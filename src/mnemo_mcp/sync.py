@@ -366,8 +366,10 @@ def setup_sync(remote_type: str = "drive") -> None:
     Usage: mnemo-mcp setup-sync [type]
     Default type: drive (Google Drive)
 
-    Prints the token JSON for use in RCLONE_CONFIG_*_TOKEN env var.
+    Captures the token from rclone output, escapes it for JSON,
+    and prints ready-to-paste MCP config.
     """
+    import json
     import sys
 
     print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
@@ -389,8 +391,12 @@ def setup_sync(remote_type: str = "drive") -> None:
     print("A browser window will open for authentication.\n")
     print("-" * 50)
 
+    # Capture stdout (contains token JSON), let stderr pass through
+    # so user sees rclone progress messages in real-time
     result = subprocess.run(
         [str(rclone_path), "authorize", remote_type],
+        stdout=subprocess.PIPE,
+        text=True,
         timeout=300,
     )
 
@@ -403,13 +409,78 @@ def setup_sync(remote_type: str = "drive") -> None:
         )
         sys.exit(1)
 
-    # 3. Print setup instructions
-    remote_upper = "GDRIVE" if remote_type == "drive" else remote_type.upper()
-    print(f"""
-Copy the token JSON above and use it in your MCP config:
+    # 3. Extract token JSON from stdout
+    token_json = _extract_token(result.stdout or "")
 
+    remote_name = "gdrive" if remote_type == "drive" else remote_type
+    remote_upper = remote_name.upper()
+
+    if token_json:
+        print(f"\n{'=' * 60}")
+        print("READY-TO-PASTE MCP CONFIG")
+        print(f"{'=' * 60}\n")
+        print(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "mnemo": {
+                            "command": "uvx",
+                            "args": ["mnemo-mcp"],
+                            "env": {
+                                "SYNC_ENABLED": "true",
+                                "SYNC_REMOTE": remote_name,
+                                f"RCLONE_CONFIG_{remote_upper}_TYPE": remote_type,
+                                f"RCLONE_CONFIG_{remote_upper}_TOKEN": token_json,
+                            },
+                        }
+                    }
+                },
+                indent=2,
+            )
+        )
+        print(f"\n{'=' * 60}")
+    else:
+        # Fallback: couldn't parse token, show manual instructions
+        print(f"\n{'=' * 60}")
+        print("MANUAL SETUP")
+        print(f"{'=' * 60}\n")
+        print("Could not auto-extract token. Copy the token JSON from above,")
+        print("then escape it for MCP config JSON:\n")
+        if sys.platform == "win32":
+            print('  python -c "import json; print(json.dumps(input()))"')
+        else:
+            print("  python3 -c 'import json; print(json.dumps(input()))'")
+        print("\nPaste the token, press Enter, use the escaped output in:")
+        print(f"""
   "SYNC_ENABLED": "true",
-  "SYNC_REMOTE": "{remote_upper.lower()}",
+  "SYNC_REMOTE": "{remote_name}",
   "RCLONE_CONFIG_{remote_upper}_TYPE": "{remote_type}",
-  "RCLONE_CONFIG_{remote_upper}_TOKEN": "<paste token JSON here>"
+  "RCLONE_CONFIG_{remote_upper}_TOKEN": "<escaped-token>"
 """)
+        print(f"{'=' * 60}")
+
+
+def _extract_token(output: str) -> str | None:
+    """Extract rclone OAuth token JSON from authorize output.
+
+    rclone outputs the token between dashed lines like:
+        Paste the following into your remote machine config
+        --------------------
+        {"access_token":"...","token_type":"Bearer",...}
+        --------------------
+    """
+    import re
+
+    # Try to find JSON between ---- markers
+    pattern = r"-{4,}\s*\n\s*(\{[^}]+\})\s*\n\s*-{4,}"
+    match = re.search(pattern, output)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: find any JSON object with access_token
+    pattern = r'\{"access_token"[^}]+\}'
+    match = re.search(pattern, output)
+    if match:
+        return match.group(0).strip()
+
+    return None

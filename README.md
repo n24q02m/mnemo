@@ -60,9 +60,9 @@ pip install mnemo-mcp
 uvx mnemo-mcp setup-sync drive
 ```
 
-This downloads rclone and opens a browser for Google Drive auth. Copy the token JSON.
+This downloads rclone, opens a browser for Google Drive auth, and outputs a ready-to-paste MCP config with the properly escaped token.
 
-**Step 2**: Add to MCP config:
+**Step 2**: Copy the output JSON into your MCP config file.
 
 ```json
 {

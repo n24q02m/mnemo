@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.sync import _get_platform_info, setup_sync, sync_full
+from mnemo_mcp.sync import _extract_token, _get_platform_info, setup_sync, sync_full
 
 
 class TestPlatformInfo:
@@ -106,20 +106,47 @@ class TestSyncFull:
             assert "RCLONE_CONFIG_GDRIVE_TYPE" in result["message"]
 
 
+class TestExtractToken:
+    def test_between_dashes(self):
+        output = (
+            "Paste the following into your remote machine config\n"
+            "--------------------\n"
+            '{"access_token":"ya29.abc","token_type":"Bearer"}\n'
+            "--------------------\n"
+        )
+        token = _extract_token(output)
+        assert token is not None
+        assert '"access_token"' in token
+
+    def test_fallback_access_token(self):
+        output = 'Some text {"access_token":"ya29.abc","token_type":"Bearer"} more text'
+        token = _extract_token(output)
+        assert token is not None
+        assert '"access_token"' in token
+
+    def test_no_token(self):
+        assert _extract_token("no token here") is None
+
+    def test_empty(self):
+        assert _extract_token("") is None
+
+
 class TestSetupSync:
+    def _mock_result(self, returncode: int = 0, stdout: str = ""):
+        return MagicMock(returncode=returncode, stdout=stdout)
+
     def test_rclone_found(self, tmp_path, capsys):
         """setup_sync uses existing rclone and runs authorize."""
         rclone_path = tmp_path / "rclone"
         rclone_path.touch()
-        mock_result = MagicMock(returncode=0)
         with (
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
             patch(
-                "mnemo_mcp.sync.subprocess.run", return_value=mock_result
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(),
             ) as mock_run,
         ):
             setup_sync("drive")
-            # Verify rclone authorize was called
             mock_run.assert_called_once()
             args = mock_run.call_args
             assert args[0][0] == [str(rclone_path), "authorize", "drive"]
@@ -127,14 +154,13 @@ class TestSetupSync:
     def test_rclone_downloaded(self, tmp_path, capsys):
         """setup_sync downloads rclone when not found."""
         rclone_path = tmp_path / "rclone"
-        mock_result = MagicMock(returncode=0)
         with (
             patch("mnemo_mcp.sync._get_rclone_path", return_value=None),
+            patch("mnemo_mcp.sync.asyncio.run", return_value=rclone_path),
             patch(
-                "mnemo_mcp.sync.asyncio.run",
-                return_value=rclone_path,
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(),
             ),
-            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
         ):
             setup_sync("drive")
             captured = capsys.readouterr()
@@ -155,26 +181,53 @@ class TestSetupSync:
         """setup_sync exits when rclone authorize fails."""
         rclone_path = tmp_path / "rclone"
         rclone_path.touch()
-        mock_result = MagicMock(returncode=1)
         with (
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(returncode=1),
+            ),
         ):
             import pytest
 
             with pytest.raises(SystemExit, match="1"):
                 setup_sync("drive")
 
-    def test_prints_env_var_instructions(self, tmp_path, capsys):
-        """setup_sync prints correct env var names for the remote type."""
+    def test_fallback_instructions(self, tmp_path, capsys):
+        """setup_sync shows manual instructions when token not extracted."""
         rclone_path = tmp_path / "rclone"
         rclone_path.touch()
-        mock_result = MagicMock(returncode=0)
         with (
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(stdout="no token here"),
+            ),
         ):
             setup_sync("s3")
             captured = capsys.readouterr()
+            assert "MANUAL SETUP" in captured.out
             assert "RCLONE_CONFIG_S3_TYPE" in captured.out
             assert "RCLONE_CONFIG_S3_TOKEN" in captured.out
+
+    def test_auto_extract_token(self, tmp_path, capsys):
+        """setup_sync outputs ready-to-paste config when token is extracted."""
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+        token_output = (
+            "--------------------\n"
+            '{"access_token":"ya29.abc","token_type":"Bearer"}\n'
+            "--------------------\n"
+        )
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(stdout=token_output),
+            ),
+        ):
+            setup_sync("drive")
+            captured = capsys.readouterr()
+            assert "READY-TO-PASTE" in captured.out
+            assert "mcpServers" in captured.out
+            assert "access_token" in captured.out
