@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.4](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.3...v0.1.0-beta.4) (2026-02-12)
+
+
+### Features
+
+* Enhance embedding model detection and API key handling; update documentation and tests ([ce394f7](https://github.com/n24q02m/mnemo-mcp/commit/ce394f72edf96a1a0ba5a7ba731ec6e6cd3f9be3))
+
 ## [0.1.0-beta.3](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-02-12)
 
 
