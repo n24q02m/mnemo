@@ -383,7 +383,7 @@ async def config(
                     "sync": {
                         "enabled": settings.sync_enabled,
                         "remote": settings.sync_remote,
-                        "folder": settings.get_effective_sync_folder(),
+                        "folder": settings.sync_folder,
                         "interval": settings.sync_interval,
                     },
                 }

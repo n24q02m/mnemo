@@ -307,7 +307,7 @@ async def sync_full(db: MemoryDB) -> dict:
 
     db_path = settings.get_db_path()
     remote = settings.sync_remote
-    folder = settings.get_effective_sync_folder()
+    folder = settings.sync_folder
 
     result: dict = {"status": "ok", "pull": None, "push": None}
 
