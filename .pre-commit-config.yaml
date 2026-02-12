@@ -1,3 +1,6 @@
+default_language_version:
+  python: python3.13
+
 repos:
   # Common Checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -42,7 +45,7 @@ repos:
 
       - id: pytest
         name: pytest
-        entry: uv run pytest --tb=short -q
+        entry: uv run pytest --timeout=30 --tb=short -q
         language: system
         types: [python]
         pass_filenames: false

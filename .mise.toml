@@ -1,14 +1,19 @@
 [tools]
 python = "3.13"
+node = "24"
 uv = "latest"
+
+[settings]
+trusted_config_paths = ["."]
+
+[env]
+UV_LINK_MODE = "copy"
 
 [tasks.setup]
 description = "Setup development environment"
 run = [
   "mise install",
-  "node scripts/clean-venv.mjs",
   "uv sync --group dev",
-  "uv pip install pre-commit",
   "uv run pre-commit install",
   "echo 'Setup complete!'"
 ]
@@ -28,6 +33,10 @@ run = "uv run pytest"
 [tasks.fix]
 description = "Auto-fix formatting and linting issues"
 run = [
-  "uv run ruff check --fix .",
+  "uv run ruff check --fix --unsafe-fixes .",
   "uv run ruff format .",
 ]
+
+[tasks.dev]
+description = "Run MCP server locally"
+run = "uv run mnemo-mcp"

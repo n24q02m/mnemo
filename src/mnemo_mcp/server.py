@@ -9,6 +9,7 @@ MCP Interface:
 """
 
 import json
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import resources as pkg_resources
@@ -100,6 +101,7 @@ mcp = FastMCP(
 
 # --- Helper ---
 
+
 def _get_ctx(ctx: Context) -> tuple[MemoryDB, str | None, int]:
     """Extract db, model, dims from context."""
     lc = ctx.request_context.lifespan_context
@@ -167,12 +169,14 @@ async def memory(
                 tags=tags,
                 embedding=embedding,
             )
-            return json.dumps({
-                "id": memory_id,
-                "status": "saved",
-                "category": category or "general",
-                "semantic": embedding is not None,
-            })
+            return json.dumps(
+                {
+                    "id": memory_id,
+                    "status": "saved",
+                    "category": category or "general",
+                    "semantic": embedding is not None,
+                }
+            )
 
         case "search":
             if not query:
@@ -186,21 +190,25 @@ async def memory(
                 tags=tags,
                 limit=limit,
             )
-            return json.dumps({
-                "count": len(results),
-                "results": results,
-                "semantic": embedding is not None,
-            })
+            return json.dumps(
+                {
+                    "count": len(results),
+                    "results": results,
+                    "semantic": embedding is not None,
+                }
+            )
 
         case "list":
             results = db.list_memories(
                 category=category,
                 limit=limit,
             )
-            return json.dumps({
-                "count": len(results),
-                "results": results,
-            })
+            return json.dumps(
+                {
+                    "count": len(results),
+                    "results": results,
+                }
+            )
 
         case "update":
             if not memory_id:
@@ -232,21 +240,27 @@ async def memory(
 
         case "export":
             jsonl = db.export_jsonl()
-            return json.dumps({
-                "format": "jsonl",
-                "data": jsonl,
-                "count": len(jsonl.strip().split("\n")) if jsonl.strip() else 0,
-            })
+            return json.dumps(
+                {
+                    "format": "jsonl",
+                    "data": jsonl,
+                    "count": len(jsonl.strip().split("\n")) if jsonl.strip() else 0,
+                }
+            )
 
         case "import":
             if not data:
-                return json.dumps({"error": "data (JSONL string) is required for import"})
+                return json.dumps(
+                    {"error": "data (JSONL string) is required for import"}
+                )
 
             result = db.import_jsonl(data, mode=mode)
-            return json.dumps({
-                "status": "imported",
-                **result,
-            })
+            return json.dumps(
+                {
+                    "status": "imported",
+                    **result,
+                }
+            )
 
         case "stats":
             s = db.stats()
@@ -257,13 +271,21 @@ async def memory(
             return json.dumps(s)
 
         case _:
-            return json.dumps({
-                "error": f"Unknown action: {action}",
-                "valid_actions": [
-                    "add", "search", "list", "update", "delete",
-                    "export", "import", "stats",
-                ],
-            })
+            return json.dumps(
+                {
+                    "error": f"Unknown action: {action}",
+                    "valid_actions": [
+                        "add",
+                        "search",
+                        "list",
+                        "update",
+                        "delete",
+                        "export",
+                        "import",
+                        "stats",
+                    ],
+                }
+            )
 
 
 @mcp.tool(
@@ -290,25 +312,27 @@ async def config(
     match action:
         case "status":
             s = db.stats()
-            return json.dumps({
-                "database": {
-                    "path": str(settings.get_db_path()),
-                    "total_memories": s["total_memories"],
-                    "categories": s["categories"],
-                    "vec_enabled": s["vec_enabled"],
-                },
-                "embedding": {
-                    "model": embedding_model,
-                    "dims": embedding_dims,
-                    "available": embedding_model is not None,
-                },
-                "sync": {
-                    "enabled": settings.sync_enabled,
-                    "remote": settings.sync_remote,
-                    "folder": settings.sync_folder,
-                    "interval": settings.sync_interval,
-                },
-            })
+            return json.dumps(
+                {
+                    "database": {
+                        "path": str(settings.get_db_path()),
+                        "total_memories": s["total_memories"],
+                        "categories": s["categories"],
+                        "vec_enabled": s["vec_enabled"],
+                    },
+                    "embedding": {
+                        "model": embedding_model,
+                        "dims": embedding_dims,
+                        "available": embedding_model is not None,
+                    },
+                    "sync": {
+                        "enabled": settings.sync_enabled,
+                        "remote": settings.sync_remote,
+                        "folder": settings.sync_folder,
+                        "interval": settings.sync_interval,
+                    },
+                }
+            )
 
         case "sync":
             from mnemo_mcp.sync import sync_full
@@ -321,14 +345,19 @@ async def config(
                 return json.dumps({"error": "key and value are required for set"})
 
             valid_keys = {
-                "sync_enabled", "sync_remote", "sync_folder",
-                "sync_interval", "log_level",
+                "sync_enabled",
+                "sync_remote",
+                "sync_folder",
+                "sync_interval",
+                "log_level",
             }
             if key not in valid_keys:
-                return json.dumps({
-                    "error": f"Invalid key: {key}",
-                    "valid_keys": sorted(valid_keys),
-                })
+                return json.dumps(
+                    {
+                        "error": f"Invalid key: {key}",
+                        "valid_keys": sorted(valid_keys),
+                    }
+                )
 
             # Apply setting
             if key == "sync_enabled":
@@ -339,23 +368,27 @@ async def config(
                 settings.log_level = value.upper()
                 logger.remove()
                 logger.add(
-                    lambda msg: None,  # Loguru re-add
+                    sys.stderr,
                     level=settings.log_level,
                 )
             else:
                 setattr(settings, key, value)
 
-            return json.dumps({
-                "status": "updated",
-                "key": key,
-                "value": getattr(settings, key),
-            })
+            return json.dumps(
+                {
+                    "status": "updated",
+                    "key": key,
+                    "value": getattr(settings, key),
+                }
+            )
 
         case _:
-            return json.dumps({
-                "error": f"Unknown action: {action}",
-                "valid_actions": ["status", "sync", "set"],
-            })
+            return json.dumps(
+                {
+                    "error": f"Unknown action: {action}",
+                    "valid_actions": ["status", "sync", "set"],
+                }
+            )
 
 
 @mcp.tool(
@@ -368,10 +401,12 @@ async def help(topic: str = "memory") -> str:
 
     filename = valid_topics.get(topic)
     if not filename:
-        return json.dumps({
-            "error": f"Unknown topic: {topic}",
-            "valid_topics": list(valid_topics.keys()),
-        })
+        return json.dumps(
+            {
+                "error": f"Unknown topic: {topic}",
+                "valid_topics": list(valid_topics.keys()),
+            }
+        )
 
     doc_file = docs_package / filename
     content = doc_file.read_text(encoding="utf-8")
@@ -427,8 +462,6 @@ def recall_context(topic: str) -> str:
 
 def main() -> None:
     """Run the MCP server."""
-    import sys
-
     logger.remove()
     logger.add(sys.stderr, level=settings.log_level)
     logger.info("Starting Mnemo MCP Server...")

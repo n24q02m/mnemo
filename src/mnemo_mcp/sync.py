@@ -125,9 +125,7 @@ async def _download_rclone() -> Path | None:
             response.raise_for_status()
 
             # Write to temp file
-            with tempfile.NamedTemporaryFile(
-                suffix=".zip", delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
                 tmp.write(response.content)
                 tmp_path = Path(tmp.name)
 
@@ -190,13 +188,13 @@ def _run_rclone(
 
 async def check_remote_configured(rclone_path: Path, remote: str) -> bool:
     """Check if an rclone remote is configured."""
-    result = await asyncio.to_thread(
-        _run_rclone, rclone_path, ["listremotes"], 10
-    )
+    result = await asyncio.to_thread(_run_rclone, rclone_path, ["listremotes"], 10)
     if result.returncode != 0:
         return False
 
-    remotes = [r.strip().rstrip(":") for r in result.stdout.strip().split("\n") if r.strip()]
+    remotes = [
+        r.strip().rstrip(":") for r in result.stdout.strip().split("\n") if r.strip()
+    ]
     return remote in remotes
 
 
@@ -225,7 +223,9 @@ async def sync_push(rclone_path: Path, db_path: Path, remote: str, folder: str) 
         return False
 
 
-async def sync_pull(rclone_path: Path, db_path: Path, remote: str, folder: str) -> Path | None:
+async def sync_pull(
+    rclone_path: Path, db_path: Path, remote: str, folder: str
+) -> Path | None:
     """Pull remote database to local temp directory.
 
     Downloads the remote DB file to a temp location for merging.
@@ -297,9 +297,7 @@ async def sync_full(db: MemoryDB) -> dict:
             if remote_jsonl.strip():
                 import_result = db.import_jsonl(remote_jsonl, mode="merge")
                 result["pull"] = import_result
-                logger.info(
-                    f"Merged {import_result['imported']} memories from remote"
-                )
+                logger.info(f"Merged {import_result['imported']} memories from remote")
             else:
                 result["pull"] = {"imported": 0, "skipped": 0}
 

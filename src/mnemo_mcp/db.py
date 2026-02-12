@@ -8,6 +8,7 @@ Provides:
 """
 
 import json
+import math
 import sqlite3
 import struct
 import uuid
@@ -59,9 +60,7 @@ class MemoryDB:
                 sqlite_vec.load(self._conn)
                 self._conn.enable_load_extension(False)
                 self._vec_enabled = True
-                logger.debug(
-                    f"sqlite-vec loaded (dims={embedding_dims})"
-                )
+                logger.debug(f"sqlite-vec loaded (dims={embedding_dims})")
             except Exception as e:
                 logger.warning(f"sqlite-vec load failed: {e}")
 
@@ -273,9 +272,11 @@ class MemoryDB:
                 k: v for k, v in results.items() if v.get("category") == category
             }
         if tags:
+
             def _has_tags(mem: dict) -> bool:
                 mem_tags = json.loads(mem.get("tags", "[]"))
                 return any(t in mem_tags for t in tags)
+
             results = {k: v for k, v in results.items() if _has_tags(v)}
 
         # 4. Compute hybrid score
@@ -294,7 +295,6 @@ class MemoryDB:
                 recency = 0.0
 
             # Frequency boost (logarithmic)
-            import math
             freq = math.log1p(mem.get("access_count", 0)) / 10.0
             freq = min(freq, 1.0)
 
@@ -402,9 +402,7 @@ class MemoryDB:
 
         # Update embedding if provided
         if embedding and self._vec_enabled:
-            self._conn.execute(
-                "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
-            )
+            self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
             self._conn.execute(
                 "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
                 (memory_id, _serialize_f32(embedding)),
@@ -422,18 +420,14 @@ class MemoryDB:
         self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
         if self._vec_enabled:
-            self._conn.execute(
-                "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
-            )
+            self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
 
         self._conn.commit()
         return True
 
     def stats(self) -> dict:
         """Get database statistics."""
-        total = self._conn.execute(
-            "SELECT COUNT(*) FROM memories"
-        ).fetchone()[0]
+        total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
 
         categories = self._conn.execute(
             "SELECT category, COUNT(*) as cnt FROM memories GROUP BY category ORDER BY cnt DESC"
