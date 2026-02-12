@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.7](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.6...v0.1.0-beta.7) (2026-02-12)
+
+
+### Features
+
+* **sync:** enhance setup_sync to auto-extract rclone token and output MCP config ([0eec357](https://github.com/n24q02m/mnemo-mcp/commit/0eec357400f73ea85f1b1caad269c63ba7fcaa5f))
+
 ## [0.1.0-beta.6](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.5...v0.1.0-beta.6) (2026-02-12)
 
 
