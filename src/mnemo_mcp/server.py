@@ -29,6 +29,11 @@ _EMBEDDING_CANDIDATES = [
     "embed-english-v3.0",
 ]
 
+# Fixed embedding dimensions for sqlite-vec.
+# All embeddings are truncated to this size so switching models never
+# breaks the vector table. Override via EMBEDDING_DIMS env var.
+_DEFAULT_EMBEDDING_DIMS = 768
+
 # --- Lifespan ---
 
 
@@ -48,11 +53,14 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         # Explicit model — validate it
         from mnemo_mcp.embedder import check_embedding_available
 
-        detected_dims = check_embedding_available(embedding_model)
-        if detected_dims > 0:
+        native_dims = check_embedding_available(embedding_model)
+        if native_dims > 0:
             if embedding_dims == 0:
-                embedding_dims = detected_dims
-            logger.info(f"Embedding: {embedding_model} (dims={embedding_dims})")
+                embedding_dims = _DEFAULT_EMBEDDING_DIMS
+            logger.info(
+                f"Embedding: {embedding_model} "
+                f"(native={native_dims}, stored={embedding_dims})"
+            )
         else:
             logger.warning(
                 f"Embedding model {embedding_model} not available, using FTS5-only"
@@ -63,12 +71,15 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         from mnemo_mcp.embedder import check_embedding_available
 
         for candidate in _EMBEDDING_CANDIDATES:
-            detected_dims = check_embedding_available(candidate)
-            if detected_dims > 0:
+            native_dims = check_embedding_available(candidate)
+            if native_dims > 0:
                 embedding_model = candidate
                 if embedding_dims == 0:
-                    embedding_dims = detected_dims
-                logger.info(f"Embedding: {embedding_model} (dims={embedding_dims})")
+                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                logger.info(
+                    f"Embedding: {embedding_model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
+                )
                 break
         if not embedding_model:
             logger.warning("No embedding model available, using FTS5-only")
@@ -135,13 +146,17 @@ def _json(obj: object) -> str:
 
 
 async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
-    """Embed text if model is available."""
+    """Embed text if model is available, truncated to fixed dims."""
     if not model:
         return None
     from mnemo_mcp.embedder import embed_single
 
     try:
-        return await embed_single(text, model, dims if dims > 0 else None)
+        vec = await embed_single(text, model)
+        # Truncate to fixed dims so switching models never breaks the DB
+        if dims > 0 and len(vec) > dims:
+            vec = vec[:dims]
+        return vec
     except Exception as e:
         logger.debug(f"Embedding failed: {e}")
         return None

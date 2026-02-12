@@ -1,8 +1,8 @@
 """Tests for mnemo_mcp.sync — rclone management and sync operations."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.sync import _get_platform_info, sync_full
+from mnemo_mcp.sync import _get_platform_info, setup_sync, sync_full
 
 
 class TestPlatformInfo:
@@ -103,3 +103,78 @@ class TestSyncFull:
             result = await sync_full(tmp_db)
             assert result["status"] == "error"
             assert "gdrive" in result["message"]
+            assert "RCLONE_CONFIG_GDRIVE_TYPE" in result["message"]
+
+
+class TestSetupSync:
+    def test_rclone_found(self, tmp_path, capsys):
+        """setup_sync uses existing rclone and runs authorize."""
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+        mock_result = MagicMock(returncode=0)
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch(
+                "mnemo_mcp.sync.subprocess.run", return_value=mock_result
+            ) as mock_run,
+        ):
+            setup_sync("drive")
+            # Verify rclone authorize was called
+            mock_run.assert_called_once()
+            args = mock_run.call_args
+            assert args[0][0] == [str(rclone_path), "authorize", "drive"]
+
+    def test_rclone_downloaded(self, tmp_path, capsys):
+        """setup_sync downloads rclone when not found."""
+        rclone_path = tmp_path / "rclone"
+        mock_result = MagicMock(returncode=0)
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=None),
+            patch(
+                "mnemo_mcp.sync.asyncio.run",
+                return_value=rclone_path,
+            ),
+            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
+        ):
+            setup_sync("drive")
+            captured = capsys.readouterr()
+            assert "Downloading rclone" in captured.out
+
+    def test_download_fails(self, capsys):
+        """setup_sync exits when rclone download fails."""
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=None),
+            patch("mnemo_mcp.sync.asyncio.run", return_value=None),
+        ):
+            import pytest
+
+            with pytest.raises(SystemExit, match="1"):
+                setup_sync("drive")
+
+    def test_authorize_fails(self, tmp_path):
+        """setup_sync exits when rclone authorize fails."""
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+        mock_result = MagicMock(returncode=1)
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
+        ):
+            import pytest
+
+            with pytest.raises(SystemExit, match="1"):
+                setup_sync("drive")
+
+    def test_prints_env_var_instructions(self, tmp_path, capsys):
+        """setup_sync prints correct env var names for the remote type."""
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+        mock_result = MagicMock(returncode=0)
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch("mnemo_mcp.sync.subprocess.run", return_value=mock_result),
+        ):
+            setup_sync("s3")
+            captured = capsys.readouterr()
+            assert "RCLONE_CONFIG_S3_TYPE" in captured.out
+            assert "RCLONE_CONFIG_S3_TOKEN" in captured.out

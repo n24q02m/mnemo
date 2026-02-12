@@ -272,10 +272,12 @@ async def sync_full(db: MemoryDB) -> dict:
 
     # Check remote is configured
     if not await check_remote_configured(rclone_path, settings.sync_remote):
+        remote_upper = settings.sync_remote.upper()
         return {
             "status": "error",
             "message": f"rclone remote '{settings.sync_remote}' not configured. "
-            f"Run: rclone config create {settings.sync_remote} drive",
+            f"Set RCLONE_CONFIG_{remote_upper}_TYPE and "
+            f"RCLONE_CONFIG_{remote_upper}_TOKEN env vars.",
         }
 
     db_path = settings.get_db_path()
@@ -356,3 +358,58 @@ def stop_auto_sync() -> None:
     if _sync_task and not _sync_task.done():
         _sync_task.cancel()
         _sync_task = None
+
+
+def setup_sync(remote_type: str = "drive") -> None:
+    """Download rclone and run authorize to get a token.
+
+    Usage: mnemo-mcp setup-sync [type]
+    Default type: drive (Google Drive)
+
+    Prints the token JSON for use in RCLONE_CONFIG_*_TOKEN env var.
+    """
+    import sys
+
+    print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
+
+    # 1. Ensure rclone is available
+    rclone_path = _get_rclone_path()
+    if rclone_path:
+        print(f"rclone found: {rclone_path}")
+    else:
+        print("Downloading rclone...")
+        rclone_path = asyncio.run(_download_rclone())
+        if not rclone_path:
+            print("ERROR: Failed to download rclone", file=sys.stderr)
+            sys.exit(1)
+        print(f"rclone installed: {rclone_path}")
+
+    # 2. Run rclone authorize (interactive — opens browser)
+    print(f'\nRunning: rclone authorize "{remote_type}"')
+    print("A browser window will open for authentication.\n")
+    print("-" * 50)
+
+    result = subprocess.run(
+        [str(rclone_path), "authorize", remote_type],
+        timeout=300,
+    )
+
+    print("-" * 50)
+
+    if result.returncode != 0:
+        print(
+            f"\nERROR: rclone authorize failed (exit {result.returncode})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # 3. Print setup instructions
+    remote_upper = "GDRIVE" if remote_type == "drive" else remote_type.upper()
+    print(f"""
+Copy the token JSON above and use it in your MCP config:
+
+  "SYNC_ENABLED": "true",
+  "SYNC_REMOTE": "{remote_upper.lower()}",
+  "RCLONE_CONFIG_{remote_upper}_TYPE": "{remote_type}",
+  "RCLONE_CONFIG_{remote_upper}_TOKEN": "<paste token JSON here>"
+""")

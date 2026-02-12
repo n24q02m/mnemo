@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
     embedding_model: str = ""
-    embedding_dims: int = 0  # 0 = auto-detect
+    embedding_dims: int = 0  # 0 = use server default (768)
 
     # Sync (rclone)
     sync_enabled: bool = False

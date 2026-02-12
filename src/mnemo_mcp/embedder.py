@@ -1,11 +1,11 @@
 """Embedding provider using LiteLLM.
 
 Supports any provider that LiteLLM handles:
-- Ollama (local, free)
 - OpenAI, Gemini, Mistral, Cohere (cloud, API key required)
 - Any OpenAI-compatible endpoint
 
 Auto-detects provider from API_KEYS config.
+Embeddings are truncated to fixed dims in server._embed().
 """
 
 import logging
