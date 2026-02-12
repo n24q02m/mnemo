@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0 (2026-02-12)
+
+
+### Features
+
+* promote dev to main (v0.1.0-beta.2) ([#3](https://github.com/n24q02m/mnemo-mcp/issues/3)) ([6039e3e](https://github.com/n24q02m/mnemo-mcp/commit/6039e3ebcc0f89de12acf75277a4754fd589ea80))
+
 ## [0.1.0-beta.3](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.2...v0.1.0-beta.3) (2026-02-12)
 
 
