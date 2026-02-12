@@ -54,6 +54,16 @@ pip install mnemo-mcp
 
 ### With sync (multi-machine)
 
+**Step 1**: Get a drive token (one-time, requires browser):
+
+```bash
+uvx mnemo-mcp setup-sync drive
+```
+
+This downloads rclone, opens a browser for Google Drive auth, and outputs a **base64-encoded token** for `RCLONE_CONFIG_GDRIVE_TOKEN`.
+
+**Step 2**: Copy the token and add it to your MCP config:
+
 ```json
 {
   "mcpServers": {
@@ -64,14 +74,74 @@ pip install mnemo-mcp
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
         "SYNC_ENABLED": "true",
         "SYNC_REMOTE": "gdrive",
-        "SYNC_INTERVAL": "300"
+        "SYNC_INTERVAL": "300",
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>"
       }
     }
   }
 }
 ```
 
-Requires rclone remote configured: `rclone config create gdrive drive`
+Both raw JSON and base64-encoded tokens are supported. Base64 is recommended — it avoids nested JSON escaping issues.
+
+Remote is configured via env vars — works in any environment (local, Docker, CI).
+
+### With Docker
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "mnemo-data:/data",
+        "-e", "API_KEYS",
+        "-e", "DB_PATH",
+        "n24q02m/mnemo-mcp:latest"
+      ],
+      "env": {
+        "DB_PATH": "/data/memories.db",
+        "API_KEYS": "GOOGLE_API_KEY:AIza..."
+      }
+    }
+  }
+}
+```
+
+### With sync in Docker
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "mnemo-data:/data",
+        "-e", "DB_PATH",
+        "-e", "API_KEYS",
+        "-e", "SYNC_ENABLED",
+        "-e", "SYNC_REMOTE",
+        "-e", "SYNC_INTERVAL",
+        "-e", "RCLONE_CONFIG_GDRIVE_TYPE",
+        "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",
+        "n24q02m/mnemo-mcp:latest"
+      ],
+      "env": {
+        "DB_PATH": "/data/memories.db",
+        "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        "SYNC_ENABLED": "true",
+        "SYNC_REMOTE": "gdrive",
+        "SYNC_INTERVAL": "300",
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>"
+      }
+    }
+  }
+}
+```
 
 ## Configuration
 
@@ -80,7 +150,7 @@ Requires rclone remote configured: `rclone config create gdrive drive`
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`) |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name |
-| `EMBEDDING_DIMS` | auto-detect | Embedding dimensions |
+| `EMBEDDING_DIMS` | `768` | Embedding dimensions (fixed, override if needed) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | — | rclone remote name |
 | `SYNC_FOLDER` | `mnemo-mcp` | Remote folder |
@@ -89,13 +159,18 @@ Requires rclone remote configured: `rclone config create gdrive drive`
 
 ### Supported Embedding Providers
 
-| API Key | Auto-detected Model |
-|---------|-------------------|
-| `GOOGLE_API_KEY` | `gemini/text-embedding-004` |
-| `OPENAI_API_KEY` | `text-embedding-3-small` |
-| `MISTRAL_API_KEY` | `mistral/mistral-embed` |
-| `COHERE_API_KEY` | `cohere/embed-english-v3.0` |
-| `OLLAMA_API_BASE` | Set `EMBEDDING_MODEL` manually |
+The server auto-detects embedding models by trying each provider in order:
+
+| Priority | Env Var (LiteLLM) | Model | Native Dims | Stored |
+|----------|-------------------|-------|-------------|--------|
+| 1 | `GEMINI_API_KEY` | `gemini/gemini-embedding-001` | 3072 | 768 |
+| 2 | `OPENAI_API_KEY` | `text-embedding-3-small` | 1536 | 768 |
+| 3 | `MISTRAL_API_KEY` | `mistral/mistral-embed` | 1024 | 768 |
+| 4 | `COHERE_API_KEY` | `embed-english-v3.0` | 1024 | 768 |
+
+All embeddings are truncated to **768 dims** (default) for storage. This ensures switching models never breaks the vector table. Override with `EMBEDDING_DIMS` if needed.
+
+`API_KEYS` format maps your env var to LiteLLM's expected var (e.g., `GOOGLE_API_KEY:key` auto-sets `GEMINI_API_KEY`). Set `EMBEDDING_MODEL` explicitly for other providers.
 
 No API keys = FTS5-only mode (text search works perfectly, just no semantic similarity).
 
@@ -143,7 +218,7 @@ help(topic="memory")  # or "config"
                     |
               LiteLLM embed
                     |
-        Gemini / OpenAI / Ollama / ...
+        Gemini / OpenAI / Mistral / Cohere
 
         Sync: rclone (embedded) → Google Drive / S3 / ...
 ```

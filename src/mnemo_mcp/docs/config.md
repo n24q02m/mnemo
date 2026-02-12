@@ -31,9 +31,11 @@ Requires `SYNC_ENABLED=true` and `SYNC_REMOTE` configured.
 - `push`: Success/failure of push operation
 
 **Sync prerequisites:**
-1. rclone installed (auto-downloaded if not found)
-2. rclone remote configured (e.g., `rclone config create gdrive drive`)
-3. `SYNC_ENABLED=true` and `SYNC_REMOTE=gdrive` in environment
+1. Get a token: `uvx mnemo-mcp setup-sync drive` (downloads rclone + opens browser)
+2. Set env vars in MCP config:
+   - `RCLONE_CONFIG_<REMOTE>_TYPE`: remote type (e.g., `drive`, `s3`)
+   - `RCLONE_CONFIG_<REMOTE>_TOKEN`: token JSON from step 1
+3. `SYNC_ENABLED=true` and `SYNC_REMOTE=<remote_name>` in environment
 
 ### `set` - Update a configuration value
 
@@ -64,7 +66,7 @@ Configure via environment variables before starting the server:
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path |
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
 | `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name |
-| `EMBEDDING_DIMS` | (auto-detect) | Embedding dimensions |
+| `EMBEDDING_DIMS` | `768` | Fixed embedding dimensions (all vectors truncated to this size) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | (none) | Rclone remote name |
 | `SYNC_FOLDER` | `mnemo-mcp` | Remote folder name |
@@ -77,10 +79,12 @@ Configure via environment variables before starting the server:
 API_KEYS="GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
 ```
 
-The server auto-detects which embedding model to use based on available API keys:
-- `GOOGLE_API_KEY` → `gemini/text-embedding-004`
-- `OPENAI_API_KEY` → `text-embedding-3-small`
-- `MISTRAL_API_KEY` → `mistral/mistral-embed`
-- `COHERE_API_KEY` → `cohere/embed-english-v3.0`
+The server auto-detects which embedding model to use by trying providers in order:
+1. `gemini/gemini-embedding-001` (requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+2. `text-embedding-3-small` (requires `OPENAI_API_KEY`)
+3. `mistral/mistral-embed` (requires `MISTRAL_API_KEY`)
+4. `embed-english-v3.0` (requires `COHERE_API_KEY`)
+
+Set `EMBEDDING_MODEL` explicitly to use a specific model.
 
 No API keys = FTS5-only mode (text search without semantic search).

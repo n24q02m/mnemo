@@ -19,6 +19,9 @@ Resilience:
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import os
 import platform
 import shutil
 import stat
@@ -171,6 +174,27 @@ async def ensure_rclone() -> Path | None:
     return await _download_rclone()
 
 
+def _prepare_rclone_env() -> dict[str, str]:
+    """Prepare env dict for rclone, decoding base64 tokens if needed.
+
+    Supports both raw JSON and base64-encoded tokens in
+    ``RCLONE_CONFIG_*_TOKEN`` env vars.  Base64 avoids nested JSON
+    escaping issues in MCP config files.
+    """
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("RCLONE_CONFIG_") and key.endswith("_TOKEN"):
+            value = env[key]
+            if value and not value.lstrip().startswith("{"):
+                try:
+                    decoded = base64.b64decode(value).decode("utf-8")
+                    json.loads(decoded)  # Validate JSON structure
+                    env[key] = decoded
+                except Exception:
+                    pass
+    return env
+
+
 def _run_rclone(
     rclone_path: Path, args: list[str], timeout: int = 120
 ) -> subprocess.CompletedProcess:
@@ -183,6 +207,7 @@ def _run_rclone(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=_prepare_rclone_env(),
     )
 
 
@@ -272,10 +297,12 @@ async def sync_full(db: MemoryDB) -> dict:
 
     # Check remote is configured
     if not await check_remote_configured(rclone_path, settings.sync_remote):
+        remote_upper = settings.sync_remote.upper()
         return {
             "status": "error",
             "message": f"rclone remote '{settings.sync_remote}' not configured. "
-            f"Run: rclone config create {settings.sync_remote} drive",
+            f"Set RCLONE_CONFIG_{remote_upper}_TYPE and "
+            f"RCLONE_CONFIG_{remote_upper}_TOKEN env vars.",
         }
 
     db_path = settings.get_db_path()
@@ -356,3 +383,119 @@ def stop_auto_sync() -> None:
     if _sync_task and not _sync_task.done():
         _sync_task.cancel()
         _sync_task = None
+
+
+def setup_sync(remote_type: str = "drive") -> None:
+    """Download rclone and run authorize to get a token.
+
+    Usage: mnemo-mcp setup-sync [type]
+    Default type: drive (Google Drive)
+
+    Captures the token from rclone output, base64-encodes it,
+    and prints ready-to-paste MCP config.
+    """
+
+    print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
+
+    # 1. Ensure rclone is available
+    rclone_path = _get_rclone_path()
+    if rclone_path:
+        print(f"rclone found: {rclone_path}")
+    else:
+        print("Downloading rclone...")
+        rclone_path = asyncio.run(_download_rclone())
+        if not rclone_path:
+            print("ERROR: Failed to download rclone", file=sys.stderr)
+            sys.exit(1)
+        print(f"rclone installed: {rclone_path}")
+
+    # 2. Run rclone authorize (interactive — opens browser)
+    print(f'\nRunning: rclone authorize "{remote_type}"')
+    print("A browser window will open for authentication.\n")
+    print("-" * 50)
+
+    # Capture stdout (contains token JSON), let stderr pass through
+    # so user sees rclone progress messages in real-time
+    result = subprocess.run(
+        [str(rclone_path), "authorize", remote_type],
+        stdout=subprocess.PIPE,
+        text=True,
+        timeout=300,
+    )
+
+    print("-" * 50)
+
+    if result.returncode != 0:
+        print(
+            f"\nERROR: rclone authorize failed (exit {result.returncode})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # 3. Extract token JSON from stdout
+    token_json = _extract_token(result.stdout or "")
+
+    remote_name = "gdrive" if remote_type == "drive" else remote_type
+    remote_upper = remote_name.upper()
+
+    if token_json:
+        token_b64 = base64.b64encode(token_json.encode()).decode()
+
+        print(f"\n{'=' * 60}")
+        print(f"RCLONE_CONFIG_{remote_upper}_TOKEN (base64-encoded)")
+        print(f"{'=' * 60}\n")
+        print(token_b64)
+        print(f"\n{'=' * 60}")
+        print("\nEnv vars needed for sync:")
+        print("  SYNC_ENABLED=true")
+        print(f"  SYNC_REMOTE={remote_name}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 above>")
+        print("\nServer auto-decodes base64 at runtime.")
+        print("Both raw JSON and base64 tokens are supported.")
+    else:
+        # Fallback: couldn't parse token, show manual instructions
+        print(f"\n{'=' * 60}")
+        print("MANUAL SETUP")
+        print(f"{'=' * 60}\n")
+        print("Could not auto-extract token from rclone output.")
+        print("Copy the token JSON from above and base64-encode it:\n")
+        if sys.platform == "win32":
+            print(
+                '  python -c "import base64,sys; print(base64.b64encode(input().encode()).decode())"'
+            )
+        else:
+            print(
+                "  python3 -c 'import base64,sys; print(base64.b64encode(input().encode()).decode())'"
+            )
+        print("\nThen set these env vars:")
+        print("  SYNC_ENABLED=true")
+        print(f"  SYNC_REMOTE={remote_name}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 output>")
+
+
+def _extract_token(output: str) -> str | None:
+    """Extract rclone OAuth token JSON from authorize output.
+
+    rclone outputs the token between dashed lines like:
+        Paste the following into your remote machine config
+        --------------------
+        {"access_token":"...","token_type":"Bearer",...}
+        --------------------
+    """
+    import re
+
+    # Try to find JSON between ---- markers
+    pattern = r"-{4,}\s*\n\s*(\{[^}]+\})\s*\n\s*-{4,}"
+    match = re.search(pattern, output)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: find any JSON object with access_token
+    pattern = r'\{"access_token"[^}]+\}'
+    match = re.search(pattern, output)
+    if match:
+        return match.group(0).strip()
+
+    return None

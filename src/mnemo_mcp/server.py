@@ -20,39 +20,71 @@ from mcp.server.fastmcp import Context, FastMCP
 from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
 
+# Embedding models to try during auto-detection (in priority order).
+# LiteLLM validates each against its API key — first success wins.
+_EMBEDDING_CANDIDATES = [
+    "gemini/gemini-embedding-001",
+    "text-embedding-3-small",
+    "mistral/mistral-embed",
+    "embed-english-v3.0",
+]
+
+# Fixed embedding dimensions for sqlite-vec.
+# All embeddings are truncated to this size so switching models never
+# breaks the vector table. Override via EMBEDDING_DIMS env var.
+_DEFAULT_EMBEDDING_DIMS = 768
+
 # --- Lifespan ---
 
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Initialize DB, embeddings, and sync on startup."""
-    # 1. Setup API keys
+    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY → GEMINI_API_KEY)
     keys = settings.setup_api_keys()
     if keys:
         logger.info(f"API keys configured: {', '.join(keys.keys())}")
 
-    # 2. Resolve embedding model
+    # 2. Resolve embedding model + dims
     embedding_model = settings.resolve_embedding_model()
-    embedding_dims = 0
+    embedding_dims = settings.resolve_embedding_dims()
 
     if embedding_model:
-        from mnemo_mcp.embedder import check_embedding_available, detect_embedding_dims
+        # Explicit model — validate it
+        from mnemo_mcp.embedder import check_embedding_available
 
-        if check_embedding_available(embedding_model):
-            embedding_dims = settings.resolve_embedding_dims(embedding_model)
-            # Try to detect actual dims if not known
-            if embedding_dims == 768:  # Default fallback, verify
-                actual = detect_embedding_dims(embedding_model)
-                if actual > 0:
-                    embedding_dims = actual
-            logger.info(f"Embedding: {embedding_model} (dims={embedding_dims})")
+        native_dims = check_embedding_available(embedding_model)
+        if native_dims > 0:
+            if embedding_dims == 0:
+                embedding_dims = _DEFAULT_EMBEDDING_DIMS
+            logger.info(
+                f"Embedding: {embedding_model} "
+                f"(native={native_dims}, stored={embedding_dims})"
+            )
         else:
             logger.warning(
                 f"Embedding model {embedding_model} not available, using FTS5-only"
             )
             embedding_model = None
+    elif keys:
+        # Auto-detect: try candidate models
+        from mnemo_mcp.embedder import check_embedding_available
+
+        for candidate in _EMBEDDING_CANDIDATES:
+            native_dims = check_embedding_available(candidate)
+            if native_dims > 0:
+                embedding_model = candidate
+                if embedding_dims == 0:
+                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                logger.info(
+                    f"Embedding: {embedding_model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
+                )
+                break
+        if not embedding_model:
+            logger.warning("No embedding model available, using FTS5-only")
     else:
-        logger.info("No embedding model configured, using FTS5-only search")
+        logger.info("No API keys configured, using FTS5-only search")
 
     # 3. Initialize database
     db_path = settings.get_db_path()
@@ -108,14 +140,39 @@ def _get_ctx(ctx: Context) -> tuple[MemoryDB, str | None, int]:
     return lc["db"], lc["embedding_model"], lc["embedding_dims"]
 
 
+def _json(obj: object) -> str:
+    """Serialize to readable JSON."""
+    return json.dumps(obj, indent=2)
+
+
+def _format_memory(mem: dict) -> dict:
+    """Format a raw memory dict for tool output.
+
+    - Parse ``tags`` from JSON string to list
+    - Round ``score`` to 3 decimal places
+    """
+    if isinstance(mem.get("tags"), str):
+        try:
+            mem["tags"] = json.loads(mem["tags"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if "score" in mem:
+        mem["score"] = round(mem["score"], 3)
+    return mem
+
+
 async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
-    """Embed text if model is available."""
+    """Embed text if model is available, truncated to fixed dims."""
     if not model:
         return None
     from mnemo_mcp.embedder import embed_single
 
     try:
-        return await embed_single(text, model, dims if dims > 0 else None)
+        vec = await embed_single(text, model)
+        # Truncate to fixed dims so switching models never breaks the DB
+        if dims > 0 and len(vec) > dims:
+            vec = vec[:dims]
+        return vec
     except Exception as e:
         logger.debug(f"Embedding failed: {e}")
         return None
@@ -160,7 +217,7 @@ async def memory(
     match action:
         case "add":
             if not content:
-                return json.dumps({"error": "content is required for add"})
+                return _json({"error": "content is required for add"})
 
             embedding = await _embed(content, embedding_model, embedding_dims)
             memory_id = db.add(
@@ -169,7 +226,7 @@ async def memory(
                 tags=tags,
                 embedding=embedding,
             )
-            return json.dumps(
+            return _json(
                 {
                     "id": memory_id,
                     "status": "saved",
@@ -180,7 +237,7 @@ async def memory(
 
         case "search":
             if not query:
-                return json.dumps({"error": "query is required for search"})
+                return _json({"error": "query is required for search"})
 
             embedding = await _embed(query, embedding_model, embedding_dims)
             results = db.search(
@@ -190,10 +247,10 @@ async def memory(
                 tags=tags,
                 limit=limit,
             )
-            return json.dumps(
+            return _json(
                 {
                     "count": len(results),
-                    "results": results,
+                    "results": [_format_memory(r) for r in results],
                     "semantic": embedding is not None,
                 }
             )
@@ -203,16 +260,16 @@ async def memory(
                 category=category,
                 limit=limit,
             )
-            return json.dumps(
+            return _json(
                 {
                     "count": len(results),
-                    "results": results,
+                    "results": [_format_memory(r) for r in results],
                 }
             )
 
         case "update":
             if not memory_id:
-                return json.dumps({"error": "memory_id is required for update"})
+                return _json({"error": "memory_id is required for update"})
 
             embedding = None
             if content:
@@ -226,21 +283,21 @@ async def memory(
                 embedding=embedding,
             )
             if ok:
-                return json.dumps({"status": "updated", "id": memory_id})
-            return json.dumps({"error": f"Memory {memory_id} not found"})
+                return _json({"status": "updated", "id": memory_id})
+            return _json({"error": f"Memory {memory_id} not found"})
 
         case "delete":
             if not memory_id:
-                return json.dumps({"error": "memory_id is required for delete"})
+                return _json({"error": "memory_id is required for delete"})
 
             ok = db.delete(memory_id)
             if ok:
-                return json.dumps({"status": "deleted", "id": memory_id})
-            return json.dumps({"error": f"Memory {memory_id} not found"})
+                return _json({"status": "deleted", "id": memory_id})
+            return _json({"error": f"Memory {memory_id} not found"})
 
         case "export":
             jsonl = db.export_jsonl()
-            return json.dumps(
+            return _json(
                 {
                     "format": "jsonl",
                     "data": jsonl,
@@ -250,12 +307,10 @@ async def memory(
 
         case "import":
             if not data:
-                return json.dumps(
-                    {"error": "data (JSONL string) is required for import"}
-                )
+                return _json({"error": "data (JSONL string) is required for import"})
 
             result = db.import_jsonl(data, mode=mode)
-            return json.dumps(
+            return _json(
                 {
                     "status": "imported",
                     **result,
@@ -268,10 +323,10 @@ async def memory(
             s["embedding_dims"] = embedding_dims
             s["sync_enabled"] = settings.sync_enabled
             s["sync_remote"] = settings.sync_remote
-            return json.dumps(s)
+            return _json(s)
 
         case _:
-            return json.dumps(
+            return _json(
                 {
                     "error": f"Unknown action: {action}",
                     "valid_actions": [
@@ -312,7 +367,7 @@ async def config(
     match action:
         case "status":
             s = db.stats()
-            return json.dumps(
+            return _json(
                 {
                     "database": {
                         "path": str(settings.get_db_path()),
@@ -338,11 +393,11 @@ async def config(
             from mnemo_mcp.sync import sync_full
 
             result = await sync_full(db)
-            return json.dumps(result)
+            return _json(result)
 
         case "set":
             if not key or value is None:
-                return json.dumps({"error": "key and value are required for set"})
+                return _json({"error": "key and value are required for set"})
 
             valid_keys = {
                 "sync_enabled",
@@ -352,7 +407,7 @@ async def config(
                 "log_level",
             }
             if key not in valid_keys:
-                return json.dumps(
+                return _json(
                     {
                         "error": f"Invalid key: {key}",
                         "valid_keys": sorted(valid_keys),
@@ -374,7 +429,7 @@ async def config(
             else:
                 setattr(settings, key, value)
 
-            return json.dumps(
+            return _json(
                 {
                     "status": "updated",
                     "key": key,
@@ -383,7 +438,7 @@ async def config(
             )
 
         case _:
-            return json.dumps(
+            return _json(
                 {
                     "error": f"Unknown action: {action}",
                     "valid_actions": ["status", "sync", "set"],
@@ -401,7 +456,7 @@ async def help(topic: str = "memory") -> str:
 
     filename = valid_topics.get(topic)
     if not filename:
-        return json.dumps(
+        return _json(
             {
                 "error": f"Unknown topic: {topic}",
                 "valid_topics": list(valid_topics.keys()),
@@ -423,7 +478,7 @@ async def stats_resource(ctx: Context = None) -> str:  # type: ignore[assignment
     s = db.stats()
     s["embedding_model"] = embedding_model
     s["sync_enabled"] = settings.sync_enabled
-    return json.dumps(s)
+    return _json(s)
 
 
 @mcp.resource("mnemo://recent")
@@ -431,7 +486,7 @@ async def recent_resource(ctx: Context = None) -> str:  # type: ignore[assignmen
     """10 most recently updated memories."""
     db, _, _ = _get_ctx(ctx)
     results = db.list_memories(limit=10)
-    return json.dumps(results)
+    return _json(results)
 
 
 # --- Prompts ---
