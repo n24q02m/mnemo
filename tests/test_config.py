@@ -166,3 +166,29 @@ class TestEmbeddingDims:
         """Without explicit EMBEDDING_DIMS, returns 0 (auto-detect at runtime)."""
         s = Settings(api_keys=None)
         assert s.resolve_embedding_dims() == 0
+
+
+class TestEffectiveSyncFolder:
+    def test_default_path(self):
+        """Empty DB_PATH produces a deterministic hash suffix."""
+        s = Settings(api_keys=None)
+        folder = s.get_effective_sync_folder()
+        assert folder.startswith("mnemo-mcp/")
+        assert len(folder.split("/")[-1]) == 8  # 8-char hex hash
+
+    def test_custom_path(self):
+        """Different DB_PATH yields a different hash suffix."""
+        s1 = Settings(api_keys=None)  # db_path=""
+        s2 = Settings(db_path="/data/memories.db", api_keys=None)
+        assert s1.get_effective_sync_folder() != s2.get_effective_sync_folder()
+
+    def test_same_path_same_hash(self):
+        """Same DB_PATH always produces the same hash (deterministic)."""
+        s1 = Settings(db_path="/data/memories.db", api_keys=None)
+        s2 = Settings(db_path="/data/memories.db", api_keys=None)
+        assert s1.get_effective_sync_folder() == s2.get_effective_sync_folder()
+
+    def test_custom_sync_folder(self):
+        """Custom SYNC_FOLDER is used as prefix."""
+        s = Settings(sync_folder="my-sync", api_keys=None)
+        assert s.get_effective_sync_folder().startswith("my-sync/")

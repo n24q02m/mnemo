@@ -145,6 +145,22 @@ def _json(obj: object) -> str:
     return json.dumps(obj, indent=2)
 
 
+def _format_memory(mem: dict) -> dict:
+    """Format a raw memory dict for tool output.
+
+    - Parse ``tags`` from JSON string to list
+    - Round ``score`` to 3 decimal places
+    """
+    if isinstance(mem.get("tags"), str):
+        try:
+            mem["tags"] = json.loads(mem["tags"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if "score" in mem:
+        mem["score"] = round(mem["score"], 3)
+    return mem
+
+
 async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
     """Embed text if model is available, truncated to fixed dims."""
     if not model:
@@ -234,7 +250,7 @@ async def memory(
             return _json(
                 {
                     "count": len(results),
-                    "results": results,
+                    "results": [_format_memory(r) for r in results],
                     "semantic": embedding is not None,
                 }
             )
@@ -247,7 +263,7 @@ async def memory(
             return _json(
                 {
                     "count": len(results),
-                    "results": results,
+                    "results": [_format_memory(r) for r in results],
                 }
             )
 
@@ -367,7 +383,7 @@ async def config(
                     "sync": {
                         "enabled": settings.sync_enabled,
                         "remote": settings.sync_remote,
-                        "folder": settings.sync_folder,
+                        "folder": settings.get_effective_sync_folder(),
                         "interval": settings.sync_interval,
                     },
                 }

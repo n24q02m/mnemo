@@ -1,5 +1,6 @@
 """Configuration settings for Mnemo MCP Server."""
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -116,6 +117,17 @@ class Settings(BaseSettings):
     def resolve_embedding_dims(self) -> int:
         """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""
         return self.embedding_dims
+
+    def get_effective_sync_folder(self) -> str:
+        """Get sync folder with unique suffix derived from DB_PATH.
+
+        Appends a short hash of the raw ``db_path`` setting to
+        ``sync_folder`` so that different databases never collide on
+        the same remote.  Same ``DB_PATH`` value on different machines
+        produces the same hash, enabling correct multi-machine merge.
+        """
+        h = hashlib.sha256(self.db_path.encode()).hexdigest()[:8]
+        return f"{self.sync_folder}/{h}"
 
 
 settings = Settings()

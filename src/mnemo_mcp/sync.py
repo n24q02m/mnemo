@@ -19,6 +19,9 @@ Resilience:
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import os
 import platform
 import shutil
 import stat
@@ -171,6 +174,27 @@ async def ensure_rclone() -> Path | None:
     return await _download_rclone()
 
 
+def _prepare_rclone_env() -> dict[str, str]:
+    """Prepare env dict for rclone, decoding base64 tokens if needed.
+
+    Supports both raw JSON and base64-encoded tokens in
+    ``RCLONE_CONFIG_*_TOKEN`` env vars.  Base64 avoids nested JSON
+    escaping issues in MCP config files.
+    """
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("RCLONE_CONFIG_") and key.endswith("_TOKEN"):
+            value = env[key]
+            if value and not value.lstrip().startswith("{"):
+                try:
+                    decoded = base64.b64decode(value).decode("utf-8")
+                    json.loads(decoded)  # Validate JSON structure
+                    env[key] = decoded
+                except Exception:
+                    pass
+    return env
+
+
 def _run_rclone(
     rclone_path: Path, args: list[str], timeout: int = 120
 ) -> subprocess.CompletedProcess:
@@ -183,6 +207,7 @@ def _run_rclone(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=_prepare_rclone_env(),
     )
 
 
@@ -282,7 +307,7 @@ async def sync_full(db: MemoryDB) -> dict:
 
     db_path = settings.get_db_path()
     remote = settings.sync_remote
-    folder = settings.sync_folder
+    folder = settings.get_effective_sync_folder()
 
     result: dict = {"status": "ok", "pull": None, "push": None}
 
@@ -366,11 +391,9 @@ def setup_sync(remote_type: str = "drive") -> None:
     Usage: mnemo-mcp setup-sync [type]
     Default type: drive (Google Drive)
 
-    Captures the token from rclone output, escapes it for JSON,
+    Captures the token from rclone output, base64-encodes it,
     and prints ready-to-paste MCP config.
     """
-    import json
-    import sys
 
     print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
 
@@ -416,48 +439,40 @@ def setup_sync(remote_type: str = "drive") -> None:
     remote_upper = remote_name.upper()
 
     if token_json:
+        token_b64 = base64.b64encode(token_json.encode()).decode()
+
         print(f"\n{'=' * 60}")
-        print("READY-TO-PASTE MCP CONFIG")
+        print(f"RCLONE_CONFIG_{remote_upper}_TOKEN (base64-encoded)")
         print(f"{'=' * 60}\n")
-        print(
-            json.dumps(
-                {
-                    "mcpServers": {
-                        "mnemo": {
-                            "command": "uvx",
-                            "args": ["mnemo-mcp"],
-                            "env": {
-                                "SYNC_ENABLED": "true",
-                                "SYNC_REMOTE": remote_name,
-                                f"RCLONE_CONFIG_{remote_upper}_TYPE": remote_type,
-                                f"RCLONE_CONFIG_{remote_upper}_TOKEN": token_json,
-                            },
-                        }
-                    }
-                },
-                indent=2,
-            )
-        )
+        print(token_b64)
         print(f"\n{'=' * 60}")
+        print("\nEnv vars needed for sync:")
+        print("  SYNC_ENABLED=true")
+        print(f"  SYNC_REMOTE={remote_name}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 above>")
+        print("\nServer auto-decodes base64 at runtime.")
+        print("Both raw JSON and base64 tokens are supported.")
     else:
         # Fallback: couldn't parse token, show manual instructions
         print(f"\n{'=' * 60}")
         print("MANUAL SETUP")
         print(f"{'=' * 60}\n")
-        print("Could not auto-extract token. Copy the token JSON from above,")
-        print("then escape it for MCP config JSON:\n")
+        print("Could not auto-extract token from rclone output.")
+        print("Copy the token JSON from above and base64-encode it:\n")
         if sys.platform == "win32":
-            print('  python -c "import json; print(json.dumps(input()))"')
+            print(
+                '  python -c "import base64,sys; print(base64.b64encode(input().encode()).decode())"'
+            )
         else:
-            print("  python3 -c 'import json; print(json.dumps(input()))'")
-        print("\nPaste the token, press Enter, use the escaped output in:")
-        print(f"""
-  "SYNC_ENABLED": "true",
-  "SYNC_REMOTE": "{remote_name}",
-  "RCLONE_CONFIG_{remote_upper}_TYPE": "{remote_type}",
-  "RCLONE_CONFIG_{remote_upper}_TOKEN": "<escaped-token>"
-""")
-        print(f"{'=' * 60}")
+            print(
+                "  python3 -c 'import base64,sys; print(base64.b64encode(input().encode()).decode())'"
+            )
+        print("\nThen set these env vars:")
+        print("  SYNC_ENABLED=true")
+        print(f"  SYNC_REMOTE={remote_name}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
+        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 output>")
 
 
 def _extract_token(output: str) -> str | None:

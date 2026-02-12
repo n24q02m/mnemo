@@ -60,9 +60,9 @@ pip install mnemo-mcp
 uvx mnemo-mcp setup-sync drive
 ```
 
-This downloads rclone, opens a browser for Google Drive auth, and outputs a ready-to-paste MCP config with the properly escaped token.
+This downloads rclone, opens a browser for Google Drive auth, and outputs a **base64-encoded token** for `RCLONE_CONFIG_GDRIVE_TOKEN`.
 
-**Step 2**: Copy the output JSON into your MCP config file.
+**Step 2**: Copy the token and add it to your MCP config:
 
 ```json
 {
@@ -74,16 +74,19 @@ This downloads rclone, opens a browser for Google Drive auth, and outputs a read
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
         "SYNC_ENABLED": "true",
         "SYNC_REMOTE": "gdrive",
-        "SYNC_INTERVAL": "300",
         "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste token JSON>"
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>"
       }
     }
   }
 }
 ```
 
+Both raw JSON and base64-encoded tokens are supported. Base64 is recommended — it avoids nested JSON escaping issues.
+
 Remote is configured via env vars — works in any environment (local, Docker, CI).
+
+> **Multi-instance note**: Each unique `DB_PATH` automatically gets a separate sync folder on the remote (via path hash). No manual configuration needed — local and Docker instances won't overwrite each other.
 
 ### With Docker
 
@@ -104,7 +107,28 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 }
 ```
 
-For sync in Docker, add `-e SYNC_ENABLED=true`, `-e SYNC_REMOTE=gdrive`, and `RCLONE_CONFIG_*` env vars to args.
+### With sync in Docker
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "API_KEYS=GOOGLE_API_KEY:AIza...",
+        "-v", "mnemo-data:/data",
+        "-e", "DB_PATH=/data/memories.db",
+        "-e", "SYNC_ENABLED=true",
+        "-e", "SYNC_REMOTE=gdrive",
+        "-e", "RCLONE_CONFIG_GDRIVE_TYPE=drive",
+        "-e", "RCLONE_CONFIG_GDRIVE_TOKEN=<paste base64 token>",
+        "n24q02m/mnemo-mcp:latest"
+      ]
+    }
+  }
+}
+```
 
 ## Configuration
 
@@ -116,7 +140,7 @@ For sync in Docker, add `-e SYNC_ENABLED=true`, `-e SYNC_REMOTE=gdrive`, and `RC
 | `EMBEDDING_DIMS` | `768` | Embedding dimensions (fixed, override if needed) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | — | rclone remote name |
-| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder |
+| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder (auto-suffixed per DB_PATH) |
 | `SYNC_INTERVAL` | `0` | Auto-sync seconds (0=manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
 

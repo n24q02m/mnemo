@@ -62,6 +62,11 @@ class TestMemorySearch:
         result = json.loads(await memory(action="search", query="Python AI", ctx=ctx))
         assert result["count"] > 0
         assert result["semantic"] is False
+        # Tags should be parsed list, not JSON string
+        assert isinstance(result["results"][0]["tags"], list)
+        # Score should be rounded
+        score = result["results"][0]["score"]
+        assert score == round(score, 3)
 
     async def test_search_no_query(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -86,10 +91,13 @@ class TestMemorySearch:
 class TestMemoryList:
     async def test_list(self, ctx_with_db):
         ctx, db = ctx_with_db
-        db.add("mem1")
+        db.add("mem1", tags=["a", "b"])
         db.add("mem2")
         result = json.loads(await memory(action="list", ctx=ctx))
         assert result["count"] == 2
+        # Tags should be parsed lists
+        for r in result["results"]:
+            assert isinstance(r["tags"], list)
 
     async def test_list_with_category(self, ctx_with_db):
         ctx, db = ctx_with_db
