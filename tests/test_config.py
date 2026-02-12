@@ -67,6 +67,7 @@ class TestApiKeys:
         assert result["GOOGLE_API_KEY"] == ["test-key-123"]
         assert os.environ.get("GOOGLE_API_KEY") == "test-key-123"
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def test_multiple_keys(self, monkeypatch):
         s = Settings(api_keys="GOOGLE_API_KEY:key1,OPENAI_API_KEY:key2")
@@ -75,6 +76,7 @@ class TestApiKeys:
         assert "GOOGLE_API_KEY" in result
         assert "OPENAI_API_KEY" in result
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def test_duplicate_provider(self, monkeypatch):
@@ -84,6 +86,7 @@ class TestApiKeys:
         assert len(result["GOOGLE_API_KEY"]) == 2
         assert os.environ.get("GOOGLE_API_KEY") == "key1"
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def test_malformed_no_colon(self):
         s = Settings(api_keys="INVALID_FORMAT")
@@ -101,6 +104,7 @@ class TestApiKeys:
         assert "GOOGLE_API_KEY" in result
         assert result["GOOGLE_API_KEY"] == ["key1"]
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     def test_colon_in_key_value(self, monkeypatch):
@@ -109,6 +113,25 @@ class TestApiKeys:
         result = s.setup_api_keys()
         assert result["GOOGLE_API_KEY"] == ["abc:def:ghi"]
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def test_alias_google_to_gemini(self, monkeypatch):
+        """GOOGLE_API_KEY should also set GEMINI_API_KEY for LiteLLM embeddings."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        s = Settings(api_keys="GOOGLE_API_KEY:test-key")
+        s.setup_api_keys()
+        assert os.environ.get("GEMINI_API_KEY") == "test-key"
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def test_alias_no_overwrite(self, monkeypatch):
+        """If GEMINI_API_KEY already set, alias does not overwrite."""
+        monkeypatch.setenv("GEMINI_API_KEY", "existing")
+        s = Settings(api_keys="GOOGLE_API_KEY:new-key")
+        s.setup_api_keys()
+        assert os.environ.get("GEMINI_API_KEY") == "existing"
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
 class TestEmbeddingModel:
@@ -116,37 +139,17 @@ class TestEmbeddingModel:
         s = Settings(embedding_model="custom/model", api_keys=None)
         assert s.resolve_embedding_model() == "custom/model"
 
-    def test_google_auto(self):
+    def test_no_model_returns_none(self):
+        """Without explicit EMBEDDING_MODEL, returns None (auto-detect in server)."""
         s = Settings(api_keys="GOOGLE_API_KEY:key")
-        assert s.resolve_embedding_model() == "gemini/text-embedding-004"
-
-    def test_openai_auto(self):
-        s = Settings(api_keys="OPENAI_API_KEY:key")
-        assert s.resolve_embedding_model() == "text-embedding-3-small"
-
-    def test_mistral_auto(self):
-        s = Settings(api_keys="MISTRAL_API_KEY:key")
-        assert s.resolve_embedding_model() == "mistral/mistral-embed"
-
-    def test_cohere_auto(self):
-        s = Settings(api_keys="COHERE_API_KEY:key")
-        assert s.resolve_embedding_model() == "cohere/embed-english-v3.0"
+        assert s.resolve_embedding_model() is None
 
     def test_no_keys_returns_none(self):
         s = Settings(api_keys=None)
         assert s.resolve_embedding_model() is None
 
-    def test_unknown_provider_returns_none(self):
-        s = Settings(api_keys="UNKNOWN_KEY:value")
-        assert s.resolve_embedding_model() is None
-
-    def test_first_provider_wins(self):
-        """When multiple providers configured, first one determines the model."""
-        s = Settings(api_keys="OPENAI_API_KEY:k1,GOOGLE_API_KEY:k2")
-        assert s.resolve_embedding_model() == "text-embedding-3-small"
-
     def test_explicit_overrides_auto(self):
-        """Explicit EMBEDDING_MODEL takes priority over API_KEYS inference."""
+        """Explicit EMBEDDING_MODEL takes priority over API_KEYS."""
         s = Settings(
             embedding_model="custom/model",
             api_keys="GOOGLE_API_KEY:key",
@@ -157,31 +160,9 @@ class TestEmbeddingModel:
 class TestEmbeddingDims:
     def test_explicit_dims(self):
         s = Settings(embedding_dims=512, api_keys=None)
-        assert s.resolve_embedding_dims("any-model") == 512
+        assert s.resolve_embedding_dims() == 512
 
-    def test_known_models(self):
+    def test_default_zero(self):
+        """Without explicit EMBEDDING_DIMS, returns 0 (auto-detect at runtime)."""
         s = Settings(api_keys=None)
-        assert s.resolve_embedding_dims("gemini/text-embedding-004") == 768
-        assert s.resolve_embedding_dims("text-embedding-3-small") == 1536
-        assert s.resolve_embedding_dims("text-embedding-3-large") == 3072
-        assert s.resolve_embedding_dims("mistral/mistral-embed") == 1024
-        assert s.resolve_embedding_dims("cohere/embed-english-v3.0") == 1024
-
-    def test_ollama_models(self):
-        s = Settings(api_keys=None)
-        assert s.resolve_embedding_dims("ollama/nomic-embed-text") == 768
-        assert s.resolve_embedding_dims("ollama/mxbai-embed-large") == 1024
-        assert s.resolve_embedding_dims("ollama/all-minilm") == 384
-
-    def test_unknown_model_default(self):
-        s = Settings(api_keys=None)
-        assert s.resolve_embedding_dims("unknown/model") == 768
-
-    def test_none_model_returns_zero(self):
-        s = Settings(api_keys=None)
-        assert s.resolve_embedding_dims(None) == 0
-
-    def test_explicit_overrides_known(self):
-        """Explicit dims should override known model dims."""
-        s = Settings(embedding_dims=256, api_keys=None)
-        assert s.resolve_embedding_dims("text-embedding-3-small") == 256
+        assert s.resolve_embedding_dims() == 0

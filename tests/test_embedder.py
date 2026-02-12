@@ -6,7 +6,6 @@ import pytest
 
 from mnemo_mcp.embedder import (
     check_embedding_available,
-    detect_embedding_dims,
     embed_single,
     embed_texts,
 )
@@ -78,28 +77,16 @@ class TestEmbedSingle:
 
 class TestCheckAvailable:
     @patch("mnemo_mcp.embedder.litellm_embedding")
-    def test_available(self, mock_embed):
+    def test_available_returns_dims(self, mock_embed):
         mock_embed.return_value = MagicMock(data=[{"embedding": [0.1, 0.2]}])
-        assert check_embedding_available("model") is True
+        assert check_embedding_available("model") == 2
 
     @patch("mnemo_mcp.embedder.litellm_embedding")
-    def test_not_available(self, mock_embed):
+    def test_not_available_returns_zero(self, mock_embed):
         mock_embed.side_effect = Exception("Model not found")
-        assert check_embedding_available("model") is False
+        assert check_embedding_available("model") == 0
 
     @patch("mnemo_mcp.embedder.litellm_embedding")
-    def test_empty_data(self, mock_embed):
+    def test_empty_data_returns_zero(self, mock_embed):
         mock_embed.return_value = MagicMock(data=[])
-        assert check_embedding_available("model") is False
-
-
-class TestDetectDims:
-    @patch("mnemo_mcp.embedder.litellm_embedding")
-    def test_detects_dimensions(self, mock_embed):
-        mock_embed.return_value = MagicMock(data=[{"embedding": [0.0] * 768}])
-        assert detect_embedding_dims("model") == 768
-
-    @patch("mnemo_mcp.embedder.litellm_embedding")
-    def test_returns_zero_on_error(self, mock_embed):
-        mock_embed.side_effect = Exception("fail")
-        assert detect_embedding_dims("model") == 0
+        assert check_embedding_available("model") == 0

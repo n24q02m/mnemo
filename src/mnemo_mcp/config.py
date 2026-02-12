@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
     embedding_model: str = ""
-    embedding_dims: int = 0  # 0 = auto-detect
+    embedding_dims: int = 0  # 0 = use server default (768)
 
     # Sync (rclone)
     sync_enabled: bool = False
@@ -56,10 +56,18 @@ class Settings(BaseSettings):
         """Get data directory (parent of db file)."""
         return self.get_db_path().parent
 
+    # LiteLLM uses different env vars for embeddings vs completions
+    _ENV_ALIASES: dict[str, str] = {
+        "GOOGLE_API_KEY": "GEMINI_API_KEY",
+    }
+
     def setup_api_keys(self) -> dict[str, list[str]]:
         """Parse API_KEYS and set env vars for LiteLLM.
 
         Format: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
+
+        Also sets aliases (e.g., GOOGLE_API_KEY → GEMINI_API_KEY)
+        because LiteLLM embedding uses GEMINI_API_KEY for gemini/ models.
 
         Returns:
             Dict mapping env var name to list of API keys.
@@ -87,71 +95,27 @@ class Settings(BaseSettings):
         for env_var, keys in keys_by_env.items():
             if keys:
                 os.environ[env_var] = keys[0]
+                # Set alias if defined (e.g., GOOGLE_API_KEY → GEMINI_API_KEY)
+                alias = self._ENV_ALIASES.get(env_var)
+                if alias and alias not in os.environ:
+                    os.environ[alias] = keys[0]
 
         return keys_by_env
 
     def resolve_embedding_model(self) -> str | None:
-        """Auto-detect embedding model from API_KEYS if not explicitly set.
+        """Return explicit EMBEDDING_MODEL or None for auto-detect.
 
-        Priority:
-        1. Explicit EMBEDDING_MODEL env var
-        2. Infer from API keys:
-           - GOOGLE_API_KEY → gemini/text-embedding-004
-           - OPENAI_API_KEY → text-embedding-3-small
-           - MISTRAL_API_KEY → mistral/mistral-embed
-           - COHERE_API_KEY → cohere/embed-english-v3.0
-        3. None (embeddings disabled, FTS5-only mode)
+        If EMBEDDING_MODEL is set explicitly, return it.
+        Otherwise return None — auto-detection happens in server lifespan
+        by trying candidate models via LiteLLM.
         """
         if self.embedding_model:
             return self.embedding_model
-
-        if not self.api_keys:
-            return None
-
-        # Check which providers are configured
-        for pair in self.api_keys.split(","):
-            pair = pair.strip()
-            if ":" not in pair:
-                continue
-            env_var = pair.split(":", 1)[0].strip().upper()
-
-            if env_var == "GOOGLE_API_KEY":
-                return "gemini/text-embedding-004"
-            elif env_var == "OPENAI_API_KEY":
-                return "text-embedding-3-small"
-            elif env_var == "MISTRAL_API_KEY":
-                return "mistral/mistral-embed"
-            elif env_var == "COHERE_API_KEY":
-                return "cohere/embed-english-v3.0"
-
         return None
 
-    def resolve_embedding_dims(self, model: str | None) -> int:
-        """Get embedding dimensions for a model.
-
-        Returns explicit EMBEDDING_DIMS if set, otherwise infers from model.
-        """
-        if self.embedding_dims > 0:
-            return self.embedding_dims
-
-        if not model:
-            return 0
-
-        # Known dimensions for common models
-        dims_map = {
-            "gemini/text-embedding-004": 768,
-            "text-embedding-3-small": 1536,
-            "text-embedding-3-large": 3072,
-            "text-embedding-ada-002": 1536,
-            "mistral/mistral-embed": 1024,
-            "cohere/embed-english-v3.0": 1024,
-            # Ollama models
-            "ollama/nomic-embed-text": 768,
-            "ollama/mxbai-embed-large": 1024,
-            "ollama/all-minilm": 384,
-        }
-
-        return dims_map.get(model, 768)  # Default 768
+    def resolve_embedding_dims(self) -> int:
+        """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""
+        return self.embedding_dims
 
 
 settings = Settings()
