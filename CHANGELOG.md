@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.8](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-02-12)
+
+
+### Features
+
+* **sync:** enhance setup_sync to support base64-encoded tokens and improve sync folder handling ([7f3c92e](https://github.com/n24q02m/mnemo-mcp/commit/7f3c92e27721401cfd19875a9b6a4a4bee7f8102))
+
 ## [0.1.0-beta.7](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.6...v0.1.0-beta.7) (2026-02-12)
 
 
