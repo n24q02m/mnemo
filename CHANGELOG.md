@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.6](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.5...v0.1.0-beta.6) (2026-02-12)
+
+
+### Features
+
+* Implement sync setup command and update documentation; adjust embedding dimensions handling ([f31eb8e](https://github.com/n24q02m/mnemo-mcp/commit/f31eb8e71a6e104dee666f1bb520a1aeab19ab42))
+
 ## [0.1.0-beta.5](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.4...v0.1.0-beta.5) (2026-02-12)
 
 
