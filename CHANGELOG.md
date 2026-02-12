@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-beta.9](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.8...v0.1.0-beta.9) (2026-02-12)
+
+
+### Features
+
+* **sync:** add SYNC_INTERVAL setting and simplify sync folder handling ([fe3e281](https://github.com/n24q02m/mnemo-mcp/commit/fe3e2813a48bcc10ac5895d2663fedc24d0b90dd))
+
 ## [0.1.0-beta.8](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0-beta.7...v0.1.0-beta.8) (2026-02-12)
 
 
