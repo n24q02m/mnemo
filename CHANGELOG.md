@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.0...v0.1.1) (2026-02-12)
+
+
+### Bug Fixes
+
+* use dynamic version from package metadata instead of hardcoded string ([245efc5](https://github.com/n24q02m/mnemo-mcp/commit/245efc51c49adc3ac7c5465bdf2de341a2a95f0f))
+
 ## 0.1.0 (2026-02-12)
 
 
