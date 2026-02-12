@@ -64,7 +64,7 @@ Configure via environment variables before starting the server:
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path |
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
 | `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name |
-| `EMBEDDING_DIMS` | (auto-detect) | Embedding dimensions |
+| `EMBEDDING_DIMS` | (auto-detect) | Embedding dimensions (detected from model) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | (none) | Rclone remote name |
 | `SYNC_FOLDER` | `mnemo-mcp` | Remote folder name |
@@ -77,10 +77,12 @@ Configure via environment variables before starting the server:
 API_KEYS="GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
 ```
 
-The server auto-detects which embedding model to use based on available API keys:
-- `GOOGLE_API_KEY` → `gemini/text-embedding-004`
-- `OPENAI_API_KEY` → `text-embedding-3-small`
-- `MISTRAL_API_KEY` → `mistral/mistral-embed`
-- `COHERE_API_KEY` → `cohere/embed-english-v3.0`
+The server auto-detects which embedding model to use by trying providers in order:
+1. `gemini/gemini-embedding-001` (requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`)
+2. `text-embedding-3-small` (requires `OPENAI_API_KEY`)
+3. `mistral/mistral-embed` (requires `MISTRAL_API_KEY`)
+4. `embed-english-v3.0` (requires `COHERE_API_KEY`)
+
+Set `EMBEDDING_MODEL` explicitly to use a specific model.
 
 No API keys = FTS5-only mode (text search without semantic search).

@@ -34,7 +34,7 @@ async def embed_texts(
 
     Args:
         texts: List of texts to embed.
-        model: LiteLLM model string (e.g., "gemini/text-embedding-004").
+        model: LiteLLM model string (e.g., "gemini/gemini-embedding-001").
         dimensions: Optional output dimensions (for models that support it).
 
     Returns:
@@ -70,29 +70,21 @@ async def embed_single(
     return results[0]
 
 
-def check_embedding_available(model: str) -> bool:
+def check_embedding_available(model: str) -> int:
     """Check if an embedding model is available.
 
     Sends a test request to verify the model works.
+
+    Returns:
+        Embedding dimensions if available, 0 if not.
     """
     try:
         response = litellm_embedding(model=model, input=["test"])
         if response.data:
             dim = len(response.data[0]["embedding"])
             logger.info(f"Embedding model {model} available (dims={dim})")
-            return True
-        return False
+            return dim
+        return 0
     except Exception as e:
         logger.debug(f"Embedding model {model} not available: {e}")
-        return False
-
-
-def detect_embedding_dims(model: str) -> int:
-    """Detect embedding dimensions by sending a test request."""
-    try:
-        response = litellm_embedding(model=model, input=["test"])
-        if response.data:
-            return len(response.data[0]["embedding"])
-    except Exception:
-        pass
-    return 0
+        return 0
