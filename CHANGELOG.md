@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.2...v0.1.3-beta) (2026-02-13)
+
+
+### Features
+
+* implement tiered FTS5 queries and add common stop words for improved search functionality ([202dce4](https://github.com/n24q02m/mnemo-mcp/commit/202dce47ee9e038c30b3a0017c058b836b847986))
+
 ## [0.1.2](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.1...v0.1.2) (2026-02-13)
 
 
