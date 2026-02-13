@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3-beta.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3-beta...v0.1.3-beta.1) (2026-02-13)
+
+
+### Bug Fixes
+
+* correct changelog descriptions for FTS5 search overhaul ([783d8a9](https://github.com/n24q02m/mnemo-mcp/commit/783d8a9f2370997cb205c474e122d0b23ed4f907))
+
 ## [0.1.3-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.2...v0.1.3-beta) (2026-02-13)
 
 
