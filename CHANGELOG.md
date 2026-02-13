@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.3](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.2...v0.1.3) (2026-02-13)
+
+
+### Features
+
+* implement tiered FTS5 queries and add common stop words for improved search functionality ([202dce4](https://github.com/n24q02m/mnemo-mcp/commit/202dce47ee9e038c30b3a0017c058b836b847986))
+* promote dev to main ([02fefd9](https://github.com/n24q02m/mnemo-mcp/commit/02fefd9456be6da7404ea8a096dc681b53384009))
+* promote dev to main (v0.1.3-beta.1) ([72480bc](https://github.com/n24q02m/mnemo-mcp/commit/72480bc80179fa86f24103f4cadada7ae747b992))
+
+
+### Bug Fixes
+
+* correct changelog descriptions for FTS5 search overhaul ([783d8a9](https://github.com/n24q02m/mnemo-mcp/commit/783d8a9f2370997cb205c474e122d0b23ed4f907))
+* resolve ruff f-string format issues in db.py ([ee05d15](https://github.com/n24q02m/mnemo-mcp/commit/ee05d1538efb6136e43964a5c477be0b3af230fc))
+
+
+### Documentation
+
+* add optional/required annotations to sync config examples ([52cf348](https://github.com/n24q02m/mnemo-mcp/commit/52cf348af49894f63f9d0fc7cc9745598164df5d))
+
 ## [0.1.3-beta.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3-beta...v0.1.3-beta.1) (2026-02-13)
 
 
