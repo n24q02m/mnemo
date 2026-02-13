@@ -9,7 +9,6 @@ Provides:
 
 import json
 import math
-import re
 import sqlite3
 import struct
 import uuid
@@ -30,54 +29,24 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-# Common stop words filtered from FTS queries to reduce noise.
-# Includes English and Vietnamese stop words for multilingual support.
-_STOP_WORDS = frozenset({
-    # English
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-    "on", "with", "at", "by", "from", "as", "into", "through", "during",
-    "before", "after", "above", "below", "between", "out", "off", "over",
-    "under", "again", "further", "then", "once", "and", "but", "or",
-    "nor", "not", "so", "very", "just", "about", "up", "it", "its",
-    "this", "that", "these", "those", "i", "me", "my", "we", "our",
-    "you", "your", "he", "him", "his", "she", "her", "they", "them",
-    "their", "what", "which", "who", "whom", "how", "when", "where", "why",
-    # Vietnamese
-    "la", "là", "cua", "của", "va", "và", "trong", "cho", "den", "đến",
-    "de", "để", "co", "có", "khong", "không", "nay", "này", "do", "đó",
-    "cac", "các", "mot", "một", "nhung", "những", "duoc", "được",
-    "se", "sẽ", "da", "đã", "dang", "đang", "thi", "thì", "ma", "mà",
-    "nhu", "như", "khi", "tai", "tại", "voi", "với", "tu", "từ",
-    "theo", "tren", "trên", "boi", "bởi", "hay", "hoac", "hoặc",
-    "cung", "cũng", "roi", "rồi", "rat", "rất", "chi", "chỉ",
-    "noi", "nơi", "day", "đây", "gi", "gì", "sao", "nao", "nào",
-    "bao", "nhieu", "nhiều", "ai", "toi", "tôi", "ban", "bạn",
-    "chung", "chúng", "ho", "họ", "no", "nó", "minh", "mình",
-})
-
-
 def _build_fts_queries(query: str) -> list[str]:
     """Build tiered FTS5 queries: AND (precise) -> OR (broad).
 
-    Filters common English stop words to reduce noise.
-    Uses prefix matching for partial word support.
+    No stop-word filtering — BM25's IDF naturally down-weights common
+    words (any language) and the AND->OR fallback ensures recall.
     """
     words = [w.strip() for w in query.split() if w.strip()]
-    content_words = [w for w in words if w.lower() not in _STOP_WORDS]
-    if not content_words:
-        content_words = words  # All stop words -> use them anyway
+    safe = [w.replace('"', '""') for w in words]
 
-    safe = [w.replace('"', '""') for w in content_words]
-
+    if not safe:
+        return []
     if len(safe) == 1:
         return [f'"{ safe[0]}"*']
 
     return [
-        # Tier 1: AND -- all terms must appear (most precise)
+        # Tier 1: AND — all terms must appear (most precise)
         " AND ".join(f'"{ w}"*' for w in safe),
-        # Tier 2: OR -- any term matches (broadest fallback)
+        # Tier 2: OR — any term matches (broadest fallback)
         " OR ".join(f'"{ w}"*' for w in safe),
     ]
 
