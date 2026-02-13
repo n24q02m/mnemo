@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3...v0.1.4-beta) (2026-02-13)
+
+
+### Features
+
+* add batch splitting and retry with exponential backoff to embedder ([0a9d350](https://github.com/n24q02m/mnemo-mcp/commit/0a9d350b8496d886908ae7a2f7cc79183d5c00e8))
+
 ## [0.1.3](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.2...v0.1.3) (2026-02-13)
 
 
