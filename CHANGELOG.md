@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.3-beta.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3-beta...v0.1.3-beta.1) (2026-02-13)
+
+
+### Bug Fixes
+
+* correct changelog descriptions for FTS5 search overhaul ([783d8a9](https://github.com/n24q02m/mnemo-mcp/commit/783d8a9f2370997cb205c474e122d0b23ed4f907))
+
+## [0.1.3-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.2...v0.1.3-beta) (2026-02-13)
+
+
+### Features
+
+* overhaul FTS5 search engine with BM25 column weights, tiered AND-to-OR queries, min-max normalization, RRF fusion, chunk quality scoring, language-agnostic stop word handling via BM25 IDF, and category SQL pre-filtering ([202dce4](https://github.com/n24q02m/mnemo-mcp/commit/202dce47ee9e038c30b3a0017c058b836b847986))
+
 ## [0.1.2](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.1...v0.1.2) (2026-02-13)
 
 
