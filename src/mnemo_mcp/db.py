@@ -9,6 +9,7 @@ Provides:
 
 import json
 import math
+import re
 import sqlite3
 import struct
 import uuid
@@ -27,6 +28,58 @@ def _serialize_f32(vec: list[float]) -> bytes:
 def _now_iso() -> str:
     """Current UTC timestamp in ISO format."""
     return datetime.now(UTC).isoformat()
+
+
+# Common stop words filtered from FTS queries to reduce noise.
+# Includes English and Vietnamese stop words for multilingual support.
+_STOP_WORDS = frozenset({
+    # English
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "out", "off", "over",
+    "under", "again", "further", "then", "once", "and", "but", "or",
+    "nor", "not", "so", "very", "just", "about", "up", "it", "its",
+    "this", "that", "these", "those", "i", "me", "my", "we", "our",
+    "you", "your", "he", "him", "his", "she", "her", "they", "them",
+    "their", "what", "which", "who", "whom", "how", "when", "where", "why",
+    # Vietnamese
+    "la", "là", "cua", "của", "va", "và", "trong", "cho", "den", "đến",
+    "de", "để", "co", "có", "khong", "không", "nay", "này", "do", "đó",
+    "cac", "các", "mot", "một", "nhung", "những", "duoc", "được",
+    "se", "sẽ", "da", "đã", "dang", "đang", "thi", "thì", "ma", "mà",
+    "nhu", "như", "khi", "tai", "tại", "voi", "với", "tu", "từ",
+    "theo", "tren", "trên", "boi", "bởi", "hay", "hoac", "hoặc",
+    "cung", "cũng", "roi", "rồi", "rat", "rất", "chi", "chỉ",
+    "noi", "nơi", "day", "đây", "gi", "gì", "sao", "nao", "nào",
+    "bao", "nhieu", "nhiều", "ai", "toi", "tôi", "ban", "bạn",
+    "chung", "chúng", "ho", "họ", "no", "nó", "minh", "mình",
+})
+
+
+def _build_fts_queries(query: str) -> list[str]:
+    """Build tiered FTS5 queries: AND (precise) -> OR (broad).
+
+    Filters common English stop words to reduce noise.
+    Uses prefix matching for partial word support.
+    """
+    words = [w.strip() for w in query.split() if w.strip()]
+    content_words = [w for w in words if w.lower() not in _STOP_WORDS]
+    if not content_words:
+        content_words = words  # All stop words -> use them anyway
+
+    safe = [w.replace('"', '""') for w in content_words]
+
+    if len(safe) == 1:
+        return [f'"{ safe[0]}"*']
+
+    return [
+        # Tier 1: AND -- all terms must appear (most precise)
+        " AND ".join(f'"{ w}"*' for w in safe),
+        # Tier 2: OR -- any term matches (broadest fallback)
+        " OR ".join(f'"{ w}"*' for w in safe),
+    ]
 
 
 class MemoryDB:
@@ -191,62 +244,90 @@ class MemoryDB:
     ) -> list[dict]:
         """Search memories with hybrid scoring.
 
-        Combines FTS5 text search + semantic search + recency + frequency.
+        Uses tiered FTS5 queries (AND -> OR fallback), BM25 column weights,
+        min-max normalization, RRF fusion (when embedding available),
+        plus recency and frequency boosts.
+
+        Category filtering is applied in SQL for efficiency.
+        Tag filtering is post-search (JSON array matching).
 
         Returns:
             List of memory dicts sorted by relevance.
         """
         results: dict[str, dict] = {}
 
-        # 1. FTS5 text search
-        # Convert natural language query to FTS5 OR query with prefix matching
-        # "which dataframe library" → "which* OR dataframe* OR library*"
-        words = [w.strip() for w in query.split() if w.strip()]
-        if words:
-            safe_words = [w.replace('"', '""') for w in words]
-            fts_query = " OR ".join(f'"{w}"*' for w in safe_words)
-        else:
-            fts_query = query.replace('"', '""')
-        try:
-            rows = self._conn.execute(
-                """SELECT m.*, rank
-                   FROM memories_fts f
-                   JOIN memories m ON f.id = m.id
-                   WHERE memories_fts MATCH ?
-                   ORDER BY rank
-                   LIMIT ?""",
-                (fts_query, limit * 2),
-            ).fetchall()
+        # 1. FTS5 search with tiered queries + BM25 column weights
+        # Weights: id(0), content(1), category(0-unindexed), tags(5)
+        fts_queries = _build_fts_queries(query)
 
-            for row in rows:
-                mid = row["id"]
-                # FTS5 rank is negative (lower = better), normalize to 0-1
-                fts_score = 1.0 / (1.0 + abs(row["rank"]))
-                results[mid] = {
-                    **dict(row),
-                    "fts_score": fts_score,
-                    "vec_score": 0.0,
-                }
-        except Exception:
-            # FTS5 can fail on complex queries, silently skip
-            pass
+        for fts_query in fts_queries:
+            try:
+                fts_sql = """
+                    SELECT m.*,
+                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
+                    FROM memories_fts f
+                    JOIN memories m ON f.id = m.id
+                    WHERE memories_fts MATCH ?
+                """
+                fts_params: list = [fts_query]
+
+                # Category pre-filter in SQL (not post-search)
+                if category:
+                    fts_sql += " AND m.category = ?"
+                    fts_params.append(category)
+
+                fts_sql += " ORDER BY bm25_score LIMIT ?"
+                fts_params.append(limit * 3)
+
+                rows = self._conn.execute(fts_sql, fts_params).fetchall()
+                if rows:
+                    for row in rows:
+                        mid = row["id"]
+                        results[mid] = {
+                            **dict(row),
+                            # BM25 is negative; negate so higher = better
+                            "fts_score": -row["bm25_score"],
+                            "vec_score": 0.0,
+                        }
+                    break  # Got results, skip broader tier
+            except Exception:
+                continue
+
+        # Min-max normalize FTS scores to 0-1
+        fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
+        if fts_vals:
+            min_f = min(fts_vals)
+            max_f = max(fts_vals)
+            rng = max_f - min_f
+            for m in results.values():
+                if rng > 0 and m["fts_score"] > 0:
+                    m["fts_score"] = (m["fts_score"] - min_f) / rng
+                elif m["fts_score"] > 0:
+                    m["fts_score"] = 1.0
 
         # 2. Semantic search (if embedding provided)
         if embedding and self._vec_enabled:
             try:
-                vec_rows = self._conn.execute(
-                    """SELECT id, distance
-                       FROM memories_vec
-                       WHERE embedding MATCH ?
-                       ORDER BY distance
-                       LIMIT ?""",
-                    (_serialize_f32(embedding), limit * 2),
-                ).fetchall()
+                vec_sql = """
+                    SELECT v.id, v.distance
+                    FROM memories_vec v
+                    JOIN memories m ON v.id = m.id
+                    WHERE v.embedding MATCH ?
+                """
+                vec_params: list = [_serialize_f32(embedding)]
 
+                # Category pre-filter for vector search too
+                if category:
+                    vec_sql += " AND m.category = ?"
+                    vec_params.append(category)
+
+                vec_sql += " ORDER BY distance LIMIT ?"
+                vec_params.append(limit * 3)
+
+                vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
                 for row in vec_rows:
                     mid = row["id"]
-                    # Distance is cosine distance (0 = identical), convert to similarity
-                    vec_score = 1.0 - row["distance"]
+                    vec_score = max(0.0, 1.0 - row["distance"])
                     if mid in results:
                         results[mid]["vec_score"] = vec_score
                     else:
@@ -266,11 +347,7 @@ class MemoryDB:
         if not results:
             return []
 
-        # 3. Apply category/tag filters
-        if category:
-            results = {
-                k: v for k, v in results.items() if v.get("category") == category
-            }
+        # 3. Tag post-filter (JSON array matching not feasible in SQL)
         if tags:
 
             def _has_tags(mem: dict) -> bool:
@@ -282,30 +359,59 @@ class MemoryDB:
         # 4. Compute hybrid score
         now = datetime.now(UTC)
         scored = []
-        for mem in results.values():
-            fts = mem.get("fts_score", 0.0)
-            vec = mem.get("vec_score", 0.0)
+        has_vec = any(m["vec_score"] > 0 for m in results.values())
 
-            # Recency boost (exponential decay, half-life = 7 days)
-            try:
-                updated = datetime.fromisoformat(mem["updated_at"])
-                days_old = (now - updated).total_seconds() / 86400
-                recency = 2.0 ** (-days_old / 7.0)
-            except (ValueError, KeyError):
-                recency = 0.0
+        if has_vec:
+            # RRF fusion for FTS + vector, plus recency + frequency
+            k = 60
+            all_ids = list(results.keys())
+            fts_ranked = sorted(
+                all_ids, key=lambda x: results[x]["fts_score"], reverse=True
+            )
+            vec_ranked = sorted(
+                all_ids, key=lambda x: results[x]["vec_score"], reverse=True
+            )
+            fts_rank = {cid: i + 1 for i, cid in enumerate(fts_ranked)}
+            vec_rank = {cid: i + 1 for i, cid in enumerate(vec_ranked)}
 
-            # Frequency boost (logarithmic)
-            freq = math.log1p(mem.get("access_count", 0)) / 10.0
-            freq = min(freq, 1.0)
+            for mid, mem in results.items():
+                fr = fts_rank.get(mid, len(all_ids))
+                vr = vec_rank.get(mid, len(all_ids))
+                rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
 
-            # Weighted combination
-            if vec > 0:
-                score = fts * 0.35 + vec * 0.35 + recency * 0.2 + freq * 0.1
-            else:
-                score = fts * 0.6 + recency * 0.3 + freq * 0.1
+                # Recency boost (half-life = 7 days)
+                try:
+                    updated = datetime.fromisoformat(mem["updated_at"])
+                    days_old = (now - updated).total_seconds() / 86400
+                    recency = 2.0 ** (-days_old / 7.0)
+                except (ValueError, KeyError):
+                    recency = 0.0
 
-            mem["score"] = score
-            scored.append(mem)
+                # Frequency boost (logarithmic)
+                freq = math.log1p(mem.get("access_count", 0)) / 10.0
+                freq = min(freq, 1.0)
+
+                # Normalize RRF to ~0-1 range
+                rrf_norm = rrf * (k + 1) / 2.0
+                mem["score"] = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
+                scored.append(mem)
+        else:
+            # FTS-only with recency + frequency
+            for mem in results.values():
+                fts = mem.get("fts_score", 0.0)
+
+                try:
+                    updated = datetime.fromisoformat(mem["updated_at"])
+                    days_old = (now - updated).total_seconds() / 86400
+                    recency = 2.0 ** (-days_old / 7.0)
+                except (ValueError, KeyError):
+                    recency = 0.0
+
+                freq = math.log1p(mem.get("access_count", 0)) / 10.0
+                freq = min(freq, 1.0)
+
+                mem["score"] = fts * 0.6 + recency * 0.3 + freq * 0.1
+                scored.append(mem)
 
         # Sort by score descending
         scored.sort(key=lambda m: m["score"], reverse=True)
@@ -328,7 +434,7 @@ class MemoryDB:
         for m in top:
             m.pop("fts_score", None)
             m.pop("vec_score", None)
-            m.pop("rank", None)
+            m.pop("bm25_score", None)
 
         return top
 
