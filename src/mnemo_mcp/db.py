@@ -41,13 +41,13 @@ def _build_fts_queries(query: str) -> list[str]:
     if not safe:
         return []
     if len(safe) == 1:
-        return [f'"{ safe[0]}"*']
+        return [f'"{safe[0]}"*']
 
     return [
         # Tier 1: AND — all terms must appear (most precise)
-        " AND ".join(f'"{ w}"*' for w in safe),
+        " AND ".join(f'"{w}"*' for w in safe),
         # Tier 2: OR — any term matches (broadest fallback)
-        " OR ".join(f'"{ w}"*' for w in safe),
+        " OR ".join(f'"{w}"*' for w in safe),
     ]
 
 
