@@ -68,19 +68,20 @@ This downloads rclone, opens a browser for Google Drive auth, and outputs a **ba
 
 **Step 2**: Copy the token and add it to your MCP config:
 
-```json
+```jsonc
 {
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
       "args": ["mnemo-mcp"],
       "env": {
-        "API_KEYS": "GOOGLE_API_KEY:AIza...",
-        "SYNC_ENABLED": "true",
-        "SYNC_REMOTE": "gdrive",
-        "SYNC_INTERVAL": "300",
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>"
+        "API_KEYS": "GOOGLE_API_KEY:AIza...", // optional: enables semantic search
+        "SYNC_ENABLED": "true",               // required for sync
+        "SYNC_REMOTE": "gdrive",               // required: rclone remote name
+        "SYNC_INTERVAL": "300",                // optional: auto-sync seconds (default: 0 = manual)
+        // "SYNC_FOLDER": "mnemo-mcp",          // optional: remote folder (default: mnemo-mcp)
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",  // required: rclone backend type
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>" // required: from setup-sync
       }
     }
   }
@@ -116,7 +117,7 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 
 ### With sync in Docker
 
-```json
+```jsonc
 {
   "mcpServers": {
     "mnemo": {
@@ -128,19 +129,20 @@ Remote is configured via env vars — works in any environment (local, Docker, C
         "-e", "API_KEYS",
         "-e", "SYNC_ENABLED",
         "-e", "SYNC_REMOTE",
-        "-e", "SYNC_INTERVAL",
+        "-e", "SYNC_INTERVAL",     // optional: remove if manual sync only
         "-e", "RCLONE_CONFIG_GDRIVE_TYPE",
         "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
         "DB_PATH": "/data/memories.db",
-        "API_KEYS": "GOOGLE_API_KEY:AIza...",
-        "SYNC_ENABLED": "true",
-        "SYNC_REMOTE": "gdrive",
-        "SYNC_INTERVAL": "300",
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>"
+        "API_KEYS": "GOOGLE_API_KEY:AIza...", // optional: enables semantic search
+        "SYNC_ENABLED": "true",               // required for sync
+        "SYNC_REMOTE": "gdrive",               // required: rclone remote name
+        "SYNC_INTERVAL": "300",                // optional: auto-sync seconds (default: 0 = manual)
+        // "SYNC_FOLDER": "mnemo-mcp",          // optional: remote folder (default: mnemo-mcp)
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",  // required: rclone backend type
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>" // required: from setup-sync
       }
     }
   }
@@ -152,14 +154,14 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
-| `API_KEYS` | — | API keys (`ENV:key,ENV:key`) |
-| `EMBEDDING_MODEL` | auto-detect | LiteLLM model name |
-| `EMBEDDING_DIMS` | `768` | Embedding dimensions (fixed, override if needed) |
+| `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
+| `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
+| `EMBEDDING_DIMS` | `768` | Embedding dimensions (optional, fixed) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
-| `SYNC_REMOTE` | — | rclone remote name |
-| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder |
-| `SYNC_INTERVAL` | `0` | Auto-sync seconds (0=manual) |
-| `LOG_LEVEL` | `INFO` | Log level |
+| `SYNC_REMOTE` | — | rclone remote name (required when sync enabled) |
+| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder (optional) |
+| `SYNC_INTERVAL` | `0` | Auto-sync seconds (optional, 0=manual) |
+| `LOG_LEVEL` | `INFO` | Log level (optional) |
 
 ### Supported Embedding Providers
 
