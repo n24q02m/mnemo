@@ -3,7 +3,7 @@
 import json
 import time
 
-from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.db import MemoryDB, _build_fts_queries
 
 
 class TestAdd:
@@ -481,3 +481,34 @@ class TestEdgeCases:
     def test_db_path_property(self, tmp_db: MemoryDB):
         s = tmp_db.stats()
         assert "test.db" in s["db_path"]
+
+
+class TestPhraseTierQueries:
+    """Verify _build_fts_queries produces 3-tier PHRASE/AND/OR queries."""
+
+    def test_single_word(self):
+        queries = _build_fts_queries("python")
+        assert len(queries) == 1
+        assert '"python"*' in queries[0]
+
+    def test_multi_word_three_tiers(self):
+        queries = _build_fts_queries("machine learning")
+        assert len(queries) == 3
+        # Tier 0: PHRASE
+        assert queries[0] == '"machine learning"'
+        # Tier 1: AND
+        assert "AND" in queries[1]
+        # Tier 2: OR
+        assert "OR" in queries[2]
+
+    def test_empty_query(self):
+        assert _build_fts_queries("") == []
+
+    def test_whitespace_only(self):
+        assert _build_fts_queries("   ") == []
+
+    def test_quotes_escaped(self):
+        queries = _build_fts_queries('say "hello"')
+        assert len(queries) == 3
+        # Double quotes should be escaped
+        assert '""' in queries[0]

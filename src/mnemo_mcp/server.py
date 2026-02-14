@@ -16,6 +16,7 @@ from importlib import resources as pkg_resources
 
 from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
@@ -40,51 +41,74 @@ _DEFAULT_EMBEDDING_DIMS = 768
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Initialize DB, embeddings, and sync on startup."""
-    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY → GEMINI_API_KEY)
+    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY -> GEMINI_API_KEY)
     keys = settings.setup_api_keys()
     if keys:
         logger.info(f"API keys configured: {', '.join(keys.keys())}")
 
-    # 2. Resolve embedding model + dims
+    # 2. Resolve embedding backend + model + dims
     embedding_model = settings.resolve_embedding_model()
     embedding_dims = settings.resolve_embedding_dims()
+    embedding_backend_type = settings.resolve_embedding_backend()
 
-    if embedding_model:
-        # Explicit model — validate it
-        from mnemo_mcp.embedder import check_embedding_available
+    if embedding_backend_type == "local":
+        # Local ONNX backend (qwen3-embed) — no API keys needed
+        from mnemo_mcp.embedder import init_backend
 
-        native_dims = check_embedding_available(embedding_model)
+        backend = init_backend("local")
+        native_dims = backend.check_available()
         if native_dims > 0:
             if embedding_dims == 0:
                 embedding_dims = _DEFAULT_EMBEDDING_DIMS
+            embedding_model = "__local__"
             logger.info(
-                f"Embedding: {embedding_model} "
+                f"Embedding: local ONNX "
                 f"(native={native_dims}, stored={embedding_dims})"
             )
         else:
-            logger.warning(
-                f"Embedding model {embedding_model} not available, using FTS5-only"
-            )
-            embedding_model = None
-    elif keys:
-        # Auto-detect: try candidate models
-        from mnemo_mcp.embedder import check_embedding_available
+            logger.warning("Local embedding not available, trying LiteLLM...")
+            embedding_backend_type = "litellm" if keys else ""
 
-        for candidate in _EMBEDDING_CANDIDATES:
-            native_dims = check_embedding_available(candidate)
+    if embedding_backend_type == "litellm":
+        from mnemo_mcp.embedder import check_embedding_available, init_backend
+
+        if embedding_model and embedding_model != "__local__":
+            # Explicit model — validate it
+            native_dims = check_embedding_available(embedding_model)
             if native_dims > 0:
-                embedding_model = candidate
+                init_backend("litellm", embedding_model)
                 if embedding_dims == 0:
                     embedding_dims = _DEFAULT_EMBEDDING_DIMS
                 logger.info(
                     f"Embedding: {embedding_model} "
                     f"(native={native_dims}, stored={embedding_dims})"
                 )
-                break
-        if not embedding_model:
-            logger.warning("No embedding model available, using FTS5-only")
-    else:
-        logger.info("No API keys configured, using FTS5-only search")
+            else:
+                logger.warning(
+                    f"Embedding model {embedding_model} not available, using FTS5-only"
+                )
+                embedding_model = None
+        elif keys:
+            # Auto-detect: try candidate models
+            for candidate in _EMBEDDING_CANDIDATES:
+                native_dims = check_embedding_available(candidate)
+                if native_dims > 0:
+                    embedding_model = candidate
+                    init_backend("litellm", candidate)
+                    if embedding_dims == 0:
+                        embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                    logger.info(
+                        f"Embedding: {embedding_model} "
+                        f"(native={native_dims}, stored={embedding_dims})"
+                    )
+                    break
+            if not embedding_model:
+                logger.warning("No embedding model available, using FTS5-only")
+        else:
+            embedding_model = None
+
+    if not embedding_backend_type:
+        logger.info("No embedding backend available, using FTS5-only search")
 
     # 3. Initialize database
     db_path = settings.get_db_path()
@@ -162,14 +186,28 @@ def _format_memory(mem: dict) -> dict:
 
 
 async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
-    """Embed text if model is available, truncated to fixed dims."""
+    """Embed text if embedding is available, truncated to fixed dims."""
     if not model:
         return None
+
+    from mnemo_mcp.embedder import get_backend
+
+    backend = get_backend()
+    if backend is not None:
+        try:
+            vec = await backend.embed_single(text)
+            if dims > 0 and len(vec) > dims:
+                vec = vec[:dims]
+            return vec
+        except Exception as e:
+            logger.debug(f"Embedding failed: {e}")
+            return None
+
+    # Legacy path: no backend initialized but model is set
     from mnemo_mcp.embedder import embed_single
 
     try:
         vec = await embed_single(text, model)
-        # Truncate to fixed dims so switching models never breaks the DB
         if dims > 0 and len(vec) > dims:
             vec = vec[:dims]
         return vec
@@ -186,7 +224,14 @@ async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
         "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats. "
         "PROACTIVE: save user preferences, decisions, corrections, project conventions. "
         "Search before recommending. Use help tool for full docs."
-    )
+    ),
+    annotations=ToolAnnotations(
+        title="Memory",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
 )
 async def memory(
     action: str,
@@ -347,7 +392,14 @@ async def memory(
     description=(
         "Server config and sync. Actions: status|sync|set. "
         "status: show config. sync: manual sync. set: change setting."
-    )
+    ),
+    annotations=ToolAnnotations(
+        title="Config",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def config(
     action: str,
@@ -447,7 +499,14 @@ async def config(
 
 
 @mcp.tool(
-    description="Full documentation for memory and config tools. topic: 'memory' | 'config'"
+    description="Full documentation for memory and config tools. topic: 'memory' | 'config'",
+    annotations=ToolAnnotations(
+        title="Help",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
 )
 async def help(topic: str = "memory") -> str:
     """Load full documentation for a tool."""

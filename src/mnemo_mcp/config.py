@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
     embedding_model: str = ""
     embedding_dims: int = 0  # 0 = use server default (768)
+    embedding_backend: str = ""  # "litellm" | "local" | "" (auto-detect)
 
     # Sync (rclone)
     sync_enabled: bool = False
@@ -116,6 +117,31 @@ class Settings(BaseSettings):
     def resolve_embedding_dims(self) -> int:
         """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""
         return self.embedding_dims
+
+    def resolve_embedding_backend(self) -> str:
+        """Resolve embedding backend: 'local', 'litellm', or ''.
+
+        Auto-detect order:
+        1. Explicit EMBEDDING_BACKEND setting
+        2. 'local' if qwen3-embed is installed
+        3. 'litellm' if API keys are configured
+        4. '' (no embedding, FTS5-only)
+        """
+        if self.embedding_backend:
+            return self.embedding_backend
+
+        # Auto-detect: prefer local if available
+        try:
+            import qwen3_embed  # noqa: F401
+
+            return "local"
+        except ImportError:
+            pass
+
+        if self.api_keys:
+            return "litellm"
+
+        return ""
 
 
 settings = Settings()

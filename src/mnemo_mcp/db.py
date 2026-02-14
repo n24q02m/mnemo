@@ -30,10 +30,11 @@ def _now_iso() -> str:
 
 
 def _build_fts_queries(query: str) -> list[str]:
-    """Build tiered FTS5 queries: AND (precise) -> OR (broad).
+    """Build tiered FTS5 queries: PHRASE -> AND -> OR.
 
     No stop-word filtering — BM25's IDF naturally down-weights common
-    words (any language) and the AND->OR fallback ensures recall.
+    words (any language) and the PHRASE->AND->OR fallback ensures
+    precision first, then recall.
     """
     words = [w.strip() for w in query.split() if w.strip()]
     safe = [w.replace('"', '""') for w in words]
@@ -44,7 +45,9 @@ def _build_fts_queries(query: str) -> list[str]:
         return [f'"{safe[0]}"*']
 
     return [
-        # Tier 1: AND — all terms must appear (most precise)
+        # Tier 0: PHRASE — exact phrase match (highest precision)
+        '"' + " ".join(safe) + '"',
+        # Tier 1: AND — all terms must appear
         " AND ".join(f'"{w}"*' for w in safe),
         # Tier 2: OR — any term matches (broadest fallback)
         " OR ".join(f'"{w}"*' for w in safe),

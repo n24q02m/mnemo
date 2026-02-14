@@ -21,8 +21,14 @@
 # With uv (recommended)
 uvx mnemo-mcp
 
+# With local Qwen3 ONNX embedding (no API keys needed)
+uvx --extra local mnemo-mcp
+
 # With pip
 pip install mnemo-mcp
+
+# With local embedding
+pip install mnemo-mcp[local]
 ```
 
 ## Quick Start
@@ -40,7 +46,21 @@ pip install mnemo-mcp
 }
 ```
 
-### With embeddings (semantic search)
+### With local embedding (no API keys)
+
+```jsonc
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": ["--extra", "local", "mnemo-mcp"]
+      // No API_KEYS needed -- Qwen3-Embedding-0.6B runs locally on CPU
+    }
+  }
+}
+```
+
+### With embeddings (cloud API)
 
 ```json
 {
@@ -155,6 +175,7 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
+| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3 ONNX). Auto: local > litellm > FTS5-only |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `768` | Embedding dimensions (optional, fixed) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
@@ -165,7 +186,10 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 
 ### Supported Embedding Providers
 
-The server auto-detects embedding models by trying each provider in order:
+The server auto-detects the best available embedding backend:
+
+1. **Local (Qwen3 ONNX)** — If `qwen3-embed` is installed (`pip install mnemo-mcp[local]`), uses Qwen3-Embedding-0.6B on CPU. No API keys needed.
+2. **Cloud (LiteLLM)** — Detects API keys and picks the best model:
 
 | Priority | Env Var (LiteLLM) | Model | Native Dims | Stored |
 |----------|-------------------|-------|-------------|--------|
@@ -178,7 +202,9 @@ All embeddings are truncated to **768 dims** (default) for storage. This ensures
 
 `API_KEYS` format maps your env var to LiteLLM's expected var (e.g., `GOOGLE_API_KEY:key` auto-sets `GEMINI_API_KEY`). Set `EMBEDDING_MODEL` explicitly for other providers.
 
-No API keys = FTS5-only mode (text search works perfectly, just no semantic similarity).
+Override auto-detection with `EMBEDDING_BACKEND=litellm` or `EMBEDDING_BACKEND=local`.
+
+No API keys and no `qwen3-embed` = FTS5-only mode (text search works perfectly, just no semantic similarity).
 
 ## MCP Tools
 
@@ -222,11 +248,14 @@ help(topic="memory")  # or "config"
             /     \
         FTS5    sqlite-vec
                     |
-              LiteLLM embed
-                    |
-        Gemini / OpenAI / Mistral / Cohere
+              EmbeddingBackend
+              /            \
+         LiteLLM        Qwen3 ONNX
+            |           (local CPU)
+  Gemini / OpenAI /
+  Mistral / Cohere
 
-        Sync: rclone (embedded) → Google Drive / S3 / ...
+        Sync: rclone (embedded) -> Google Drive / S3 / ...
 ```
 
 ## Development

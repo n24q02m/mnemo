@@ -166,3 +166,30 @@ class TestEmbeddingDims:
         """Without explicit EMBEDDING_DIMS, returns 0 (auto-detect at runtime)."""
         s = Settings(api_keys=None)
         assert s.resolve_embedding_dims() == 0
+
+
+class TestEmbeddingBackend:
+    def test_explicit_litellm(self):
+        s = Settings(embedding_backend="litellm", api_keys=None)
+        assert s.resolve_embedding_backend() == "litellm"
+
+    def test_explicit_local(self):
+        s = Settings(embedding_backend="local", api_keys=None)
+        assert s.resolve_embedding_backend() == "local"
+
+    def test_auto_detect_litellm_with_keys(self):
+        """Falls back to litellm when qwen3-embed not installed but keys provided."""
+        s = Settings(api_keys="GOOGLE_API_KEY:key")
+        assert s.resolve_embedding_backend() in ("litellm", "local")
+
+    def test_auto_detect_no_keys_no_local(self):
+        """Returns '' when no keys and no local model."""
+        s = Settings(api_keys=None)
+        # Only if qwen3-embed is not installed
+        result = s.resolve_embedding_backend()
+        assert result in ("", "local")  # local if qwen3-embed installed in env
+
+    def test_explicit_overrides_auto(self):
+        """Explicit backend takes priority over auto-detection."""
+        s = Settings(embedding_backend="litellm", api_keys=None)
+        assert s.resolve_embedding_backend() == "litellm"
