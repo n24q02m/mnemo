@@ -1,6 +1,6 @@
 [project]
 name = "mnemo-mcp"
-version = "0.1.4-beta"
+version = "0.1.4"
 description = "Open-source MCP Server for persistent AI memory with embedded sync"
 readme = "README.md"
 license = { text = "MIT" }
