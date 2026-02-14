@@ -62,8 +62,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
                 embedding_dims = _DEFAULT_EMBEDDING_DIMS
             embedding_model = "__local__"
             logger.info(
-                f"Embedding: local ONNX "
-                f"(native={native_dims}, stored={embedding_dims})"
+                f"Embedding: local ONNX (native={native_dims}, stored={embedding_dims})"
             )
         else:
             logger.warning("Local embedding not available, trying LiteLLM...")

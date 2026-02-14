@@ -639,7 +639,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "0.1.3"
+version = "0.1.4b0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
