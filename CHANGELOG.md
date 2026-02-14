@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.4...v0.1.5-beta) (2026-02-14)
+
+
+### Features
+
+* Refactor embedding tests and add dual-backend support ([67e99a2](https://github.com/n24q02m/mnemo-mcp/commit/67e99a2a6b2af2f7772977b6e21aa2761b17df31))
+
+
+### Bug Fixes
+
+* optimize Docker build with BuildKit cache and non-root user ([e449e2d](https://github.com/n24q02m/mnemo-mcp/commit/e449e2da5cb8ffbad4b7d2d0363d5b21ce274345))
+
 ## [0.1.4](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3...v0.1.4) (2026-02-13)
 
 
