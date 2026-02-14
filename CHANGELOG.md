@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4-beta.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.4-beta...v0.1.4-beta.1) (2026-02-14)
+
+
+### Features
+
+* Refactor embedding tests and add dual-backend support ([4b4dbdb](https://github.com/n24q02m/mnemo-mcp/commit/4b4dbdbeea5165453cddaf9d068c2a5a66f7cc29))
+
 ## [0.1.4-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.3...v0.1.4-beta) (2026-02-13)
 
 
