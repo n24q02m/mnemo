@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5-beta.1](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.5-beta...v0.1.5-beta.1) (2026-02-14)
+
+
+### Bug Fixes
+
+* **cd:** make scripts executable and clean working tree before promote merge ([4135c2e](https://github.com/n24q02m/mnemo-mcp/commit/4135c2e780d2a9fde73d38a24fae6cbfdc90cf70))
+
 ## [0.1.5-beta](https://github.com/n24q02m/mnemo-mcp/compare/v0.1.4...v0.1.5-beta) (2026-02-14)
 
 
