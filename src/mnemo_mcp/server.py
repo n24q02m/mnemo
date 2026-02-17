@@ -185,20 +185,29 @@ def _format_memory(mem: dict) -> dict:
     return mem
 
 
-async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
-    """Embed text if embedding is available, truncated to fixed dims."""
+async def _embed(
+    text: str, model: str | None, dims: int, is_query: bool = False
+) -> list[float] | None:
+    """Embed text if embedding is available.
+
+    Args:
+        text: Text to embed.
+        model: Embedding model name.
+        dims: Target dimensions (MRL truncation).
+        is_query: If True, use query_embed for instruction-aware asymmetric
+            retrieval (Qwen3). Document embeddings stay raw.
+    """
     if not model:
         return None
 
-    from mnemo_mcp.embedder import get_backend
+    from mnemo_mcp.embedder import Qwen3EmbedBackend, get_backend
 
     backend = get_backend()
     if backend is not None:
         try:
-            vec = await backend.embed_single(text)
-            if dims > 0 and len(vec) > dims:
-                vec = vec[:dims]
-            return vec
+            if is_query and isinstance(backend, Qwen3EmbedBackend):
+                return await backend.embed_single_query(text, dims)
+            return await backend.embed_single(text, dims)
         except Exception as e:
             logger.debug(f"Embedding failed: {e}")
             return None
@@ -207,10 +216,7 @@ async def _embed(text: str, model: str | None, dims: int) -> list[float] | None:
     from mnemo_mcp.embedder import embed_single
 
     try:
-        vec = await embed_single(text, model)
-        if dims > 0 and len(vec) > dims:
-            vec = vec[:dims]
-        return vec
+        return await embed_single(text, model, dims)
     except Exception as e:
         logger.debug(f"Embedding failed: {e}")
         return None
@@ -285,7 +291,9 @@ async def memory(
             if not query:
                 return _json({"error": "query is required for search"})
 
-            embedding = await _embed(query, embedding_model, embedding_dims)
+            embedding = await _embed(
+                query, embedding_model, embedding_dims, is_query=True
+            )
             results = await asyncio.to_thread(
                 db.search,
                 query=query,
