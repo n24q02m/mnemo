@@ -218,7 +218,7 @@ No API keys and no `qwen3-embed` = FTS5-only mode (text search works perfectly, 
 | `update` | `memory_id` | `content`, `category`, `tags` |
 | `delete` | `memory_id` | — |
 | `export` | — | — |
-| `import` | `data` | `mode` (merge/replace) |
+| `import` | `data` (JSONL) | `mode` (merge/replace) |
 | `stats` | — | — |
 
 ### `config` — Server configuration
@@ -234,6 +234,20 @@ No API keys and no `qwen3-embed` = FTS5-only mode (text search works perfectly, 
 ```
 help(topic="memory")  # or "config"
 ```
+
+### MCP Resources
+
+| URI | Description |
+|-----|-------------|
+| `mnemo://stats` | Database statistics and server status |
+| `mnemo://recent` | 10 most recently updated memories |
+
+### MCP Prompts
+
+| Prompt | Parameters | Description |
+|--------|------------|-------------|
+| `save_summary` | `summary` | Generate prompt to save a conversation summary as memory |
+| `recall_context` | `topic` | Generate prompt to recall relevant memories about a topic |
 
 ## Architecture
 
