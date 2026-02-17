@@ -56,7 +56,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         # Local ONNX backend (qwen3-embed) — no API keys needed
         from mnemo_mcp.embedder import init_backend
 
-        backend = init_backend("local")
+        backend = init_backend("local", embedding_model or None)
         native_dims = backend.check_available()
         if native_dims > 0:
             if embedding_dims == 0:

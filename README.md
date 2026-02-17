@@ -24,11 +24,17 @@ uvx mnemo-mcp
 # With local Qwen3 ONNX embedding (no API keys needed)
 uvx --extra local mnemo-mcp
 
+# With local GGUF embedding (GPU support via llama-cpp-python)
+uvx --extra gguf mnemo-mcp
+
 # With pip
 pip install mnemo-mcp
 
 # With local embedding
 pip install mnemo-mcp[local]
+
+# With GGUF embedding (GPU)
+pip install mnemo-mcp[gguf]
 ```
 
 ## Quick Start
@@ -175,8 +181,8 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
-| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3 ONNX). Auto: local > litellm > FTS5-only |
-| `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
+| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3 ONNX/GGUF). Auto: local > litellm > FTS5-only |
+| `EMBEDDING_MODEL` | auto-detect | LiteLLM model name, or `Qwen/Qwen3-Embedding-0.6B-GGUF` for GGUF (optional) |
 | `EMBEDDING_DIMS` | `768` | Embedding dimensions (optional, fixed) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | — | rclone remote name (required when sync enabled) |

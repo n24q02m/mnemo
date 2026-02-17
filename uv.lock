@@ -639,7 +639,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "1.0.2"
+version = "1.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -652,6 +652,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+gguf = [
+    { name = "qwen3-embed" },
+]
 local = [
     { name = "qwen3-embed" },
 ]
@@ -675,9 +678,10 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "qwen3-embed", marker = "extra == 'local'", specifier = ">=0.2.0" },
+    { name = "qwen3-embed", extras = ["gguf"], marker = "extra == 'gguf'", specifier = ">=0.2.0" },
     { name = "sqlite-vec" },
 ]
-provides-extras = ["local"]
+provides-extras = ["local", "gguf"]
 
 [package.metadata.requires-dev]
 dev = [

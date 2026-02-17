@@ -87,4 +87,11 @@ The server auto-detects which embedding model to use by trying providers in orde
 
 Set `EMBEDDING_MODEL` explicitly to use a specific model.
 
+For GGUF with GPU support:
+
+```bash
+pip install mnemo-mcp[gguf]
+# Set EMBEDDING_BACKEND=local and EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B-GGUF
+```
+
 No API keys = FTS5-only mode (text search without semantic search).

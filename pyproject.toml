@@ -45,6 +45,7 @@ dev = [
 
 [project.optional-dependencies]
 local = ["qwen3-embed>=0.2.0"]
+gguf = ["qwen3-embed[gguf]>=0.2.0"]
 
 [project.scripts]
 mnemo-mcp = "mnemo_mcp.__main__:_cli"
