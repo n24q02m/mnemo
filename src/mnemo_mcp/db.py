@@ -70,8 +70,8 @@ class MemoryDB:
         # Create parent directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Open connection
-        self._conn = sqlite3.connect(str(db_path))
+        # Open connection (allow cross-thread use for asyncio.to_thread)
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")

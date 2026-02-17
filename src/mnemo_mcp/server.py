@@ -8,6 +8,7 @@ MCP Interface:
 - Prompts: save_summary, recall_context
 """
 
+import asyncio
 import json
 import sys
 from collections.abc import AsyncIterator
@@ -264,7 +265,8 @@ async def memory(
                 return _json({"error": "content is required for add"})
 
             embedding = await _embed(content, embedding_model, embedding_dims)
-            memory_id = db.add(
+            memory_id = await asyncio.to_thread(
+                db.add,
                 content=content,
                 category=category or "general",
                 tags=tags,
@@ -284,7 +286,8 @@ async def memory(
                 return _json({"error": "query is required for search"})
 
             embedding = await _embed(query, embedding_model, embedding_dims)
-            results = db.search(
+            results = await asyncio.to_thread(
+                db.search,
                 query=query,
                 embedding=embedding,
                 category=category,
@@ -300,7 +303,8 @@ async def memory(
             )
 
         case "list":
-            results = db.list_memories(
+            results = await asyncio.to_thread(
+                db.list_memories,
                 category=category,
                 limit=limit,
             )
@@ -319,7 +323,8 @@ async def memory(
             if content:
                 embedding = await _embed(content, embedding_model, embedding_dims)
 
-            ok = db.update(
+            ok = await asyncio.to_thread(
+                db.update,
                 memory_id=memory_id,
                 content=content,
                 category=category,
@@ -334,13 +339,13 @@ async def memory(
             if not memory_id:
                 return _json({"error": "memory_id is required for delete"})
 
-            ok = db.delete(memory_id)
+            ok = await asyncio.to_thread(db.delete, memory_id)
             if ok:
                 return _json({"status": "deleted", "id": memory_id})
             return _json({"error": f"Memory {memory_id} not found"})
 
         case "export":
-            jsonl = db.export_jsonl()
+            jsonl = await asyncio.to_thread(db.export_jsonl)
             return _json(
                 {
                     "format": "jsonl",
@@ -353,7 +358,7 @@ async def memory(
             if not data:
                 return _json({"error": "data (JSONL string) is required for import"})
 
-            result = db.import_jsonl(data, mode=mode)
+            result = await asyncio.to_thread(db.import_jsonl, data, mode=mode)
             return _json(
                 {
                     "status": "imported",
@@ -362,7 +367,7 @@ async def memory(
             )
 
         case "stats":
-            s = db.stats()
+            s = await asyncio.to_thread(db.stats)
             s["embedding_model"] = embedding_model
             s["embedding_dims"] = embedding_dims
             s["sync_enabled"] = settings.sync_enabled
@@ -417,7 +422,7 @@ async def config(
 
     match action:
         case "status":
-            s = db.stats()
+            s = await asyncio.to_thread(db.stats)
             return _json(
                 {
                     "database": {
@@ -533,7 +538,7 @@ async def help(topic: str = "memory") -> str:
 async def stats_resource(ctx: Context = None) -> str:  # type: ignore[assignment]
     """Database statistics and server status."""
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    s = db.stats()
+    s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["sync_enabled"] = settings.sync_enabled
     return _json(s)
@@ -543,7 +548,7 @@ async def stats_resource(ctx: Context = None) -> str:  # type: ignore[assignment
 async def recent_resource(ctx: Context = None) -> str:  # type: ignore[assignment]
     """10 most recently updated memories."""
     db, _, _ = _get_ctx(ctx)
-    results = db.list_memories(limit=10)
+    results = await asyncio.to_thread(db.list_memories, limit=10)
     return _json(results)
 
 
