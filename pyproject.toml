@@ -31,6 +31,8 @@ dependencies = [
     "litellm",
     # SQLite vector search
     "sqlite-vec",
+    # Local ONNX embedding (auto-fallback when no cloud API)
+    "qwen3-embed>=1.1.0",
 ]
 
 [dependency-groups]
@@ -42,10 +44,6 @@ dev = [
     "ty",
     "pre-commit",
 ]
-
-[project.optional-dependencies]
-local = ["qwen3-embed>=1.1.0"]
-gguf = ["qwen3-embed[gguf]>=1.1.0"]
 
 [project.scripts]
 mnemo-mcp = "mnemo_mcp.__main__:_cli"

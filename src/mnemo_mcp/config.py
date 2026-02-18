@@ -123,23 +123,23 @@ class Settings(BaseSettings):
 
         Auto-detect order:
         1. Explicit EMBEDDING_BACKEND setting
-        2. 'local' if qwen3-embed is installed
-        3. 'litellm' if API keys are configured
+        2. 'litellm' if API keys are configured (cloud first)
+        3. 'local' if qwen3-embed is available (built-in fallback)
         4. '' (no embedding, FTS5-only)
         """
         if self.embedding_backend:
             return self.embedding_backend
 
-        # Auto-detect: prefer local if available
+        # Auto-detect: prefer cloud if API keys available
+        if self.api_keys:
+            return "litellm"
+
         try:
             import qwen3_embed  # noqa: F401
 
             return "local"
         except ImportError:
             pass
-
-        if self.api_keys:
-            return "litellm"
 
         return ""
 
