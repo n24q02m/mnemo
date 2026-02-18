@@ -205,7 +205,7 @@ class TestRetryLogic:
 class TestQwen3EmbedBackend:
     def test_default_model(self):
         backend = Qwen3EmbedBackend()
-        assert backend._model_name == "Qwen/Qwen3-Embedding-0.6B"
+        assert backend._model_name == "n24q02m/Qwen3-Embedding-0.6B-ONNX"
 
     def test_custom_model(self):
         backend = Qwen3EmbedBackend("custom/model")

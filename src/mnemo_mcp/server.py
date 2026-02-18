@@ -52,63 +52,67 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
 
-    if embedding_backend_type == "local":
-        # Local ONNX backend (qwen3-embed) — no API keys needed
-        from mnemo_mcp.embedder import init_backend
-
-        backend = init_backend("local", embedding_model or None)
-        native_dims = backend.check_available()
-        if native_dims > 0:
-            if embedding_dims == 0:
-                embedding_dims = _DEFAULT_EMBEDDING_DIMS
-            embedding_model = "__local__"
-            logger.info(
-                f"Embedding: local ONNX (native={native_dims}, stored={embedding_dims})"
-            )
-        else:
-            logger.warning("Local embedding not available, trying LiteLLM...")
-            embedding_backend_type = "litellm" if keys else ""
+    from mnemo_mcp.embedder import init_backend
 
     if embedding_backend_type == "litellm":
-        from mnemo_mcp.embedder import check_embedding_available, init_backend
-
-        if embedding_model and embedding_model != "__local__":
-            # Explicit model — validate it
-            native_dims = check_embedding_available(embedding_model)
-            if native_dims > 0:
-                init_backend("litellm", embedding_model)
-                if embedding_dims == 0:
-                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
-                logger.info(
-                    f"Embedding: {embedding_model} "
-                    f"(native={native_dims}, stored={embedding_dims})"
-                )
-            else:
-                logger.warning(
-                    f"Embedding model {embedding_model} not available, using FTS5-only"
-                )
-                embedding_model = None
-        elif keys:
-            # Auto-detect: try candidate models
-            for candidate in _EMBEDDING_CANDIDATES:
-                native_dims = check_embedding_available(candidate)
+        if embedding_model:
+            # Explicit model -- validate it
+            try:
+                backend = init_backend("litellm", embedding_model)
+                native_dims = backend.check_available()
                 if native_dims > 0:
-                    embedding_model = candidate
-                    init_backend("litellm", candidate)
                     if embedding_dims == 0:
                         embedding_dims = _DEFAULT_EMBEDDING_DIMS
                     logger.info(
                         f"Embedding: {embedding_model} "
                         f"(native={native_dims}, stored={embedding_dims})"
                     )
-                    break
-            if not embedding_model:
-                logger.warning("No embedding model available, using FTS5-only")
-        else:
-            embedding_model = None
+                else:
+                    logger.warning(f"Embedding model {embedding_model} not available")
+                    embedding_model = None
+            except Exception as e:
+                logger.warning(f"Embedding model {embedding_model} not available: {e}")
+                embedding_model = None
+        elif keys:
+            # Auto-detect: try candidate models
+            for candidate in _EMBEDDING_CANDIDATES:
+                try:
+                    backend = init_backend("litellm", candidate)
+                    native_dims = backend.check_available()
+                    if native_dims > 0:
+                        embedding_model = candidate
+                        if embedding_dims == 0:
+                            embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                        logger.info(
+                            f"Embedding: {embedding_model} "
+                            f"(native={native_dims}, stored={embedding_dims})"
+                        )
+                        break
+                except Exception:
+                    continue
 
-    if not embedding_backend_type:
-        logger.info("No embedding backend available, using FTS5-only search")
+        # Cloud not available -- fallback to local
+        if not embedding_model:
+            logger.warning("Cloud embedding not available, using local fallback")
+            embedding_backend_type = "local"
+
+    if embedding_backend_type == "local":
+        local_model = settings.resolve_local_embedding_model()
+        try:
+            backend = init_backend("local", local_model)
+            native_dims = backend.check_available()
+            if native_dims > 0:
+                embedding_model = "__local__"
+                if embedding_dims == 0:
+                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                logger.info(
+                    f"Embedding: local {local_model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
+                )
+            else:
+                logger.error("Local embedding model not available")
+        except Exception as e:
+            logger.error(f"Local embedding init failed: {e}")
 
     # 3. Initialize database
     db_path = settings.get_db_path()

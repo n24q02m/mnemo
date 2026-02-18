@@ -128,7 +128,7 @@ Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both 
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
-| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3 ONNX). Auto: litellm > local |
+| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local (always available) |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
@@ -139,11 +139,17 @@ Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both 
 
 ### Embedding
 
-Auto-detection logic:
+Embedding is **always available** — a local model is built-in and requires no configuration.
 
-- **Embedding**: `API_KEYS` set -> cloud (Gemini > OpenAI > Mistral > Cohere). No API keys -> local Qwen3-Embedding-0.6B (ONNX, CPU).
+- **Default**: Local Qwen3-Embedding-0.6B. Set `API_KEYS` to upgrade to cloud (Gemini > OpenAI > Mistral > Cohere), with automatic local fallback if cloud fails.
+- **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF model (~480MB) instead of ONNX (~570MB) for better performance.
 - All embeddings stored at **768 dims** (default). Switching providers never breaks the vector table.
 - Override with `EMBEDDING_BACKEND=local` to force local even with API keys.
+
+`API_KEYS` supports multiple providers in a single string:
+```
+API_KEYS=GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-...,COHERE_API_KEY:co-...
+```
 
 Cloud embedding providers (auto-detected from `API_KEYS`, priority order):
 

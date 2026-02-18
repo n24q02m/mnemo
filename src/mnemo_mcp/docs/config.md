@@ -92,7 +92,7 @@ For GGUF with GPU support:
 
 ```bash
 pip install mnemo-mcp[gguf]
-# Set EMBEDDING_BACKEND=local and EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B-GGUF
+# Set EMBEDDING_BACKEND=local and EMBEDDING_MODEL=n24q02m/Qwen3-Embedding-0.6B-GGUF
 ```
 
 No API keys = FTS5-only mode (text search without semantic search).
