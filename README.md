@@ -17,42 +17,7 @@
 
 ## Quick Start
 
-### Option 1: Minimal uvx (Recommended)
-
-```jsonc
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["mnemo-mcp@latest"]
-      // No API keys needed -- local Qwen3-Embedding-0.6B (ONNX, CPU) for hybrid search (FTS5 + vector)
-      // First run downloads ~570MB model, cached for subsequent runs
-    }
-  }
-}
-```
-
-### Option 2: Minimal Docker
-
-```jsonc
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "--name", "mcp-mnemo",
-        "-v", "mnemo-data:/data",
-        "n24q02m/mnemo-mcp:latest"
-      ]
-      // Volume persists memories across restarts
-      // Same built-in local embedding as uvx
-    }
-  }
-}
-```
-
-### Option 3: Full uvx
+### Option 1: uvx (Recommended)
 
 ```jsonc
 {
@@ -61,19 +26,23 @@
       "command": "uvx",
       "args": ["mnemo-mcp@latest"],
       "env": {
-        "API_KEYS": "GOOGLE_API_KEY:AIza...",     // cloud embedding (Gemini > OpenAI > Mistral > Cohere) for semantic search
-        "SYNC_ENABLED": "true",                    // enable sync
-        "SYNC_REMOTE": "gdrive",                   // rclone remote name
-        "SYNC_INTERVAL": "300",                    // auto-sync every 5min (0 = manual)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // from: uvx mnemo-mcp setup-sync drive
+        // -- optional: cloud embedding (Gemini > OpenAI > Mistral > Cohere) for semantic search
+        // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
+        // -- first run downloads ~570MB model, cached for subsequent runs
+        "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: sync memories across machines via rclone
+        "SYNC_ENABLED": "true",                    // optional, default: false
+        "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
+        "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",      // required when SYNC_ENABLED=true
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // required when SYNC_ENABLED=true, from: uvx mnemo-mcp setup-sync drive
       }
     }
   }
 }
 ```
 
-### Option 4: Full Docker
+### Option 2: Docker
 
 ```jsonc
 {
@@ -83,30 +52,30 @@
       "args": [
         "run", "-i", "--rm",
         "--name", "mcp-mnemo",
-        "-v", "mnemo-data:/data",
-        "-e", "API_KEYS",
-        "-e", "SYNC_ENABLED",
-        "-e", "SYNC_REMOTE",
-        "-e", "SYNC_INTERVAL",
-        "-e", "RCLONE_CONFIG_GDRIVE_TYPE",
-        "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",
+        "-v", "mnemo-data:/data",                  // persists memories across restarts
+        "-e", "API_KEYS",                          // optional: pass-through from env below
+        "-e", "SYNC_ENABLED",                      // optional: pass-through from env below
+        "-e", "SYNC_REMOTE",                       // required when SYNC_ENABLED=true: pass-through
+        "-e", "SYNC_INTERVAL",                     // optional: pass-through from env below
+        "-e", "RCLONE_CONFIG_GDRIVE_TYPE",         // required when SYNC_ENABLED=true: pass-through
+        "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",        // required when SYNC_ENABLED=true: pass-through
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
+        // -- optional: cloud embedding (Gemini > OpenAI > Mistral > Cohere) for semantic search
+        // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
-        "SYNC_ENABLED": "true",
-        "SYNC_REMOTE": "gdrive",
-        "SYNC_INTERVAL": "300",
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"
+        // -- optional: sync memories across machines via rclone
+        "SYNC_ENABLED": "true",                    // optional, default: false
+        "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
+        "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",      // required when SYNC_ENABLED=true
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // required when SYNC_ENABLED=true, from: uvx mnemo-mcp setup-sync drive
       }
-      // Same auto-detection: cloud embedding from API_KEYS, fallback to local
     }
   }
 }
 ```
-
-> The `-v mnemo-data:/data` volume persists memories across restarts.
 
 ### Sync setup (one-time)
 
