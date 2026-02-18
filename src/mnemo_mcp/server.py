@@ -247,7 +247,7 @@ async def memory(
     category: str | None = None,
     tags: list[str] | None = None,
     limit: int = 5,
-    data: str | None = None,
+    data: str | list | None = None,
     mode: str = "merge",
     ctx: Context = None,  # type: ignore[assignment]
 ) -> str:
@@ -364,9 +364,23 @@ async def memory(
 
         case "import":
             if not data:
-                return _json({"error": "data (JSONL string) is required for import"})
+                return _json(
+                    {
+                        "error": "data (JSONL string or list of objects) is required for import"
+                    }
+                )
 
-            result = await asyncio.to_thread(db.import_jsonl, data, mode=mode)
+            # Normalize: accept both JSONL string and parsed list/dict from MCP clients
+            if isinstance(data, list):
+                import_data = "\n".join(
+                    json.dumps(item, ensure_ascii=False) for item in data
+                )
+            elif isinstance(data, dict):
+                import_data = json.dumps(data, ensure_ascii=False)
+            else:
+                import_data = data
+
+            result = await asyncio.to_thread(db.import_jsonl, import_data, mode=mode)
             return _json(
                 {
                     "status": "imported",

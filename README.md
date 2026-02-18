@@ -127,6 +127,7 @@ Remote is configured via env vars — works in any environment (local, Docker, C
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
+        "--name", "mcp-mnemo",
         "-v", "mnemo-data:/data",
         "-e", "API_KEYS",
         "-e", "DB_PATH",
@@ -150,6 +151,7 @@ Remote is configured via env vars — works in any environment (local, Docker, C
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
+        "--name", "mcp-mnemo",
         "-v", "mnemo-data:/data",
         "-e", "DB_PATH",
         "-e", "API_KEYS",
