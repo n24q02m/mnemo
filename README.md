@@ -39,86 +39,22 @@ pip install mnemo-mcp[gguf]
 
 ## Quick Start
 
-### Minimal (FTS5 only, no API keys)
+### Option 1: Minimal uvx (Recommended)
+
+FTS5-only text search. No API keys needed.
 
 ```json
 {
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": ["mnemo-mcp"]
+      "args": ["mnemo-mcp@latest"]
     }
   }
 }
 ```
 
-### With local embedding (no API keys)
-
-```jsonc
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["--extra", "local", "mnemo-mcp"]
-      // No API_KEYS needed -- Qwen3-Embedding-0.6B runs locally on CPU
-    }
-  }
-}
-```
-
-### With embeddings (cloud API)
-
-```json
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["mnemo-mcp"],
-      "env": {
-        "API_KEYS": "GOOGLE_API_KEY:AIza..."
-      }
-    }
-  }
-}
-```
-
-### With sync (multi-machine)
-
-**Step 1**: Get a drive token (one-time, requires browser):
-
-```bash
-uvx mnemo-mcp setup-sync drive
-```
-
-This downloads rclone, opens a browser for Google Drive auth, and outputs a **base64-encoded token** for `RCLONE_CONFIG_GDRIVE_TOKEN`.
-
-**Step 2**: Copy the token and add it to your MCP config:
-
-```jsonc
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["mnemo-mcp"],
-      "env": {
-        "API_KEYS": "GOOGLE_API_KEY:AIza...", // optional: enables semantic search
-        "SYNC_ENABLED": "true",               // required for sync
-        "SYNC_REMOTE": "gdrive",               // required: rclone remote name
-        "SYNC_INTERVAL": "300",                // optional: auto-sync seconds (default: 0 = manual)
-        // "SYNC_FOLDER": "mnemo-mcp",          // optional: remote folder (default: mnemo-mcp)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",  // required: rclone backend type
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>" // required: from setup-sync
-      }
-    }
-  }
-}
-```
-
-Both raw JSON and base64-encoded tokens are supported. Base64 is recommended — it avoids nested JSON escaping issues.
-
-Remote is configured via env vars — works in any environment (local, Docker, CI).
-
-### With Docker
+### Option 2: Minimal Docker
 
 ```json
 {
@@ -129,20 +65,37 @@ Remote is configured via env vars — works in any environment (local, Docker, C
         "run", "-i", "--rm",
         "--name", "mcp-mnemo",
         "-v", "mnemo-data:/data",
-        "-e", "API_KEYS",
-        "-e", "DB_PATH",
         "n24q02m/mnemo-mcp:latest"
-      ],
+      ]
+    }
+  }
+}
+```
+
+### Option 3: Full uvx
+
+Cloud embedding (Gemini), multi-machine sync via Google Drive.
+
+```jsonc
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": ["mnemo-mcp@latest"],
       "env": {
-        "DB_PATH": "/data/memories.db",
-        "API_KEYS": "GOOGLE_API_KEY:AIza..."
+        "API_KEYS": "GOOGLE_API_KEY:AIza...",     // embedding for semantic search
+        "SYNC_ENABLED": "true",                    // enable sync
+        "SYNC_REMOTE": "gdrive",                   // rclone remote name
+        "SYNC_INTERVAL": "300",                    // auto-sync every 5min (0 = manual)
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // from: uvx mnemo-mcp setup-sync drive
       }
     }
   }
 }
 ```
 
-### With sync in Docker
+### Option 4: Full Docker
 
 ```jsonc
 {
@@ -153,28 +106,45 @@ Remote is configured via env vars — works in any environment (local, Docker, C
         "run", "-i", "--rm",
         "--name", "mcp-mnemo",
         "-v", "mnemo-data:/data",
-        "-e", "DB_PATH",
         "-e", "API_KEYS",
         "-e", "SYNC_ENABLED",
         "-e", "SYNC_REMOTE",
-        "-e", "SYNC_INTERVAL",     // optional: remove if manual sync only
+        "-e", "SYNC_INTERVAL",
         "-e", "RCLONE_CONFIG_GDRIVE_TYPE",
         "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
-        "DB_PATH": "/data/memories.db",
-        "API_KEYS": "GOOGLE_API_KEY:AIza...", // optional: enables semantic search
-        "SYNC_ENABLED": "true",               // required for sync
-        "SYNC_REMOTE": "gdrive",               // required: rclone remote name
-        "SYNC_INTERVAL": "300",                // optional: auto-sync seconds (default: 0 = manual)
-        // "SYNC_FOLDER": "mnemo-mcp",          // optional: remote folder (default: mnemo-mcp)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",  // required: rclone backend type
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<paste base64 token>" // required: from setup-sync
+        "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        "SYNC_ENABLED": "true",
+        "SYNC_REMOTE": "gdrive",
+        "SYNC_INTERVAL": "300",
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",
+        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"
       }
     }
   }
 }
+```
+
+> The `-v mnemo-data:/data` volume persists memories across restarts.
+
+### Sync setup (one-time)
+
+```bash
+uvx mnemo-mcp setup-sync drive
+```
+
+Opens a browser for Google Drive auth and outputs a base64 token for `RCLONE_CONFIG_GDRIVE_TOKEN`. Both raw JSON and base64 tokens are supported.
+
+### Without uvx
+
+```bash
+pip install mnemo-mcp               # FTS5 only
+pip install mnemo-mcp[local]        # + Qwen3 ONNX embedding (no API keys)
+pip install mnemo-mcp[gguf]         # + GGUF embedding (GPU via llama-cpp-python)
+
+mnemo-mcp
 ```
 
 ## Configuration
