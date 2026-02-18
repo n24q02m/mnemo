@@ -183,7 +183,7 @@ Remote is configured via env vars — works in any environment (local, Docker, C
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
 | `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3 ONNX/GGUF). Auto: local > litellm > FTS5-only |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name, or `Qwen/Qwen3-Embedding-0.6B-GGUF` for GGUF (optional) |
-| `EMBEDDING_DIMS` | `768` | Embedding dimensions (optional, fixed) |
+| `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | — | rclone remote name (required when sync enabled) |
 | `SYNC_FOLDER` | `mnemo-mcp` | Remote folder (optional) |
