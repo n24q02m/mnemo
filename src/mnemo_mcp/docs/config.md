@@ -8,7 +8,7 @@ The `config` tool shows server status and manages runtime configuration.
 
 ### `status` - Show current configuration
 
-Returns database stats, embedding model info, sync status, and API key status.
+Returns database stats, embedding model info, and sync status.
 
 **Parameters:** None
 
@@ -67,7 +67,7 @@ Configure via environment variables before starting the server:
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
 | `EMBEDDING_BACKEND` | (auto-detect) | `local` (qwen3-embed ONNX/GGUF), `litellm` (API), or empty (auto) |
 | `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name or GGUF model ID |
-| `EMBEDDING_DIMS` | `768` | Fixed embedding dimensions (all vectors truncated to this size) |
+| `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | (none) | Rclone remote name |
 | `SYNC_FOLDER` | `mnemo-mcp` | Remote folder name |
@@ -95,4 +95,4 @@ pip install mnemo-mcp[gguf]
 # Set EMBEDDING_BACKEND=local and EMBEDDING_MODEL=n24q02m/Qwen3-Embedding-0.6B-GGUF
 ```
 
-No API keys = FTS5-only mode (text search without semantic search).
+No API keys = local-only mode (uses built-in Qwen3-Embedding-0.6B-ONNX for semantic search).

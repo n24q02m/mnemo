@@ -238,7 +238,7 @@ async def _embed(
     annotations=ToolAnnotations(
         title="Memory",
         readOnlyHint=False,
-        destructiveHint=False,
+        destructiveHint=True,
         idempotentHint=False,
         openWorldHint=False,
     ),

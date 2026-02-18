@@ -56,7 +56,7 @@ List memories with optional filtering, ordered by most recently updated.
 
 **Parameters:**
 - `category` (optional): Filter by category
-- `limit` (optional): Max results (default: 20)
+- `limit` (optional): Max results (default: 5)
 
 **Example:**
 ```json
@@ -96,10 +96,10 @@ Returns all memories as a JSONL string for backup or migration.
 
 ### `import` - Import memories from JSONL
 
-Import memories from a JSONL string.
+Import memories from JSONL string, list of objects, or single object.
 
 **Parameters:**
-- `data` (required): JSONL string (one JSON object per line)
+- `data` (required): JSONL string, list of objects, or single object
 - `mode` (optional): "merge" (skip existing, default) or "replace" (clear + import)
 
 ### `stats` - Get database statistics
