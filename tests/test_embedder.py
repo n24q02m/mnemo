@@ -234,10 +234,11 @@ class TestQwen3EmbedBackend:
         result = await backend.embed_single("hello")
         assert result == [0.1, 0.2, 0.3]
 
-    def test_check_available_not_installed(self):
-        """Returns 0 when qwen3-embed is not installed."""
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    def test_check_available_not_installed(self, mock_get_model):
+        """Returns 0 when qwen3-embed is not available."""
+        mock_get_model.side_effect = ImportError("No module named 'qwen3_embed'")
         backend = Qwen3EmbedBackend()
-        # In test env, qwen3-embed is not installed
         assert backend.check_available() == 0
 
 

@@ -332,9 +332,12 @@ async def sync_full(db: MemoryDB) -> dict:
             logger.error(f"Merge failed: {e}")
             result["pull"] = {"error": str(e)}
         finally:
-            # Cleanup temp file
+            # Cleanup temp file and directory
             remote_db_path.unlink(missing_ok=True)
-            remote_db_path.parent.rmdir()
+            try:
+                remote_db_path.parent.rmdir()
+            except OSError:
+                pass
     else:
         result["pull"] = {"imported": 0, "skipped": 0, "note": "No remote DB found"}
 

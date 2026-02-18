@@ -65,7 +65,8 @@ Configure via environment variables before starting the server:
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path |
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
-| `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name |
+| `EMBEDDING_BACKEND` | (auto-detect) | `local` (qwen3-embed ONNX/GGUF), `litellm` (API), or empty (auto) |
+| `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name or GGUF model ID |
 | `EMBEDDING_DIMS` | `768` | Fixed embedding dimensions (all vectors truncated to this size) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | (none) | Rclone remote name |
