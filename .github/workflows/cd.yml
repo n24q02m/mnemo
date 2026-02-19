@@ -126,7 +126,7 @@ jobs:
           mkdir -p ${{ runner.temp }}/digests
           echo "${{ steps.build.outputs.digest }}" > "${{ runner.temp }}/digests/${{ matrix.artifact }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: digest-${{ matrix.artifact }}
           path: ${{ runner.temp }}/digests/*
