@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     - API_KEYS: Provider API keys, supports multiple providers
         Format: "ENV_VAR:key,ENV_VAR:key,..."
         Example: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
-        Embedding providers: Google, OpenAI, Mistral, Cohere
+        Embedding providers: Google, OpenAI, Cohere
     - EMBEDDING_MODEL: LiteLLM embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "litellm" | "local" (auto: API_KEYS -> litellm, else local)

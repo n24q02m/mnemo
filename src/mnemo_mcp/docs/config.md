@@ -82,9 +82,8 @@ API_KEYS="GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
 
 The server auto-detects which embedding model to use by trying providers in order:
 1. `gemini/gemini-embedding-001` (requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`)
-2. `text-embedding-3-small` (requires `OPENAI_API_KEY`)
-3. `mistral/mistral-embed` (requires `MISTRAL_API_KEY`)
-4. `embed-english-v3.0` (requires `COHERE_API_KEY`)
+2. `text-embedding-3-large` (requires `OPENAI_API_KEY`)
+3. `embed-multilingual-v3.0` (requires `COHERE_API_KEY`)
 
 Set `EMBEDDING_MODEL` explicitly to use a specific model.
 

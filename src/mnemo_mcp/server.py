@@ -26,9 +26,8 @@ from mnemo_mcp.db import MemoryDB
 # LiteLLM validates each against its API key — first success wins.
 _EMBEDDING_CANDIDATES = [
     "gemini/gemini-embedding-001",
-    "text-embedding-3-small",
-    "mistral/mistral-embed",
-    "embed-english-v3.0",
+    "text-embedding-3-large",
+    "embed-multilingual-v3.0",
 ]
 
 # Fixed embedding dimensions for sqlite-vec.

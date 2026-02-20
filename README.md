@@ -26,7 +26,7 @@
       "command": "uvx",
       "args": ["mnemo-mcp@latest"],
       "env": {
-        // -- optional: cloud embedding (Gemini > OpenAI > Mistral > Cohere) for semantic search
+        // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
         // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
         // -- first run downloads ~570MB model, cached for subsequent runs
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
@@ -62,7 +62,7 @@
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
-        // -- optional: cloud embedding (Gemini > OpenAI > Mistral > Cohere) for semantic search
+        // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
         // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
         // -- optional: sync memories across machines via rclone
@@ -110,7 +110,7 @@ Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both 
 
 Embedding is **always available** — a local model is built-in and requires no configuration.
 
-- **Default**: Local Qwen3-Embedding-0.6B. Set `API_KEYS` to upgrade to cloud (Gemini > OpenAI > Mistral > Cohere), with automatic local fallback if cloud fails.
+- **Default**: Local Qwen3-Embedding-0.6B. Set `API_KEYS` to upgrade to cloud (Gemini > OpenAI > Cohere), with automatic local fallback if cloud fails.
 - **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF model (~480MB) instead of ONNX (~570MB) for better performance.
 - All embeddings stored at **768 dims** (default). Switching providers never breaks the vector table.
 - Override with `EMBEDDING_BACKEND=local` to force local even with API keys.
@@ -125,9 +125,8 @@ Cloud embedding providers (auto-detected from `API_KEYS`, priority order):
 | Priority | Env Var (LiteLLM) | Model | Native Dims | Stored |
 |----------|-------------------|-------|-------------|--------|
 | 1 | `GEMINI_API_KEY` | `gemini/gemini-embedding-001` | 3072 | 768 |
-| 2 | `OPENAI_API_KEY` | `text-embedding-3-small` | 1536 | 768 |
-| 3 | `MISTRAL_API_KEY` | `mistral/mistral-embed` | 1024 | 768 |
-| 4 | `COHERE_API_KEY` | `embed-english-v3.0` | 1024 | 768 |
+| 2 | `OPENAI_API_KEY` | `text-embedding-3-large` | 3072 | 768 |
+| 3 | `COHERE_API_KEY` | `embed-multilingual-v3.0` | 1024 | 768 |
 
 All embeddings are truncated to **768 dims** (default) for storage. This ensures switching models never breaks the vector table. Override with `EMBEDDING_DIMS` if needed.
 
@@ -193,8 +192,7 @@ help(topic="memory")  # or "config"
               /            \
          LiteLLM        Qwen3 ONNX
             |           (local CPU)
-  Gemini / OpenAI /
-  Mistral / Cohere
+  Gemini / OpenAI / Cohere
 
         Sync: rclone (embedded) -> Google Drive / S3 / ...
 ```
