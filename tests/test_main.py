@@ -180,6 +180,74 @@ class TestWarmup:
         assert "WARNING" in captured.out
 
 
+class TestClearModelCache:
+    """_clear_model_cache removes corrupted HF Hub cache directories."""
+
+    def test_removes_existing_cache(self, tmp_path):
+        from mnemo_mcp.__main__ import _clear_model_cache
+
+        model_dir = tmp_path / "models--org--model"
+        model_dir.mkdir(parents=True)
+        (model_dir / "refs").mkdir()
+        (model_dir / "blobs").mkdir()
+        (model_dir / "blobs" / "abc.incomplete").touch()
+
+        with patch.dict("os.environ", {"QWEN3_EMBED_CACHE_PATH": str(tmp_path)}):
+            _clear_model_cache("org/model")
+
+        assert not model_dir.exists()
+
+    def test_noop_when_cache_missing(self, tmp_path):
+        from mnemo_mcp.__main__ import _clear_model_cache
+
+        with patch.dict("os.environ", {"QWEN3_EMBED_CACHE_PATH": str(tmp_path)}):
+            _clear_model_cache("nonexistent/model")  # Should not raise
+
+
+class TestWarmupCorruptedCache:
+    """_warmup handles corrupted ONNX cache (NO_SUCHFILE) gracefully."""
+
+    @patch("mnemo_mcp.__main__._clear_model_cache")
+    @patch("qwen3_embed.TextEmbedding")
+    @patch("mnemo_mcp.config.settings")
+    def test_corrupted_cache_clears_and_retries(
+        self, mock_settings, mock_te, mock_clear
+    ):
+        """When TextEmbedding raises NO_SUCHFILE, clears cache and retries."""
+        from mnemo_mcp.__main__ import _warmup
+
+        mock_settings.setup_api_keys.return_value = {}
+        mock_settings.resolve_local_embedding_model.return_value = "org/model"
+
+        # First call raises NO_SUCHFILE, second succeeds
+        mock_model_ok = MagicMock()
+        mock_model_ok.embed.return_value = iter([np.array([0.1, 0.2])])
+
+        exc = Exception("[ONNXRuntimeError] : 3 : NO_SUCHFILE : file doesn't exist")
+        mock_te.side_effect = [exc, mock_model_ok]
+
+        _warmup()
+
+        mock_clear.assert_called_once_with("org/model")
+        assert mock_te.call_count == 2
+
+    @patch("qwen3_embed.TextEmbedding")
+    @patch("mnemo_mcp.config.settings")
+    def test_non_cache_error_re_raises(self, mock_settings, mock_te):
+        """Non-cache errors (e.g. import error) are re-raised."""
+        from mnemo_mcp.__main__ import _warmup
+
+        mock_settings.setup_api_keys.return_value = {}
+        mock_settings.resolve_local_embedding_model.return_value = "org/model"
+
+        mock_te.side_effect = ImportError("qwen3_embed not installed")
+
+        import pytest
+
+        with pytest.raises(ImportError, match="not installed"):
+            _warmup()
+
+
 class TestWarmupInitEmbeddingBackend:
     """Tests for _init_embedding_backend in server.py (background init).
 

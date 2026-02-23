@@ -3,6 +3,27 @@
 import sys
 
 
+def _clear_model_cache(model_name: str) -> None:
+    """Remove corrupted HuggingFace cache for a model so it re-downloads."""
+    import os
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    cache_dir = Path(
+        os.getenv(
+            "QWEN3_EMBED_CACHE_PATH",
+            os.path.join(tempfile.gettempdir(), "qwen3_embed_cache"),
+        )
+    )
+    # HF Hub cache uses models--org--repo directory naming
+    safe_name = model_name.replace("/", "--")
+    model_cache = cache_dir / f"models--{safe_name}"
+    if model_cache.exists():
+        shutil.rmtree(model_cache)
+        print(f"  Cleared corrupted cache: {model_cache}")
+
+
 def _warmup() -> None:
     """Pre-download models and validate setup to avoid first-run delays.
 
@@ -48,12 +69,25 @@ def _warmup() -> None:
 
     from qwen3_embed import TextEmbedding
 
-    model = TextEmbedding(model_name=local_model)
-    result = list(model.embed(["warmup test"]))
-    if result:
-        print(f"  Local embedding ready (dims={len(result[0])})")
-    else:
-        print("  WARNING: Local embedding test failed")
+    try:
+        model = TextEmbedding(model_name=local_model)
+        result = list(model.embed(["warmup test"]))
+        if result:
+            print(f"  Local embedding ready (dims={len(result[0])})")
+        else:
+            print("  WARNING: Local embedding test failed")
+    except Exception as exc:
+        if "NO_SUCHFILE" in str(exc) or "doesn't exist" in str(exc):
+            print("  Corrupted cache detected, clearing and retrying...")
+            _clear_model_cache(local_model)
+            model = TextEmbedding(model_name=local_model)
+            result = list(model.embed(["warmup test"]))
+            if result:
+                print(f"  Local embedding ready (dims={len(result[0])})")
+            else:
+                print("  WARNING: Local embedding test failed after retry")
+        else:
+            raise
 
     print("Warmup complete!")
 
