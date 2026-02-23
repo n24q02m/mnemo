@@ -78,6 +78,18 @@
 }
 ```
 
+### Pre-install (optional)
+
+Pre-download dependencies before adding to your MCP client config. This avoids slow first-run startup:
+
+```bash
+# Pre-download embedding model (~570MB) and validate API keys
+uvx mnemo-mcp warmup
+
+# With cloud embedding (validates API key, skips local download if cloud works)
+API_KEYS="GOOGLE_API_KEY:AIza..." uvx mnemo-mcp warmup
+```
+
 ### Sync setup (one-time)
 
 ```bash

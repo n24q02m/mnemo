@@ -38,27 +38,33 @@ _DEFAULT_EMBEDDING_DIMS = 768
 # --- Lifespan ---
 
 
-@asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
-    """Initialize DB, embeddings, and sync on startup."""
-    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY -> GEMINI_API_KEY)
-    keys = settings.setup_api_keys()
-    if keys:
-        logger.info(f"API keys configured: {', '.join(keys.keys())}")
+async def _init_embedding_backend(
+    keys: dict,
+    ctx: dict,
+) -> None:
+    """Initialize embedding backend in background.
 
-    # 2. Resolve embedding backend + model + dims
+    Tries cloud (LiteLLM) first if API keys are available, then falls back
+    to local (qwen3-embed ONNX). Updates ``ctx`` dict in-place so tools
+    pick up the model/dims as soon as they are ready.
+
+    Running this as a background task lets the MCP server accept connections
+    immediately instead of blocking on model download (~570 MB on first run).
+    """
+    from mnemo_mcp.embedder import init_backend
+
     embedding_model = settings.resolve_embedding_model()
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
-
-    from mnemo_mcp.embedder import init_backend
 
     if embedding_backend_type == "litellm":
         if embedding_model:
             # Explicit model -- validate it
             try:
-                backend = init_backend("litellm", embedding_model)
-                native_dims = backend.check_available()
+                backend = await asyncio.to_thread(
+                    init_backend, "litellm", embedding_model
+                )
+                native_dims = await asyncio.to_thread(backend.check_available)
                 if native_dims > 0:
                     if embedding_dims == 0:
                         embedding_dims = _DEFAULT_EMBEDDING_DIMS
@@ -66,6 +72,9 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
                         f"Embedding: {embedding_model} "
                         f"(native={native_dims}, stored={embedding_dims})"
                     )
+                    ctx["embedding_model"] = embedding_model
+                    ctx["embedding_dims"] = embedding_dims
+                    return
                 else:
                     logger.warning(f"Embedding model {embedding_model} not available")
                     embedding_model = None
@@ -76,8 +85,10 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
             # Auto-detect: try candidate models
             for candidate in _EMBEDDING_CANDIDATES:
                 try:
-                    backend = init_backend("litellm", candidate)
-                    native_dims = backend.check_available()
+                    backend = await asyncio.to_thread(
+                        init_backend, "litellm", candidate
+                    )
+                    native_dims = await asyncio.to_thread(backend.check_available)
                     if native_dims > 0:
                         embedding_model = candidate
                         if embedding_dims == 0:
@@ -86,34 +97,55 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
                             f"Embedding: {embedding_model} "
                             f"(native={native_dims}, stored={embedding_dims})"
                         )
-                        break
+                        ctx["embedding_model"] = embedding_model
+                        ctx["embedding_dims"] = embedding_dims
+                        return
                 except Exception:
                     continue
 
         # Cloud not available -- fallback to local
         if not embedding_model:
             logger.warning("Cloud embedding not available, using local fallback")
-            embedding_backend_type = "local"
 
-    if embedding_backend_type == "local":
-        local_model = settings.resolve_local_embedding_model()
-        try:
-            backend = init_backend("local", local_model)
-            native_dims = backend.check_available()
-            if native_dims > 0:
-                embedding_model = "__local__"
-                if embedding_dims == 0:
-                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
-                logger.info(
-                    f"Embedding: local {local_model} "
-                    f"(native={native_dims}, stored={embedding_dims})"
-                )
-            else:
-                logger.error("Local embedding model not available")
-        except Exception as e:
-            logger.error(f"Local embedding init failed: {e}")
+    # Local backend (always available)
+    local_model = settings.resolve_local_embedding_model()
+    try:
+        backend = await asyncio.to_thread(init_backend, "local", local_model)
+        native_dims = await asyncio.to_thread(backend.check_available)
+        if native_dims > 0:
+            if embedding_dims == 0:
+                embedding_dims = _DEFAULT_EMBEDDING_DIMS
+            logger.info(
+                f"Embedding: local {local_model} "
+                f"(native={native_dims}, stored={embedding_dims})"
+            )
+            ctx["embedding_model"] = "__local__"
+            ctx["embedding_dims"] = embedding_dims
+        else:
+            logger.error("Local embedding model not available")
+    except Exception as e:
+        logger.error(f"Local embedding init failed: {e}")
 
-    # 3. Initialize database
+
+@asynccontextmanager
+async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    """Initialize DB, embeddings, and sync on startup.
+
+    Embedding backend init runs as a background task so the server accepts
+    connections immediately. Tools gracefully degrade to FTS5-only search
+    until the embedding model is ready.
+    """
+    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY -> GEMINI_API_KEY)
+    keys = settings.setup_api_keys()
+    if keys:
+        logger.info(f"API keys configured: {', '.join(keys.keys())}")
+
+    # 2. Resolve initial embedding dims (may be refined by background task)
+    embedding_dims = settings.resolve_embedding_dims()
+    if embedding_dims == 0:
+        embedding_dims = _DEFAULT_EMBEDDING_DIMS
+
+    # 3. Initialize database (fast, no network)
     db_path = settings.get_db_path()
     db = MemoryDB(db_path, embedding_dims=embedding_dims)
     stats = db.stats()
@@ -132,15 +164,30 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
             f"(interval={settings.sync_interval}s)"
         )
 
+    # Shared context -- embedding_model starts as None (not ready yet).
+    # Background task updates it in-place once the backend is validated.
     ctx = {
         "db": db,
-        "embedding_model": embedding_model,
+        "embedding_model": None,
         "embedding_dims": embedding_dims,
     }
+
+    # 5. Initialize embedding backend in background (non-blocking).
+    # This avoids blocking the server start on model download (~570 MB)
+    # or cloud API validation. Tools degrade to FTS5-only until ready.
+    embedding_task = asyncio.create_task(_init_embedding_backend(keys, ctx))
 
     try:
         yield ctx
     finally:
+        # Cancel embedding init if still running
+        if not embedding_task.done():
+            embedding_task.cancel()
+            try:
+                await embedding_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
         # Cleanup
         from mnemo_mcp.sync import stop_auto_sync
 

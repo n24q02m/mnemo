@@ -262,6 +262,70 @@ class TestBackendFactory:
             init_backend("unknown")
 
 
+class TestCheckAvailableApiKeyValidation:
+    """check_available() distinguishes API key errors from other failures."""
+
+    @patch("litellm.embedding")
+    def test_api_key_401_logs_warning(self, mock_embed):
+        """401 errors are logged at warning level (not debug)."""
+        mock_embed.side_effect = Exception("401 Unauthorized: Invalid API key")
+        backend = LiteLLMBackend("model")
+        result = backend.check_available()
+        assert result == 0
+
+    @patch("litellm.embedding")
+    def test_api_key_403_logs_warning(self, mock_embed):
+        """403 forbidden errors are logged at warning level."""
+        mock_embed.side_effect = Exception("403 Forbidden")
+        backend = LiteLLMBackend("model")
+        assert backend.check_available() == 0
+
+    @patch("litellm.embedding")
+    def test_invalid_key_detected(self, mock_embed):
+        """'invalid' keyword in error triggers warning path."""
+        mock_embed.side_effect = Exception("Invalid API key provided")
+        backend = LiteLLMBackend("model")
+        assert backend.check_available() == 0
+
+    @patch("litellm.embedding")
+    def test_unauthorized_detected(self, mock_embed):
+        """'unauthorized' keyword in error triggers warning path."""
+        mock_embed.side_effect = Exception("Unauthorized access")
+        backend = LiteLLMBackend("model")
+        assert backend.check_available() == 0
+
+    @patch("litellm.embedding")
+    def test_non_auth_error_logged_at_debug(self, mock_embed):
+        """Non-auth errors (e.g. model not found) go to debug level."""
+        mock_embed.side_effect = Exception("Model not found: xyz")
+        backend = LiteLLMBackend("model")
+        assert backend.check_available() == 0
+
+
+class TestQwen3GetModelWarning:
+    """_get_model() logs download warning on first call."""
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    def test_check_available_success(self, mock_get_model):
+        """check_available returns dims when model works."""
+        import numpy as np
+
+        mock_model = MagicMock()
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
+        mock_get_model.return_value = mock_model
+
+        backend = Qwen3EmbedBackend()
+        dims = backend.check_available()
+        assert dims == 3
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    def test_check_available_returns_zero_on_error(self, mock_get_model):
+        """check_available returns 0 when model raises."""
+        mock_get_model.side_effect = Exception("ONNX runtime error")
+        backend = Qwen3EmbedBackend()
+        assert backend.check_available() == 0
+
+
 class TestLegacyCompat:
     """Legacy module-level functions still work."""
 
