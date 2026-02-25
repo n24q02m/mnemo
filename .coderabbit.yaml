@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!uv.lock"
+    - "!**/*.generated.*"
+  path_instructions:
+    - path: "src/mnemo_mcp/db.py"
+      instructions: "Review for SQLite safety: parameterized queries, FTS5 injection prevention, proper asyncio.to_thread usage for blocking I/O."
+    - path: "src/mnemo_mcp/server.py"
+      instructions: "Review for MCP tool patterns: structured error returns, match/case dispatch, proper context usage."
+
+chat:
+  auto_reply: true
