@@ -29,6 +29,11 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+# Maximum content length to prevent memory poisoning attacks (OWASP LLM09).
+# Limits damage from indirect prompt injection writing oversized payloads.
+MAX_CONTENT_LENGTH = 5000
+
+
 def _build_fts_queries(query: str) -> list[str]:
     """Build tiered FTS5 queries: PHRASE -> AND -> OR.
 
@@ -183,7 +188,15 @@ class MemoryDB:
 
         Returns:
             Memory ID.
+
+        Raises:
+            ValueError: If content exceeds MAX_CONTENT_LENGTH.
         """
+        if len(content) > MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
+            )
+
         memory_id = uuid.uuid4().hex[:12]
         now = _now_iso()
         tags_json = json.dumps(tags or [])
@@ -203,7 +216,7 @@ class MemoryDB:
             )
 
         self._conn.commit()
-        logger.debug(f"Added memory {memory_id}: {content[:50]}...")
+        logger.info(f"[AUDIT] add id={memory_id} cat={category} len={len(content)}")
         return memory_id
 
     def search(
@@ -450,7 +463,16 @@ class MemoryDB:
         tags: list[str] | None = None,
         embedding: list[float] | None = None,
     ) -> bool:
-        """Update an existing memory. Returns True if found and updated."""
+        """Update an existing memory. Returns True if found and updated.
+
+        Raises:
+            ValueError: If content exceeds MAX_CONTENT_LENGTH.
+        """
+        if content is not None and len(content) > MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
+            )
+
         existing = self.get(memory_id)
         if not existing:
             return False
@@ -487,6 +509,7 @@ class MemoryDB:
             )
 
         self._conn.commit()
+        logger.info(f"[AUDIT] update id={memory_id}")
         return True
 
     def delete(self, memory_id: str) -> bool:
@@ -501,6 +524,7 @@ class MemoryDB:
             self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
 
         self._conn.commit()
+        logger.info(f"[AUDIT] delete id={memory_id}")
         return True
 
     def stats(self) -> dict:
@@ -545,7 +569,7 @@ class MemoryDB:
             mode: "merge" (skip existing) or "replace" (clear + import).
 
         Returns:
-            Dict with import stats.
+            Dict with import stats (imported, skipped, rejected).
         """
         if mode == "replace":
             self._conn.execute("DELETE FROM memories")
@@ -554,6 +578,7 @@ class MemoryDB:
 
         imported = 0
         skipped = 0
+        rejected = 0
 
         for line in data.strip().split("\n"):
             line = line.strip()
@@ -562,6 +587,16 @@ class MemoryDB:
 
             mem = json.loads(line)
             memory_id = mem.get("id", uuid.uuid4().hex[:12])
+
+            # Content length validation (memory poisoning prevention)
+            content = mem.get("content", "")
+            if len(content) > MAX_CONTENT_LENGTH:
+                logger.warning(
+                    f"[AUDIT] import rejected id={memory_id} "
+                    f"len={len(content)} exceeds {MAX_CONTENT_LENGTH}"
+                )
+                rejected += 1
+                continue
 
             # Check if exists (for merge mode)
             if mode == "merge":
@@ -584,7 +619,7 @@ class MemoryDB:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
-                    mem["content"],
+                    content,
                     mem.get("category", "general"),
                     tags_json,
                     mem.get("source"),
@@ -597,7 +632,9 @@ class MemoryDB:
             imported += 1
 
         self._conn.commit()
-        return {"imported": imported, "skipped": skipped}
+        if imported > 0:
+            logger.info(f"[AUDIT] import count={imported} mode={mode}")
+        return {"imported": imported, "skipped": skipped, "rejected": rejected}
 
     def close(self) -> None:
         """Close database connection."""

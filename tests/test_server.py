@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB
 from mnemo_mcp.server import config, help, memory, recall_context, save_summary
 
 
@@ -53,6 +53,18 @@ class TestMemoryAdd:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="add", ctx=ctx))
         assert "error" in result
+
+    async def test_add_exceeds_content_length(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await memory(
+                action="add",
+                content="x" * (MAX_CONTENT_LENGTH + 1),
+                ctx=ctx,
+            )
+        )
+        assert "error" in result
+        assert "exceeds limit" in result["error"]
 
 
 class TestMemorySearch:
@@ -140,6 +152,24 @@ class TestMemoryUpdate:
             )
         )
         assert "error" in result
+
+    async def test_update_exceeds_content_length(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        mid = db.add("original")
+        result = json.loads(
+            await memory(
+                action="update",
+                memory_id=mid,
+                content="x" * (MAX_CONTENT_LENGTH + 1),
+                ctx=ctx,
+            )
+        )
+        assert "error" in result
+        assert "exceeds limit" in result["error"]
+        # Original content preserved
+        mem = db.get(mid)
+        assert mem is not None
+        assert mem["content"] == "original"
 
 
 class TestMemoryDelete:

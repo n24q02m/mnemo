@@ -321,13 +321,16 @@ async def memory(
                 return _json({"error": "content is required for add"})
 
             embedding = await _embed(content, embedding_model, embedding_dims)
-            memory_id = await asyncio.to_thread(
-                db.add,
-                content=content,
-                category=category or "general",
-                tags=tags,
-                embedding=embedding,
-            )
+            try:
+                memory_id = await asyncio.to_thread(
+                    db.add,
+                    content=content,
+                    category=category or "general",
+                    tags=tags,
+                    embedding=embedding,
+                )
+            except ValueError as e:
+                return _json({"error": str(e)})
             return _json(
                 {
                     "id": memory_id,
@@ -381,14 +384,17 @@ async def memory(
             if content:
                 embedding = await _embed(content, embedding_model, embedding_dims)
 
-            ok = await asyncio.to_thread(
-                db.update,
-                memory_id=memory_id,
-                content=content,
-                category=category,
-                tags=tags,
-                embedding=embedding,
-            )
+            try:
+                ok = await asyncio.to_thread(
+                    db.update,
+                    memory_id=memory_id,
+                    content=content,
+                    category=category,
+                    tags=tags,
+                    embedding=embedding,
+                )
+            except ValueError as e:
+                return _json({"error": str(e)})
             if ok:
                 return _json({"status": "updated", "id": memory_id})
             return _json({"error": f"Memory {memory_id} not found"})
