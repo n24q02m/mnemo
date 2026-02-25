@@ -17,6 +17,7 @@ run = [
   "uv sync --group dev",
   "uv pip install pre-commit",
   "uv run pre-commit install",
+  "uv run pre-commit install --hook-type commit-msg",
   "echo 'Setup complete!'"
 ]
 
