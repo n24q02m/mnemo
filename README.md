@@ -234,6 +234,10 @@ uv run ty check src/
 uv run pytest
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## License
 
-MIT
+MIT - See [LICENSE](LICENSE)
