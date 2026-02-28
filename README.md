@@ -25,6 +25,14 @@
 
 ## Quick Start
 
+The recommended way to run this server is via `uvx`:
+
+```bash
+uvx mnemo-mcp@latest
+```
+
+> Alternatively, you can use `pipx run mnemo-mcp`.
+
 ### Option 1: uvx (Recommended)
 
 ```jsonc
