@@ -272,6 +272,184 @@ async def _embed(
         return None
 
 
+async def _handle_add(
+    db: MemoryDB,
+    content: str | None,
+    category: str | None,
+    tags: list[str] | None,
+    embedding_model: str | None,
+    embedding_dims: int,
+) -> str:
+    if not content:
+        return _json({"error": "content is required for add"})
+
+    embedding = await _embed(content, embedding_model, embedding_dims)
+    try:
+        memory_id = await asyncio.to_thread(
+            db.add,
+            content=content,
+            category=category or "general",
+            tags=tags,
+            embedding=embedding,
+        )
+    except ValueError as e:
+        return _json({"error": str(e)})
+    return _json(
+        {
+            "id": memory_id,
+            "status": "saved",
+            "category": category or "general",
+            "semantic": embedding is not None,
+        }
+    )
+
+
+async def _handle_search(
+    db: MemoryDB,
+    query: str | None,
+    category: str | None,
+    tags: list[str] | None,
+    limit: int,
+    embedding_model: str | None,
+    embedding_dims: int,
+) -> str:
+    if not query:
+        return _json({"error": "query is required for search"})
+
+    embedding = await _embed(query, embedding_model, embedding_dims, is_query=True)
+    results = await asyncio.to_thread(
+        db.search,
+        query=query,
+        embedding=embedding,
+        category=category,
+        tags=tags,
+        limit=limit,
+    )
+    return _json(
+        {
+            "count": len(results),
+            "results": [_format_memory(r) for r in results],
+            "semantic": embedding is not None,
+        }
+    )
+
+
+async def _handle_list(
+    db: MemoryDB,
+    category: str | None,
+    limit: int,
+) -> str:
+    results = await asyncio.to_thread(
+        db.list_memories,
+        category=category,
+        limit=limit,
+    )
+    return _json(
+        {
+            "count": len(results),
+            "results": [_format_memory(r) for r in results],
+        }
+    )
+
+
+async def _handle_update(
+    db: MemoryDB,
+    memory_id: str | None,
+    content: str | None,
+    category: str | None,
+    tags: list[str] | None,
+    embedding_model: str | None,
+    embedding_dims: int,
+) -> str:
+    if not memory_id:
+        return _json({"error": "memory_id is required for update"})
+
+    embedding = None
+    if content:
+        embedding = await _embed(content, embedding_model, embedding_dims)
+
+    try:
+        ok = await asyncio.to_thread(
+            db.update,
+            memory_id=memory_id,
+            content=content,
+            category=category,
+            tags=tags,
+            embedding=embedding,
+        )
+    except ValueError as e:
+        return _json({"error": str(e)})
+    if ok:
+        return _json({"status": "updated", "id": memory_id})
+    return _json({"error": f"Memory {memory_id} not found"})
+
+
+async def _handle_delete(
+    db: MemoryDB,
+    memory_id: str | None,
+) -> str:
+    if not memory_id:
+        return _json({"error": "memory_id is required for delete"})
+
+    ok = await asyncio.to_thread(db.delete, memory_id)
+    if ok:
+        return _json({"status": "deleted", "id": memory_id})
+    return _json({"error": f"Memory {memory_id} not found"})
+
+
+async def _handle_export(
+    db: MemoryDB,
+) -> str:
+    jsonl = await asyncio.to_thread(db.export_jsonl)
+    return _json(
+        {
+            "format": "jsonl",
+            "data": jsonl,
+            "count": len(jsonl.strip().split("\n")) if jsonl.strip() else 0,
+        }
+    )
+
+
+async def _handle_import(
+    db: MemoryDB,
+    data: str | list | None,
+    mode: str,
+) -> str:
+    if not data:
+        return _json(
+            {"error": "data (JSONL string or list of objects) is required for import"}
+        )
+
+    # Normalize: accept both JSONL string and parsed list/dict from MCP clients
+    if isinstance(data, list):
+        import_data = "\n".join(json.dumps(item, ensure_ascii=False) for item in data)
+    elif isinstance(data, dict):
+        import_data = json.dumps(data, ensure_ascii=False)
+    else:
+        import_data = data
+
+    result = await asyncio.to_thread(db.import_jsonl, import_data, mode=mode)
+    return _json(
+        {
+            "status": "imported",
+            **result,
+        }
+    )
+
+
+async def _handle_stats(
+    db: MemoryDB,
+    embedding_model: str | None,
+    embedding_dims: int,
+) -> str:
+    s = await asyncio.to_thread(db.stats)
+    s["embedding_model"] = embedding_model
+    s["embedding_dims"] = embedding_dims
+    s["sync_enabled"] = settings.sync_enabled
+    s["sync_remote"] = settings.sync_remote
+    return _json(s)
+
+
 # --- Tools ---
 
 
@@ -317,141 +495,27 @@ async def memory(
 
     match action:
         case "add":
-            if not content:
-                return _json({"error": "content is required for add"})
-
-            embedding = await _embed(content, embedding_model, embedding_dims)
-            try:
-                memory_id = await asyncio.to_thread(
-                    db.add,
-                    content=content,
-                    category=category or "general",
-                    tags=tags,
-                    embedding=embedding,
-                )
-            except ValueError as e:
-                return _json({"error": str(e)})
-            return _json(
-                {
-                    "id": memory_id,
-                    "status": "saved",
-                    "category": category or "general",
-                    "semantic": embedding is not None,
-                }
+            return await _handle_add(
+                db, content, category, tags, embedding_model, embedding_dims
             )
-
         case "search":
-            if not query:
-                return _json({"error": "query is required for search"})
-
-            embedding = await _embed(
-                query, embedding_model, embedding_dims, is_query=True
+            return await _handle_search(
+                db, query, category, tags, limit, embedding_model, embedding_dims
             )
-            results = await asyncio.to_thread(
-                db.search,
-                query=query,
-                embedding=embedding,
-                category=category,
-                tags=tags,
-                limit=limit,
-            )
-            return _json(
-                {
-                    "count": len(results),
-                    "results": [_format_memory(r) for r in results],
-                    "semantic": embedding is not None,
-                }
-            )
-
         case "list":
-            results = await asyncio.to_thread(
-                db.list_memories,
-                category=category,
-                limit=limit,
-            )
-            return _json(
-                {
-                    "count": len(results),
-                    "results": [_format_memory(r) for r in results],
-                }
-            )
-
+            return await _handle_list(db, category, limit)
         case "update":
-            if not memory_id:
-                return _json({"error": "memory_id is required for update"})
-
-            embedding = None
-            if content:
-                embedding = await _embed(content, embedding_model, embedding_dims)
-
-            try:
-                ok = await asyncio.to_thread(
-                    db.update,
-                    memory_id=memory_id,
-                    content=content,
-                    category=category,
-                    tags=tags,
-                    embedding=embedding,
-                )
-            except ValueError as e:
-                return _json({"error": str(e)})
-            if ok:
-                return _json({"status": "updated", "id": memory_id})
-            return _json({"error": f"Memory {memory_id} not found"})
-
+            return await _handle_update(
+                db, memory_id, content, category, tags, embedding_model, embedding_dims
+            )
         case "delete":
-            if not memory_id:
-                return _json({"error": "memory_id is required for delete"})
-
-            ok = await asyncio.to_thread(db.delete, memory_id)
-            if ok:
-                return _json({"status": "deleted", "id": memory_id})
-            return _json({"error": f"Memory {memory_id} not found"})
-
+            return await _handle_delete(db, memory_id)
         case "export":
-            jsonl = await asyncio.to_thread(db.export_jsonl)
-            return _json(
-                {
-                    "format": "jsonl",
-                    "data": jsonl,
-                    "count": len(jsonl.strip().split("\n")) if jsonl.strip() else 0,
-                }
-            )
-
+            return await _handle_export(db)
         case "import":
-            if not data:
-                return _json(
-                    {
-                        "error": "data (JSONL string or list of objects) is required for import"
-                    }
-                )
-
-            # Normalize: accept both JSONL string and parsed list/dict from MCP clients
-            if isinstance(data, list):
-                import_data = "\n".join(
-                    json.dumps(item, ensure_ascii=False) for item in data
-                )
-            elif isinstance(data, dict):
-                import_data = json.dumps(data, ensure_ascii=False)
-            else:
-                import_data = data
-
-            result = await asyncio.to_thread(db.import_jsonl, import_data, mode=mode)
-            return _json(
-                {
-                    "status": "imported",
-                    **result,
-                }
-            )
-
+            return await _handle_import(db, data, mode)
         case "stats":
-            s = await asyncio.to_thread(db.stats)
-            s["embedding_model"] = embedding_model
-            s["embedding_dims"] = embedding_dims
-            s["sync_enabled"] = settings.sync_enabled
-            s["sync_remote"] = settings.sync_remote
-            return _json(s)
-
+            return await _handle_stats(db, embedding_model, embedding_dims)
         case _:
             return _json(
                 {
