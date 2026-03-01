@@ -400,12 +400,12 @@ async def _handle_delete(
 async def _handle_export(
     db: MemoryDB,
 ) -> str:
-    jsonl = await asyncio.to_thread(db.export_jsonl)
+    jsonl, count = await asyncio.to_thread(db.export_jsonl)
     return _json(
         {
             "format": "jsonl",
             "data": jsonl,
-            "count": len(jsonl.strip().split("\n")) if jsonl.strip() else 0,
+            "count": count,
         }
     )
 

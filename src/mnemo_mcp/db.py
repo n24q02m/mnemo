@@ -7,6 +7,7 @@ Provides:
 - Hybrid search scoring (text + semantic + recency + frequency)
 """
 
+import io
 import json
 import math
 import sqlite3
@@ -568,19 +569,24 @@ class MemoryDB:
             "db_path": str(self._db_path),
         }
 
-    def export_jsonl(self) -> str:
-        """Export all memories as JSONL string."""
-        rows = self._conn.execute(
-            "SELECT * FROM memories ORDER BY created_at"
-        ).fetchall()
+    def export_jsonl(self) -> tuple[str, int]:
+        """Export all memories as JSONL string.
 
-        lines = []
-        for row in rows:
+        Returns:
+            Tuple of (jsonl_string, count_of_records).
+        """
+        cursor = self._conn.execute("SELECT * FROM memories ORDER BY created_at")
+        output = io.StringIO()
+        count = 0
+
+        for row in cursor:
             d = dict(row)
             d["tags"] = json.loads(d["tags"])
-            lines.append(json.dumps(d, ensure_ascii=False))
+            output.write(json.dumps(d, ensure_ascii=False))
+            output.write("\n")
+            count += 1
 
-        return "\n".join(lines)
+        return output.getvalue(), count
 
     def import_jsonl(self, data: str, mode: str = "merge") -> dict:
         """Import memories from JSONL string.

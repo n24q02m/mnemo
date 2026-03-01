@@ -355,7 +355,7 @@ async def sync_full(db: MemoryDB) -> dict:
         try:
             # Open remote DB and export JSONL
             remote_db = MemoryDB(remote_db_path, embedding_dims=0)
-            remote_jsonl = remote_db.export_jsonl()
+            remote_jsonl, _ = remote_db.export_jsonl()
             remote_db.close()
 
             # Import into local DB (merge mode - skip existing)

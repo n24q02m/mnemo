@@ -323,7 +323,8 @@ class TestStats:
 
 class TestExportImport:
     def test_export_jsonl_format(self, tmp_db_with_data: MemoryDB):
-        jsonl = tmp_db_with_data.export_jsonl()
+        jsonl, count = tmp_db_with_data.export_jsonl()
+        assert count == 4
         lines = [ln for ln in jsonl.split("\n") if ln.strip()]
         assert len(lines) == 4
         for line in lines:
@@ -333,7 +334,7 @@ class TestExportImport:
             assert isinstance(obj["tags"], list)  # Tags parsed from JSON
 
     def test_export_empty(self, tmp_db: MemoryDB):
-        assert tmp_db.export_jsonl() == ""
+        assert tmp_db.export_jsonl() == ("", 0)
 
     def test_import_merge(self, tmp_db: MemoryDB):
         data = json.dumps({"id": "test001", "content": "imported memory"})
@@ -364,7 +365,8 @@ class TestExportImport:
 
     def test_roundtrip(self, tmp_db_with_data: MemoryDB, tmp_path):
         """Export → import into fresh DB → verify data matches."""
-        jsonl = tmp_db_with_data.export_jsonl()
+        jsonl, count = tmp_db_with_data.export_jsonl()
+        assert count == 4
 
         db2 = MemoryDB(tmp_path / "db2.db", embedding_dims=0)
         result = db2.import_jsonl(jsonl, mode="merge")
