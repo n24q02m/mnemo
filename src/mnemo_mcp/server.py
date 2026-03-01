@@ -253,20 +253,15 @@ async def _embed(
     from mnemo_mcp.embedder import Qwen3EmbedBackend, get_backend
 
     backend = get_backend()
-    if backend is not None:
-        try:
-            if is_query and isinstance(backend, Qwen3EmbedBackend):
-                return await backend.embed_single_query(text, dims)
-            return await backend.embed_single(text, dims)
-        except Exception as e:
-            logger.debug(f"Embedding failed: {e}")
-            return None
-
-    # Legacy path: no backend initialized but model is set
-    from mnemo_mcp.embedder import embed_single
+    if backend is None:
+        # Should not happen if model is set (implies init succeeded), but safe guard.
+        logger.warning(f"Embedding backend not initialized despite model={model}")
+        return None
 
     try:
-        return await embed_single(text, model, dims)
+        if is_query and isinstance(backend, Qwen3EmbedBackend):
+            return await backend.embed_single_query(text, dims)
+        return await backend.embed_single(text, dims)
     except Exception as e:
         logger.debug(f"Embedding failed: {e}")
         return None
@@ -493,6 +488,10 @@ async def memory(
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
+    # Clamp limit to reasonable bounds to prevent DoS
+    if isinstance(limit, int):
+        limit = max(1, min(limit, 100))
+
     match action:
         case "add":
             return await _handle_add(
@@ -618,7 +617,25 @@ async def config(
             elif key == "sync_interval":
                 settings.sync_interval = int(value)
             elif key == "log_level":
-                settings.log_level = value.upper()
+                level = value.upper()
+                valid_levels = {
+                    "TRACE",
+                    "DEBUG",
+                    "INFO",
+                    "SUCCESS",
+                    "WARNING",
+                    "ERROR",
+                    "CRITICAL",
+                }
+                if level not in valid_levels:
+                    return _json(
+                        {
+                            "error": f"Invalid log level: {value}",
+                            "valid_levels": sorted(valid_levels),
+                        }
+                    )
+
+                settings.log_level = level
                 logger.remove()
                 logger.add(
                     sys.stderr,

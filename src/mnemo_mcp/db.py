@@ -358,8 +358,13 @@ class MemoryDB:
         if tags:
 
             def _has_tags(mem: dict) -> bool:
-                mem_tags = json.loads(mem.get("tags", "[]"))
-                return any(t in mem_tags for t in tags)
+                try:
+                    mem_tags = json.loads(mem.get("tags", "[]"))
+                    if not isinstance(mem_tags, list):
+                        return False
+                    return any(t in mem_tags for t in tags)
+                except (json.JSONDecodeError, TypeError):
+                    return False
 
             results = {k: v for k, v in results.items() if _has_tags(v)}
 
