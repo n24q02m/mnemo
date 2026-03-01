@@ -193,3 +193,14 @@ class TestEmbeddingBackend:
         """Explicit backend takes priority over auto-detection."""
         s = Settings(embedding_backend="litellm", api_keys=None)
         assert s.resolve_embedding_backend() == "litellm"
+
+
+class TestRcloneVersion:
+    def test_default(self):
+        s = Settings(api_keys=None)
+        assert s.rclone_version == "v1.68.2"
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv("RCLONE_VERSION", "v1.99.9")
+        s = Settings(api_keys=None)
+        assert s.rclone_version == "v1.99.9"

@@ -5,11 +5,13 @@ import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import mnemo_mcp.sync
 from mnemo_mcp.sync import (
     _extract_token,
     _get_platform_info,
     _prepare_rclone_env,
     setup_sync,
+    start_auto_sync,
     sync_full,
 )
 
@@ -268,3 +270,72 @@ class TestSetupSync:
             assert expected_b64 in captured.out
             assert "SYNC_ENABLED=true" in captured.out
             assert "auto-decodes base64" in captured.out
+
+
+class TestStartAutoSync:
+    def teardown_method(self):
+        """Ensure _sync_task is reset after each test."""
+        if mnemo_mcp.sync._sync_task and not mnemo_mcp.sync._sync_task.done():
+            mnemo_mcp.sync._sync_task.cancel()
+        mnemo_mcp.sync._sync_task = None
+
+    def test_sync_disabled(self, tmp_db):
+        """Task is not started if sync is disabled."""
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.create_task") as mock_create_task,
+        ):
+            mock_settings.sync_enabled = False
+            start_auto_sync(tmp_db)
+            mock_create_task.assert_not_called()
+
+    def test_invalid_interval(self, tmp_db):
+        """Task is not started if interval is <= 0."""
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.create_task") as mock_create_task,
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.sync_interval = 0
+            start_auto_sync(tmp_db)
+            mock_create_task.assert_not_called()
+
+    def test_already_running(self, tmp_db):
+        """Task is not started if already running."""
+        # Simulate running task
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        mnemo_mcp.sync._sync_task = mock_task
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.create_task") as mock_create_task,
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.sync_interval = 60
+
+            start_auto_sync(tmp_db)
+            mock_create_task.assert_not_called()
+
+    def test_starts_task(self, tmp_db):
+        """Task is started correctly when conditions are met."""
+        mnemo_mcp.sync._sync_task = None
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.create_task") as mock_create_task,
+            patch("mnemo_mcp.sync._auto_sync_loop") as mock_loop,
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.sync_interval = 60
+
+            # Setup create_task to return a dummy task
+            dummy_task = MagicMock()
+            mock_create_task.return_value = dummy_task
+
+            start_auto_sync(tmp_db)
+
+            mock_create_task.assert_called_once()
+            # Verify the global var was set
+            assert mnemo_mcp.sync._sync_task == dummy_task
+            mock_loop.assert_called_once_with(tmp_db)

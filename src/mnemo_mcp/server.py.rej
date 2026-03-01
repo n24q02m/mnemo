@@ -1,0 +1,29 @@
+--- src/mnemo_mcp/server.py
++++ src/mnemo_mcp/server.py
+@@ -59,7 +59,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+             # Explicit model -- validate it
+             try:
+                 backend = init_backend("litellm", embedding_model)
+-                native_dims = backend.check_available()
++                native_dims = await backend.check_available()
+                 if native_dims > 0:
+                     if embedding_dims == 0:
+                         embedding_dims = _DEFAULT_EMBEDDING_DIMS
+@@ -78,7 +78,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+             for candidate in _EMBEDDING_CANDIDATES:
+                 try:
+                     backend = init_backend("litellm", candidate)
+-                    native_dims = backend.check_available()
++                    native_dims = await backend.check_available()
+                     if native_dims > 0:
+                         embedding_model = candidate
+                         if embedding_dims == 0:
+@@ -100,7 +100,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+         local_model = settings.resolve_local_embedding_model()
+         try:
+             backend = init_backend("local", local_model)
+-            native_dims = backend.check_available()
++            native_dims = await backend.check_available()
+             if native_dims > 0:
+                 embedding_model = "__local__"
+                 if embedding_dims == 0:

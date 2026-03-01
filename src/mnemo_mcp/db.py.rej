@@ -1,0 +1,277 @@
+--- src/mnemo_mcp/db.py
++++ src/mnemo_mcp/db.py
+@@ -239,10 +239,37 @@ def search(
+         Returns:
+             List of memory dicts sorted by relevance.
+         """
+-        results: dict[str, dict] = {}
++        # 1. FTS5 search
++        results = self._search_fts(query, category, limit)
++
++        # 2. Vector search (augment or add results)
++        if embedding and self._vec_enabled:
++            self._search_vector(embedding, category, limit, results)
++
++        if not results:
++            return []
++
++        # 3. Tag post-filter
++        if tags:
++            results = self._filter_by_tags(results, tags)
++            if not results:
++                return []
++
++        # 4. Compute hybrid score and sort
++        scored = self._compute_hybrid_scores(results)
++
++        # 5. Update access counts and cleanup
++        top = scored[:limit]
++        if top:
++            self._update_access_stats(top)
++
++        return top
+ 
+-        # 1. FTS5 search with tiered queries + BM25 column weights
+-        # Weights: id(0), content(1), category(0-unindexed), tags(5)
++    def _search_fts(
++        self, query: str, category: str | None, limit: int
++    ) -> dict[str, dict]:
++        """Execute FTS5 search with tiered queries."""
++        results: dict[str, dict] = {}
+         fts_queries = _build_fts_queries(query)
+ 
+         for fts_query in fts_queries:
+@@ -256,7 +283,6 @@ def search(
+                 """
+                 fts_params: list = [fts_query]
+ 
+-                # Category pre-filter in SQL (not post-search)
+                 if category:
+                     fts_sql += " AND m.category = ?"
+                     fts_params.append(category)
+@@ -290,64 +316,71 @@ def search(
+                 elif m["fts_score"] > 0:
+                     m["fts_score"] = 1.0
+ 
+-        # 2. Semantic search (if embedding provided)
+-        if embedding and self._vec_enabled:
+-            try:
+-                vec_sql = """
+-                    SELECT v.id, v.distance
+-                    FROM memories_vec v
+-                    JOIN memories m ON v.id = m.id
+-                    WHERE v.embedding MATCH ?
+-                """
+-                vec_params: list = [_serialize_f32(embedding)]
+-
+-                # Category pre-filter for vector search too
+-                if category:
+-                    vec_sql += " AND m.category = ?"
+-                    vec_params.append(category)
+-
+-                vec_sql += " ORDER BY distance LIMIT ?"
+-                vec_params.append(limit * 3)
+-
+-                vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
+-                for row in vec_rows:
+-                    mid = row["id"]
+-                    vec_score = max(0.0, 1.0 - row["distance"])
+-                    if mid in results:
+-                        results[mid]["vec_score"] = vec_score
+-                    else:
+-                        # Fetch full memory
+-                        mem = self._conn.execute(
+-                            "SELECT * FROM memories WHERE id = ?", (mid,)
+-                        ).fetchone()
+-                        if mem:
+-                            results[mid] = {
+-                                **dict(mem),
+-                                "fts_score": 0.0,
+-                                "vec_score": vec_score,
+-                            }
+-            except Exception as e:
+-                logger.debug(f"Vector search error: {e}")
+-
+-        if not results:
+-            return []
+-
+-        # 3. Tag post-filter (JSON array matching not feasible in SQL)
+-        if tags:
+-
+-            def _has_tags(mem: dict) -> bool:
+-                mem_tags = json.loads(mem.get("tags", "[]"))
+-                return any(t in mem_tags for t in tags)
+-
+-            results = {k: v for k, v in results.items() if _has_tags(v)}
++        return results
+ 
+-        # 4. Compute hybrid score
++    def _search_vector(
++        self,
++        embedding: list[float],
++        category: str | None,
++        limit: int,
++        results: dict[str, dict],
++    ) -> None:
++        """Execute vector search and merge into results."""
++        try:
++            vec_sql = """
++                SELECT v.id, v.distance
++                FROM memories_vec v
++                JOIN memories m ON v.id = m.id
++                WHERE v.embedding MATCH ?
++            """
++            vec_params: list = [_serialize_f32(embedding)]
++
++            if category:
++                vec_sql += " AND m.category = ?"
++                vec_params.append(category)
++
++            vec_sql += " ORDER BY distance LIMIT ?"
++            vec_params.append(limit * 3)
++
++            vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
++            for row in vec_rows:
++                mid = row["id"]
++                vec_score = max(0.0, 1.0 - row["distance"])
++                if mid in results:
++                    results[mid]["vec_score"] = vec_score
++                else:
++                    # Fetch full memory
++                    mem = self._conn.execute(
++                        "SELECT * FROM memories WHERE id = ?", (mid,)
++                    ).fetchone()
++                    if mem:
++                        results[mid] = {
++                            **dict(mem),
++                            "fts_score": 0.0,
++                            "vec_score": vec_score,
++                        }
++        except Exception as e:
++            logger.debug(f"Vector search error: {e}")
++
++    def _filter_by_tags(
++        self, results: dict[str, dict], tags: list[str]
++    ) -> dict[str, dict]:
++        """Filter results by tags (post-search)."""
++        filtered = {}
++        for mid, mem in results.items():
++            mem_tags = json.loads(mem.get("tags", "[]"))
++            if any(t in mem_tags for t in tags):
++                filtered[mid] = mem
++        return filtered
++
++    def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
++        """Compute hybrid scores (RRF or weighted sum) and sort results."""
+         now = datetime.now(UTC)
+         scored = []
+         has_vec = any(m["vec_score"] > 0 for m in results.values())
+ 
+         if has_vec:
+-            # RRF fusion for FTS + vector, plus recency + frequency
++            # RRF fusion
+             k = 60
+             all_ids = list(results.keys())
+             fts_ranked = sorted(
+@@ -364,64 +397,60 @@ def _has_tags(mem: dict) -> bool:
+                 vr = vec_rank.get(mid, len(all_ids))
+                 rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
+ 
+-                # Recency boost (half-life = 7 days)
+-                try:
+-                    updated = datetime.fromisoformat(mem["updated_at"])
+-                    days_old = (now - updated).total_seconds() / 86400
+-                    recency = 2.0 ** (-days_old / 7.0)
+-                except (ValueError, KeyError):
+-                    recency = 0.0
++                # Normalize RRF
++                rrf_norm = rrf * (k + 1) / 2.0
+ 
+-                # Frequency boost (logarithmic)
+-                freq = math.log1p(mem.get("access_count", 0)) / 10.0
+-                freq = min(freq, 1.0)
++                recency = self._calc_recency(mem, now)
++                freq = self._calc_frequency(mem)
+ 
+-                # Normalize RRF to ~0-1 range
+-                rrf_norm = rrf * (k + 1) / 2.0
+                 mem["score"] = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
+                 scored.append(mem)
+         else:
+-            # FTS-only with recency + frequency
++            # FTS-only
+             for mem in results.values():
+                 fts = mem.get("fts_score", 0.0)
+-
+-                try:
+-                    updated = datetime.fromisoformat(mem["updated_at"])
+-                    days_old = (now - updated).total_seconds() / 86400
+-                    recency = 2.0 ** (-days_old / 7.0)
+-                except (ValueError, KeyError):
+-                    recency = 0.0
+-
+-                freq = math.log1p(mem.get("access_count", 0)) / 10.0
+-                freq = min(freq, 1.0)
++                recency = self._calc_recency(mem, now)
++                freq = self._calc_frequency(mem)
+ 
+                 mem["score"] = fts * 0.6 + recency * 0.3 + freq * 0.1
+                 scored.append(mem)
+ 
+-        # Sort by score descending
+         scored.sort(key=lambda m: m["score"], reverse=True)
+ 
+-        # Update access counts for returned results
+-        top = scored[:limit]
+-        if top:
+-            ids = [m["id"] for m in top]
+-            placeholders = ",".join("?" for _ in ids)
+-            self._conn.execute(
+-                f"""UPDATE memories
+-                    SET access_count = access_count + 1,
+-                        last_accessed = ?
+-                    WHERE id IN ({placeholders})""",
+-                [_now_iso(), *ids],
+-            )
+-            self._conn.commit()
+-
+-        # Clean up internal scores from output
+-        for m in top:
++        # Clean up internal scores
++        for m in scored:
+             m.pop("fts_score", None)
+             m.pop("vec_score", None)
+             m.pop("bm25_score", None)
+ 
+-        return top
++        return scored
++
++    def _calc_recency(self, mem: dict, now: datetime) -> float:
++        """Calculate recency score (0.0 to 1.0)."""
++        try:
++            updated = datetime.fromisoformat(mem["updated_at"])
++            days_old = (now - updated).total_seconds() / 86400
++            return 2.0 ** (-days_old / 7.0)
++        except (ValueError, KeyError):
++            return 0.0
++
++    def _calc_frequency(self, mem: dict) -> float:
++        """Calculate frequency score (0.0 to 1.0)."""
++        freq = math.log1p(mem.get("access_count", 0)) / 10.0
++        return min(freq, 1.0)
++
++    def _update_access_stats(self, top_results: list[dict]) -> None:
++        """Update access count and last_accessed for top results."""
++        ids = [m["id"] for m in top_results]
++        placeholders = ",".join("?" for _ in ids)
++        self._conn.execute(
++            f"""UPDATE memories
++                SET access_count = access_count + 1,
++                    last_accessed = ?
++                WHERE id IN ({placeholders})""",
++            [_now_iso(), *ids],
++        )
++        self._conn.commit()
+ 
+     def list_memories(
+         self,

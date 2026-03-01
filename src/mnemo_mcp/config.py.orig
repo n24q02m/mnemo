@@ -80,7 +80,6 @@ class Settings(BaseSettings):
     sync_remote: str = ""  # rclone remote name
     sync_folder: str = "mnemo-mcp"
     sync_interval: int = 0  # seconds, 0 = manual only
-    rclone_version: str = "v1.68.2"
 
     # Logging
     log_level: str = "INFO"
