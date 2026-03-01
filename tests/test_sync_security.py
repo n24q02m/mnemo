@@ -1,76 +1,123 @@
 import hashlib
-import zipfile
-from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
-from mnemo_mcp.sync import _download_rclone
 from mnemo_mcp.config import Settings
+from mnemo_mcp.sync import _download_rclone
 
 
 @pytest.mark.asyncio
-async def test_rclone_download_checksum_success():
-    """Test successful rclone download with valid checksum."""
-    # We need to construct bytes that hash to expected_hash, or mock the checksum dict
-    # Let's mock the checksum dict so we can use arbitrary bytes.
+async def test_download_verification_fails_on_checksum_mismatch():
+    """Verify that _download_rclone fails when SHA256 checksum mismatches."""
+    # Mock content
+    dummy_content = b"fake zip content"
+    # The real code expects a specific hash for linux-amd64.
+    # We guarantee mismatch by using random content.
 
-    # Create a valid zip file content so zipfile extraction works
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zf:
-        zf.writestr("rclone", b"executable bytes")
-    zip_content = zip_buffer.getvalue()
-    zip_hash = hashlib.sha256(zip_content).hexdigest()
-
-    mock_response = AsyncMock()
-    mock_response.content = zip_content
+    # Mock httpx response
+    mock_response = MagicMock()
+    mock_response.content = dummy_content
     mock_response.raise_for_status = MagicMock()
 
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get.return_value = mock_response
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.get.return_value = mock_response
 
-    mock_client_cls = MagicMock()
-    mock_client_cls.return_value.__aenter__.return_value = mock_client_instance
+    # Mock temp file context manager
+    mock_temp = MagicMock()
+    mock_temp_file = MagicMock()
+    mock_temp.return_value.__enter__.return_value = mock_temp_file
+    mock_temp_file.name = "/tmp/fake_rclone.zip"
 
     with (
-        patch("mnemo_mcp.sync.httpx.AsyncClient", mock_client_cls),
+        patch("mnemo_mcp.sync.httpx.AsyncClient", return_value=mock_client),
         patch("mnemo_mcp.sync._get_platform_info", return_value=("linux", "amd64", "")),
-        patch("mnemo_mcp.sync._RCLONE_CHECKSUMS", {"linux-amd64": zip_hash}),
-        patch("mnemo_mcp.sync.Path.mkdir"),
-        patch("mnemo_mcp.sync.Path.chmod"),
-        patch("mnemo_mcp.sync.Path.exists", return_value=False),
-        patch("mnemo_mcp.sync.Path.stat"),
-        patch("mnemo_mcp.sync.Path.write_bytes") as mock_write_bytes,
+        patch("mnemo_mcp.sync.tempfile.NamedTemporaryFile", mock_temp),
+        patch("builtins.open", new_callable=MagicMock) as mock_open,
+        patch("pathlib.Path.unlink") as mock_unlink,
     ):
-        path = await _download_rclone()
-        assert path is not None
-        mock_write_bytes.assert_called_once()
+        # Mock reading the file for checksum calculation
+        # The code does open(tmp_path, "rb")
+        mock_file_handle = MagicMock()
+        mock_file_handle.read.side_effect = [
+            dummy_content,
+            b"",
+        ]  # Return content then EOF
+        mock_open.return_value.__enter__.return_value = mock_file_handle
+
+        # Call the function
+        result = await _download_rclone()
+
+        # Assertions
+        assert result is None, "Should fail (return None) on checksum mismatch"
+        mock_unlink.assert_called_with(missing_ok=True)  # Should delete temp file
 
 
 @pytest.mark.asyncio
-async def test_rclone_download_checksum_mismatch():
-    """Test failed rclone download with invalid checksum."""
+async def test_download_verification_succeeds_with_correct_checksum():
+    """Verify that _download_rclone succeeds when SHA256 checksum matches."""
+    # Mock content
+    dummy_content = b"valid zip content"
+    dummy_hash = hashlib.sha256(dummy_content).hexdigest()
 
-    mock_response = AsyncMock()
-    mock_response.content = b"malicious content"
+    # Mock httpx response
+    mock_response = MagicMock()
+    mock_response.content = dummy_content
     mock_response.raise_for_status = MagicMock()
 
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get.return_value = mock_response
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.get.return_value = mock_response
 
-    mock_client_cls = MagicMock()
-    mock_client_cls.return_value.__aenter__.return_value = mock_client_instance
+    # Mock ZipFile
+    mock_zip_instance = MagicMock()
+    mock_info = MagicMock()
+    mock_info.filename = "rclone"
+    mock_info.is_dir.return_value = False
+    mock_zip_instance.infolist.return_value = [mock_info]
 
+    mock_read_handle = MagicMock()
+    mock_read_handle.read.return_value = b"binary data"
+    mock_zip_instance.open.return_value.__enter__.return_value = mock_read_handle
+
+    mock_zip_cls = MagicMock()
+    mock_zip_cls.return_value.__enter__.return_value = mock_zip_instance
+
+    # Mock _RCLONE_CHECKSUMS to match our dummy content
+    # We patch the dictionary in the module
     with (
-        patch("mnemo_mcp.sync.httpx.AsyncClient", mock_client_cls),
+        patch("mnemo_mcp.sync.httpx.AsyncClient", return_value=mock_client),
         patch("mnemo_mcp.sync._get_platform_info", return_value=("linux", "amd64", "")),
-        patch("mnemo_mcp.sync.Path.mkdir"),
-        patch("mnemo_mcp.sync.Path.exists", return_value=False),
+        patch("mnemo_mcp.sync.zipfile.ZipFile", mock_zip_cls),
+        patch("mnemo_mcp.sync.tempfile.NamedTemporaryFile") as mock_temp,
+        patch("builtins.open", new_callable=MagicMock) as mock_open,
+        patch.dict("mnemo_mcp.sync._RCLONE_CHECKSUMS", {"linux-amd64": dummy_hash}),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.chmod"),
+        patch("pathlib.Path.exists", return_value=False),
+        patch("pathlib.Path.write_bytes"),
+        patch("pathlib.Path.stat"),
     ):
-        path = await _download_rclone()
-        # The function catches exceptions and logs error, returns None on failure
-        assert path is None
+        # Mock temp file
+        mock_temp_file = MagicMock()
+        mock_temp.return_value.__enter__.return_value = mock_temp_file
+        mock_temp_file.name = "/tmp/fake_rclone.zip"
+
+        # Mock reading file for checksum
+        mock_file_handle = MagicMock()
+        mock_file_handle.read.side_effect = [dummy_content, b""]
+        mock_open.return_value.__enter__.return_value = mock_file_handle
+
+        # Call function
+        result = await _download_rclone()
+
+        assert result is not None
+        assert result.name == "rclone"
+
 
 def test_sync_remote_valid():
     """Valid sync_remote values should be accepted."""

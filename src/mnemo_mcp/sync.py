@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import platform
@@ -141,25 +142,33 @@ async def _download_rclone() -> Path | None:
             response = await client.get(url, timeout=120.0)
             response.raise_for_status()
 
-            # Verify checksum
-            content_hash = hashlib.sha256(response.content).hexdigest()
-            expected_hash = _RCLONE_CHECKSUMS.get(f"{os_name}-{arch}")
-            if expected_hash:
-                if content_hash != expected_hash:
-                    raise ValueError(
-                        f"Checksum mismatch for {archive_name}. "
-                        f"Expected {expected_hash}, got {content_hash}."
-                    )
-            else:
-                logger.warning(
-                    f"No checksum available for {os_name}-{arch}. "
-                    f"Proceeding without verification."
-                )
-
             # Write to temp file
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
                 tmp.write(response.content)
                 tmp_path = Path(tmp.name)
+
+        # Verify SHA256 checksum
+        expected_hash = _RCLONE_CHECKSUMS.get(f"{os_name}-{arch}")
+        if expected_hash:
+            sha256 = hashlib.sha256()
+            with open(tmp_path, "rb") as f:
+                while chunk := f.read(8192):
+                    sha256.update(chunk)
+            file_hash = sha256.hexdigest()
+
+            if file_hash != expected_hash:
+                tmp_path.unlink(missing_ok=True)
+                logger.error(
+                    f"Checksum mismatch for rclone download!\n"
+                    f"Expected: {expected_hash}\n"
+                    f"Got:      {file_hash}"
+                )
+                raise ValueError("SHA256 checksum verification failed")
+        else:
+            logger.warning(
+                f"No checksum found for platform {os_name}-{arch}. "
+                "Skipping verification."
+            )
 
         # Extract rclone binary from zip
         with zipfile.ZipFile(tmp_path, "r") as zf:
