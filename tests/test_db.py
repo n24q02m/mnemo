@@ -9,10 +9,10 @@ from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB, _build_fts_queries
 
 
 class TestAdd:
-    def test_returns_12char_hex_id(self, tmp_db: MemoryDB):
+    def test_returns_32char_hex_id(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test content")
         assert isinstance(mid, str)
-        assert len(mid) == 12
+        assert len(mid) == 32
         int(mid, 16)  # Should parse as hex
 
     def test_default_category(self, tmp_db: MemoryDB):

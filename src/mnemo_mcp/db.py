@@ -198,7 +198,7 @@ class MemoryDB:
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
 
-        memory_id = uuid.uuid4().hex[:12]
+        memory_id = uuid.uuid4().hex
         now = _now_iso()
         tags_json = json.dumps(tags or [])
 
@@ -612,18 +612,35 @@ class MemoryDB:
         skipped = 0
         rejected = 0
 
-        lines = [line.strip() for line in data.strip().split("\n") if line.strip()]
+        if isinstance(data, list):
+            iterator = data
+        elif isinstance(data, dict):
+            iterator = [data]
+        elif isinstance(data, str):
+            iterator = []
+            for line in data.strip().split("\n"):
+                line = line.strip()
+                if line:
+                    try:
+                        import json
+
+                        iterator.append(json.loads(line))
+                    except Exception:
+                        rejected += 1
+        else:
+            iterator = []
+
+        lines = iterator
         BATCH_SIZE = 900
 
         for i in range(0, len(lines), BATCH_SIZE):
-            batch_lines = lines[i : i + BATCH_SIZE]
+            batch_items = lines[i : i + BATCH_SIZE]
             parsed_batch = []
 
-            # Parse and validate batch
-            for line in batch_lines:
+            # Validate batch
+            for mem in batch_items:
                 try:
-                    mem = json.loads(line)
-                    memory_id = mem.get("id", uuid.uuid4().hex[:12])
+                    memory_id = mem.get("id", uuid.uuid4().hex)
                     content = mem.get("content", "")
 
                     if len(content) > MAX_CONTENT_LENGTH:
@@ -635,31 +652,17 @@ class MemoryDB:
                         continue
 
                     parsed_batch.append((memory_id, mem, content))
-                except json.JSONDecodeError:
+                except Exception:
                     rejected += 1
                     continue
 
             if not parsed_batch:
                 continue
 
-            existing_ids = set()
-            if mode == "merge":
-                # Batch existence check
-                batch_ids = [item[0] for item in parsed_batch]
-                placeholders = ",".join("?" for _ in batch_ids)
-                rows = self._conn.execute(
-                    f"SELECT id FROM memories WHERE id IN ({placeholders})", batch_ids
-                ).fetchall()
-                existing_ids = {row[0] for row in rows}
-
             to_insert = []
             now = _now_iso()
 
             for memory_id, mem, content in parsed_batch:
-                if memory_id in existing_ids:
-                    skipped += 1
-                    continue
-
                 tags = mem.get("tags", [])
                 if isinstance(tags, list):
                     tags_json = json.dumps(tags)
@@ -679,16 +682,29 @@ class MemoryDB:
                         mem.get("last_accessed", now),
                     )
                 )
-                imported += 1
 
             if to_insert:
-                self._conn.executemany(
-                    """INSERT OR REPLACE INTO memories
-                       (id, content, category, tags, source,
-                        created_at, updated_at, access_count, last_accessed)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    to_insert,
-                )
+                cursor = self._conn.cursor()
+                if mode == "replace":
+                    cursor.executemany(
+                        """INSERT OR REPLACE INTO memories
+                           (id, content, category, tags, source,
+                            created_at, updated_at, access_count, last_accessed)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        to_insert,
+                    )
+                    imported += len(to_insert)
+                else:
+                    cursor.executemany(
+                        """INSERT OR IGNORE INTO memories
+                           (id, content, category, tags, source,
+                            created_at, updated_at, access_count, last_accessed)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        to_insert,
+                    )
+                    inserted_batch = cursor.rowcount
+                    imported += inserted_batch
+                    skipped += len(to_insert) - inserted_batch
 
         self._conn.commit()
         if imported > 0:

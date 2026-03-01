@@ -598,8 +598,6 @@ async def config(
 
             valid_keys = {
                 "sync_enabled",
-                "sync_remote",
-                "sync_folder",
                 "sync_interval",
                 "log_level",
             }
