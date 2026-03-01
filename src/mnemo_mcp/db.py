@@ -261,6 +261,12 @@ class MemoryDB:
                     fts_sql += " AND m.category = ?"
                     fts_params.append(category)
 
+                # Tag pre-filter in SQL
+                if tags:
+                    tag_placeholders = ",".join("?" for _ in tags)
+                    fts_sql += f" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
+                    fts_params.extend(tags)
+
                 fts_sql += " ORDER BY bm25_score LIMIT ?"
                 fts_params.append(limit * 3)
 
@@ -305,6 +311,12 @@ class MemoryDB:
                 if category:
                     vec_sql += " AND m.category = ?"
                     vec_params.append(category)
+
+                # Tag pre-filter in SQL
+                if tags:
+                    tag_placeholders = ",".join("?" for _ in tags)
+                    vec_sql += f" AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
+                    vec_params.extend(tags)
 
                 vec_sql += " ORDER BY distance LIMIT ?"
                 vec_params.append(limit * 3)

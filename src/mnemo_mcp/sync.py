@@ -41,7 +41,6 @@ from mnemo_mcp.config import settings
 if TYPE_CHECKING:
     from mnemo_mcp.db import MemoryDB
 
-import hashlib
 
 # Rclone version to download
 _RCLONE_VERSION = "v1.68.2"
