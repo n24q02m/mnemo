@@ -1,8 +1,10 @@
 """Configuration settings for Mnemo MCP Server."""
 
 import os
+import re
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -82,7 +84,25 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
-    model_config = {"env_prefix": "", "case_sensitive": False}
+    model_config = {
+        "env_prefix": "",
+        "case_sensitive": False,
+        "validate_assignment": True,
+    }
+
+    @field_validator("sync_remote")
+    @classmethod
+    def validate_sync_remote(cls, v: str) -> str:
+        """Validate sync_remote to prevent argument injection."""
+        if not v:
+            return v
+        if v.startswith("-"):
+            raise ValueError("sync_remote must not start with a hyphen (-)")
+        if not re.match(r"^[a-zA-Z0-9_.-]*$", v):
+            raise ValueError(
+                "sync_remote can only contain alphanumeric characters, dashes, underscores, and dots"
+            )
+        return v
 
     def get_db_path(self) -> Path:
         """Get resolved database path."""

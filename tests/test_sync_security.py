@@ -4,8 +4,10 @@ from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mnemo_mcp.sync import _download_rclone
+from mnemo_mcp.config import Settings
 
 
 @pytest.mark.asyncio
@@ -69,3 +71,53 @@ async def test_rclone_download_checksum_mismatch():
         path = await _download_rclone()
         # The function catches exceptions and logs error, returns None on failure
         assert path is None
+
+def test_sync_remote_valid():
+    """Valid sync_remote values should be accepted."""
+    s = Settings(sync_remote="my-gdrive_1.2")
+    assert s.sync_remote == "my-gdrive_1.2"
+
+    s = Settings(sync_remote="")
+    assert s.sync_remote == ""
+
+    s.sync_remote = "another.valid-remote_name"
+    assert s.sync_remote == "another.valid-remote_name"
+
+
+def test_sync_remote_invalid_characters():
+    """Invalid characters should be rejected to prevent injection."""
+    invalid_remotes = [
+        "my gdrive",
+        "my;gdrive",
+        "my&gdrive",
+        "my|gdrive",
+        "my`gdrive",
+        "my$gdrive",
+        "my(gdrive",
+        "my)gdrive",
+        "my<gdrive",
+        "my>gdrive",
+    ]
+    for remote in invalid_remotes:
+        with pytest.raises(ValidationError, match="can only contain alphanumeric"):
+            Settings(sync_remote=remote)
+
+        s = Settings()
+        with pytest.raises(ValidationError, match="can only contain alphanumeric"):
+            s.sync_remote = remote
+
+
+def test_sync_remote_starts_with_hyphen():
+    """sync_remote starting with hyphen should be rejected to prevent argument injection."""
+    with pytest.raises(ValidationError, match="must not start with a hyphen"):
+        Settings(sync_remote="-my-gdrive")
+
+    with pytest.raises(ValidationError, match="must not start with a hyphen"):
+        Settings(sync_remote="--config")
+
+    s = Settings()
+    with pytest.raises(ValidationError, match="must not start with a hyphen"):
+        s.sync_remote = "-my-gdrive"
+
+    with pytest.raises(ValidationError, match="must not start with a hyphen"):
+        s.sync_remote = "--config"
