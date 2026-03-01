@@ -589,56 +589,83 @@ class MemoryDB:
         skipped = 0
         rejected = 0
 
-        for line in data.strip().split("\n"):
-            line = line.strip()
-            if not line:
+        lines = [line.strip() for line in data.strip().split("\n") if line.strip()]
+        BATCH_SIZE = 900
+
+        for i in range(0, len(lines), BATCH_SIZE):
+            batch_lines = lines[i : i + BATCH_SIZE]
+            parsed_batch = []
+
+            # Parse and validate batch
+            for line in batch_lines:
+                try:
+                    mem = json.loads(line)
+                    memory_id = mem.get("id", uuid.uuid4().hex[:12])
+                    content = mem.get("content", "")
+
+                    if len(content) > MAX_CONTENT_LENGTH:
+                        logger.warning(
+                            f"[AUDIT] import rejected id={memory_id} "
+                            f"len={len(content)} exceeds {MAX_CONTENT_LENGTH}"
+                        )
+                        rejected += 1
+                        continue
+
+                    parsed_batch.append((memory_id, mem, content))
+                except json.JSONDecodeError:
+                    rejected += 1
+                    continue
+
+            if not parsed_batch:
                 continue
 
-            mem = json.loads(line)
-            memory_id = mem.get("id", uuid.uuid4().hex[:12])
-
-            # Content length validation (memory poisoning prevention)
-            content = mem.get("content", "")
-            if len(content) > MAX_CONTENT_LENGTH:
-                logger.warning(
-                    f"[AUDIT] import rejected id={memory_id} "
-                    f"len={len(content)} exceeds {MAX_CONTENT_LENGTH}"
-                )
-                rejected += 1
-                continue
-
-            # Check if exists (for merge mode)
+            existing_ids = set()
             if mode == "merge":
-                existing = self.get(memory_id)
-                if existing:
+                # Batch existence check
+                batch_ids = [item[0] for item in parsed_batch]
+                placeholders = ",".join("?" for _ in batch_ids)
+                rows = self._conn.execute(
+                    f"SELECT id FROM memories WHERE id IN ({placeholders})", batch_ids
+                ).fetchall()
+                existing_ids = {row[0] for row in rows}
+
+            to_insert = []
+            now = _now_iso()
+
+            for memory_id, mem, content in parsed_batch:
+                if memory_id in existing_ids:
                     skipped += 1
                     continue
 
-            tags = mem.get("tags", [])
-            if isinstance(tags, list):
-                tags_json = json.dumps(tags)
-            else:
-                tags_json = tags
+                tags = mem.get("tags", [])
+                if isinstance(tags, list):
+                    tags_json = json.dumps(tags)
+                else:
+                    tags_json = tags
 
-            now = _now_iso()
-            self._conn.execute(
-                """INSERT OR REPLACE INTO memories
-                   (id, content, category, tags, source,
-                    created_at, updated_at, access_count, last_accessed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    memory_id,
-                    content,
-                    mem.get("category", "general"),
-                    tags_json,
-                    mem.get("source"),
-                    mem.get("created_at", now),
-                    mem.get("updated_at", now),
-                    mem.get("access_count", 0),
-                    mem.get("last_accessed", now),
-                ),
-            )
-            imported += 1
+                to_insert.append(
+                    (
+                        memory_id,
+                        content,
+                        mem.get("category", "general"),
+                        tags_json,
+                        mem.get("source"),
+                        mem.get("created_at", now),
+                        mem.get("updated_at", now),
+                        mem.get("access_count", 0),
+                        mem.get("last_accessed", now),
+                    )
+                )
+                imported += 1
+
+            if to_insert:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO memories
+                       (id, content, category, tags, source,
+                        created_at, updated_at, access_count, last_accessed)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    to_insert,
+                )
 
         self._conn.commit()
         if imported > 0:
