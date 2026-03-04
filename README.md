@@ -273,6 +273,12 @@ uv run ty check src/
 uv run pytest
 ```
 
+## Related Projects
+
+- **[modalcom-ai-workers](https://github.com/n24q02m/modalcom-ai-workers)** — GPU-accelerated AI workers on Modal.com (embedding, reranking)
+- **[wet-mcp](https://github.com/n24q02m/wet-mcp)** — MCP web search server with embedded SearXNG and docs search
+- **[qwen3-embed](https://github.com/n24q02m/qwen3-embed)** — Local embedding/reranking library used by mnemo-mcp
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md)
