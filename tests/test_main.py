@@ -271,6 +271,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_model.return_value = "gemini/model"
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 3072
@@ -281,7 +282,7 @@ class TestWarmupInitEmbeddingBackend:
             "embedding_dims": 768,
         }
 
-        await _init_embedding_backend({"GEMINI_API_KEY": "key"}, ctx)
+        await _init_embedding_backend("sdk", ctx)
 
         assert ctx["embedding_model"] == "gemini/model"
         assert ctx["embedding_dims"] == 768  # DEFAULT_EMBEDDING_DIMS
@@ -301,6 +302,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_model.return_value = None
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         # First candidate fails, second succeeds
         backend_fail = MagicMock()
@@ -311,7 +313,7 @@ class TestWarmupInitEmbeddingBackend:
 
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
 
-        await _init_embedding_backend({"KEY": "val"}, ctx)
+        await _init_embedding_backend("sdk", ctx)
 
         assert ctx["embedding_model"] is not None
         assert ctx["embedding_dims"] == 768
@@ -332,6 +334,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
         mock_settings.resolve_local_embedding_model.return_value = "local/model"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         # Cloud fails, local succeeds
         cloud_backend = MagicMock()
@@ -342,7 +345,7 @@ class TestWarmupInitEmbeddingBackend:
 
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
 
-        await _init_embedding_backend({"KEY": "val"}, ctx)
+        await _init_embedding_backend("sdk", ctx)
 
         assert ctx["embedding_model"] == "__local__"
 
@@ -360,6 +363,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 1024
@@ -367,7 +371,7 @@ class TestWarmupInitEmbeddingBackend:
 
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
 
-        await _init_embedding_backend({}, ctx)
+        await _init_embedding_backend("local", ctx)
 
         mock_init.assert_called_once_with("local", "local/m")
         assert ctx["embedding_model"] == "__local__"
@@ -388,6 +392,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.side_effect = Exception("import error")
@@ -395,6 +400,6 @@ class TestWarmupInitEmbeddingBackend:
 
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
 
-        await _init_embedding_backend({}, ctx)
+        await _init_embedding_backend("local", ctx)
 
         assert ctx["embedding_model"] is None

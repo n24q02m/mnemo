@@ -4,6 +4,7 @@ import os
 import re
 from pathlib import Path
 
+from loguru import logger
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -52,6 +53,10 @@ class Settings(BaseSettings):
         Format: "ENV_VAR:key,ENV_VAR:key,..."
         Example: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
         Embedding providers: Google, OpenAI, Cohere
+    - LITELLM_PROXY_URL: LiteLLM Proxy URL (e.g. http://10.0.0.20:4000)
+    - LITELLM_PROXY_KEY: LiteLLM Proxy virtual key
+    - EMBEDDING_API_BASE: Custom embedding endpoint URL (e.g. Modal workers)
+    - EMBEDDING_API_KEY: API key for custom embedding endpoint
     - EMBEDDING_MODEL: LiteLLM embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "litellm" | "local" (auto: API_KEYS -> litellm, else local)
@@ -67,6 +72,14 @@ class Settings(BaseSettings):
 
     # LLM API Keys: "ENV_VAR:key,ENV_VAR:key,..."
     api_keys: str | None = None
+
+    # LiteLLM Proxy (selfhosted gateway)
+    litellm_proxy_url: str = ""  # e.g. http://10.0.0.20:4000
+    litellm_proxy_key: str = ""
+
+    # Custom endpoint (e.g. modalcom-ai-workers on Modal.com)
+    embedding_api_base: str = ""  # e.g. https://workspace--embedding-serve.modal.run
+    embedding_api_key: str = ""
 
     # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
     embedding_model: str = ""
@@ -161,6 +174,45 @@ class Settings(BaseSettings):
 
         return keys_by_env
 
+    def resolve_litellm_mode(self) -> str:
+        """Detect LiteLLM mode: 'proxy', 'sdk', or 'local'."""
+        if self.litellm_proxy_url:
+            return "proxy"
+        if self.api_keys or self.embedding_api_base:
+            return "sdk"
+        return "local"
+
+    def setup_litellm(self) -> str:
+        """One-time LiteLLM configuration. Call once during lifespan startup.
+
+        Returns mode string: 'proxy', 'sdk', or 'local'.
+        """
+        mode = self.resolve_litellm_mode()
+
+        if mode == "proxy":
+            import litellm
+
+            os.environ["LITELLM_PROXY_API_BASE"] = self.litellm_proxy_url
+            os.environ["LITELLM_PROXY_API_KEY"] = self.litellm_proxy_key
+            litellm.use_litellm_proxy = True
+            logger.info(f"LiteLLM Proxy mode: {self.litellm_proxy_url}")
+        elif mode == "sdk":
+            self.setup_api_keys()
+            logger.info("LiteLLM SDK direct mode")
+        else:
+            logger.info("Local mode (no LiteLLM)")
+
+        return mode
+
+    def get_embedding_litellm_kwargs(self) -> dict:
+        """Get extra kwargs for litellm embedding calls (api_base, api_key for Mode 2b)."""
+        kwargs: dict = {}
+        if self.embedding_api_base:
+            kwargs["api_base"] = self.embedding_api_base
+        if self.embedding_api_key:
+            kwargs["api_key"] = self.embedding_api_key
+        return kwargs
+
     def resolve_embedding_model(self) -> str | None:
         """Return explicit EMBEDDING_MODEL or None for auto-detect."""
         if self.embedding_model:
@@ -185,12 +237,13 @@ class Settings(BaseSettings):
 
         Auto-detect order:
         1. Explicit EMBEDDING_BACKEND setting
-        2. 'litellm' if API keys are configured
+        2. 'litellm' if in proxy/sdk mode (API keys or proxy configured)
         3. 'local' (qwen3-embed built-in, always available)
         """
         if self.embedding_backend:
             return self.embedding_backend
-        if self.api_keys:
+        mode = self.resolve_litellm_mode()
+        if mode in ("proxy", "sdk"):
             return "litellm"
         return "local"
 

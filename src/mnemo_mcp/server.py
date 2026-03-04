@@ -39,7 +39,7 @@ _DEFAULT_EMBEDDING_DIMS = 768
 
 
 async def _init_embedding_backend(
-    keys: dict,
+    mode: str,
     ctx: dict,
 ) -> None:
     """Initialize embedding backend in background.
@@ -56,13 +56,14 @@ async def _init_embedding_backend(
     embedding_model = settings.resolve_embedding_model()
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
+    litellm_kwargs = settings.get_embedding_litellm_kwargs()
 
     if embedding_backend_type == "litellm":
         if embedding_model:
             # Explicit model -- validate it
             try:
                 backend = await asyncio.to_thread(
-                    init_backend, "litellm", embedding_model
+                    init_backend, "litellm", embedding_model, **litellm_kwargs
                 )
                 native_dims = await asyncio.to_thread(backend.check_available)
                 if native_dims > 0:
@@ -81,12 +82,12 @@ async def _init_embedding_backend(
             except Exception as e:
                 logger.warning(f"Embedding model {embedding_model} not available: {e}")
                 embedding_model = None
-        elif keys:
+        elif mode in ("proxy", "sdk"):
             # Auto-detect: try candidate models
             for candidate in _EMBEDDING_CANDIDATES:
                 try:
                     backend = await asyncio.to_thread(
-                        init_backend, "litellm", candidate
+                        init_backend, "litellm", candidate, **litellm_kwargs
                     )
                     native_dims = await asyncio.to_thread(backend.check_available)
                     if native_dims > 0:
@@ -135,10 +136,8 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     connections immediately. Tools gracefully degrade to FTS5-only search
     until the embedding model is ready.
     """
-    # 1. Setup API keys (+ aliases like GOOGLE_API_KEY -> GEMINI_API_KEY)
-    keys = settings.setup_api_keys()
-    if keys:
-        logger.info(f"API keys configured: {', '.join(keys.keys())}")
+    # 1. Setup LiteLLM mode (proxy/sdk/local)
+    mode = settings.setup_litellm()
 
     # 2. Resolve initial embedding dims (may be refined by background task)
     embedding_dims = settings.resolve_embedding_dims()
@@ -175,7 +174,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     # 5. Initialize embedding backend in background (non-blocking).
     # This avoids blocking the server start on model download (~570 MB)
     # or cloud API validation. Tools degrade to FTS5-only until ready.
-    embedding_task = asyncio.create_task(_init_embedding_backend(keys, ctx))
+    embedding_task = asyncio.create_task(_init_embedding_backend(mode, ctx))
 
     try:
         yield ctx
