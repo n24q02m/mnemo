@@ -3,7 +3,7 @@
 **Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
-[![Codecov](https://img.shields.io/codecov/c/github/n24q02m/mnemo-mcp?logo=codecov&logoColor=white)](https://codecov.io/gh/n24q02m/mnemo-mcp)
+[![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
 [![Docker](https://img.shields.io/docker/v/n24q02m/mnemo-mcp?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/mnemo-mcp)
 [![License: MIT](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
