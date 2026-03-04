@@ -124,7 +124,11 @@ Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
-| `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search |
+| `LITELLM_PROXY_URL` | — | LiteLLM Proxy URL (e.g. `http://10.0.0.20:4000`). Enables proxy mode |
+| `LITELLM_PROXY_KEY` | — | LiteLLM Proxy virtual key (e.g. `sk-...`) |
+| `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search (SDK mode) |
+| `EMBEDDING_API_BASE` | — | Custom embedding endpoint URL (optional, for SDK mode) |
+| `EMBEDDING_API_KEY` | — | Custom embedding endpoint key (optional) |
 | `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local (always available) |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
@@ -134,11 +138,38 @@ Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both 
 | `SYNC_INTERVAL` | `0` | Auto-sync seconds (optional, 0=manual) |
 | `LOG_LEVEL` | `INFO` | Log level (optional) |
 
-### Embedding
+### Embedding (3-Mode Architecture)
 
 Embedding is **always available** — a local model is built-in and requires no configuration.
 
-- **Default**: Local Qwen3-Embedding-0.6B. Set `API_KEYS` to upgrade to cloud (Gemini > OpenAI > Cohere), with automatic local fallback if cloud fails.
+Embedding access supports 3 modes, resolved by priority:
+
+| Priority | Mode | Config | Use case |
+|:---------|:-----|:-------|:---------|
+| 1 | **Proxy** | `LITELLM_PROXY_URL` + `LITELLM_PROXY_KEY` | Production (OCI VM, selfhosted gateway) |
+| 2 | **SDK** | `API_KEYS` or `EMBEDDING_API_BASE` | Dev/local with direct API access |
+| 3 | **Local** | Nothing needed | Offline, always available as fallback |
+
+No cross-mode fallback — if proxy is configured but unreachable, calls fail (no silent fallback to direct API).
+
+**Proxy mode** (recommended for production):
+```bash
+LITELLM_PROXY_URL=http://10.0.0.20:4000
+LITELLM_PROXY_KEY=sk-your-virtual-key
+```
+
+**SDK mode** (direct API):
+```bash
+API_KEYS=GOOGLE_API_KEY:AIza...
+```
+
+**Custom endpoints** (e.g. modalcom-ai-workers on Modal.com):
+```bash
+EMBEDDING_API_BASE=https://your-worker.modal.run
+EMBEDDING_API_KEY=your-key
+```
+
+- **Local mode**: Qwen3-Embedding-0.6B, always available with zero config.
 - **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF model (~480MB) instead of ONNX (~570MB) for better performance.
 - All embeddings stored at **768 dims** (default). Switching providers never breaks the vector table.
 - Override with `EMBEDDING_BACKEND=local` to force local even with API keys.
