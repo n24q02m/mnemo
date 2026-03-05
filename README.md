@@ -152,21 +152,22 @@ Embedding access supports 3 modes, resolved by priority:
 
 No cross-mode fallback — if proxy is configured but unreachable, calls fail (no silent fallback to direct API).
 
-**Proxy mode** (recommended for production):
-```bash
-LITELLM_PROXY_URL=http://10.0.0.20:4000
-LITELLM_PROXY_KEY=sk-your-virtual-key
-```
+```jsonc
+// In your MCP client config (Claude Desktop, Cursor, etc.):
+"env": {
+  // === Mode 1: Proxy (production) ===
+  "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
+  "LITELLM_PROXY_KEY": "sk-your-virtual-key",
 
-**SDK mode** (direct API):
-```bash
-API_KEYS=GOOGLE_API_KEY:AIza...
-```
+  // === Mode 2: SDK (direct API) ===
+  "API_KEYS": "GOOGLE_API_KEY:AIza...",
 
-**Custom endpoints** (e.g. modalcom-ai-workers on Modal.com):
-```bash
-EMBEDDING_API_BASE=https://your-worker.modal.run
-EMBEDDING_API_KEY=your-key
+  // === Mode 2: SDK (custom endpoint, e.g. modalcom-ai-workers) ===
+  "EMBEDDING_API_BASE": "https://your-worker.modal.run",
+  "EMBEDDING_API_KEY": "your-key"
+
+  // === Mode 3: Local — no env needed, always available ===
+}
 ```
 
 - **Local mode**: Qwen3-Embedding-0.6B, always available with zero config.
@@ -276,7 +277,6 @@ uv run pytest
 ## Related Projects
 
 - **[modalcom-ai-workers](https://github.com/n24q02m/modalcom-ai-workers)** — GPU-accelerated AI workers on Modal.com (embedding, reranking)
-- **[wet-mcp](https://github.com/n24q02m/wet-mcp)** — MCP web search server with embedded SearXNG and docs search
 - **[qwen3-embed](https://github.com/n24q02m/qwen3-embed)** — Local embedding/reranking library used by mnemo-mcp
 
 ## Contributing
