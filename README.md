@@ -42,10 +42,16 @@ uvx mnemo-mcp@latest
       "command": "uvx",
       "args": ["mnemo-mcp@latest"],
       "env": {
+        // -- optional: LiteLLM Proxy (production, selfhosted gateway)
+        // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
+        // "LITELLM_PROXY_KEY": "sk-your-virtual-key",
         // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
         // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
         // -- first run downloads ~570MB model, cached for subsequent runs
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
+        // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
+        // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
         "SYNC_ENABLED": "true",                    // optional, default: false
         "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
@@ -69,7 +75,11 @@ uvx mnemo-mcp@latest
         "run", "-i", "--rm",
         "--name", "mcp-mnemo",
         "-v", "mnemo-data:/data",                  // persists memories across restarts
+        "-e", "LITELLM_PROXY_URL",                 // optional: pass-through from env below
+        "-e", "LITELLM_PROXY_KEY",                 // optional: pass-through from env below
         "-e", "API_KEYS",                          // optional: pass-through from env below
+        "-e", "EMBEDDING_API_BASE",                // optional: pass-through from env below
+        "-e", "EMBEDDING_API_KEY",                 // optional: pass-through from env below
         "-e", "SYNC_ENABLED",                      // optional: pass-through from env below
         "-e", "SYNC_REMOTE",                       // required when SYNC_ENABLED=true: pass-through
         "-e", "SYNC_INTERVAL",                     // optional: pass-through from env below
@@ -78,9 +88,15 @@ uvx mnemo-mcp@latest
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
+        // -- optional: LiteLLM Proxy (production, selfhosted gateway)
+        // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
+        // "LITELLM_PROXY_KEY": "sk-your-virtual-key",
         // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
         // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
         "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
+        // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
+        // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
         "SYNC_ENABLED": "true",                    // optional, default: false
         "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
@@ -151,24 +167,6 @@ Embedding access supports 3 modes, resolved by priority:
 | 3 | **Local** | Nothing needed | Offline, always available as fallback |
 
 No cross-mode fallback — if proxy is configured but unreachable, calls fail (no silent fallback to direct API).
-
-```jsonc
-// In your MCP client config (Claude Desktop, Cursor, etc.):
-"env": {
-  // === Mode 1: Proxy (production) ===
-  "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
-  "LITELLM_PROXY_KEY": "sk-your-virtual-key",
-
-  // === Mode 2: SDK (direct API) ===
-  "API_KEYS": "GOOGLE_API_KEY:AIza...",
-
-  // === Mode 2: SDK (custom endpoint, e.g. modalcom-ai-workers) ===
-  "EMBEDDING_API_BASE": "https://your-worker.modal.run",
-  "EMBEDDING_API_KEY": "your-key"
-
-  // === Mode 3: Local — no env needed, always available ===
-}
-```
 
 - **Local mode**: Qwen3-Embedding-0.6B, always available with zero config.
 - **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF model (~480MB) instead of ONNX (~570MB) for better performance.
