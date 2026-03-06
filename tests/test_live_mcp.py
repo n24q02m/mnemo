@@ -20,7 +20,6 @@ import tempfile
 from mcp import StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -94,7 +93,10 @@ async def run_tests():
                     ok("listResources", f"uris={resource_uris}")
                 elif len(resource_uris) >= 0:
                     # Some FastMCP versions may not expose resources via list
-                    ok("listResources", f"uris={resource_uris} (may be empty in some versions)")
+                    ok(
+                        "listResources",
+                        f"uris={resource_uris} (may be empty in some versions)",
+                    )
             except Exception as e:
                 ok("listResources", f"Not supported: {str(e)[:60]}")
 
@@ -137,7 +139,11 @@ async def run_tests():
                     "config", {"action": "set", "key": "log_level", "value": "DEBUG"}
                 )
                 t = parse(r)
-                if "updated" in t.lower() or "set" in t.lower() or "log_level" in t.lower():
+                if (
+                    "updated" in t.lower()
+                    or "set" in t.lower()
+                    or "log_level" in t.lower()
+                ):
                     ok("config.set(log_level=DEBUG)", t[:80])
                 else:
                     fail("config.set(log_level=DEBUG)", t[:80])
@@ -280,7 +286,11 @@ async def run_tests():
                     },
                 )
                 t = parse(r)
-                if "import" in t.lower() or "merge" in t.lower() or "success" in t.lower():
+                if (
+                    "import" in t.lower()
+                    or "merge" in t.lower()
+                    or "success" in t.lower()
+                ):
                     ok("memory.import", t[:80])
                 else:
                     fail("memory.import", t[:80])
@@ -318,7 +328,11 @@ async def run_tests():
             try:
                 r = await session.call_tool("memory", {"action": "invalid_action"})
                 t = parse(r)
-                if "error" in t.lower() or "unknown" in t.lower() or "invalid" in t.lower():
+                if (
+                    "error" in t.lower()
+                    or "unknown" in t.lower()
+                    or "invalid" in t.lower()
+                ):
                     ok("memory(invalid action)", t[:80])
                 else:
                     fail("memory(invalid action)", f"No error: {t[:60]}")
@@ -329,7 +343,11 @@ async def run_tests():
             try:
                 r = await session.call_tool("memory", {"action": "add"})
                 t = parse(r)
-                if "error" in t.lower() or "content" in t.lower() or "required" in t.lower():
+                if (
+                    "error" in t.lower()
+                    or "content" in t.lower()
+                    or "required" in t.lower()
+                ):
                     ok("memory.add(no content)", t[:80])
                 else:
                     fail("memory.add(no content)", f"No error: {t[:60]}")
@@ -342,7 +360,11 @@ async def run_tests():
                     "config", {"action": "set", "key": "invalid_key", "value": "x"}
                 )
                 t = parse(r)
-                if "error" in t.lower() or "invalid" in t.lower() or "valid" in t.lower():
+                if (
+                    "error" in t.lower()
+                    or "invalid" in t.lower()
+                    or "valid" in t.lower()
+                ):
                     ok("config.set(invalid key)", t[:80])
                 else:
                     fail("config.set(invalid key)", f"No error: {t[:60]}")
@@ -403,7 +425,11 @@ async def run_tests():
                 )
                 t = parse(r)
                 # Should either save or reject gracefully
-                if "error" in t.lower() or "limit" in t.lower() or "saved" in json.loads(t).get("status", ""):
+                if (
+                    "error" in t.lower()
+                    or "limit" in t.lower()
+                    or "saved" in json.loads(t).get("status", "")
+                ):
                     ok("memory.add(100K chars)", f"Handled: {t[:60]}")
                 else:
                     fail("memory.add(100K chars)", t[:60])
@@ -417,9 +443,9 @@ async def run_tests():
 
     # ===== SUMMARY =====
     total = passed + failed
-    print(f"\n{'='*60}")
-    print(f"RESULT: {passed}/{total} PASS ({100*passed/total:.1f}%)")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print(f"RESULT: {passed}/{total} PASS ({100 * passed / total:.1f}%)")
+    print(f"{'=' * 60}")
 
     if failed > 0:
         print("\nFailed tests:")
