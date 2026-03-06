@@ -24,6 +24,22 @@
           "name": "API_KEYS"
         }
       ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/n24q02m/mnemo-mcp:latest",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "API keys for cloud embedding (format: ENV_VAR:key). Without this, uses built-in local Qwen3 model.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        }
+      ]
     }
   ]
 }
