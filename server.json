@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.n24q02m/mnemo-mcp",
+  "description": "Persistent AI memory with hybrid search (FTS5 + semantic) and cross-machine sync via rclone. Open, free, unlimited.",
+  "repository": {
+    "url": "https://github.com/n24q02m/mnemo-mcp.git",
+    "source": "github"
+  },
+  "version": "1.5.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mnemo-mcp",
+      "version": "1.5.2",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "API keys for cloud embedding (format: ENV_VAR:key). Without this, uses built-in local Qwen3 model.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/n24q02m/mnemo-mcp:latest",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "API keys for cloud embedding (format: ENV_VAR:key). Without this, uses built-in local Qwen3 model.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        }
+      ]
+    }
+  ]
+}
