@@ -70,6 +70,7 @@ packages = ["src/mnemo_mcp"]
 include = [
     "src/mnemo_mcp/**/*.py",
     "src/mnemo_mcp/**/*.md",
+    "src/mnemo_mcp/py.typed",
 ]
 
 [tool.pytest.ini_options]
