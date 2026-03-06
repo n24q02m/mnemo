@@ -1,5 +1,7 @@
 # Mnemo MCP Server
 
+mcp-name: io.github.n24q02m/mnemo-mcp
+
 **Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
