@@ -277,7 +277,7 @@ async def sync_push(rclone_path: Path, db_path: Path, remote: str, folder: str) 
     result = await asyncio.to_thread(
         _run_rclone,
         rclone_path,
-        ["copy", str(db_path), remote_dest, "--progress"],
+        ["copy", "--progress", "--", str(db_path), remote_dest],
         300,
     )
 
@@ -307,7 +307,7 @@ async def sync_pull(
     result = await asyncio.to_thread(
         _run_rclone,
         rclone_path,
-        ["copyto", remote_src, str(temp_db), "--progress"],
+        ["copyto", "--progress", "--", remote_src, str(temp_db)],
         300,
     )
 
@@ -461,7 +461,7 @@ def setup_sync(remote_type: str = "drive") -> None:
     # Capture stdout (contains token JSON), let stderr pass through
     # so user sees rclone progress messages in real-time
     result = subprocess.run(
-        [str(rclone_path), "authorize", remote_type],
+        [str(rclone_path), "authorize", "--", remote_type],
         stdout=subprocess.PIPE,
         text=True,
         timeout=300,

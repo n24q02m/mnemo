@@ -189,7 +189,7 @@ class TestSetupSync:
             setup_sync("drive")
             mock_run.assert_called_once()
             args = mock_run.call_args
-            assert args[0][0] == [str(rclone_path), "authorize", "drive"]
+            assert args[0][0] == [str(rclone_path), "authorize", "--", "drive"]
 
     def test_rclone_downloaded(self, tmp_path, capsys):
         """setup_sync downloads rclone when not found."""
