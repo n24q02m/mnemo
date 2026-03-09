@@ -2,7 +2,7 @@ default_language_version:
   python: python3.13
 
 repos:
-  # Common Checks
+  # Common hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -24,7 +24,7 @@ repos:
         name: fix end of files
         exclude_types: [image]
 
-  # Python
+  # Python hooks
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.6
     hooks:
@@ -38,19 +38,19 @@ repos:
     hooks:
       - id: ty
         name: ty type check
-        entry: uv run ty check
+        entry: mise exec -- uv run ty check
         language: system
         types: [python]
         pass_filenames: false
 
       - id: pytest
         name: pytest
-        entry: uv run pytest --timeout=30 --tb=short -q
+        entry: mise exec -- uv run pytest --timeout=30 --tb=short -q
         language: system
         types: [python]
         pass_filenames: false
 
-  # Commit Message Enforcement
+  # Commit message enforcement
   - repo: local
     hooks:
       - id: enforce-commit
