@@ -608,7 +608,7 @@ class MemoryDB:
 
         return output.getvalue(), count
 
-    def import_jsonl(self, data: str, mode: str = "merge") -> dict:
+    def import_jsonl(self, data: str | list | dict, mode: str = "merge") -> dict:
         """Import memories from JSONL string.
 
         Args:
@@ -637,8 +637,6 @@ class MemoryDB:
                 line = line.strip()
                 if line:
                     try:
-                        import json
-
                         iterator.append(json.loads(line))
                     except Exception:
                         rejected += 1
