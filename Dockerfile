@@ -34,7 +34,7 @@ LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
 WORKDIR /app
 
 # Install rclone for sync support
-COPY --from=rclone/rclone:1.73.1 --chmod=755 /usr/local/bin/rclone /usr/bin/rclone
+COPY --from=rclone/rclone:1.73.2 --chmod=755 /usr/local/bin/rclone /usr/bin/rclone
 
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
