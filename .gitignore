@@ -35,3 +35,7 @@ temp/
 # Build artifacts
 dist/
 build/
+
+# AI Agent
+.jules/
+JULES.md
