@@ -226,7 +226,7 @@ class TestVectorSearchRRFDirect:
                     return original_conn.execute(sql, params)
                 return original_conn.execute(sql)
 
-        vec_db._conn = ConnProxy()  # type: ignore[assignment]
+        vec_db._conn = ConnProxy()  # ConnProxy duck-types Connection
 
     def test_rrf_fusion_with_both_fts_and_vec(self, vec_db: MemoryDB):
         """RRF fusion scoring when both FTS and vector find results."""

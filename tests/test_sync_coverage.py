@@ -120,7 +120,7 @@ class TestExtractZipSync:
 
         with zipfile.ZipFile(zip_path, "w") as zf:
             # Add a directory ending with "rclone"
-            zf.mkdir("rclone")  # type: ignore[attr-defined]
+            zf.mkdir("rclone")
             zf.writestr("subdir/rclone", b"real_binary")
 
         result = _extract_zip_sync(zip_path, target_path, "rclone")
