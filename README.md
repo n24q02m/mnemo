@@ -58,8 +58,10 @@ uvx mnemo-mcp@latest
         "SYNC_ENABLED": "true",                    // optional, default: false
         "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
         "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",      // required when SYNC_ENABLED=true
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // required when SYNC_ENABLED=true, from: uvx mnemo-mcp setup-sync drive
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive"       // required when SYNC_ENABLED=true
+        // Token is auto-managed: run `uvx mnemo-mcp setup-sync drive` once,
+        // token is saved locally at ~/.mnemo-mcp/tokens/ and reused automatically.
+        // No need to set RCLONE_CONFIG_GDRIVE_TOKEN in config.
       }
     }
   }
@@ -86,7 +88,6 @@ uvx mnemo-mcp@latest
         "-e", "SYNC_REMOTE",                       // required when SYNC_ENABLED=true: pass-through
         "-e", "SYNC_INTERVAL",                     // optional: pass-through from env below
         "-e", "RCLONE_CONFIG_GDRIVE_TYPE",         // required when SYNC_ENABLED=true: pass-through
-        "-e", "RCLONE_CONFIG_GDRIVE_TOKEN",        // required when SYNC_ENABLED=true: pass-through
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
@@ -103,8 +104,8 @@ uvx mnemo-mcp@latest
         "SYNC_ENABLED": "true",                    // optional, default: false
         "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
         "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive",      // required when SYNC_ENABLED=true
-        "RCLONE_CONFIG_GDRIVE_TOKEN": "<base64>"   // required when SYNC_ENABLED=true, from: uvx mnemo-mcp setup-sync drive
+        "RCLONE_CONFIG_GDRIVE_TYPE": "drive"       // required when SYNC_ENABLED=true
+        // Token is auto-managed via ~/.mnemo-mcp/tokens/
       }
     }
   }
@@ -135,7 +136,7 @@ uvx mnemo-mcp setup-sync onedrive
 uvx mnemo-mcp setup-sync s3
 ```
 
-Opens a browser for OAuth and outputs env vars (`RCLONE_CONFIG_*`) to set. Both raw JSON and base64 tokens are supported.
+Opens a browser for OAuth. The token is automatically saved to `~/.mnemo-mcp/tokens/` and reused on subsequent runs. No need to manually copy tokens into your MCP config.
 
 ## Configuration
 
