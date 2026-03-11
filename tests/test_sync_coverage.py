@@ -664,12 +664,14 @@ class TestAutoSyncLoop:
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
             patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("mnemo_mcp.sync.sync_full", new_callable=AsyncMock) as mock_sync,
         ):
             mock_settings.sync_interval = 10
             mock_sleep.side_effect = asyncio.CancelledError()
 
             await _auto_sync_loop(tmp_db)
-            # Should exit cleanly
+            # sync_full called once for initial sync, then cancelled during sleep
+            assert mock_sync.await_count == 1
 
     async def test_sync_error_continues_loop(self, tmp_db):
         """Non-fatal errors during sync don't stop the loop."""
@@ -692,6 +694,7 @@ class TestAutoSyncLoop:
         ):
             mock_settings.sync_interval = 1
             await _auto_sync_loop(tmp_db)
+            # initial sync + 2 loop iterations before cancel
             assert call_count >= 2
 
 
