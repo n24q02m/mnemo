@@ -822,9 +822,7 @@ class TestInteractiveAuth:
         with patch(
             "mnemo_mcp.sync.asyncio.to_thread",
             new_callable=AsyncMock,
-            return_value=MagicMock(
-                returncode=0, stdout="---\nnot valid json\n---"
-            ),
+            return_value=MagicMock(returncode=0, stdout="---\nnot valid json\n---"),
         ):
             result = await _interactive_auth(rclone_path, "drive")
             assert result is None
@@ -975,12 +973,13 @@ class TestSetupSyncSuccess:
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
             patch(
                 "mnemo_mcp.sync.subprocess.run",
-                return_value=MagicMock(
-                    returncode=0, stdout=f"---\n{token_json}\n---"
-                ),
+                return_value=MagicMock(returncode=0, stdout=f"---\n{token_json}\n---"),
             ),
             patch("mnemo_mcp.token_store.save_token"),
-            patch("mnemo_mcp.token_store.get_token_path", return_value=tmp_path / "drive.json"),
+            patch(
+                "mnemo_mcp.token_store.get_token_path",
+                return_value=tmp_path / "drive.json",
+            ),
         ):
             setup_sync("drive")
             captured = capsys.readouterr()
@@ -999,12 +998,13 @@ class TestSetupSyncSuccess:
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
             patch(
                 "mnemo_mcp.sync.subprocess.run",
-                return_value=MagicMock(
-                    returncode=0, stdout=f"---\n{token_json}\n---"
-                ),
+                return_value=MagicMock(returncode=0, stdout=f"---\n{token_json}\n---"),
             ),
             patch("mnemo_mcp.token_store.save_token"),
-            patch("mnemo_mcp.token_store.get_token_path", return_value=tmp_path / "dropbox.json"),
+            patch(
+                "mnemo_mcp.token_store.get_token_path",
+                return_value=tmp_path / "dropbox.json",
+            ),
         ):
             setup_sync("dropbox")
             captured = capsys.readouterr()
