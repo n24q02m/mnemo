@@ -55,13 +55,11 @@ uvx mnemo-mcp@latest
         // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
         // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
+        // -- on first sync, a browser opens for OAuth (auto, no manual setup)
         "SYNC_ENABLED": "true",                    // optional, default: false
-        "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
-        "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive"       // required when SYNC_ENABLED=true
-        // Token is auto-managed: run `uvx mnemo-mcp setup-sync drive` once,
-        // token is saved locally at ~/.mnemo-mcp/tokens/ and reused automatically.
-        // No need to set RCLONE_CONFIG_GDRIVE_TOKEN in config.
+        "SYNC_INTERVAL": "300"                     // optional, auto-sync every 5min (0 = manual only)
+        // "SYNC_REMOTE": "gdrive",                 // optional, default: gdrive
+        // "SYNC_PROVIDER": "drive",                // optional, default: drive (Google Drive)
       }
     }
   }
@@ -85,9 +83,7 @@ uvx mnemo-mcp@latest
         "-e", "EMBEDDING_API_BASE",                // optional: pass-through from env below
         "-e", "EMBEDDING_API_KEY",                 // optional: pass-through from env below
         "-e", "SYNC_ENABLED",                      // optional: pass-through from env below
-        "-e", "SYNC_REMOTE",                       // required when SYNC_ENABLED=true: pass-through
         "-e", "SYNC_INTERVAL",                     // optional: pass-through from env below
-        "-e", "RCLONE_CONFIG_GDRIVE_TYPE",         // required when SYNC_ENABLED=true: pass-through
         "n24q02m/mnemo-mcp:latest"
       ],
       "env": {
@@ -102,10 +98,7 @@ uvx mnemo-mcp@latest
         // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
         "SYNC_ENABLED": "true",                    // optional, default: false
-        "SYNC_REMOTE": "gdrive",                   // required when SYNC_ENABLED=true
-        "SYNC_INTERVAL": "300",                    // optional, auto-sync every 5min (0 = manual only)
-        "RCLONE_CONFIG_GDRIVE_TYPE": "drive"       // required when SYNC_ENABLED=true
-        // Token is auto-managed via ~/.mnemo-mcp/tokens/
+        "SYNC_INTERVAL": "300"                     // optional, auto-sync every 5min (0 = manual only)
       }
     }
   }
@@ -124,19 +117,25 @@ uvx mnemo-mcp warmup
 API_KEYS="GOOGLE_API_KEY:AIza..." uvx mnemo-mcp warmup
 ```
 
-### Sync setup (one-time)
+### Sync setup
 
-```bash
-# Google Drive
-uvx mnemo-mcp setup-sync drive
+Sync is fully automatic. Just set `SYNC_ENABLED=true` and the server handles everything:
 
-# Other providers (any rclone remote type)
-uvx mnemo-mcp setup-sync dropbox
-uvx mnemo-mcp setup-sync onedrive
-uvx mnemo-mcp setup-sync s3
+1. **First sync**: rclone is auto-downloaded, a browser opens for OAuth authentication
+2. **Token saved**: OAuth token is stored locally at `~/.mnemo-mcp/tokens/` (600 permissions)
+3. **Subsequent runs**: Token is loaded automatically — no manual steps needed
+
+For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
+
+```jsonc
+{
+  "SYNC_ENABLED": "true",
+  "SYNC_PROVIDER": "dropbox",        // rclone provider type
+  "SYNC_REMOTE": "dropbox"           // rclone remote name
+}
 ```
 
-Opens a browser for OAuth. The token is automatically saved to `~/.mnemo-mcp/tokens/` and reused on subsequent runs. No need to manually copy tokens into your MCP config.
+> **Advanced**: You can also run `uvx mnemo-mcp setup-sync drive` to pre-authenticate before first use, but this is optional.
 
 ## Configuration
 
@@ -152,10 +151,11 @@ Opens a browser for OAuth. The token is automatically saved to `~/.mnemo-mcp/tok
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
-| `SYNC_REMOTE` | — | rclone remote name (required when sync enabled) |
-| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder (optional) |
-| `SYNC_INTERVAL` | `0` | Auto-sync seconds (optional, 0=manual) |
-| `LOG_LEVEL` | `INFO` | Log level (optional) |
+| `SYNC_PROVIDER` | `drive` | rclone provider type (drive, dropbox, s3, etc.) |
+| `SYNC_REMOTE` | `gdrive` | rclone remote name |
+| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder |
+| `SYNC_INTERVAL` | `300` | Auto-sync seconds (0=manual) |
+| `LOG_LEVEL` | `INFO` | Log level |
 
 ### Embedding (3-Mode Architecture)
 
