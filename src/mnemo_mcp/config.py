@@ -62,9 +62,10 @@ class Settings(BaseSettings):
     - EMBEDDING_BACKEND: "litellm" | "local" (auto: API_KEYS -> litellm, else local)
         Local: GGUF if GPU + llama-cpp-python, else ONNX
     - SYNC_ENABLED: Enable rclone sync (default: false)
-    - SYNC_REMOTE: Rclone remote name (e.g., "gdrive")
+    - SYNC_PROVIDER: rclone provider type (default: "drive" for Google Drive)
+    - SYNC_REMOTE: Rclone remote name (default: "gdrive")
     - SYNC_FOLDER: Remote folder name (default: "mnemo-mcp")
-    - SYNC_INTERVAL: Auto-sync interval in seconds (0 = manual only)
+    - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)
     """
 
     # Database
@@ -90,9 +91,10 @@ class Settings(BaseSettings):
 
     # Sync (rclone)
     sync_enabled: bool = False
-    sync_remote: str = ""  # rclone remote name
+    sync_provider: str = "drive"  # rclone provider type (drive, dropbox, s3, etc.)
+    sync_remote: str = "gdrive"  # rclone remote name
     sync_folder: str = "mnemo-mcp"
-    sync_interval: int = 0  # seconds, 0 = manual only
+    sync_interval: int = 300  # seconds, 0 = manual only
     rclone_version: str = "v1.68.2"
 
     # Logging

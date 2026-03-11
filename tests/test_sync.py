@@ -103,6 +103,7 @@ class TestSyncFull:
                 new_callable=AsyncMock,
                 return_value=rclone_path,
             ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
                 "mnemo_mcp.sync.check_remote_configured",
                 new_callable=AsyncMock,
@@ -114,7 +115,6 @@ class TestSyncFull:
             result = await sync_full(tmp_db)
             assert result["status"] == "error"
             assert "gdrive" in result["message"]
-            assert "RCLONE_CONFIG_GDRIVE_TYPE" in result["message"]
 
 
 class TestExtractToken:
@@ -247,29 +247,26 @@ class TestSetupSync:
             setup_sync("s3")
             captured = capsys.readouterr()
             assert "MANUAL SETUP" in captured.out
-            assert "base64" in captured.out.lower()
-            assert "RCLONE_CONFIG_S3_TYPE" in captured.out
 
     def test_auto_extract_token(self, tmp_path, capsys):
-        """setup_sync outputs base64 token value for copy-paste."""
+        """setup_sync saves token locally and shows simplified config."""
         rclone_path = tmp_path / "rclone"
         rclone_path.touch()
         token_json = '{"access_token":"ya29.abc","token_type":"Bearer"}'
         token_output = f"--------------------\n{token_json}\n--------------------\n"
-        expected_b64 = base64.b64encode(token_json.encode()).decode()
         with (
             patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
             patch(
                 "mnemo_mcp.sync.subprocess.run",
                 return_value=self._mock_result(stdout=token_output),
             ),
+            patch("mnemo_mcp.token_store.save_token") as mock_save,
         ):
             setup_sync("drive")
+            mock_save.assert_called_once()
             captured = capsys.readouterr()
-            assert "RCLONE_CONFIG_GDRIVE_TOKEN" in captured.out
-            assert expected_b64 in captured.out
-            assert "SYNC_ENABLED=true" in captured.out
-            assert "auto-decodes base64" in captured.out
+            assert "SUCCESS" in captured.out
+            assert "SYNC_ENABLED" in captured.out
 
 
 class TestStartAutoSync:

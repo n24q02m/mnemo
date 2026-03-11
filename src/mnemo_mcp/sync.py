@@ -215,13 +215,23 @@ async def ensure_rclone() -> Path | None:
 
 
 def _prepare_rclone_env() -> dict[str, str]:
-    """Prepare env dict for rclone, decoding base64 tokens if needed.
+    """Prepare env dict for rclone with auto-token management.
 
-    Supports both raw JSON and base64-encoded tokens in
-    ``RCLONE_CONFIG_*_TOKEN`` env vars.  Base64 avoids nested JSON
-    escaping issues in MCP config files.
+    Token resolution priority:
+    1. Env var ``RCLONE_CONFIG_*_TOKEN`` (backward compatible)
+    2. Local token file (~/.mnemo-mcp/tokens/<provider>.json)
+
+    Supports both raw JSON and base64-encoded tokens in env vars.
     """
+    from mnemo_mcp.token_store import load_token
+
     env = os.environ.copy()
+    remote = settings.sync_remote
+    remote_upper = remote.upper()
+    token_key = f"RCLONE_CONFIG_{remote_upper}_TOKEN"
+    type_key = f"RCLONE_CONFIG_{remote_upper}_TYPE"
+
+    # Priority 1: Env var tokens (decode base64 if needed)
     for key in list(env):
         if key.startswith("RCLONE_CONFIG_") and key.endswith("_TOKEN"):
             value = env[key]
@@ -232,6 +242,16 @@ def _prepare_rclone_env() -> dict[str, str]:
                     env[key] = decoded
                 except Exception:
                     pass
+
+    # Priority 2: Local token file (only if env var not set)
+    if token_key not in env or not env[token_key]:
+        token = load_token(settings.sync_provider)
+        if token:
+            env[token_key] = json.dumps(token)
+            if type_key not in env:
+                env[type_key] = settings.sync_provider
+            logger.debug(f"Using local token for {settings.sync_provider}")
+
     return env
 
 
@@ -324,26 +344,36 @@ async def sync_pull(
 async def sync_full(db: MemoryDB) -> dict:
     """Full sync cycle: pull → merge → push.
 
+    Auto-provisions tokens if needed (interactive browser auth on first run).
+
     Returns:
         Dict with sync results.
     """
     from mnemo_mcp.db import MemoryDB
 
-    if not settings.sync_enabled or not settings.sync_remote:
+    if not settings.sync_enabled:
         return {"status": "disabled", "message": "Sync not configured"}
 
     rclone_path = await ensure_rclone()
     if not rclone_path:
         return {"status": "error", "message": "rclone not available"}
 
-    # Check remote is configured
+    # Auto-provision token if needed
+    if not _has_token_available():
+        token = await _interactive_auth(rclone_path, settings.sync_provider)
+        if not token:
+            return {
+                "status": "error",
+                "message": "No sync token available. "
+                "Run the server interactively to complete OAuth setup.",
+            }
+
+    # Check remote is configured (env vars or local token loaded by _prepare_rclone_env)
     if not await check_remote_configured(rclone_path, settings.sync_remote):
-        remote_upper = settings.sync_remote.upper()
         return {
             "status": "error",
             "message": f"rclone remote '{settings.sync_remote}' not configured. "
-            f"Set RCLONE_CONFIG_{remote_upper}_TYPE and "
-            f"RCLONE_CONFIG_{remote_upper}_TOKEN env vars.",
+            "Token may be invalid — try deleting the token file and re-authenticating.",
         }
 
     db_path = settings.get_db_path()
@@ -429,15 +459,73 @@ def stop_auto_sync() -> None:
         _sync_task = None
 
 
+def _has_token_available() -> bool:
+    """Check if a sync token is available (env var or local file)."""
+    from mnemo_mcp.token_store import load_token
+
+    remote_upper = settings.sync_remote.upper()
+    token_key = f"RCLONE_CONFIG_{remote_upper}_TOKEN"
+
+    # Check env var
+    if os.environ.get(token_key):
+        return True
+
+    # Check local token file
+    return load_token(settings.sync_provider) is not None
+
+
+async def _interactive_auth(rclone_path: Path, provider: str) -> dict | None:
+    """Run rclone authorize interactively to get OAuth token.
+
+    Opens browser for user authentication. Blocks until complete
+    or timeout (5 minutes).
+
+    Returns token dict on success, None on failure.
+    """
+    from mnemo_mcp.token_store import save_token
+
+    logger.info(f"No sync token found. Starting {provider} authentication...")
+    logger.info("A browser window will open for authentication.")
+
+    result = await asyncio.to_thread(
+        lambda: subprocess.run(
+            [str(rclone_path), "authorize", "--", provider],
+            stdout=subprocess.PIPE,
+            text=True,
+            timeout=300,
+        )
+    )
+
+    if result.returncode != 0:
+        logger.error(f"Authentication failed (exit {result.returncode})")
+        return None
+
+    token_str = _extract_token(result.stdout or "")
+    if not token_str:
+        logger.error("Could not extract token from rclone output")
+        return None
+
+    try:
+        token = json.loads(token_str)
+    except json.JSONDecodeError:
+        logger.error("Invalid token JSON from rclone")
+        return None
+
+    save_token(provider, token)
+    logger.info("Authentication successful! Token saved locally.")
+    return token
+
+
 def setup_sync(remote_type: str = "drive") -> None:
-    """Download rclone and run authorize to get a token.
+    """Download rclone, run authorize, and save token locally.
 
     Usage: mnemo-mcp setup-sync [type]
     Default type: drive (Google Drive)
 
-    Captures the token from rclone output, base64-encodes it,
-    and prints ready-to-paste MCP config.
+    Token is saved to ~/.mnemo-mcp/tokens/<type>.json so no env vars
+    are needed for sync — just set SYNC_ENABLED=true.
     """
+    from mnemo_mcp.token_store import save_token
 
     print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
 
@@ -480,43 +568,42 @@ def setup_sync(remote_type: str = "drive") -> None:
     token_json = _extract_token(result.stdout or "")
 
     remote_name = "gdrive" if remote_type == "drive" else remote_type
-    remote_upper = remote_name.upper()
 
     if token_json:
-        token_b64 = base64.b64encode(token_json.encode()).decode()
+        # Save token locally
+        try:
+            token_dict = json.loads(token_json)
+            save_token(remote_type, token_dict)
+            from mnemo_mcp.token_store import get_token_path
 
-        print(f"\n{'=' * 60}")
-        print(f"RCLONE_CONFIG_{remote_upper}_TOKEN (base64-encoded)")
-        print(f"{'=' * 60}\n")
-        print(token_b64)
-        print(f"\n{'=' * 60}")
-        print("\nEnv vars needed for sync:")
-        print("  SYNC_ENABLED=true")
-        print(f"  SYNC_REMOTE={remote_name}")
-        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
-        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 above>")
-        print("\nServer auto-decodes base64 at runtime.")
-        print("Both raw JSON and base64 tokens are supported.")
+            token_path = get_token_path(remote_type)
+
+            print(f"\n{'=' * 60}")
+            print("SUCCESS! Token saved locally.")
+            print(f"{'=' * 60}\n")
+            print(f"Token file: {token_path}")
+            print("\nAll you need in your MCP config:")
+            print('  "SYNC_ENABLED": "true"')
+            if remote_type != "drive":
+                print(f'  "SYNC_PROVIDER": "{remote_type}"')
+            if remote_name != "gdrive":
+                print(f'  "SYNC_REMOTE": "{remote_name}"')
+            print("\nThe server will auto-load the token from disk.")
+            print("No need to copy/paste any tokens!")
+        except json.JSONDecodeError:
+            # Fallback: print base64 for manual config
+            token_b64 = base64.b64encode(token_json.encode()).decode()
+            print(f"\n{'=' * 60}")
+            print("Token saved but could not parse JSON. Base64 token:")
+            print(f"{'=' * 60}\n")
+            print(token_b64)
     else:
-        # Fallback: couldn't parse token, show manual instructions
         print(f"\n{'=' * 60}")
         print("MANUAL SETUP")
         print(f"{'=' * 60}\n")
         print("Could not auto-extract token from rclone output.")
-        print("Copy the token JSON from above and base64-encode it:\n")
-        if sys.platform == "win32":
-            print(
-                '  python -c "import base64,sys; print(base64.b64encode(input().encode()).decode())"'
-            )
-        else:
-            print(
-                "  python3 -c 'import base64,sys; print(base64.b64encode(input().encode()).decode())'"
-            )
-        print("\nThen set these env vars:")
-        print("  SYNC_ENABLED=true")
-        print(f"  SYNC_REMOTE={remote_name}")
-        print(f"  RCLONE_CONFIG_{remote_upper}_TYPE={remote_type}")
-        print(f"  RCLONE_CONFIG_{remote_upper}_TOKEN=<base64 output>")
+        print("Try running the server with SYNC_ENABLED=true — it will")
+        print("open a browser for authentication automatically.")
 
 
 def _extract_token(output: str) -> str | None:

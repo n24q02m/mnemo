@@ -288,6 +288,9 @@ async def _handle_add(
         )
     except ValueError as e:
         return _json({"error": str(e)})
+    except Exception:
+        logger.exception("Unexpected error in _handle_add")
+        return _json({"error": "Internal error while adding memory"})
     return _json(
         {
             "id": memory_id,
@@ -373,6 +376,9 @@ async def _handle_update(
         )
     except ValueError as e:
         return _json({"error": str(e)})
+    except Exception:
+        logger.exception("Unexpected error in _handle_update")
+        return _json({"error": "Internal error while updating memory"})
     if ok:
         return _json({"status": "updated", "id": memory_id})
     return _json({"error": f"Memory {memory_id} not found"})
@@ -731,7 +737,11 @@ def recall_context(topic: str) -> str:
 def main() -> None:
     """Run the MCP server."""
     logger.remove()
-    logger.add(sys.stderr, level=settings.log_level)
+    valid_levels = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
+    level = settings.log_level.upper() if settings.log_level else "WARNING"
+    if level not in valid_levels:
+        level = "WARNING"
+    logger.add(sys.stderr, level=level)
     logger.info("Starting Mnemo MCP Server...")
 
     mcp.run()

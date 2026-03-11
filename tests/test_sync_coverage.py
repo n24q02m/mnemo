@@ -7,6 +7,7 @@ stop_auto_sync, setup_sync (win32 branch).
 """
 
 import asyncio
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -493,6 +494,7 @@ class TestSyncFullFlow:
                 new_callable=AsyncMock,
                 return_value=rclone_path,
             ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
                 "mnemo_mcp.sync.check_remote_configured",
                 new_callable=AsyncMock,
@@ -531,6 +533,7 @@ class TestSyncFullFlow:
                 new_callable=AsyncMock,
                 return_value=rclone_path,
             ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
                 "mnemo_mcp.sync.check_remote_configured",
                 new_callable=AsyncMock,
@@ -571,6 +574,7 @@ class TestSyncFullFlow:
                 new_callable=AsyncMock,
                 return_value=rclone_path,
             ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
                 "mnemo_mcp.sync.check_remote_configured",
                 new_callable=AsyncMock,
@@ -615,6 +619,7 @@ class TestSyncFullFlow:
                 new_callable=AsyncMock,
                 return_value=rclone_path,
             ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
                 "mnemo_mcp.sync.check_remote_configured",
                 new_callable=AsyncMock,
@@ -749,4 +754,256 @@ class TestSetupSyncWin32:
             setup_sync("drive")
             captured = capsys.readouterr()
             assert "MANUAL SETUP" in captured.out
-            assert "python -c" in captured.out
+            assert "SYNC_ENABLED=true" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _interactive_auth
+# ---------------------------------------------------------------------------
+
+
+class TestInteractiveAuth:
+    async def test_auth_success(self, tmp_path):
+        from mnemo_mcp.sync import _interactive_auth
+
+        rclone_path = tmp_path / "rclone"
+        token_json = '{"access_token": "test123", "token_type": "Bearer"}'
+
+        with (
+            patch(
+                "mnemo_mcp.sync.asyncio.to_thread",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    returncode=0,
+                    stdout=f"---\n{token_json}\n---",
+                ),
+            ),
+            patch("mnemo_mcp.token_store.save_token") as mock_save,
+        ):
+            result = await _interactive_auth(rclone_path, "drive")
+            assert result is not None
+            assert result["access_token"] == "test123"
+            mock_save.assert_called_once()
+
+    async def test_auth_rclone_failure(self, tmp_path):
+        from mnemo_mcp.sync import _interactive_auth
+
+        rclone_path = tmp_path / "rclone"
+
+        with patch(
+            "mnemo_mcp.sync.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=MagicMock(returncode=1, stdout=""),
+        ):
+            result = await _interactive_auth(rclone_path, "drive")
+            assert result is None
+
+    async def test_auth_no_token_in_output(self, tmp_path):
+        from mnemo_mcp.sync import _interactive_auth
+
+        rclone_path = tmp_path / "rclone"
+
+        with patch(
+            "mnemo_mcp.sync.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=MagicMock(returncode=0, stdout="no json here"),
+        ):
+            result = await _interactive_auth(rclone_path, "drive")
+            assert result is None
+
+    async def test_auth_invalid_json(self, tmp_path):
+        from mnemo_mcp.sync import _interactive_auth
+
+        rclone_path = tmp_path / "rclone"
+
+        with patch(
+            "mnemo_mcp.sync.asyncio.to_thread",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                returncode=0, stdout="---\nnot valid json\n---"
+            ),
+        ):
+            result = await _interactive_auth(rclone_path, "drive")
+            assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _has_token_available
+# ---------------------------------------------------------------------------
+
+
+class TestHasTokenAvailable:
+    def test_env_var_available(self):
+        from mnemo_mcp.sync import _has_token_available
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch.dict(os.environ, {"RCLONE_CONFIG_GDRIVE_TOKEN": "tok"}),
+        ):
+            mock_settings.sync_remote = "gdrive"
+            mock_settings.sync_provider = "drive"
+            result = _has_token_available()
+            assert result is True
+
+    def test_local_token_available(self):
+        from mnemo_mcp.sync import _has_token_available
+
+        # Ensure env var is NOT set
+        env_copy = os.environ.copy()
+        env_copy.pop("RCLONE_CONFIG_GDRIVE_TOKEN", None)
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch.dict(os.environ, env_copy, clear=True),
+            patch(
+                "mnemo_mcp.token_store.load_token",
+                return_value={"access_token": "tok"},
+            ),
+        ):
+            mock_settings.sync_remote = "gdrive"
+            mock_settings.sync_provider = "drive"
+            result = _has_token_available()
+            assert result is True
+
+    def test_no_token(self):
+        from mnemo_mcp.sync import _has_token_available
+
+        env_copy = os.environ.copy()
+        env_copy.pop("RCLONE_CONFIG_GDRIVE_TOKEN", None)
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch.dict(os.environ, env_copy, clear=True),
+            patch("mnemo_mcp.token_store.load_token", return_value=None),
+        ):
+            mock_settings.sync_remote = "gdrive"
+            mock_settings.sync_provider = "drive"
+            result = _has_token_available()
+            assert result is False
+
+
+# ---------------------------------------------------------------------------
+# sync_full: token auto-provisioning paths
+# ---------------------------------------------------------------------------
+
+
+class TestSyncFullTokenPaths:
+    async def test_no_token_auth_fails(self, tmp_db, tmp_path):
+        """When no token and interactive auth fails, return error."""
+        from mnemo_mcp.sync import sync_full
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch(
+                "mnemo_mcp.sync.ensure_rclone",
+                new_callable=AsyncMock,
+                return_value=tmp_path / "rclone",
+            ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=False),
+            patch(
+                "mnemo_mcp.sync._interactive_auth",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.sync_provider = "drive"
+            result = await sync_full(tmp_db)
+            assert result["status"] == "error"
+            assert "No sync token" in result["message"]
+
+    async def test_no_token_auth_succeeds(self, tmp_db, tmp_path):
+        """When no token but interactive auth succeeds, continue sync."""
+        from mnemo_mcp.sync import sync_full
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch(
+                "mnemo_mcp.sync.ensure_rclone",
+                new_callable=AsyncMock,
+                return_value=tmp_path / "rclone",
+            ),
+            patch("mnemo_mcp.sync._has_token_available", return_value=False),
+            patch(
+                "mnemo_mcp.sync._interactive_auth",
+                new_callable=AsyncMock,
+                return_value={"access_token": "tok"},
+            ),
+            patch(
+                "mnemo_mcp.sync.check_remote_configured",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "mnemo_mcp.sync.sync_pull",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "mnemo_mcp.sync.sync_push",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.sync_provider = "drive"
+            mock_settings.sync_remote = "gdrive"
+            mock_settings.sync_folder = "mnemo-mcp"
+            mock_settings.get_db_path.return_value = tmp_path / "test.db"
+            result = await sync_full(tmp_db)
+            assert result["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# setup_sync: success path
+# ---------------------------------------------------------------------------
+
+
+class TestSetupSyncSuccess:
+    def test_success_path(self, tmp_path, capsys):
+        from mnemo_mcp.sync import setup_sync
+
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+
+        token_json = '{"access_token": "test123", "token_type": "Bearer"}'
+
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=MagicMock(
+                    returncode=0, stdout=f"---\n{token_json}\n---"
+                ),
+            ),
+            patch("mnemo_mcp.token_store.save_token"),
+            patch("mnemo_mcp.token_store.get_token_path", return_value=tmp_path / "drive.json"),
+        ):
+            setup_sync("drive")
+            captured = capsys.readouterr()
+            assert "SUCCESS" in captured.out
+            assert "SYNC_ENABLED" in captured.out
+
+    def test_success_non_drive_provider(self, tmp_path, capsys):
+        from mnemo_mcp.sync import setup_sync
+
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+
+        token_json = '{"access_token": "test123", "token_type": "Bearer"}'
+
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=MagicMock(
+                    returncode=0, stdout=f"---\n{token_json}\n---"
+                ),
+            ),
+            patch("mnemo_mcp.token_store.save_token"),
+            patch("mnemo_mcp.token_store.get_token_path", return_value=tmp_path / "dropbox.json"),
+        ):
+            setup_sync("dropbox")
+            captured = capsys.readouterr()
+            assert "SUCCESS" in captured.out
+            assert "SYNC_PROVIDER" in captured.out
