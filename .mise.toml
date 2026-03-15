@@ -1,3 +1,4 @@
+# Mise configuration for mnemo-mcp
 [tools]
 python = "3.13"
 node = "24"
@@ -27,6 +28,7 @@ run = [
   "uv run ruff check .",
   "uv run ruff format --check .",
   "uv run ty check",
+  "echo 'All checks passed!'"
 ]
 
 [tasks.test]

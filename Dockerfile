@@ -29,6 +29,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 FROM python:3.13-slim-bookworm
 
+LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
 
 WORKDIR /app
