@@ -250,62 +250,8 @@ class MemoryDB:
         Returns:
             List of memory dicts sorted by relevance.
         """
-        results: dict[str, dict] = {}
-
-        # 1. FTS5 search with tiered queries + BM25 column weights
-        # Weights: id(0), content(1), category(0-unindexed), tags(5)
-        fts_queries = _build_fts_queries(query)
-
-        for fts_query in fts_queries:
-            try:
-                fts_sql = """
-                    SELECT m.*,
-                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
-                    FROM memories_fts f
-                    JOIN memories m ON f.id = m.id
-                    WHERE memories_fts MATCH ?
-                """
-                fts_params: list = [fts_query]
-
-                # Category pre-filter in SQL (not post-search)
-                if category:
-                    fts_sql += " AND m.category = ?"
-                    fts_params.append(category)
-
-                # Tag pre-filter in SQL
-                if tags:
-                    tag_placeholders = ",".join("?" for _ in tags)
-                    fts_sql += f" AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
-                    fts_params.extend(tags)
-
-                fts_sql += " ORDER BY bm25_score LIMIT ?"
-                fts_params.append(limit * 3)
-
-                rows = self._conn.execute(fts_sql, fts_params).fetchall()
-                if rows:
-                    for row in rows:
-                        mid = row["id"]
-                        results[mid] = {
-                            **dict(row),
-                            # BM25 is negative; negate so higher = better
-                            "fts_score": -row["bm25_score"],
-                            "vec_score": 0.0,
-                        }
-                    break  # Got results, skip broader tier
-            except Exception:
-                continue
-
-        # Min-max normalize FTS scores to 0-1
-        fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
-        if fts_vals:
-            min_f = min(fts_vals)
-            max_f = max(fts_vals)
-            rng = max_f - min_f
-            for m in results.values():
-                if rng > 0 and m["fts_score"] > 0:
-                    m["fts_score"] = (m["fts_score"] - min_f) / rng
-                elif m["fts_score"] > 0:
-                    m["fts_score"] = 1.0
+        # 1. FTS5 search
+        results = self._search_fts(query, category, tags, limit)
 
         # 2. Semantic search (if embedding provided)
         if embedding and self._vec_enabled:
@@ -318,12 +264,10 @@ class MemoryDB:
                 """
                 vec_params: list = [_serialize_f32(embedding)]
 
-                # Category pre-filter for vector search too
                 if category:
                     vec_sql += " AND m.category = ?"
                     vec_params.append(category)
 
-                # Tag pre-filter in SQL
                 if tags:
                     tag_placeholders = ",".join("?" for _ in tags)
                     vec_sql += f" AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
@@ -364,34 +308,109 @@ class MemoryDB:
         if not results:
             return []
 
-        # 3. Tag post-filter (JSON array matching not feasible in SQL)
-        if tags:
+        # 3. Compute hybrid score
+        scored = self._compute_hybrid_scores(results)
 
-            def _has_tags(mem: dict) -> bool:
-                try:
-                    mem_tags = json.loads(mem.get("tags", "[]"))
-                    if not isinstance(mem_tags, list):
-                        return False
-                    return any(t in mem_tags for t in tags)
-                except (json.JSONDecodeError, TypeError):
-                    return False
+        # 4. Update access counts for returned results
+        top = scored[:limit]
+        self._update_access_stats(top)
 
-            results = {k: v for k, v in results.items() if _has_tags(v)}
+        # Clean up internal scores from output
+        for m in top:
+            m.pop("fts_score", None)
+            m.pop("vec_score", None)
+            m.pop("bm25_score", None)
 
-        # 4. Compute hybrid score
+        return top
+
+    def _search_fts(
+        self,
+        query: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 5,
+    ) -> dict[str, dict]:
+        """Execute FTS5 search with tiered queries and BM25 column weights."""
+        results: dict[str, dict] = {}
+        fts_queries = _build_fts_queries(query)
+
+        for fts_query in fts_queries:
+            try:
+                fts_sql = """
+                    SELECT m.*,
+                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
+                    FROM memories_fts f
+                    JOIN memories m ON f.id = m.id
+                    WHERE memories_fts MATCH ?
+                """
+                fts_params: list = [fts_query]
+
+                if category:
+                    fts_sql += " AND m.category = ?"
+                    fts_params.append(category)
+
+                if tags:
+                    tag_placeholders = ",".join("?" for _ in tags)
+                    fts_sql += f" AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
+                    fts_params.extend(tags)
+
+                fts_sql += " ORDER BY bm25_score LIMIT ?"
+                fts_params.append(limit * 3)
+
+                rows = self._conn.execute(fts_sql, fts_params).fetchall()
+                if rows:
+                    for row in rows:
+                        mid = row["id"]
+                        results[mid] = {
+                            **dict(row),
+                            "fts_score": -row["bm25_score"],
+                            "vec_score": 0.0,
+                        }
+                    break
+            except Exception:
+                continue
+
+        fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
+        if fts_vals:
+            min_f = min(fts_vals)
+            max_f = max(fts_vals)
+            rng = max_f - min_f
+            for m in results.values():
+                if rng > 0 and m["fts_score"] > 0:
+                    m["fts_score"] = (m["fts_score"] - min_f) / rng
+                elif m["fts_score"] > 0:
+                    m["fts_score"] = 1.0
+
+        return results
+
+    def _calc_recency(self, updated_at: str, now: datetime) -> float:
+        """Calculate recency boost (half-life = 7 days)."""
+        try:
+            updated = datetime.fromisoformat(updated_at)
+            days_old = (now - updated).total_seconds() / 86400
+            return 2.0 ** (-days_old / 7.0)
+        except (ValueError, KeyError):
+            return 0.0
+
+    def _calc_frequency(self, access_count: int) -> float:
+        """Calculate logarithmic frequency boost."""
+        freq = math.log1p(access_count) / 10.0
+        return min(freq, 1.0)
+
+    def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
+        """Compute final scores combining FTS, vector, recency, and frequency."""
         now = datetime.now(UTC)
         scored = []
-        has_vec = any(m["vec_score"] > 0 for m in results.values())
+        has_vec = any(m.get("vec_score", 0.0) > 0 for m in results.values())
 
         if has_vec:
-            # RRF fusion for FTS + vector, plus recency + frequency
             k = 60
             all_ids = list(results.keys())
             fts_ranked = sorted(
-                all_ids, key=lambda x: results[x]["fts_score"], reverse=True
+                all_ids, key=lambda x: results[x].get("fts_score", 0.0), reverse=True
             )
             vec_ranked = sorted(
-                all_ids, key=lambda x: results[x]["vec_score"], reverse=True
+                all_ids, key=lambda x: results[x].get("vec_score", 0.0), reverse=True
             )
             fts_rank = {cid: i + 1 for i, cid in enumerate(fts_ranked)}
             vec_rank = {cid: i + 1 for i, cid in enumerate(vec_ranked)}
@@ -401,64 +420,39 @@ class MemoryDB:
                 vr = vec_rank.get(mid, len(all_ids))
                 rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
 
-                # Recency boost (half-life = 7 days)
-                try:
-                    updated = datetime.fromisoformat(mem["updated_at"])
-                    days_old = (now - updated).total_seconds() / 86400
-                    recency = 2.0 ** (-days_old / 7.0)
-                except (ValueError, KeyError):
-                    recency = 0.0
+                recency = self._calc_recency(mem.get("updated_at", ""), now)
+                freq = self._calc_frequency(mem.get("access_count", 0))
 
-                # Frequency boost (logarithmic)
-                freq = math.log1p(mem.get("access_count", 0)) / 10.0
-                freq = min(freq, 1.0)
-
-                # Normalize RRF to ~0-1 range
                 rrf_norm = rrf * (k + 1) / 2.0
                 mem["score"] = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
                 scored.append(mem)
         else:
-            # FTS-only with recency + frequency
             for mem in results.values():
                 fts = mem.get("fts_score", 0.0)
-
-                try:
-                    updated = datetime.fromisoformat(mem["updated_at"])
-                    days_old = (now - updated).total_seconds() / 86400
-                    recency = 2.0 ** (-days_old / 7.0)
-                except (ValueError, KeyError):
-                    recency = 0.0
-
-                freq = math.log1p(mem.get("access_count", 0)) / 10.0
-                freq = min(freq, 1.0)
+                recency = self._calc_recency(mem.get("updated_at", ""), now)
+                freq = self._calc_frequency(mem.get("access_count", 0))
 
                 mem["score"] = fts * 0.6 + recency * 0.3 + freq * 0.1
                 scored.append(mem)
 
-        # Sort by score descending
         scored.sort(key=lambda m: m["score"], reverse=True)
+        return scored
 
-        # Update access counts for returned results
-        top = scored[:limit]
-        if top:
-            ids = [m["id"] for m in top]
-            placeholders = ",".join("?" for _ in ids)
-            self._conn.execute(
-                f"""UPDATE memories
-                    SET access_count = access_count + 1,
-                        last_accessed = ?
-                    WHERE id IN ({placeholders})""",
-                [_now_iso(), *ids],
-            )
-            self._conn.commit()
+    def _update_access_stats(self, top: list[dict]) -> None:
+        """Increment access counts for returned search results."""
+        if not top:
+            return
 
-        # Clean up internal scores from output
-        for m in top:
-            m.pop("fts_score", None)
-            m.pop("vec_score", None)
-            m.pop("bm25_score", None)
-
-        return top
+        ids = [m["id"] for m in top]
+        placeholders = ",".join("?" for _ in ids)
+        self._conn.execute(
+            f"""UPDATE memories
+                SET access_count = access_count + 1,
+                    last_accessed = ?
+                WHERE id IN ({placeholders})""",
+            [_now_iso(), *ids],
+        )
+        self._conn.commit()
 
     def list_memories(
         self,
