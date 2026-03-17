@@ -494,7 +494,12 @@ async def _interactive_auth(rclone_path: Path, provider: str) -> dict | None:
 
     Returns token dict on success, None on failure.
     """
+    from mnemo_mcp.config import RCLONE_PROVIDERS
     from mnemo_mcp.token_store import save_token
+
+    if provider not in RCLONE_PROVIDERS:
+        logger.error(f"Invalid provider: {provider}")
+        return None
 
     logger.info(f"No sync token found. Starting {provider} authentication...")
     logger.info("A browser window will open for authentication.")
@@ -537,7 +542,13 @@ def setup_sync(remote_type: str = "drive") -> None:
     Token is saved to ~/.mnemo-mcp/tokens/<type>.json so no env vars
     are needed for sync — just set SYNC_ENABLED=true.
     """
+    from mnemo_mcp.config import RCLONE_PROVIDERS
     from mnemo_mcp.token_store import save_token
+
+    if remote_type not in RCLONE_PROVIDERS:
+        print(f"ERROR: Invalid provider type '{remote_type}'.", file=sys.stderr)
+        print(f"Must be one of: {', '.join(sorted(RCLONE_PROVIDERS))}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"=== Mnemo MCP: Setup Sync ({remote_type}) ===\n")
 

@@ -170,3 +170,12 @@ def test_sync_remote_starts_with_hyphen():
 
     with pytest.raises(ValidationError, match="must not start with a hyphen"):
         s.sync_remote = "--config"
+
+
+@pytest.mark.asyncio
+async def test_interactive_auth_invalid_provider():
+    """Verify that _interactive_auth fails when an invalid provider is provided."""
+    from mnemo_mcp.sync import _interactive_auth
+
+    result = await _interactive_auth(MagicMock(), "invalid_provider")
+    assert result is None
