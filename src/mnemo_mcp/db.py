@@ -71,6 +71,10 @@ class MemoryDB:
             embedding_dims: Embedding dimensions (0 = no vector search).
         """
         self._db_path = db_path
+        if type(embedding_dims) is not int:
+            raise ValueError(
+                f"embedding_dims must be an integer, got {type(embedding_dims).__name__}"
+            )
         self._embedding_dims = embedding_dims
 
         # Create parent directory

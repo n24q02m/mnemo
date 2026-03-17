@@ -563,3 +563,21 @@ class TestContentLengthValidation:
         assert tmp_db.get("ok1") is not None
         assert tmp_db.get("big1") is None
         assert tmp_db.get("ok2") is not None
+
+
+class TestDBInitSecurity:
+    def test_invalid_embedding_dims_type(self, tmp_path):
+        import pytest
+
+        from mnemo_mcp.db import MemoryDB
+
+        db_path = tmp_path / "test.sqlite"
+
+        with pytest.raises(ValueError, match="embedding_dims must be an integer"):
+            MemoryDB(db_path, embedding_dims="1536]; DROP TABLE memories; --")  # type: ignore
+
+        with pytest.raises(ValueError, match="embedding_dims must be an integer"):
+            MemoryDB(db_path, embedding_dims=True)
+
+        with pytest.raises(ValueError, match="embedding_dims must be an integer"):
+            MemoryDB(db_path, embedding_dims=1536.5)  # type: ignore
