@@ -63,12 +63,18 @@ def _build_fts_queries(query: str) -> list[str]:
 class MemoryDB:
     """SQLite database for persistent AI memories."""
 
-    def __init__(self, db_path: Path, embedding_dims: int = 0):
+    def __init__(
+        self,
+        db_path: Path,
+        embedding_dims: int = 0,
+        recency_half_life_days: float = 7.0,
+    ):
         """Open or create memory database.
 
         Args:
             db_path: Path to SQLite database file.
             embedding_dims: Embedding dimensions (0 = no vector search).
+            recency_half_life_days: Half-life in days for recency decay.
         """
         self._db_path = db_path
         if type(embedding_dims) is not int:
@@ -76,6 +82,7 @@ class MemoryDB:
                 f"embedding_dims must be an integer, got {type(embedding_dims).__name__}"
             )
         self._embedding_dims = embedding_dims
+        self._recency_half_life = float(recency_half_life_days)
 
         # Create parent directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,6 +93,7 @@ class MemoryDB:
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
         self._conn.execute("PRAGMA busy_timeout = 5000")
+        self._conn.execute("PRAGMA foreign_keys = ON")
 
         # Load sqlite-vec extension for vector search
         self._vec_enabled = False
@@ -163,6 +171,58 @@ class MemoryDB:
                 VALUES (new.rowid, new.id, new.content, new.tags);
             END;
         """)
+
+        # Knowledge graph tables
+        self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS entities (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_name_type
+                ON entities(name, entity_type);
+
+            CREATE TABLE IF NOT EXISTS relations (
+                id TEXT PRIMARY KEY NOT NULL,
+                source_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                target_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                relation_type TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
+            CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
+
+            CREATE TABLE IF NOT EXISTS memory_entities (
+                memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                PRIMARY KEY (memory_id, entity_id)
+            );
+
+            -- Archive table
+            CREATE TABLE IF NOT EXISTS archived_memories (
+                id TEXT PRIMARY KEY NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT,
+                importance REAL NOT NULL DEFAULT 0.5,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                last_accessed TEXT NOT NULL,
+                archived_at TEXT NOT NULL
+            );
+        """)
+
+        # Add importance column to memories (migration for existing DBs)
+        try:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.5"
+            )
+        except Exception:
+            pass  # Column already exists
 
         # sqlite-vec virtual table (only if enabled)
         if self._vec_enabled and self._embedding_dims > 0:
@@ -384,11 +444,11 @@ class MemoryDB:
         return results
 
     def _calc_recency(self, updated_at: str, now: datetime) -> float:
-        """Calculate recency boost (half-life = 7 days)."""
+        """Calculate recency boost using configurable half-life."""
         try:
             updated = datetime.fromisoformat(updated_at)
             days_old = (now - updated).total_seconds() / 86400
-            return 2.0 ** (-days_old / 7.0)
+            return 2.0 ** (-days_old / self._recency_half_life)
         except (ValueError, KeyError):
             return 0.0
 
@@ -727,6 +787,125 @@ class MemoryDB:
         if imported > 0:
             logger.info(f"[AUDIT] import count={imported} mode={mode}")
         return {"imported": imported, "skipped": skipped, "rejected": rejected}
+
+    def archive_old_memories(
+        self, days: int = 90, importance_threshold: float = 0.3
+    ) -> int:
+        """Move old, low-importance memories to archive. Returns count archived."""
+        cursor = self._conn.cursor()
+        rows = cursor.execute(
+            """SELECT id, content, category, tags, source, importance,
+                      created_at, updated_at, access_count, last_accessed
+               FROM memories
+               WHERE last_accessed < datetime('now', ? || ' days')
+                 AND importance < ?""",
+            (f"-{days}", importance_threshold),
+        ).fetchall()
+
+        now = _now_iso()
+        count = 0
+        for row in rows:
+            cursor.execute(
+                """INSERT OR REPLACE INTO archived_memories
+                   (id, content, category, tags, source, importance,
+                    created_at, updated_at, access_count, last_accessed, archived_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (*row, now),
+            )
+            cursor.execute("DELETE FROM memories WHERE id = ?", (row[0],))
+            count += 1
+        self._conn.commit()
+        if count > 0:
+            logger.info(f"[AUDIT] archived count={count}")
+        return count
+
+    def restore_memory(self, memory_id: str) -> bool:
+        """Restore archived memory back to active."""
+        cursor = self._conn.cursor()
+        row = cursor.execute(
+            "SELECT * FROM archived_memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        if not row:
+            return False
+        now = _now_iso()
+        cursor.execute(
+            """INSERT OR REPLACE INTO memories
+               (id, content, category, tags, source, importance,
+                created_at, updated_at, access_count, last_accessed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row[0], row[1], row[2], row[3], row[4], row[5], row[6], now, row[8], now),
+        )
+        cursor.execute("DELETE FROM archived_memories WHERE id = ?", (memory_id,))
+        self._conn.commit()
+        logger.info(f"[AUDIT] restore id={memory_id}")
+        return True
+
+    def list_archived(self, limit: int = 20) -> list[dict]:
+        """List archived memories."""
+        cursor = self._conn.cursor()
+        rows = cursor.execute(
+            "SELECT id, content, category, tags, importance, archived_at "
+            "FROM archived_memories ORDER BY archived_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "content": r[1][:200],
+                "category": r[2],
+                "tags": json.loads(r[3]),
+                "importance": r[4],
+                "archived_at": r[5],
+            }
+            for r in rows
+        ]
+
+    def check_duplicate(self, content: str, threshold: float = 0.9) -> dict | None:
+        """Check if similar memory exists. Returns match info or None."""
+        words = content.split()[:10]
+        query = " ".join(words)
+        if not query.strip():
+            return None
+        results = self.search(query=query, limit=3)
+
+        if not results:
+            return None
+
+        top = results[0]
+        content_words = set(content.lower().split())
+        top_words = set(top["content"].lower().split())
+        if not content_words:
+            return None
+        overlap = len(content_words & top_words) / max(
+            len(content_words), len(top_words)
+        )
+
+        if overlap > threshold:
+            return {
+                "duplicate": True,
+                "existing_id": top["id"],
+                "existing_content": top["content"][:200],
+                "similarity": round(overlap, 2),
+            }
+        elif overlap > 0.7:
+            return {
+                "similar": True,
+                "existing_id": top["id"],
+                "existing_content": top["content"][:200],
+                "similarity": round(overlap, 2),
+            }
+        return None
+
+    def update_importance(self, memory_id: str, importance: float) -> bool:
+        """Update importance score for a memory."""
+        importance = max(0.0, min(1.0, importance))
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "UPDATE memories SET importance = ? WHERE id = ?",
+            (importance, memory_id),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
 
     def close(self) -> None:
         """Close database connection."""

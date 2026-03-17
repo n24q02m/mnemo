@@ -138,6 +138,21 @@ class Settings(BaseSettings):
     sync_interval: int = 300  # seconds, 0 = manual only
     rclone_version: str = "v1.68.2"
 
+    # Archive
+    archive_enabled: bool = True
+    archive_after_days: int = 90
+    archive_importance_threshold: float = 0.3
+
+    # Dedup
+    dedup_threshold: float = 0.9
+    dedup_warn_threshold: float = 0.7
+
+    # Temporal decay
+    recency_half_life_days: int = 7
+
+    # LLM for graph/importance (reuse existing proxy/SDK config)
+    llm_models: str = "gemini/gemini-3-flash-preview"
+
     # Logging
     log_level: str = "INFO"
 

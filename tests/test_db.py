@@ -565,6 +565,160 @@ class TestContentLengthValidation:
         assert tmp_db.get("ok2") is not None
 
 
+class TestImportanceColumn:
+    def test_importance_default_value(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("test content")
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["importance"] == 0.5
+
+    def test_update_importance(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("important content")
+        ok = tmp_db.update_importance(mid, 0.9)
+        assert ok is True
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["importance"] == 0.9
+
+    def test_update_importance_clamps(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("test")
+        tmp_db.update_importance(mid, 1.5)
+        mem = tmp_db.get(mid)
+        assert mem["importance"] == 1.0
+
+        tmp_db.update_importance(mid, -0.5)
+        mem = tmp_db.get(mid)
+        assert mem["importance"] == 0.0
+
+    def test_update_importance_nonexistent(self, tmp_db: MemoryDB):
+        ok = tmp_db.update_importance("nonexistent", 0.8)
+        assert ok is False
+
+
+class TestArchive:
+    def test_archive_old_memories(self, tmp_db: MemoryDB):
+        # Add a memory with old last_accessed
+        mid = tmp_db.add("old memory", category="test")
+        tmp_db._conn.execute(
+            "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+            (mid,),
+        )
+        tmp_db._conn.commit()
+
+        count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        assert count == 1
+        assert tmp_db.get(mid) is None  # Removed from active
+
+    def test_archive_keeps_recent(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("recent memory")
+        count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        assert count == 0
+        assert tmp_db.get(mid) is not None
+
+    def test_archive_keeps_important(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("important memory")
+        tmp_db.update_importance(mid, 0.9)
+        tmp_db._conn.execute(
+            "UPDATE memories SET last_accessed = datetime('now', '-100 days') WHERE id = ?",
+            (mid,),
+        )
+        tmp_db._conn.commit()
+
+        count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        assert count == 0
+        assert tmp_db.get(mid) is not None
+
+    def test_restore_memory(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("to archive")
+        tmp_db._conn.execute(
+            "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+            (mid,),
+        )
+        tmp_db._conn.commit()
+
+        tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        assert tmp_db.get(mid) is None
+
+        ok = tmp_db.restore_memory(mid)
+        assert ok is True
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["content"] == "to archive"
+
+    def test_restore_nonexistent(self, tmp_db: MemoryDB):
+        ok = tmp_db.restore_memory("nonexistent")
+        assert ok is False
+
+    def test_list_archived(self, tmp_db: MemoryDB):
+        mid1 = tmp_db.add("old1")
+        mid2 = tmp_db.add("old2")
+        for mid in (mid1, mid2):
+            tmp_db._conn.execute(
+                "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+                (mid,),
+            )
+        tmp_db._conn.commit()
+
+        tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        archived = tmp_db.list_archived()
+        assert len(archived) == 2
+        assert all("archived_at" in a for a in archived)
+        assert all("id" in a for a in archived)
+
+    def test_list_archived_empty(self, tmp_db: MemoryDB):
+        assert tmp_db.list_archived() == []
+
+    def test_list_archived_limit(self, tmp_db: MemoryDB):
+        for i in range(5):
+            mid = tmp_db.add(f"old {i}")
+            tmp_db._conn.execute(
+                "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+                (mid,),
+            )
+        tmp_db._conn.commit()
+
+        tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
+        archived = tmp_db.list_archived(limit=2)
+        assert len(archived) == 2
+
+
+class TestCheckDuplicate:
+    def test_no_duplicate(self, tmp_db: MemoryDB):
+        tmp_db.add("Python is a programming language")
+        result = tmp_db.check_duplicate("JavaScript is for web development")
+        assert result is None
+
+    def test_detects_duplicate(self, tmp_db: MemoryDB):
+        tmp_db.add("Python is a great programming language for data science")
+        result = tmp_db.check_duplicate(
+            "Python is a great programming language for data science"
+        )
+        assert result is not None
+        assert result.get("duplicate") is True
+
+    def test_empty_content(self, tmp_db: MemoryDB):
+        result = tmp_db.check_duplicate("")
+        assert result is None
+
+    def test_empty_db(self, tmp_db: MemoryDB):
+        result = tmp_db.check_duplicate("some content")
+        assert result is None
+
+
+class TestRecencyHalfLife:
+    def test_custom_half_life(self, tmp_path):
+        db = MemoryDB(
+            tmp_path / "halflife.db", embedding_dims=0, recency_half_life_days=14.0
+        )
+        assert db._recency_half_life == 14.0
+        db.close()
+
+    def test_default_half_life(self, tmp_path):
+        db = MemoryDB(tmp_path / "default.db", embedding_dims=0)
+        assert db._recency_half_life == 7.0
+        db.close()
+
+
 class TestDBInitSecurity:
     def test_invalid_embedding_dims_type(self, tmp_path):
         import pytest
