@@ -234,6 +234,75 @@ class TestMemoryStats:
         assert result["total_memories"] == 0
 
 
+class TestMemoryRestore:
+    async def test_restore(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        mid = db.add("to archive and restore")
+        db._conn.execute(
+            "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+            (mid,),
+        )
+        db._conn.commit()
+        db.archive_old_memories(days=90, importance_threshold=0.3)
+        assert db.get(mid) is None
+
+        result = json.loads(await memory(action="restore", memory_id=mid, ctx=ctx))
+        assert result["status"] == "restored"
+        assert db.get(mid) is not None
+
+    async def test_restore_no_id(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(await memory(action="restore", ctx=ctx))
+        assert "error" in result
+
+    async def test_restore_nonexistent(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await memory(action="restore", memory_id="fake123", ctx=ctx)
+        )
+        assert "error" in result
+
+
+class TestMemoryArchived:
+    async def test_archived_empty(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(await memory(action="archived", ctx=ctx))
+        assert result["count"] == 0
+        assert result["results"] == []
+
+    async def test_archived_with_data(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        mid = db.add("old memory")
+        db._conn.execute(
+            "UPDATE memories SET last_accessed = datetime('now', '-100 days'), importance = 0.1 WHERE id = ?",
+            (mid,),
+        )
+        db._conn.commit()
+        db.archive_old_memories(days=90, importance_threshold=0.3)
+
+        result = json.loads(await memory(action="archived", ctx=ctx))
+        assert result["count"] == 1
+        assert result["results"][0]["id"] == mid
+
+
+class TestMemoryConsolidate:
+    async def test_consolidate_local_mode_error(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        db.add("mem1", category="tech")
+        db.add("mem2", category="tech")
+        # Default mode is local (no API keys)
+        result = json.loads(
+            await memory(action="consolidate", category="tech", ctx=ctx)
+        )
+        assert "error" in result
+        assert "LLM" in result["error"]
+
+    async def test_consolidate_no_category(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(await memory(action="consolidate", ctx=ctx))
+        assert "error" in result
+
+
 class TestMemoryUnknownAction:
     async def test_unknown_action(self, ctx_with_db):
         ctx, _ = ctx_with_db

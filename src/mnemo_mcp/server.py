@@ -191,7 +191,11 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
     # 3. Initialize database (fast, no network)
     db_path = settings.get_db_path()
-    db = MemoryDB(db_path, embedding_dims=embedding_dims)
+    db = MemoryDB(
+        db_path,
+        embedding_dims=embedding_dims,
+        recency_half_life_days=settings.recency_half_life_days,
+    )
     stats = db.stats()
     logger.info(
         f"Database: {db_path} ({stats['total_memories']} memories, "
@@ -326,6 +330,19 @@ async def _handle_add(
     if not content:
         return _json({"error": "content is required for add"})
 
+    # Dedup check before insert
+    dedup_warning = None
+    try:
+        dedup_result = await asyncio.to_thread(
+            db.check_duplicate, content, settings.dedup_threshold
+        )
+        if dedup_result and dedup_result.get("duplicate"):
+            dedup_warning = dedup_result
+        elif dedup_result and dedup_result.get("similar"):
+            dedup_warning = dedup_result
+    except Exception:
+        pass  # Non-blocking, ignore errors
+
     embedding = await _embed(content, embedding_model, embedding_dims)
     try:
         memory_id = await asyncio.to_thread(
@@ -340,14 +357,55 @@ async def _handle_add(
     except Exception:
         logger.exception("Unexpected error in _handle_add")
         return _json({"error": "Internal error while adding memory"})
-    return _json(
-        {
-            "id": memory_id,
-            "status": "saved",
-            "category": category or "general",
-            "semantic": embedding is not None,
-        }
+
+    result: dict = {
+        "id": memory_id,
+        "status": "saved",
+        "category": category or "general",
+        "semantic": embedding is not None,
+    }
+    if dedup_warning:
+        result["dedup_warning"] = dedup_warning
+
+    # Background: score importance + extract entities (non-blocking)
+    asyncio.create_task(_enrich_memory(db, memory_id, content))
+
+    return _json(result)
+
+
+async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
+    """Background task: score importance and extract entities."""
+    from mnemo_mcp.graph import (
+        create_relations,
+        extract_entities,
+        link_memory_entities,
+        score_importance,
+        upsert_entities,
     )
+
+    try:
+        importance = await score_importance(content)
+        if importance != 0.5:
+            await asyncio.to_thread(db.update_importance, memory_id, importance)
+    except Exception as e:
+        logger.debug(f"Importance scoring background error: {e}")
+
+    try:
+        graph_data = await extract_entities(content)
+        if graph_data and graph_data.get("entities"):
+            conn = db._conn
+            entity_ids = upsert_entities(conn, graph_data["entities"])
+            name_to_id = {}
+            for ent, eid in zip(graph_data["entities"], entity_ids, strict=False):
+                name = ent.get("name", "").strip()
+                if name:
+                    name_to_id[name] = eid
+            if graph_data.get("relations"):
+                create_relations(conn, graph_data["relations"], name_to_id)
+            link_memory_entities(conn, memory_id, entity_ids)
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"Entity extraction background error: {e}")
 
 
 async def _handle_search(
@@ -393,6 +451,23 @@ async def _handle_search(
                 reranked = True
         except Exception as e:
             logger.debug(f"Reranking failed, using original order: {e}")
+
+    # Graph boost: find related memories via entity graph
+    if results:
+        try:
+            from mnemo_mcp.graph import find_related_memory_ids
+
+            top_id = results[0]["id"]
+            related_ids = await asyncio.to_thread(
+                find_related_memory_ids, db._conn, top_id
+            )
+            if related_ids:
+                related_set = set(related_ids)
+                for r in results:
+                    if r["id"] in related_set:
+                        r["graph_related"] = True
+        except Exception:
+            pass  # Non-blocking
 
     return _json(
         {
@@ -453,6 +528,9 @@ async def _handle_update(
         logger.exception("Unexpected error in _handle_update")
         return _json({"error": "Internal error while updating memory"})
     if ok:
+        # Background: re-extract entities if content changed
+        if content:
+            asyncio.create_task(_enrich_memory(db, memory_id, content))
         return _json({"status": "updated", "id": memory_id})
     return _json({"error": f"Memory {memory_id} not found"})
 
@@ -517,12 +595,103 @@ async def _handle_stats(
     return _json(s)
 
 
+async def _handle_restore(
+    db: MemoryDB,
+    memory_id: str | None,
+) -> str:
+    if not memory_id:
+        return _json({"error": "memory_id is required for restore"})
+
+    ok = await asyncio.to_thread(db.restore_memory, memory_id)
+    if ok:
+        return _json({"status": "restored", "id": memory_id})
+    return _json({"error": f"Archived memory {memory_id} not found"})
+
+
+async def _handle_archived(
+    db: MemoryDB,
+    limit: int,
+) -> str:
+    results = await asyncio.to_thread(db.list_archived, limit)
+    return _json(
+        {
+            "count": len(results),
+            "results": results,
+        }
+    )
+
+
+async def _handle_consolidate(
+    db: MemoryDB,
+    category: str | None,
+) -> str:
+    """Consolidate similar memories in a category using LLM summarization."""
+    mode = settings.resolve_litellm_mode()
+    if mode == "local":
+        return _json({"error": "Consolidation requires LLM (proxy or SDK mode)"})
+
+    if not category:
+        return _json({"error": "category is required for consolidate"})
+
+    memories = await asyncio.to_thread(db.list_memories, category=category, limit=50)
+    if len(memories) < 2:
+        return _json(
+            {"error": f"Need at least 2 memories in '{category}' to consolidate"}
+        )
+
+    try:
+        from litellm import acompletion
+
+        llm_kwargs: dict = {}
+        if settings.litellm_proxy_url:
+            llm_kwargs["api_base"] = settings.litellm_proxy_url
+            if settings.litellm_proxy_key:
+                llm_kwargs["api_key"] = settings.litellm_proxy_key
+
+        models = [m.strip() for m in settings.llm_models.split(",") if m.strip()]
+        model = models[0] if models else "gemini/gemini-3-flash-preview"
+
+        content_list = "\n---\n".join(
+            f"[{m['id'][:8]}] {m['content']}" for m in memories[:20]
+        )
+
+        response = await acompletion(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize these related memories into a single consolidated memory. "
+                        "Preserve key facts and remove redundancy. Return ONLY the consolidated text.\n\n"
+                        f"{content_list}"
+                    ),
+                }
+            ],
+            temperature=0,
+            max_tokens=1000,
+            **llm_kwargs,
+        )
+
+        summary = response.choices[0].message.content.strip()
+        return _json(
+            {
+                "status": "consolidated",
+                "category": category,
+                "original_count": len(memories),
+                "summary": summary,
+                "note": "Review the summary and use add/delete to apply changes.",
+            }
+        )
+    except Exception as e:
+        return _json({"error": f"Consolidation failed: {e}"})
+
+
 # --- Tools ---
 
 
 @mcp.tool(
     description=(
-        "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats. "
+        "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate. "
         "PROACTIVE: save user preferences, decisions, corrections, project conventions. "
         "Search before recommending. Use help tool for full docs."
     ),
@@ -557,6 +726,9 @@ async def memory(
     - export: Export all as JSONL
     - import: Import from JSONL (data required, mode: merge|replace)
     - stats: Database statistics
+    - restore: Restore archived memory (memory_id required)
+    - archived: List archived memories (limit optional)
+    - consolidate: LLM summarize similar memories (category required)
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
@@ -587,6 +759,12 @@ async def memory(
             return await _handle_import(db, data, mode)
         case "stats":
             return await _handle_stats(db, embedding_model, embedding_dims)
+        case "restore":
+            return await _handle_restore(db, memory_id)
+        case "archived":
+            return await _handle_archived(db, limit)
+        case "consolidate":
+            return await _handle_consolidate(db, category)
         case _:
             return _json(
                 {
@@ -600,6 +778,9 @@ async def memory(
                         "export",
                         "import",
                         "stats",
+                        "restore",
+                        "archived",
+                        "consolidate",
                     ],
                 }
             )
