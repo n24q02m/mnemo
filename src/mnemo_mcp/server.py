@@ -683,7 +683,7 @@ async def help(topic: str = "memory") -> str:
         )
 
     doc_file = docs_package / filename
-    content = doc_file.read_text(encoding="utf-8")
+    content = await asyncio.to_thread(doc_file.read_text, encoding="utf-8")
     return content
 
 
