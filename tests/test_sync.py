@@ -268,6 +268,38 @@ class TestSetupSync:
             assert "SUCCESS" in captured.out
             assert "SYNC_ENABLED" in captured.out
 
+    def test_json_decode_error(self, tmp_path, capsys):
+        """setup_sync falls back to manual base64 token if JSON parsing fails."""
+        rclone_path = tmp_path / "rclone"
+        rclone_path.touch()
+
+        # This string looks like the right format but contains invalid JSON
+        invalid_json = (
+            '{"access_token":"ya29.abc", "token_type":Bearer"}'  # Missing quote
+        )
+        token_output = f"--------------------\n{invalid_json}\n--------------------\n"
+
+        with (
+            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
+            patch(
+                "mnemo_mcp.sync.subprocess.run",
+                return_value=self._mock_result(stdout=token_output),
+            ),
+            patch("mnemo_mcp.token_store.save_token") as mock_save,
+        ):
+            setup_sync("drive")
+
+            # Save should not be called since JSON is invalid
+            mock_save.assert_not_called()
+
+            # Check that fallback message is printed
+            captured = capsys.readouterr()
+            assert "Token saved but could not parse JSON. Base64 token:" in captured.out
+
+            # The base64 output should be present
+            expected_b64 = base64.b64encode(invalid_json.encode()).decode()
+            assert expected_b64 in captured.out
+
 
 class TestStartAutoSync:
     def teardown_method(self):
