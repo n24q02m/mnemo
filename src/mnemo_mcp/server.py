@@ -25,6 +25,7 @@ from mnemo_mcp.db import MemoryDB
 # Embedding models to try during auto-detection (in priority order).
 # LiteLLM validates each against its API key — first success wins.
 _EMBEDDING_CANDIDATES = [
+    "jina_ai/jina-embeddings-v5-text-small",
     "gemini/gemini-embedding-001",
     "text-embedding-3-large",
     "embed-multilingual-v3.0",
@@ -128,6 +129,50 @@ async def _init_embedding_backend(
         logger.error(f"Local embedding init failed: {e}")
 
 
+async def _init_reranker_backend(mode: str) -> None:
+    """Initialize reranker backend in background.
+
+    Tries cloud (LiteLLM) first if API keys are available, then falls back
+    to local (qwen3-embed cross-encoder). Best-effort: if both fail, search
+    still works without reranking.
+    """
+    from mnemo_mcp.reranker import init_reranker
+
+    backend_type = settings.resolve_rerank_backend()
+    if not backend_type:
+        logger.debug("Reranking disabled")
+        return
+
+    litellm_kwargs = settings.get_rerank_litellm_kwargs()
+
+    if backend_type == "litellm":
+        model = settings.resolve_rerank_model()
+        if model:
+            try:
+                backend = await asyncio.to_thread(
+                    init_reranker, "litellm", model, **litellm_kwargs
+                )
+                available = await asyncio.to_thread(backend.check_available)
+                if available:
+                    logger.info(f"Reranker: {model}")
+                    return
+            except Exception as e:
+                logger.warning(f"Reranker {model} not available: {e}")
+        logger.warning("Cloud reranker not available, using local fallback")
+
+    # Local fallback
+    local_model = settings.resolve_local_rerank_model()
+    try:
+        backend = await asyncio.to_thread(init_reranker, "local", local_model)
+        available = await asyncio.to_thread(backend.check_available)
+        if available:
+            logger.info(f"Reranker: local {local_model}")
+        else:
+            logger.error("Local reranker not available")
+    except Exception as e:
+        logger.error(f"Local reranker init failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Initialize DB, embeddings, and sync on startup.
@@ -176,16 +221,20 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     # or cloud API validation. Tools degrade to FTS5-only until ready.
     embedding_task = asyncio.create_task(_init_embedding_backend(mode, ctx))
 
+    # 6. Initialize reranker backend in background (non-blocking).
+    reranker_task = asyncio.create_task(_init_reranker_backend(mode))
+
     try:
         yield ctx
     finally:
-        # Cancel embedding init if still running
-        if not embedding_task.done():
-            embedding_task.cancel()
-            try:
-                await embedding_task
-            except (asyncio.CancelledError, Exception):
-                pass
+        # Cancel background init tasks if still running
+        for task in (embedding_task, reranker_task):
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
         # Cleanup
         from mnemo_mcp.sync import stop_auto_sync
@@ -322,11 +371,35 @@ async def _handle_search(
         tags=tags,
         limit=limit,
     )
+
+    # Rerank results for better precision (best-effort)
+    from mnemo_mcp.reranker import get_reranker
+
+    reranker = get_reranker()
+    reranked = False
+    if reranker and len(results) > 1:
+        documents = [r["content"] for r in results]
+        try:
+            ranked = await asyncio.to_thread(
+                reranker.rerank, query, documents, top_n=limit
+            )
+            if ranked:
+                reranked_results = []
+                for idx, score in ranked:
+                    r = results[idx].copy()
+                    r["rerank_score"] = round(score, 4)
+                    reranked_results.append(r)
+                results = reranked_results
+                reranked = True
+        except Exception as e:
+            logger.debug(f"Reranking failed, using original order: {e}")
+
     return _json(
         {
             "count": len(results),
             "results": [_format_memory(r) for r in results],
             "semantic": embedding is not None,
+            "reranked": reranked,
         }
     )
 

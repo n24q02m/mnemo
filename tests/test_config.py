@@ -195,6 +195,95 @@ class TestEmbeddingBackend:
         assert s.resolve_embedding_backend() == "litellm"
 
 
+class TestRerankSettings:
+    def test_rerank_enabled_default(self):
+        s = Settings(api_keys=None)
+        assert s.rerank_enabled is True
+
+    def test_rerank_backend_empty_default(self):
+        s = Settings(api_keys=None)
+        assert s.rerank_backend == ""
+
+    def test_rerank_model_empty_default(self):
+        s = Settings(api_keys=None)
+        assert s.rerank_model == ""
+
+    def test_rerank_top_n_default(self):
+        s = Settings(api_keys=None)
+        assert s.rerank_top_n == 10
+
+    def test_resolve_rerank_backend_disabled(self):
+        s = Settings(rerank_enabled=False, api_keys=None)
+        assert s.resolve_rerank_backend() == ""
+
+    def test_resolve_rerank_backend_explicit(self):
+        s = Settings(rerank_backend="litellm", api_keys=None)
+        assert s.resolve_rerank_backend() == "litellm"
+
+    def test_resolve_rerank_backend_proxy(self):
+        s = Settings(litellm_proxy_url="http://proxy:4000", api_keys=None)
+        assert s.resolve_rerank_backend() == "litellm"
+
+    def test_resolve_rerank_backend_model_set(self):
+        s = Settings(rerank_model="custom/reranker", api_keys=None)
+        assert s.resolve_rerank_backend() == "litellm"
+
+    def test_resolve_rerank_backend_jina_env(self, monkeypatch):
+        monkeypatch.setenv("JINA_AI_API_KEY", "test-key")
+        s = Settings(api_keys=None)
+        assert s.resolve_rerank_backend() == "litellm"
+
+    def test_resolve_rerank_backend_jina_in_api_keys(self):
+        s = Settings(api_keys="JINA_AI_API_KEY:test-key")
+        assert s.resolve_rerank_backend() == "litellm"
+
+    def test_resolve_rerank_backend_local_fallback(self):
+        s = Settings(api_keys=None)
+        assert s.resolve_rerank_backend() == "local"
+
+    def test_resolve_rerank_model_explicit(self):
+        s = Settings(rerank_model="custom/reranker", api_keys=None)
+        assert s.resolve_rerank_model() == "custom/reranker"
+
+    def test_resolve_rerank_model_jina_env(self, monkeypatch):
+        monkeypatch.setenv("JINA_AI_API_KEY", "test-key")
+        s = Settings(api_keys=None)
+        assert s.resolve_rerank_model() == "jina_ai/jina-reranker-v3"
+
+    def test_resolve_rerank_model_cohere_env(self, monkeypatch):
+        monkeypatch.setenv("COHERE_API_KEY", "test-key")
+        s = Settings(api_keys=None)
+        assert s.resolve_rerank_model() == "cohere/rerank-multilingual-v3.0"
+
+    def test_resolve_rerank_model_jina_in_api_keys(self):
+        s = Settings(api_keys="JINA_AI_API_KEY:test-key")
+        assert s.resolve_rerank_model() == "jina_ai/jina-reranker-v3"
+
+    def test_resolve_rerank_model_none_no_keys(self):
+        s = Settings(api_keys=None)
+        assert s.resolve_rerank_model() is None
+
+    def test_get_rerank_litellm_kwargs_empty(self):
+        s = Settings(api_keys=None)
+        assert s.get_rerank_litellm_kwargs() == {}
+
+    def test_get_rerank_litellm_kwargs_with_values(self):
+        s = Settings(
+            rerank_api_base="http://proxy:4000",
+            rerank_api_key="sk-test",
+            api_keys=None,
+        )
+        kwargs = s.get_rerank_litellm_kwargs()
+        assert kwargs["api_base"] == "http://proxy:4000"
+        assert kwargs["api_key"] == "sk-test"
+
+    def test_resolve_local_rerank_model(self):
+        s = Settings(api_keys=None)
+        model = s.resolve_local_rerank_model()
+        # Should return ONNX or GGUF depending on environment
+        assert "Qwen3-Reranker-0.6B" in model
+
+
 class TestRcloneVersion:
     def test_default(self):
         s = Settings(api_keys=None)

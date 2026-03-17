@@ -44,6 +44,11 @@ def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
     return onnx_name
 
 
+_RERANK_PROVIDERS: dict[str, str] = {
+    "JINA_AI_API_KEY": "jina_ai/jina-reranker-v3",
+    "COHERE_API_KEY": "cohere/rerank-multilingual-v3.0",
+}
+
 RCLONE_PROVIDERS = {
     "drive",
     "dropbox",
@@ -116,6 +121,14 @@ class Settings(BaseSettings):
     embedding_backend: str = (
         ""  # "litellm" | "local" | "" (auto: API_KEYS->litellm, else local)
     )
+
+    # Reranking
+    rerank_enabled: bool = True
+    rerank_backend: str = ""  # "litellm" | "local" | "" (auto)
+    rerank_model: str = ""
+    rerank_top_n: int = 10
+    rerank_api_base: str = ""
+    rerank_api_key: str = ""
 
     # Sync (rclone)
     sync_enabled: bool = False
@@ -288,6 +301,65 @@ class Settings(BaseSettings):
         if mode in ("proxy", "sdk"):
             return "litellm"
         return "local"
+
+    def resolve_rerank_backend(self) -> str:
+        """Resolve reranker backend: 'litellm', 'local', or '' (disabled).
+
+        Auto-detect order:
+        1. Disabled if rerank_enabled is False
+        2. Explicit rerank_backend setting
+        3. 'litellm' if in proxy/sdk mode or rerank_model set
+        4. 'litellm' if a known rerank provider key is in env or API_KEYS
+        5. 'local' (qwen3-embed cross-encoder, always available)
+        """
+        if not self.rerank_enabled:
+            return ""
+        if self.rerank_backend:
+            return self.rerank_backend
+        if self.litellm_proxy_url:
+            return "litellm"
+        if self.rerank_model:
+            return "litellm"
+        for key in _RERANK_PROVIDERS:
+            if os.environ.get(key):
+                return "litellm"
+        if self.api_keys:
+            for key in _RERANK_PROVIDERS:
+                if key in self.api_keys:
+                    return "litellm"
+        return "local"
+
+    def resolve_rerank_model(self) -> str | None:
+        """Resolve reranker model name from config or env.
+
+        Returns None if no known provider key is found.
+        """
+        if self.rerank_model:
+            return self.rerank_model
+        for key, model in _RERANK_PROVIDERS.items():
+            if os.environ.get(key):
+                return model
+        if self.api_keys:
+            for key, model in _RERANK_PROVIDERS.items():
+                if key in self.api_keys:
+                    return model
+        return None
+
+    def get_rerank_litellm_kwargs(self) -> dict:
+        """Get extra kwargs for litellm rerank calls (api_base, api_key)."""
+        kwargs: dict = {}
+        if self.rerank_api_base:
+            kwargs["api_base"] = self.rerank_api_base
+        if self.rerank_api_key:
+            kwargs["api_key"] = self.rerank_api_key
+        return kwargs
+
+    def resolve_local_rerank_model(self) -> str:
+        """Resolve local reranker model: GGUF if GPU + llama-cpp, else ONNX."""
+        return _resolve_local_model(
+            "n24q02m/Qwen3-Reranker-0.6B-ONNX",
+            "n24q02m/Qwen3-Reranker-0.6B-GGUF",
+        )
 
 
 settings = Settings()
