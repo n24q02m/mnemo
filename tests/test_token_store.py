@@ -102,6 +102,24 @@ class TestSaveToken:
         saved = json.loads((token_dir / "drive.json").read_text())
         assert saved["access_token"] == "new"
 
+    def test_save_chmod_oserror(self, token_dir):
+        from pathlib import Path
+
+        from mnemo_mcp.token_store import save_token
+
+        token = {"access_token": "abc"}
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch.object(Path, "chmod", side_effect=OSError("Permission denied")),
+        ):
+            m.get_data_dir.return_value = token_dir.parent
+            # This should not raise an OSError
+            save_token("drive", token)
+
+        saved = json.loads((token_dir / "drive.json").read_text())
+        assert saved["access_token"] == "abc"
+
 
 class TestDeleteToken:
     def test_delete_existing(self, token_dir):
