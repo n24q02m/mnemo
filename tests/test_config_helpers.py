@@ -52,6 +52,23 @@ class TestHasGGUFSupport:
         with patch.dict(sys.modules, {"llama_cpp": None}):
             assert _has_gguf_support() is False
 
+    def test_llama_cpp_import_error(self):
+        import builtins
+
+        orig_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "llama_cpp":
+                raise ImportError("Mocked ImportError")
+            return orig_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            # Ensure sys.modules does not prevent the import call
+            with patch.dict(sys.modules):
+                if "llama_cpp" in sys.modules:
+                    del sys.modules["llama_cpp"]
+                assert _has_gguf_support() is False
+
 
 class TestResolveLocalModel:
     def test_gpu_and_gguf(self):
