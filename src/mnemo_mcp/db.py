@@ -122,6 +122,12 @@ class MemoryDB:
                 ON memories(updated_at);
             CREATE INDEX IF NOT EXISTS idx_memories_accessed
                 ON memories(last_accessed);
+
+            -- Bolt Performance Optimization:
+            -- Compound index to eliminate O(N log N) file-sort overhead during
+            -- list_memories pagination queries (WHERE category = ? ORDER BY updated_at DESC)
+            CREATE INDEX IF NOT EXISTS idx_memories_category_updated
+                ON memories(category, updated_at DESC);
         """)
 
         # FTS5 full-text search (always available)
