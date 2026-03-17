@@ -403,3 +403,32 @@ class TestWarmupInitEmbeddingBackend:
         await _init_embedding_backend("local", ctx)
 
         assert ctx["embedding_model"] is None
+
+    @patch(
+        "mnemo_mcp.server.asyncio.to_thread",
+        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+    )
+    @patch("mnemo_mcp.server.logger")
+    @patch("mnemo_mcp.embedder.init_backend")
+    @patch("mnemo_mcp.server.settings")
+    async def test_local_backend_init_raises_exception(
+        self, mock_settings, mock_init, mock_logger, _mock_thread
+    ):
+        """When init_backend raises exception, logs error and ctx stays None."""
+        from mnemo_mcp.server import _init_embedding_backend
+
+        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.resolve_embedding_dims.return_value = 0
+        mock_settings.resolve_embedding_backend.return_value = "local"
+        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        mock_settings.get_embedding_litellm_kwargs.return_value = {}
+
+        mock_init.side_effect = Exception("Init Backend Failed")
+
+        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+        await _init_embedding_backend("local", ctx)
+
+        assert ctx["embedding_model"] is None
+        mock_logger.error.assert_called_with(
+            "Local embedding init failed: Init Backend Failed"
+        )
