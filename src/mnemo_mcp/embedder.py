@@ -128,7 +128,7 @@ class LiteLLMBackend:
         dimensions: int | None = None,
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors."""
-        from litellm import embedding as litellm_embedding
+        from litellm import aembedding as litellm_aembedding
 
         kwargs: dict = {
             "model": self.model,
@@ -144,7 +144,7 @@ class LiteLLMBackend:
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                response = litellm_embedding(**kwargs)
+                response = await litellm_aembedding(**kwargs)
                 data = sorted(response.data, key=lambda x: x["index"])
                 return [d["embedding"] for d in data]
             except Exception as e:

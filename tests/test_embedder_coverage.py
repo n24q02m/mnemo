@@ -14,7 +14,7 @@ from mnemo_mcp.embedder import LiteLLMBackend, Qwen3EmbedBackend, _is_retryable
 
 
 class TestLiteLLMBackendCustomEndpoint:
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_passes_api_base(self, mock_embed):
         """api_base is passed through to litellm embedding call."""
         mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
@@ -24,7 +24,7 @@ class TestLiteLLMBackendCustomEndpoint:
             model="model", input=["test"], api_base="https://custom.api.com"
         )
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_passes_api_key(self, mock_embed):
         """api_key is passed through to litellm embedding call."""
         mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
@@ -34,7 +34,7 @@ class TestLiteLLMBackendCustomEndpoint:
             model="model", input=["test"], api_key="sk-custom"
         )
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_passes_both_api_base_and_key(self, mock_embed):
         """Both api_base and api_key are passed through."""
         mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])

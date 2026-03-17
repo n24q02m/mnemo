@@ -16,7 +16,7 @@ from mnemo_mcp.embedder import (
 
 
 class TestLiteLLMBackend:
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_returns_embeddings(self, mock_embed):
         mock_embed.return_value = MagicMock(
             data=[
@@ -29,14 +29,14 @@ class TestLiteLLMBackend:
         assert len(result) == 2
         assert result[0] == [0.1, 0.2, 0.3]
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_empty_input(self, mock_embed):
         backend = LiteLLMBackend("test-model")
         result = await backend.embed_texts([])
         assert result == []
         mock_embed.assert_not_called()
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_preserves_order(self, mock_embed):
         """Results sorted by index even if API returns out of order."""
         mock_embed.return_value = MagicMock(
@@ -50,7 +50,7 @@ class TestLiteLLMBackend:
         assert result[0] == [0.1, 0.2]
         assert result[1] == [0.4, 0.5]
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_passes_dimensions(self, mock_embed):
         mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
         backend = LiteLLMBackend("model")
@@ -59,7 +59,7 @@ class TestLiteLLMBackend:
             model="model", input=["test"], dimensions=512
         )
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_embed_single(self, mock_embed):
         mock_embed.return_value = MagicMock(
             data=[{"index": 0, "embedding": [0.1, 0.2, 0.3]}]
@@ -80,7 +80,7 @@ class TestLiteLLMBackend:
         backend = LiteLLMBackend("model")
         assert backend.check_available() == 0
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_raises_on_non_retryable_error(self, mock_embed):
         mock_embed.side_effect = Exception("Invalid API key")
         backend = LiteLLMBackend("model")
@@ -95,7 +95,7 @@ class TestLiteLLMBackend:
 
 
 class TestBatchSplitting:
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_splits_large_batch(self, mock_embed):
         """Texts exceeding MAX_BATCH_SIZE are split into sub-batches."""
         n = LiteLLMBackend.MAX_BATCH_SIZE + 50
@@ -113,7 +113,7 @@ class TestBatchSplitting:
         vecs = await backend.embed_texts([f"t{i}" for i in range(n)])
         assert len(vecs) == n
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_batch_call_count(self, mock_embed):
         """Correct number of API calls for split batches."""
         n = LiteLLMBackend.MAX_BATCH_SIZE * 2 + 10
@@ -130,7 +130,7 @@ class TestBatchSplitting:
         await backend.embed_texts([f"t{i}" for i in range(n)])
         assert mock_embed.call_count == 3
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_no_split_under_limit(self, mock_embed):
         def mock_fn(**kwargs):
             resp = MagicMock()
@@ -149,7 +149,7 @@ class TestBatchSplitting:
 
 class TestRetryLogic:
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_retries_on_rate_limit(self, mock_embed, mock_sleep):
         success = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
         mock_embed.side_effect = [Exception("429 rate limit exceeded"), success]
@@ -159,7 +159,7 @@ class TestRetryLogic:
         mock_sleep.assert_called_once_with(1.0)
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_retries_on_server_error(self, mock_embed, mock_sleep):
         success = MagicMock(data=[{"index": 0, "embedding": [0.2]}])
         mock_embed.side_effect = [
@@ -171,7 +171,7 @@ class TestRetryLogic:
         assert result == [[0.2]]
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_no_retry_on_non_retryable(self, mock_embed, mock_sleep):
         mock_embed.side_effect = Exception("Invalid API key")
         backend = LiteLLMBackend("model")
@@ -180,7 +180,7 @@ class TestRetryLogic:
         mock_sleep.assert_not_called()
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_exponential_backoff(self, mock_embed, mock_sleep):
         success = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
         mock_embed.side_effect = [
@@ -193,7 +193,7 @@ class TestRetryLogic:
         assert mock_sleep.call_args_list == [call(1.0), call(2.0)]
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_max_retries_exhausted(self, mock_embed, mock_sleep):
         mock_embed.side_effect = Exception("429 rate limit")
         backend = LiteLLMBackend("model")
@@ -329,13 +329,13 @@ class TestQwen3GetModelWarning:
 class TestLegacyCompat:
     """Legacy module-level functions still work."""
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_embed_texts_legacy(self, mock_embed):
         mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
         result = await embed_texts(["test"], "model")
         assert result == [[0.1]]
 
-    @patch("litellm.embedding")
+    @patch("litellm.aembedding")
     async def test_embed_single_legacy(self, mock_embed):
         mock_embed.return_value = MagicMock(
             data=[{"index": 0, "embedding": [0.1, 0.2]}]
