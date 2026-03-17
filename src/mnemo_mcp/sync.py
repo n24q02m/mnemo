@@ -389,18 +389,21 @@ async def sync_full(db: MemoryDB) -> dict:
     remote_db_path = await sync_pull(rclone_path, db_path, remote, folder)
     if remote_db_path:
         try:
-            # Open remote DB and export JSONL
-            remote_db = MemoryDB(remote_db_path, embedding_dims=0)
-            remote_jsonl, _ = remote_db.export_jsonl()
-            remote_db.close()
 
-            # Import into local DB (merge mode - skip existing)
-            if remote_jsonl.strip():
-                import_result = db.import_jsonl(remote_jsonl, mode="merge")
-                result["pull"] = import_result
+            def _merge_dbs() -> dict:
+                _remote_db = MemoryDB(remote_db_path, embedding_dims=0)
+                _remote_jsonl, _ = _remote_db.export_jsonl()
+                _remote_db.close()
+                if _remote_jsonl.strip():
+                    return db.import_jsonl(_remote_jsonl, mode="merge")
+                return {"imported": 0, "skipped": 0}
+
+            # Run DB operations in thread pool to prevent blocking asyncio loop
+            import_result = await asyncio.to_thread(_merge_dbs)
+
+            result["pull"] = import_result
+            if import_result.get("imported", 0) > 0:
                 logger.info(f"Merged {import_result['imported']} memories from remote")
-            else:
-                result["pull"] = {"imported": 0, "skipped": 0}
 
         except Exception as e:
             logger.error(f"Merge failed: {e}")
