@@ -174,6 +174,20 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("sync_folder")
+    @classmethod
+    def validate_sync_folder(cls, v: str) -> str:
+        """Validate sync_folder to prevent path traversal in rclone args."""
+        if not v:
+            return v
+        if ".." in v or v.startswith("/"):
+            raise ValueError("sync_folder must not contain '..' or start with '/'")
+        if not re.match(r"^[a-zA-Z0-9_./\- ]*$", v):
+            raise ValueError(
+                "sync_folder can only contain alphanumeric characters, dashes, underscores, dots, slashes, and spaces"
+            )
+        return v
+
     @field_validator("sync_remote")
     @classmethod
     def validate_sync_remote(cls, v: str) -> str:
