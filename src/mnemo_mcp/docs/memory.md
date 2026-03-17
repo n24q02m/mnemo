@@ -108,6 +108,69 @@ Returns total count, categories breakdown, last update time, and sync status.
 
 **Parameters:** None
 
+### `restore` - Restore an archived memory
+
+Restore a previously archived memory back to active status.
+
+**Parameters:**
+- `memory_id` (required): ID of the archived memory to restore
+
+**Example:**
+```json
+{"action": "restore", "memory_id": "abc123"}
+```
+
+### `archived` - List archived memories
+
+Browse memories that have been auto-archived (old + low importance).
+
+**Parameters:**
+- `limit` (optional): Max results (default: 5)
+
+**Example:**
+```json
+{"action": "archived", "limit": 10}
+```
+
+### `consolidate` - Summarize related memories
+
+Uses LLM to summarize multiple memories in a category into a single consolidated text.
+Requires LLM access (proxy or SDK mode). Returns a summary for review — does not
+automatically modify memories.
+
+**Parameters:**
+- `category` (required): Category to consolidate
+
+**Example:**
+```json
+{"action": "consolidate", "category": "decision"}
+```
+
+## Intelligence Features
+
+### Knowledge Graph
+When LLM is available (proxy or SDK mode), adding or updating a memory automatically:
+- Extracts entities (person, project, tool, concept, org, location, event)
+- Identifies relations (uses, works_on, related_to, depends_on, created_by, part_of)
+- Links entities to memories for graph-boosted search results
+
+### Importance Scoring
+Each memory is scored 0.0-1.0 by an LLM based on its value for future recall.
+Defaults to 0.5 when LLM is unavailable. Used by auto-archive to identify low-value memories.
+
+### Duplicate Detection
+Before adding a memory, the system checks for semantic duplicates:
+- Above `DEDUP_THRESHOLD` (0.9): warns about near-duplicate
+- Above `DEDUP_WARN_THRESHOLD` (0.7): warns about similar existing memory
+
+### Auto-Archive
+Memories older than `ARCHIVE_AFTER_DAYS` (90) with importance below
+`ARCHIVE_IMPORTANCE_THRESHOLD` (0.3) are automatically archived. Use `restore` to recover them.
+
+### Reranking
+Search results are reranked using a cross-encoder model for improved precision.
+Supports Jina AI and Cohere cloud rerankers, with local Qwen3 as fallback.
+
 ## Proactive Memory Guidelines
 
 The AI SHOULD proactively save memories when it detects:

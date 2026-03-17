@@ -22,9 +22,16 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Features
 
-- **Hybrid search**: FTS5 full-text + sqlite-vec semantic + Qwen3-Embedding-0.6B (built-in)
-- **Zero config mode**: Works out of the box — local embedding, no API keys needed
-- **Auto-detect embedding**: Set `API_KEYS` for cloud embedding, auto-fallback to local
+- **Hybrid search**: FTS5 full-text + sqlite-vec semantic + reranking for precision
+- **Reranking**: Dual-backend — Jina/Cohere cloud or Qwen3 local cross-encoder
+- **Knowledge graph**: Automatic entity extraction and relation tracking across memories
+- **Importance scoring**: LLM-scored 0.0-1.0 per memory for smarter retrieval
+- **Auto-archive**: Configurable age + importance threshold to keep memory clean
+- **STM-to-LTM consolidation**: LLM summarization of related memories in a category
+- **Duplicate detection**: Warns before adding semantically similar memories
+- **Configurable temporal decay**: Tune recency bias via `RECENCY_HALF_LIFE_DAYS`
+- **Zero config mode**: Works out of the box — local embedding + reranking, no API keys needed
+- **Auto-detect providers**: Set `API_KEYS` for cloud embedding/reranking, auto-fallback to local
 - **Embedded sync**: rclone auto-downloaded and managed as subprocess
 - **Multi-machine**: JSONL-based merge sync via rclone (Google Drive, S3, etc.)
 - **Proactive memory**: Tool descriptions guide AI to save preferences, decisions, facts
@@ -51,10 +58,11 @@ uvx mnemo-mcp@latest
         // -- optional: LiteLLM Proxy (production, selfhosted gateway)
         // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
         // "LITELLM_PROXY_KEY": "sk-your-virtual-key",
-        // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
-        // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
-        // -- first run downloads ~570MB model, cached for subsequent runs
-        "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: cloud embedding + reranking (Jina > Gemini > OpenAI > Cohere)
+        // -- without this, uses built-in local Qwen3 ONNX models (CPU)
+        // -- first run downloads ~570MB model per backend, cached for subsequent runs
+        // -- Jina AI recommended: single key for both embedding and reranking
+        "API_KEYS": "JINA_AI_API_KEY:jina_...",
         // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
         // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
         // "EMBEDDING_API_KEY": "your-key",
@@ -94,9 +102,9 @@ uvx mnemo-mcp@latest
         // -- optional: LiteLLM Proxy (production, selfhosted gateway)
         // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
         // "LITELLM_PROXY_KEY": "sk-your-virtual-key",
-        // -- optional: cloud embedding (Gemini > OpenAI > Cohere) for semantic search
-        // -- without this, uses built-in local Qwen3-Embedding-0.6B (ONNX, CPU)
-        "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: cloud embedding + reranking (Jina > Gemini > OpenAI > Cohere)
+        // -- without this, uses built-in local Qwen3 ONNX models (CPU)
+        "API_KEYS": "JINA_AI_API_KEY:jina_...",
         // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
         // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
         // "EMBEDDING_API_KEY": "your-key",
@@ -118,7 +126,7 @@ Pre-download dependencies before adding to your MCP client config. This avoids s
 uvx mnemo-mcp warmup
 
 # With cloud embedding (validates API key, skips local download if cloud works)
-API_KEYS="GOOGLE_API_KEY:AIza..." uvx mnemo-mcp warmup
+API_KEYS="JINA_AI_API_KEY:jina_..." uvx mnemo-mcp warmup
 ```
 
 ### Sync setup
@@ -148,12 +156,22 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | Database location |
 | `LITELLM_PROXY_URL` | — | LiteLLM Proxy URL (e.g. `http://10.0.0.20:4000`). Enables proxy mode |
 | `LITELLM_PROXY_KEY` | — | LiteLLM Proxy virtual key (e.g. `sk-...`) |
-| `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Optional: enables semantic search (SDK mode) |
+| `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Enables cloud embedding + reranking (SDK mode) |
 | `EMBEDDING_API_BASE` | — | Custom embedding endpoint URL (optional, for SDK mode) |
 | `EMBEDDING_API_KEY` | — | Custom embedding endpoint key (optional) |
-| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local (always available) |
+| `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
+| `RERANK_ENABLED` | `true` | Enable reranking (improves search precision) |
+| `RERANK_BACKEND` | (auto-detect) | `litellm` (cloud) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local |
+| `RERANK_MODEL` | auto-detect | LiteLLM reranker model name (optional) |
+| `ARCHIVE_ENABLED` | `true` | Enable auto-archiving of old low-importance memories |
+| `ARCHIVE_AFTER_DAYS` | `90` | Days before a memory is eligible for auto-archive |
+| `ARCHIVE_IMPORTANCE_THRESHOLD` | `0.3` | Memories below this importance score are auto-archived |
+| `DEDUP_THRESHOLD` | `0.9` | Similarity threshold to block duplicate memories |
+| `DEDUP_WARN_THRESHOLD` | `0.7` | Similarity threshold to warn about similar memories |
+| `RECENCY_HALF_LIFE_DAYS` | `7` | Half-life for temporal decay in search scoring |
+| `LLM_MODELS` | `gemini/gemini-3-flash-preview` | LLM model for graph extraction, importance scoring, consolidation |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_PROVIDER` | `drive` | rclone provider type (drive, dropbox, s3, etc.) |
 | `SYNC_REMOTE` | `gdrive` | rclone remote name |
@@ -161,11 +179,11 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `SYNC_INTERVAL` | `300` | Auto-sync seconds (0=manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
 
-### Embedding (3-Mode Architecture)
+### Embedding & Reranking (3-Mode Architecture)
 
-Embedding is **always available** — a local model is built-in and requires no configuration.
+Embedding and reranking are **always available** — local models are built-in and require no configuration.
 
-Embedding access supports 3 modes, resolved by priority:
+Both embedding and reranking support 3 modes, resolved by priority:
 
 | Priority | Mode | Config | Use case |
 |:---------|:-----|:-------|:---------|
@@ -175,27 +193,37 @@ Embedding access supports 3 modes, resolved by priority:
 
 No cross-mode fallback — if proxy is configured but unreachable, calls fail (no silent fallback to direct API).
 
-- **Local mode**: Qwen3-Embedding-0.6B, always available with zero config.
-- **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF model (~480MB) instead of ONNX (~570MB) for better performance.
+- **Local mode**: Qwen3-Embedding-0.6B + Qwen3-Reranker-0.6B, always available with zero config.
+- **GPU auto-detection**: If GPU is available (CUDA/DirectML) and `llama-cpp-python` is installed, automatically uses GGUF models instead of ONNX for better performance.
 - All embeddings stored at **768 dims** (default). Switching providers never breaks the vector table.
-- Override with `EMBEDDING_BACKEND=local` to force local even with API keys.
+- Override with `EMBEDDING_BACKEND=local` or `RERANK_BACKEND=local` to force local even with API keys.
 
 `API_KEYS` supports multiple providers in a single string:
 ```
-API_KEYS=GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-...,COHERE_API_KEY:co-...
+API_KEYS=JINA_AI_API_KEY:jina_...,GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-...,COHERE_API_KEY:co-...
 ```
+
+**Jina AI is the recommended provider** — a single `JINA_AI_API_KEY` enables both embedding (`jina-embeddings-v5-text-small`) and reranking (`jina-reranker-v3`), giving you the best search quality with one key.
 
 Cloud embedding providers (auto-detected from `API_KEYS`, priority order):
 
-| Priority | Env Var (LiteLLM) | Model | Native Dims | Stored |
-|----------|-------------------|-------|-------------|--------|
-| 1 | `GEMINI_API_KEY` | `gemini/gemini-embedding-001` | 3072 | 768 |
-| 2 | `OPENAI_API_KEY` | `text-embedding-3-large` | 3072 | 768 |
-| 3 | `COHERE_API_KEY` | `embed-multilingual-v3.0` | 1024 | 768 |
+| Priority | Env Var | Model | Native Dims | Stored |
+|----------|---------|-------|-------------|--------|
+| 1 | `JINA_AI_API_KEY` | `jina-embeddings-v5-text-small` | 1024 | 768 |
+| 2 | `GEMINI_API_KEY` | `gemini/gemini-embedding-001` | 3072 | 768 |
+| 3 | `OPENAI_API_KEY` | `text-embedding-3-large` | 3072 | 768 |
+| 4 | `COHERE_API_KEY` | `embed-multilingual-v3.0` | 1024 | 768 |
+
+Cloud reranking providers (auto-detected from `API_KEYS`, priority order):
+
+| Priority | Env Var | Model |
+|----------|---------|-------|
+| 1 | `JINA_AI_API_KEY` | `jina-reranker-v3` |
+| 2 | `COHERE_API_KEY` | `rerank-multilingual-v3.0` |
 
 All embeddings are truncated to **768 dims** (default) for storage. This ensures switching models never breaks the vector table. Override with `EMBEDDING_DIMS` if needed.
 
-`API_KEYS` format maps your env var to LiteLLM's expected var (e.g., `GOOGLE_API_KEY:key` auto-sets `GEMINI_API_KEY`). Set `EMBEDDING_MODEL` explicitly for other providers.
+`API_KEYS` format maps your env var to LiteLLM's expected var (e.g., `GOOGLE_API_KEY:key` auto-sets `GEMINI_API_KEY`). Set `EMBEDDING_MODEL` or `RERANK_MODEL` explicitly for other providers.
 
 ## MCP Tools
 
@@ -211,6 +239,9 @@ All embeddings are truncated to **768 dims** (default) for storage. This ensures
 | `export` | — | — |
 | `import` | `data` (JSONL) | `mode` (merge/replace) |
 | `stats` | — | — |
+| `restore` | `memory_id` | — |
+| `archived` | — | `limit` |
+| `consolidate` | `category` | — |
 
 ### `config` — Server configuration
 
@@ -250,14 +281,16 @@ help(topic="memory")  # or "config"
              memory    config    help
                 |         |        |
             MemoryDB   Settings  docs/
-            /     \
-        FTS5    sqlite-vec
-                    |
-              EmbeddingBackend
-              /            \
-         LiteLLM        Qwen3 ONNX
-            |           (local CPU)
-  Gemini / OpenAI / Cohere
+           /   |   \
+       FTS5  sqlite-vec  KnowledgeGraph
+                |              |
+          EmbeddingBackend   LLM (entity extraction,
+          /            \      importance, consolidation)
+     LiteLLM        Qwen3 ONNX
+        |           (local CPU)      RerankerBackend
+  Jina / Gemini /                    /            \
+  OpenAI / Cohere               LiteLLM      Qwen3 ONNX
+                              Jina/Cohere    (local CPU)
 
         Sync: rclone (embedded) -> Google Drive / S3 / ...
 ```
