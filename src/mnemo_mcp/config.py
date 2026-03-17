@@ -88,8 +88,6 @@ class Settings(BaseSettings):
         Embedding providers: Google, OpenAI, Cohere
     - LITELLM_PROXY_URL: LiteLLM Proxy URL (e.g. http://10.0.0.20:4000)
     - LITELLM_PROXY_KEY: LiteLLM Proxy virtual key
-    - EMBEDDING_API_BASE: Custom embedding endpoint URL (e.g. Modal workers)
-    - EMBEDDING_API_KEY: API key for custom embedding endpoint
     - EMBEDDING_MODEL: LiteLLM embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "litellm" | "local" (auto: API_KEYS -> litellm, else local)
@@ -111,10 +109,6 @@ class Settings(BaseSettings):
     litellm_proxy_url: str = ""  # e.g. http://10.0.0.20:4000
     litellm_proxy_key: str = ""
 
-    # Custom endpoint (e.g. modalcom-ai-workers on Modal.com)
-    embedding_api_base: str = ""  # e.g. https://workspace--embedding-serve.modal.run
-    embedding_api_key: str = ""
-
     # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
     embedding_model: str = ""
     embedding_dims: int = 0  # 0 = use server default (768)
@@ -127,9 +121,6 @@ class Settings(BaseSettings):
     rerank_backend: str = ""  # "litellm" | "local" | "" (auto)
     rerank_model: str = ""
     rerank_top_n: int = 10
-    rerank_api_base: str = ""
-    rerank_api_key: str = ""
-
     # Sync (rclone)
     sync_enabled: bool = False
     sync_provider: str = "drive"  # rclone provider type (drive, dropbox, s3, etc.)
@@ -262,7 +253,7 @@ class Settings(BaseSettings):
         """Detect LiteLLM mode: 'proxy', 'sdk', or 'local'."""
         if self.litellm_proxy_url:
             return "proxy"
-        if self.api_keys or self.embedding_api_base:
+        if self.api_keys:
             return "sdk"
         return "local"
 
@@ -287,15 +278,6 @@ class Settings(BaseSettings):
             logger.info("Local mode (no LiteLLM)")
 
         return mode
-
-    def get_embedding_litellm_kwargs(self) -> dict:
-        """Get extra kwargs for litellm embedding calls (api_base, api_key for Mode 2b)."""
-        kwargs: dict = {}
-        if self.embedding_api_base:
-            kwargs["api_base"] = self.embedding_api_base
-        if self.embedding_api_key:
-            kwargs["api_key"] = self.embedding_api_key
-        return kwargs
 
     def resolve_embedding_model(self) -> str | None:
         """Return explicit EMBEDDING_MODEL or None for auto-detect."""
@@ -373,15 +355,6 @@ class Settings(BaseSettings):
                 if key in self.api_keys:
                     return model
         return None
-
-    def get_rerank_litellm_kwargs(self) -> dict:
-        """Get extra kwargs for litellm rerank calls (api_base, api_key)."""
-        kwargs: dict = {}
-        if self.rerank_api_base:
-            kwargs["api_base"] = self.rerank_api_base
-        if self.rerank_api_key:
-            kwargs["api_key"] = self.rerank_api_key
-        return kwargs
 
     def resolve_local_rerank_model(self) -> str:
         """Resolve local reranker model: GGUF if GPU + llama-cpp, else ONNX."""

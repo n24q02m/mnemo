@@ -1,7 +1,6 @@
 """Additional tests for mnemo_mcp.config — covering uncovered lines.
 
-Targets: setup_litellm (proxy/sdk/local branches),
-get_embedding_litellm_kwargs, resolve_litellm_mode.
+Targets: setup_litellm (proxy/sdk/local branches), resolve_litellm_mode.
 """
 
 import os
@@ -61,45 +60,10 @@ class TestResolveLitellmMode:
         s = Settings(api_keys="KEY:value")
         assert s.resolve_litellm_mode() == "sdk"
 
-    def test_sdk_mode_with_embedding_api_base(self):
-        """Returns 'sdk' when embedding_api_base is set."""
-        s = Settings(embedding_api_base="https://api.example.com", api_keys=None)
-        assert s.resolve_litellm_mode() == "sdk"
-
     def test_local_mode_default(self):
         """Returns 'local' when nothing is configured."""
         s = Settings(api_keys=None)
         assert s.resolve_litellm_mode() == "local"
-
-
-class TestGetEmbeddingLitellmKwargs:
-    def test_both_api_base_and_key(self):
-        """Returns both api_base and api_key when set."""
-        s = Settings(
-            embedding_api_base="https://custom.api.com",
-            embedding_api_key="custom-key",
-            api_keys=None,
-        )
-        kwargs = s.get_embedding_litellm_kwargs()
-        assert kwargs["api_base"] == "https://custom.api.com"
-        assert kwargs["api_key"] == "custom-key"
-
-    def test_api_base_only(self):
-        """Returns api_base only when api_key is empty."""
-        s = Settings(
-            embedding_api_base="https://custom.api.com",
-            embedding_api_key="",
-            api_keys=None,
-        )
-        kwargs = s.get_embedding_litellm_kwargs()
-        assert kwargs["api_base"] == "https://custom.api.com"
-        assert "api_key" not in kwargs
-
-    def test_neither_set(self):
-        """Returns empty dict when nothing is set."""
-        s = Settings(api_keys=None)
-        kwargs = s.get_embedding_litellm_kwargs()
-        assert kwargs == {}
 
 
 class TestResolveLocalEmbeddingModel:

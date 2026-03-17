@@ -263,20 +263,6 @@ class TestRerankSettings:
         s = Settings(api_keys=None)
         assert s.resolve_rerank_model() is None
 
-    def test_get_rerank_litellm_kwargs_empty(self):
-        s = Settings(api_keys=None)
-        assert s.get_rerank_litellm_kwargs() == {}
-
-    def test_get_rerank_litellm_kwargs_with_values(self):
-        s = Settings(
-            rerank_api_base="http://proxy:4000",
-            rerank_api_key="sk-test",
-            api_keys=None,
-        )
-        kwargs = s.get_rerank_litellm_kwargs()
-        assert kwargs["api_base"] == "http://proxy:4000"
-        assert kwargs["api_key"] == "sk-test"
-
     def test_resolve_local_rerank_model(self):
         s = Settings(api_keys=None)
         model = s.resolve_local_rerank_model()

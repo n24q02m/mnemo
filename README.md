@@ -63,9 +63,6 @@ uvx mnemo-mcp@latest
         // -- first run downloads ~570MB model per backend, cached for subsequent runs
         // -- Jina AI recommended: single key for both embedding and reranking
         "API_KEYS": "JINA_AI_API_KEY:jina_...",
-        // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
-        // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
-        // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
         // -- on first sync, a browser opens for OAuth (auto, no manual setup)
         "SYNC_ENABLED": "true",                    // optional, default: false
@@ -92,8 +89,6 @@ uvx mnemo-mcp@latest
         "-e", "LITELLM_PROXY_URL",                 // optional: pass-through from env below
         "-e", "LITELLM_PROXY_KEY",                 // optional: pass-through from env below
         "-e", "API_KEYS",                          // optional: pass-through from env below
-        "-e", "EMBEDDING_API_BASE",                // optional: pass-through from env below
-        "-e", "EMBEDDING_API_KEY",                 // optional: pass-through from env below
         "-e", "SYNC_ENABLED",                      // optional: pass-through from env below
         "-e", "SYNC_INTERVAL",                     // optional: pass-through from env below
         "n24q02m/mnemo-mcp:latest"
@@ -105,9 +100,6 @@ uvx mnemo-mcp@latest
         // -- optional: cloud embedding + reranking (Jina > Gemini > OpenAI > Cohere)
         // -- without this, uses built-in local Qwen3 ONNX models (CPU)
         "API_KEYS": "JINA_AI_API_KEY:jina_...",
-        // -- optional: custom embedding endpoint (e.g. modalcom-ai-workers on Modal.com)
-        // "EMBEDDING_API_BASE": "https://your-worker.modal.run",
-        // "EMBEDDING_API_KEY": "your-key",
         // -- optional: sync memories across machines via rclone
         "SYNC_ENABLED": "true",                    // optional, default: false
         "SYNC_INTERVAL": "300"                     // optional, auto-sync every 5min (0 = manual only)
@@ -157,8 +149,6 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `LITELLM_PROXY_URL` | — | LiteLLM Proxy URL (e.g. `http://10.0.0.20:4000`). Enables proxy mode |
 | `LITELLM_PROXY_KEY` | — | LiteLLM Proxy virtual key (e.g. `sk-...`) |
 | `API_KEYS` | — | API keys (`ENV:key,ENV:key`). Enables cloud embedding + reranking (SDK mode) |
-| `EMBEDDING_API_BASE` | — | Custom embedding endpoint URL (optional, for SDK mode) |
-| `EMBEDDING_API_KEY` | — | Custom embedding endpoint key (optional) |
 | `EMBEDDING_BACKEND` | (auto-detect) | `litellm` (cloud API) or `local` (Qwen3). Auto: API_KEYS -> litellm, else local |
 | `EMBEDDING_MODEL` | auto-detect | LiteLLM model name (optional) |
 | `EMBEDDING_DIMS` | `0` (auto=768) | Embedding dimensions (0 = auto-detect, default 768) |
@@ -179,17 +169,16 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `SYNC_INTERVAL` | `300` | Auto-sync seconds (0=manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
 
-### Embedding & Reranking (3-Mode Architecture)
+### Embedding & Reranking (2-Mode Architecture)
 
 Embedding and reranking are **always available** — local models are built-in and require no configuration.
 
-Both embedding and reranking support 3 modes, resolved by priority:
+Both embedding and reranking support 2 modes, resolved by priority:
 
 | Priority | Mode | Config | Use case |
 |:---------|:-----|:-------|:---------|
-| 1 | **Proxy** | `LITELLM_PROXY_URL` + `LITELLM_PROXY_KEY` | Production (OCI VM, selfhosted gateway) |
-| 2 | **SDK** | `API_KEYS` or `EMBEDDING_API_BASE` | Dev/local with direct API access |
-| 3 | **Local** | Nothing needed | Offline, always available as fallback |
+| 1 | **Proxy / SDK** | `LITELLM_PROXY_URL` + `LITELLM_PROXY_KEY` or `API_KEYS` | Production or dev with cloud APIs |
+| 2 | **Local** | Nothing needed | Offline, always available as fallback |
 
 No cross-mode fallback — if proxy is configured but unreachable, calls fail (no silent fallback to direct API).
 

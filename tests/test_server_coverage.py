@@ -230,7 +230,6 @@ class TestInitEmbeddingBackendCandidate:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         # All candidates raise exception
         mock_init.side_effect = Exception("API Error")
@@ -258,7 +257,6 @@ class TestInitEmbeddingBackendCandidate:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 0  # Not available

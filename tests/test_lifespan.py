@@ -14,7 +14,6 @@ def mock_settings():
         # Default happy path settings
         m.setup_api_keys.return_value = {"KEY": "123"}
         m.setup_litellm.return_value = "sdk"
-        m.get_embedding_litellm_kwargs.return_value = {}
         m.resolve_embedding_model.return_value = "test-model"
         m.resolve_embedding_dims.return_value = 0
         m.resolve_embedding_backend.return_value = "litellm"

@@ -57,14 +57,13 @@ async def _init_embedding_backend(
     embedding_model = settings.resolve_embedding_model()
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
-    litellm_kwargs = settings.get_embedding_litellm_kwargs()
 
     if embedding_backend_type == "litellm":
         if embedding_model:
             # Explicit model -- validate it
             try:
                 backend = await asyncio.to_thread(
-                    init_backend, "litellm", embedding_model, **litellm_kwargs
+                    init_backend, "litellm", embedding_model
                 )
                 native_dims = await asyncio.to_thread(backend.check_available)
                 if native_dims > 0:
@@ -88,7 +87,7 @@ async def _init_embedding_backend(
             for candidate in _EMBEDDING_CANDIDATES:
                 try:
                     backend = await asyncio.to_thread(
-                        init_backend, "litellm", candidate, **litellm_kwargs
+                        init_backend, "litellm", candidate
                     )
                     native_dims = await asyncio.to_thread(backend.check_available)
                     if native_dims > 0:
@@ -143,15 +142,11 @@ async def _init_reranker_backend(mode: str) -> None:
         logger.debug("Reranking disabled")
         return
 
-    litellm_kwargs = settings.get_rerank_litellm_kwargs()
-
     if backend_type == "litellm":
         model = settings.resolve_rerank_model()
         if model:
             try:
-                backend = await asyncio.to_thread(
-                    init_reranker, "litellm", model, **litellm_kwargs
-                )
+                backend = await asyncio.to_thread(init_reranker, "litellm", model)
                 available = await asyncio.to_thread(backend.check_available)
                 if available:
                     logger.info(f"Reranker: {model}")

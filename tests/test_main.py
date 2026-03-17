@@ -271,7 +271,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_model.return_value = "gemini/model"
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 3072
@@ -302,7 +301,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_model.return_value = None
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         # First candidate fails, second succeeds
         backend_fail = MagicMock()
@@ -334,7 +332,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "litellm"
         mock_settings.resolve_local_embedding_model.return_value = "local/model"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         # Cloud fails, local succeeds
         cloud_backend = MagicMock()
@@ -363,7 +360,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 1024
@@ -392,7 +388,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_backend = MagicMock()
         mock_backend.check_available.side_effect = Exception("import error")
@@ -421,7 +416,6 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
-        mock_settings.get_embedding_litellm_kwargs.return_value = {}
 
         mock_init.side_effect = Exception("Init Backend Failed")
 
