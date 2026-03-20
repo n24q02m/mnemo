@@ -39,3 +39,6 @@ build/
 # AI Agent
 .jules/
 JULES.md
+
+# Code review knowledge graph
+.code-review-graph/
