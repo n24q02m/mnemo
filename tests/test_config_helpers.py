@@ -41,6 +41,22 @@ class TestDetectGPU:
         with patch.dict(sys.modules, {"onnxruntime": mock_ort}):
             assert _detect_gpu() is False
 
+    def test_import_exception(self):
+        import builtins
+
+        orig_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "onnxruntime":
+                raise Exception("Mocked Exception")
+            return orig_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            with patch.dict(sys.modules):
+                if "onnxruntime" in sys.modules:
+                    del sys.modules["onnxruntime"]
+                assert _detect_gpu() is False
+
 
 class TestHasGGUFSupport:
     def test_llama_cpp_installed(self):
