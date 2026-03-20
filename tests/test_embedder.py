@@ -9,7 +9,6 @@ from mnemo_mcp.embedder import (
     Qwen3EmbedBackend,
     check_embedding_available,
     embed_single,
-    embed_texts,
     get_backend,
     init_backend,
 )
@@ -328,12 +327,6 @@ class TestQwen3GetModelWarning:
 
 class TestLegacyCompat:
     """Legacy module-level functions still work."""
-
-    @patch("litellm.aembedding")
-    async def test_embed_texts_legacy(self, mock_embed):
-        mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
-        result = await embed_texts(["test"], "model")
-        assert result == [[0.1]]
 
     @patch("litellm.aembedding")
     async def test_embed_single_legacy(self, mock_embed):

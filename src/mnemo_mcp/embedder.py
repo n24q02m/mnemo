@@ -383,18 +383,6 @@ def init_backend(
 # ---------------------------------------------------------------------------
 
 
-async def embed_texts(
-    texts: list[str],
-    model: str,
-    dimensions: int | None = None,
-    api_base: str | None = None,
-    api_key: str | None = None,
-) -> list[list[float]]:
-    """Embed texts using LiteLLM (legacy interface)."""
-    backend = LiteLLMBackend(model, api_base=api_base, api_key=api_key)
-    return await backend.embed_texts(texts, dimensions)
-
-
 async def embed_single(
     text: str,
     model: str,
