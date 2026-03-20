@@ -174,24 +174,43 @@ def create_relations(
 ) -> None:
     """Create relations between entities."""
     now = datetime.now(UTC).isoformat()
+    seen = set()
+    to_insert = []
+
     for rel in relations:
         src_name = rel.get("source", "").strip()
         tgt_name = rel.get("target", "").strip()
         rtype = rel.get("type", "related_to").strip().lower()
         src_id = entity_name_to_id.get(src_name)
         tgt_id = entity_name_to_id.get(tgt_name)
+
         if not src_id or not tgt_id or src_id == tgt_id:
             continue
-        existing = conn.execute(
-            "SELECT id FROM relations WHERE source_id = ? AND target_id = ? AND relation_type = ?",
-            (src_id, tgt_id, rtype),
-        ).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO relations (id, source_id, target_id, relation_type, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), src_id, tgt_id, rtype, now),
+
+        key = (src_id, tgt_id, rtype)
+        if key not in seen:
+            seen.add(key)
+            to_insert.append(
+                (
+                    str(uuid.uuid4()),
+                    src_id,
+                    tgt_id,
+                    rtype,
+                    now,
+                    src_id,
+                    tgt_id,
+                    rtype,
+                )
             )
+
+    if to_insert:
+        conn.executemany(
+            "INSERT INTO relations (id, source_id, target_id, relation_type, created_at) "
+            "SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS ("
+            "SELECT 1 FROM relations WHERE source_id = ? AND target_id = ? AND relation_type = ?"
+            ")",
+            to_insert,
+        )
 
 
 def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
