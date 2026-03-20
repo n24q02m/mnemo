@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[mnemo-mcp] Persistent memory ready. Tool: memory (add|search|list|update|delete|stats).'"
+          }
+        ]
+      }
+    ]
+  }
+}
