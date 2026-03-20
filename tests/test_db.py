@@ -584,10 +584,12 @@ class TestImportanceColumn:
         mid = tmp_db.add("test")
         tmp_db.update_importance(mid, 1.5)
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem["importance"] == 1.0
 
         tmp_db.update_importance(mid, -0.5)
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem["importance"] == 0.0
 
     def test_update_importance_nonexistent(self, tmp_db: MemoryDB):

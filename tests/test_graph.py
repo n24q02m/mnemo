@@ -23,7 +23,9 @@ class TestExtractEntities:
     async def test_success_with_llm(self):
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = (
+        mock_response.choices[
+            0
+        ].message.content = (
             '{"entities": [{"name": "Python", "type": "tool"}], "relations": []}'
         )
 
