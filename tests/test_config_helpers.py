@@ -80,10 +80,17 @@ class TestHasGGUFSupport:
 
         with patch("builtins.__import__", side_effect=mock_import):
             # Ensure sys.modules does not prevent the import call
-            with patch.dict(sys.modules):
-                if "llama_cpp" in sys.modules:
-                    del sys.modules["llama_cpp"]
+            original_module = sys.modules.get("llama_cpp", None)
+
+            if "llama_cpp" in sys.modules:
+                del sys.modules["llama_cpp"]
+
+            try:
                 assert _has_gguf_support() is False
+
+            finally:
+                if original_module is not None:
+                    sys.modules["llama_cpp"] = original_module
 
 
 class TestResolveLocalModel:
