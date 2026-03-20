@@ -3,12 +3,24 @@
 import json
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB
-from mnemo_mcp.server import config, help, memory, recall_context, save_summary
+from mnemo_mcp.server import (
+    _enrich_memory,
+    _handle_add,
+    _handle_consolidate,
+    _handle_search,
+    _handle_update,
+    config,
+    help,
+    main,
+    memory,
+    recall_context,
+    save_summary,
+)
 
 
 @pytest.fixture
@@ -398,6 +410,296 @@ class TestHelpTool:
         result = json.loads(await help(topic="invalid"))
         assert "error" in result
         assert "valid_topics" in result
+
+
+class TestDedupWarning:
+    async def test_add_with_similar_dedup(self, ctx_with_db):
+        """Cover lines 335-337: dedup_warning set from similar/duplicate result."""
+        ctx, db = ctx_with_db
+        # Add first memory
+        db.add("Python is great for machine learning")
+        # Add similar memory -- should trigger dedup warning
+        with patch.object(
+            db,
+            "check_duplicate",
+            return_value={"similar": True, "match_id": "abc", "score": 0.85},
+        ):
+            result = json.loads(
+                await _handle_add(db, "Python is excellent for ML", None, None, None, 0)
+            )
+        assert result["status"] == "saved"
+        assert "dedup_warning" in result
+
+    async def test_add_with_duplicate_dedup(self, ctx_with_db):
+        """Cover line 334-335: dedup_warning set from duplicate result."""
+        ctx, db = ctx_with_db
+        with patch.object(
+            db,
+            "check_duplicate",
+            return_value={"duplicate": True, "match_id": "abc", "score": 0.99},
+        ):
+            result = json.loads(
+                await _handle_add(db, "exact duplicate", None, None, None, 0)
+            )
+        assert result["status"] == "saved"
+        assert "dedup_warning" in result
+
+    async def test_add_dedup_exception_ignored(self, ctx_with_db):
+        """Cover lines 338-339: dedup exception is non-blocking."""
+        ctx, db = ctx_with_db
+        with patch.object(db, "check_duplicate", side_effect=RuntimeError("boom")):
+            result = json.loads(
+                await _handle_add(db, "test content", None, None, None, 0)
+            )
+        assert result["status"] == "saved"
+
+
+class TestHandleAddErrors:
+    async def test_add_unexpected_exception(self, ctx_with_db):
+        """Cover lines 352-354: unexpected exception in db.add."""
+        ctx, db = ctx_with_db
+        with patch.object(db, "add", side_effect=RuntimeError("unexpected")):
+            result = json.loads(await _handle_add(db, "test", None, None, None, 0))
+        assert "error" in result
+        assert "Internal error" in result["error"]
+
+
+class TestHandleUpdateErrors:
+    async def test_update_unexpected_exception(self, ctx_with_db):
+        """Cover lines 528-530: unexpected exception in db.update."""
+        ctx, db = ctx_with_db
+        mid = db.add("original")
+        with patch.object(db, "update", side_effect=RuntimeError("unexpected")):
+            result = json.loads(
+                await _handle_update(db, mid, "new content", None, None, None, 0)
+            )
+        assert "error" in result
+        assert "Internal error" in result["error"]
+
+
+class TestEnrichMemory:
+    async def test_enrich_importance_error(self, ctx_with_db):
+        """Cover lines 384-386: importance scoring error is non-blocking."""
+        ctx, db = ctx_with_db
+        mid = db.add("test memory")
+        with patch(
+            "mnemo_mcp.graph.score_importance",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("api error"),
+        ):
+            # Should not raise
+            await _enrich_memory(db, mid, "test memory")
+
+    async def test_enrich_entity_extraction(self, ctx_with_db):
+        """Cover lines 391-403: entity extraction and linking."""
+        ctx, db = ctx_with_db
+        mid = db.add("Python is a programming language")
+        mock_graph_data = {
+            "entities": [
+                {"name": "Python", "type": "technology"},
+                {"name": "programming language", "type": "concept"},
+            ],
+            "relations": [
+                {"source": "Python", "target": "programming language", "type": "is_a"}
+            ],
+        }
+        with (
+            patch(
+                "mnemo_mcp.graph.score_importance",
+                new_callable=AsyncMock,
+                return_value=0.5,
+            ),
+            patch(
+                "mnemo_mcp.graph.extract_entities",
+                new_callable=AsyncMock,
+                return_value=mock_graph_data,
+            ),
+            patch("mnemo_mcp.graph.upsert_entities", return_value=["e1", "e2"]),
+            patch("mnemo_mcp.graph.create_relations"),
+            patch("mnemo_mcp.graph.link_memory_entities"),
+        ):
+            await _enrich_memory(db, mid, "Python is a programming language")
+
+    async def test_enrich_entity_extraction_error(self, ctx_with_db):
+        """Cover lines 402-403: entity extraction error is non-blocking."""
+        ctx, db = ctx_with_db
+        mid = db.add("test")
+        with (
+            patch(
+                "mnemo_mcp.graph.score_importance",
+                new_callable=AsyncMock,
+                return_value=0.5,
+            ),
+            patch(
+                "mnemo_mcp.graph.extract_entities",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            await _enrich_memory(db, mid, "test")
+
+
+class TestSearchRerankerAndGraph:
+    async def test_search_with_reranker(self, ctx_with_db):
+        """Cover lines 437-451: reranker reranks results."""
+        ctx, db = ctx_with_db
+        db.add("Python for AI")
+        db.add("Python for web")
+        db.add("Python for data")
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [(1, 0.95), (0, 0.85), (2, 0.70)]
+        with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
+            result = json.loads(
+                await _handle_search(db, "Python", None, None, 5, None, 0)
+            )
+        assert result["reranked"] is True
+        assert result["results"][0]["rerank_score"] == 0.95
+
+    async def test_search_reranker_failure(self, ctx_with_db):
+        """Cover line 451: reranker failure falls back to original order."""
+        ctx, db = ctx_with_db
+        db.add("Python for AI")
+        db.add("Python for web")
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.side_effect = RuntimeError("rerank failed")
+        with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
+            result = json.loads(
+                await _handle_search(db, "Python", None, None, 5, None, 0)
+            )
+        assert result["reranked"] is False
+
+    async def test_search_with_graph_boost(self, ctx_with_db):
+        """Cover lines 463-468: graph boost marks related memories."""
+        ctx, db = ctx_with_db
+        db.add("Python for AI")
+        mid2 = db.add("Python for web development")
+        with patch("mnemo_mcp.graph.find_related_memory_ids", return_value=[mid2]):
+            result = json.loads(
+                await _handle_search(db, "Python", None, None, 5, None, 0)
+            )
+        # At least one result should have graph_related
+        related = [r for r in result["results"] if r.get("graph_related")]
+        assert len(related) >= 1
+
+    async def test_search_graph_boost_error(self, ctx_with_db):
+        """Cover lines 467-468: graph boost error is non-blocking."""
+        ctx, db = ctx_with_db
+        db.add("Python for AI")
+        with patch(
+            "mnemo_mcp.graph.find_related_memory_ids",
+            side_effect=RuntimeError("graph error"),
+        ):
+            result = json.loads(
+                await _handle_search(db, "Python", None, None, 5, None, 0)
+            )
+        assert result["count"] > 0
+
+
+class TestConsolidate:
+    async def test_consolidate_no_category_non_local(self, ctx_with_db):
+        """Cover line 637-638: no category error when mode is not local."""
+        ctx, db = ctx_with_db
+        with patch("mnemo_mcp.server.settings") as mock_settings:
+            mock_settings.resolve_litellm_mode.return_value = "proxy"
+            result = json.loads(await _handle_consolidate(db, None))
+        assert "error" in result
+        assert "category is required" in result["error"]
+
+    async def test_consolidate_too_few_memories(self, ctx_with_db):
+        """Cover lines 640-644: less than 2 memories in category."""
+        ctx, db = ctx_with_db
+        db.add("only one", category="tech")
+        with patch("mnemo_mcp.server.settings") as mock_settings:
+            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            result = json.loads(await _handle_consolidate(db, "tech"))
+        assert "error" in result
+        assert "at least 2" in result["error"]
+
+    async def test_consolidate_success(self, ctx_with_db):
+        """Cover lines 646-688: successful consolidation with LLM."""
+        ctx, db = ctx_with_db
+        db.add("Python is great", category="tech")
+        db.add("Python is awesome", category="tech")
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Python is excellent"
+
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch(
+                "litellm.acompletion",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            mock_settings.resolve_litellm_mode.return_value = "proxy"
+            mock_settings.litellm_proxy_url = "http://proxy:4000"
+            mock_settings.litellm_proxy_key = "sk-test"
+            mock_settings.llm_models = "gpt-4o,gemini-flash"
+            result = json.loads(await _handle_consolidate(db, "tech"))
+
+        assert result["status"] == "consolidated"
+        assert result["category"] == "tech"
+        assert result["original_count"] == 2
+        assert result["summary"] == "Python is excellent"
+
+    async def test_consolidate_llm_error(self, ctx_with_db):
+        """Cover lines 689-690: LLM error during consolidation."""
+        ctx, db = ctx_with_db
+        db.add("mem1", category="tech")
+        db.add("mem2", category="tech")
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch(
+                "litellm.acompletion",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("LLM error"),
+            ),
+        ):
+            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.litellm_proxy_url = None
+            mock_settings.litellm_proxy_key = None
+            mock_settings.llm_models = "gpt-4o"
+            result = json.loads(await _handle_consolidate(db, "tech"))
+        assert "error" in result
+        assert "Consolidation failed" in result["error"]
+
+
+class TestConfigSet:
+    async def test_set_sync_interval(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await config(action="set", key="sync_interval", value="600", ctx=ctx)
+        )
+        assert result["status"] == "updated"
+
+    async def test_set_log_level(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
+        )
+        assert result["status"] == "updated"
+
+    async def test_set_invalid_log_level(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await config(action="set", key="log_level", value="INVALID", ctx=ctx)
+        )
+        assert "error" in result
+        assert "valid_levels" in result
+
+
+class TestMain:
+    def test_main_invalid_log_level(self):
+        """Cover line 1001: invalid log level falls back to WARNING."""
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.mcp") as mock_mcp,
+        ):
+            mock_settings.log_level = "BOGUS"
+            main()
+            mock_mcp.run.assert_called_once()
 
 
 class TestPrompts:

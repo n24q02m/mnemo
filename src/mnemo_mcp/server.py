@@ -896,8 +896,6 @@ async def config(
                     sys.stderr,
                     level=settings.log_level,
                 )
-            else:
-                setattr(settings, key, value)
 
             return _json(
                 {
