@@ -288,3 +288,35 @@ class TestMemoryLimitClamping:
         result = json.loads(await memory(action="list", limit=1000, ctx=ctx))
         # Should not crash, limit is clamped
         assert isinstance(result["results"], list)
+
+    @patch(
+        "mnemo_mcp.server.asyncio.to_thread",
+        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+    )
+    @patch("mnemo_mcp.embedder.init_backend")
+    @patch("mnemo_mcp.server.settings")
+    async def test_local_backend_init_fails(
+        self, mock_settings, mock_init, _mock_thread
+    ):
+        """When local backend init raises exception, logs error."""
+
+        from mnemo_mcp.server import _init_embedding_backend
+
+        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.resolve_embedding_dims.return_value = 0
+        mock_settings.resolve_embedding_backend.return_value = "local"
+        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+
+        # Have init_backend throw an exception
+        mock_init.side_effect = Exception("init failed test error")
+
+        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+
+        with patch("mnemo_mcp.server.logger") as mock_logger:
+            await _init_embedding_backend("local", ctx)
+            mock_logger.error.assert_called_with(
+                "Local embedding init failed: init failed test error"
+            )
+
+        # Model should remain None
+        assert ctx["embedding_model"] is None
