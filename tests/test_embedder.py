@@ -59,6 +59,26 @@ class TestLiteLLMBackend:
         )
 
     @patch("litellm.aembedding")
+    async def test_dimensions_fallback_on_unsupported(self, mock_embed):
+        """Falls back to local truncation when provider rejects dimensions."""
+        mock_response = MagicMock(data=[{"index": 0, "embedding": [0.1] * 1024}])
+        unsupported_err = Exception("output_dimension is not supported for this model")
+        mock_embed.side_effect = [unsupported_err, mock_response]
+        backend = LiteLLMBackend("embed-multilingual-v3.0")
+        result = await backend.embed_texts(["test"], dimensions=768)
+        assert len(result[0]) == 768
+
+    @patch("litellm.aembedding")
+    async def test_local_truncation_when_server_returns_more(self, mock_embed):
+        """Truncates locally when server returns more dims than requested."""
+        mock_embed.return_value = MagicMock(
+            data=[{"index": 0, "embedding": [0.1] * 3072}]
+        )
+        backend = LiteLLMBackend("gemini/gemini-embedding-001")
+        result = await backend.embed_texts(["test"], dimensions=768)
+        assert len(result[0]) == 768
+
+    @patch("litellm.aembedding")
     async def test_embed_single(self, mock_embed):
         mock_embed.return_value = MagicMock(
             data=[{"index": 0, "embedding": [0.1, 0.2, 0.3]}]
