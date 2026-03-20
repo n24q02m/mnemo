@@ -815,20 +815,27 @@ class MemoryDB:
         ).fetchall()
 
         now = _now_iso()
-        count = 0
-        for row in rows:
-            cursor.execute(
-                """INSERT OR REPLACE INTO archived_memories
-                   (id, content, category, tags, source, importance,
-                    created_at, updated_at, access_count, last_accessed, archived_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (*row, now),
-            )
-            cursor.execute("DELETE FROM memories WHERE id = ?", (row[0],))
-            count += 1
+        if not rows:
+            return 0
+
+        insert_data = [(*row, now) for row in rows]
+        delete_data = [(row[0],) for row in rows]
+
+        cursor.executemany(
+            """INSERT OR REPLACE INTO archived_memories
+               (id, content, category, tags, source, importance,
+                created_at, updated_at, access_count, last_accessed, archived_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            insert_data,
+        )
+        cursor.executemany(
+            "DELETE FROM memories WHERE id = ?",
+            delete_data,
+        )
+
+        count = len(rows)
         self._conn.commit()
-        if count > 0:
-            logger.info(f"[AUDIT] archived count={count}")
+        logger.info(f"[AUDIT] archived count={count}")
         return count
 
     def restore_memory(self, memory_id: str) -> bool:
