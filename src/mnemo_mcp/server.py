@@ -31,7 +31,7 @@ _EMBEDDING_CANDIDATES = [
     "embed-multilingual-v3.0",
 ]
 
-# Fixed embedding dimensions for sqlite-vec.
+# Constant embedding dimensions for sqlite-vec.
 # All embeddings are truncated to this size so switching models never
 # breaks the vector table. Override via EMBEDDING_DIMS env var.
 _DEFAULT_EMBEDDING_DIMS = 768
