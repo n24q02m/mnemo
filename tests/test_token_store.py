@@ -102,7 +102,59 @@ class TestSaveToken:
         saved = json.loads((token_dir / "drive.json").read_text())
         assert saved["access_token"] == "new"
 
-    def test_save_chmod_oserror(self, token_dir):
+    def test_save_chmod_dir_oserror(self, token_dir):
+        from pathlib import Path
+
+        from mnemo_mcp.token_store import save_token
+
+        token = {"access_token": "abc"}
+
+        original_chmod = Path.chmod
+
+        def mock_chmod(self, mode):
+            if self.name == "tokens":
+                raise OSError("Permission denied for dir")
+            return original_chmod(self, mode)
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch.object(Path, "chmod", side_effect=mock_chmod, autospec=True),
+        ):
+            m.get_data_dir.return_value = token_dir.parent
+            # This should ignore the OSError from token_dir.chmod
+            save_token("drive", token)
+
+        saved = json.loads((token_dir / "drive.json").read_text())
+        assert saved["access_token"] == "abc"
+
+    def test_save_chmod_file_oserror(self, token_dir):
+        from pathlib import Path
+
+        from mnemo_mcp.token_store import save_token
+
+        token = {"access_token": "abc"}
+
+        original_chmod = Path.chmod
+
+        def mock_chmod(self, mode):
+            if self.name == "drive.json":
+                raise OSError("Permission denied for file")
+            return original_chmod(self, mode)
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch.object(Path, "chmod", side_effect=mock_chmod, autospec=True),
+        ):
+            m.get_data_dir.return_value = token_dir.parent
+            # This should ignore the OSError from path.chmod
+            save_token("drive", token)
+
+        saved = json.loads((token_dir / "drive.json").read_text())
+        assert saved["access_token"] == "abc"
+
+    def test_save_nt_os(self, token_dir):
         from pathlib import Path
 
         from mnemo_mcp.token_store import save_token
@@ -110,12 +162,13 @@ class TestSaveToken:
         token = {"access_token": "abc"}
         with (
             patch("mnemo_mcp.token_store.settings") as m,
-            patch("mnemo_mcp.token_store.os.name", "posix"),
-            patch.object(Path, "chmod", side_effect=OSError("Permission denied")),
+            patch("mnemo_mcp.token_store.os.name", "nt"),
+            patch.object(Path, "chmod") as mock_chmod,
         ):
             m.get_data_dir.return_value = token_dir.parent
-            # This should not raise an OSError
+            # This should skip chmod completely on Windows
             save_token("drive", token)
+            mock_chmod.assert_not_called()
 
         saved = json.loads((token_dir / "drive.json").read_text())
         assert saved["access_token"] == "abc"
