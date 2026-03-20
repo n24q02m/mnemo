@@ -323,7 +323,12 @@ async def _handle_add(
     embedding_dims: int,
 ) -> str:
     if not content:
-        return _json({"error": "content is required for add"})
+        return _json(
+            {
+                "error": "content is required for add",
+                "example": "action='add', content='User prefers Python for data tasks', category='preference', tags=['python']",
+            }
+        )
 
     # Dedup check before insert
     dedup_warning = None
@@ -413,7 +418,12 @@ async def _handle_search(
     embedding_dims: int,
 ) -> str:
     if not query:
-        return _json({"error": "query is required for search"})
+        return _json(
+            {
+                "error": "query is required for search",
+                "example": "action='search', query='user preferences for UI theme'",
+            }
+        )
 
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
@@ -467,14 +477,20 @@ async def _handle_search(
         except Exception:
             pass  # Non-blocking
 
-    return _json(
-        {
-            "count": len(results),
-            "results": [_format_memory(r) for r in results],
-            "semantic": embedding is not None,
-            "reranked": reranked,
-        }
-    )
+    response: dict = {
+        "count": len(results),
+        "results": [_format_memory(r) for r in results],
+        "semantic": embedding is not None,
+        "reranked": reranked,
+    }
+
+    if len(results) == 0:
+        response["suggestion"] = (
+            "No results found. Try broader terms, different keywords, "
+            "or use action='list' to browse all memories."
+        )
+
+    return _json(response)
 
 
 async def _handle_list(
@@ -508,7 +524,12 @@ async def _handle_update(
     embedding_dims: int,
 ) -> str:
     if not memory_id:
-        return _json({"error": "memory_id is required for update"})
+        return _json(
+            {
+                "error": "memory_id is required for update. Use action='search' or action='list' first to find the memory ID.",
+                "example": "action='update', memory_id='abc123', content='updated content'",
+            }
+        )
 
     embedding = None
     if content:
@@ -541,7 +562,12 @@ async def _handle_delete(
     memory_id: str | None,
 ) -> str:
     if not memory_id:
-        return _json({"error": "memory_id is required for delete"})
+        return _json(
+            {
+                "error": "memory_id is required for delete. Use action='search' or action='list' first to find the memory ID.",
+                "example": "action='delete', memory_id='abc123'",
+            }
+        )
 
     ok = await asyncio.to_thread(db.delete, memory_id)
     if ok:
@@ -601,7 +627,12 @@ async def _handle_restore(
     memory_id: str | None,
 ) -> str:
     if not memory_id:
-        return _json({"error": "memory_id is required for restore"})
+        return _json(
+            {
+                "error": "memory_id is required for restore. Use action='archived' first to find archived memory IDs.",
+                "example": "action='restore', memory_id='abc123'",
+            }
+        )
 
     ok = await asyncio.to_thread(db.restore_memory, memory_id)
     if ok:
@@ -695,9 +726,21 @@ async def _handle_consolidate(
 
 @mcp.tool(
     description=(
-        "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate. "
-        "PROACTIVE: save user preferences, decisions, corrections, project conventions. "
-        "Search before recommending. Use help tool for full docs."
+        "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate.\n"
+        "\n"
+        "ACTION GUIDE — when to use each:\n"
+        "- add: Store NEW information. Requires 'content'. Use when saving preferences, decisions, facts for the first time.\n"
+        "  Example: action='add', content='User prefers dark mode', category='preference', tags=['ui']\n"
+        "- search: Find existing memories by natural language query. Requires 'query'. Use BEFORE add to avoid duplicates.\n"
+        "  Example: action='search', query='dark mode preference'\n"
+        "- update: Modify an EXISTING memory by ID. Requires 'memory_id' (from search/list results). Use when a fact changes.\n"
+        "  Example: action='update', memory_id='abc123', content='User now prefers light mode'\n"
+        "- list: Browse all memories, optionally filtered by category. No query needed.\n"
+        "- delete: Remove a memory by ID. Requires 'memory_id'.\n"
+        "- stats: Show database statistics (total memories, categories, embedding status).\n"
+        "\n"
+        "WORKFLOW: search -> not found? -> add. Found outdated? -> update (with memory_id from results).\n"
+        "PROACTIVE: save user preferences, decisions, corrections, project conventions."
     ),
     annotations=ToolAnnotations(
         title="Memory",
@@ -722,10 +765,13 @@ async def memory(
     """Execute a memory action.
 
     Actions:
-    - add: Save memory (content required, category/tags optional)
-    - search: Hybrid search (query required, category/tags/limit optional)
-    - list: Browse memories (category/limit optional)
-    - update: Modify memory (memory_id required, content/category/tags optional)
+    - add: Store NEW information (content required, category/tags optional).
+      Use for first-time storage of preferences, decisions, facts.
+    - search: Find memories by natural language (query required, category/tags/limit optional).
+      Always search before adding to avoid duplicates.
+    - list: Browse all memories (category/limit optional). No query needed.
+    - update: Modify EXISTING memory (memory_id required, content/category/tags optional).
+      Get memory_id from search or list results first.
     - delete: Remove memory (memory_id required)
     - export: Export all as JSONL
     - import: Import from JSONL (data required, mode: merge|replace)
@@ -786,6 +832,7 @@ async def memory(
                         "archived",
                         "consolidate",
                     ],
+                    "hint": "Common actions: 'add' to store new info, 'search' to find existing, 'update' to modify by ID.",
                 }
             )
 
