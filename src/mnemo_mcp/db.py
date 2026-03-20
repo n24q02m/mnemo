@@ -205,6 +205,7 @@ class MemoryDB:
             );
             CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
             CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique ON relations(source_id, target_id, relation_type);
 
             CREATE TABLE IF NOT EXISTS memory_entities (
                 memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
