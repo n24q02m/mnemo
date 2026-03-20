@@ -19,11 +19,13 @@ class TestAdd:
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["category"] == "general"
 
     def test_custom_category(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test", category="work")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["category"] == "work"
 
@@ -31,11 +33,13 @@ class TestAdd:
         mid = tmp_db.add("test", tags=["a", "b"])
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert json.loads(mem["tags"]) == ["a", "b"]
 
     def test_no_tags_empty_list(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert json.loads(mem["tags"]) == []
 
@@ -43,17 +47,20 @@ class TestAdd:
         mid = tmp_db.add("test", source="conversation")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["source"] == "conversation"
 
     def test_source_default_none(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["source"] is None
 
     def test_timestamps_set(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["created_at"] is not None
         assert mem["updated_at"] is not None
@@ -63,6 +70,7 @@ class TestAdd:
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["access_count"] == 0
 
 
@@ -70,6 +78,7 @@ class TestGet:
     def test_existing(self, tmp_db: MemoryDB):
         mid = tmp_db.add("hello world")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["content"] == "hello world"
         assert mem["id"] == mid
@@ -80,6 +89,7 @@ class TestGet:
     def test_all_fields_present(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test", category="cat", tags=["t"], source="src")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         expected_fields = {
             "id",
@@ -101,12 +111,14 @@ class TestUpdate:
         assert tmp_db.update(mid, content="updated") is True
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == "updated"
 
     def test_category(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test", category="old")
         tmp_db.update(mid, category="new")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["category"] == "new"
 
@@ -115,16 +127,19 @@ class TestUpdate:
         tmp_db.update(mid, tags=["b", "c"])
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert json.loads(mem["tags"]) == ["b", "c"]
 
     def test_updates_timestamp(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         old_ts = mem["updated_at"]
         time.sleep(0.01)
         tmp_db.update(mid, content="changed")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["updated_at"] >= old_ts
 
@@ -136,6 +151,7 @@ class TestUpdate:
         mid = tmp_db.add("content", category="old", tags=["tag1"])
         tmp_db.update(mid, category="new")
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["content"] == "content"
         assert mem["category"] == "new"
@@ -353,6 +369,7 @@ class TestExportImport:
         assert result["imported"] == 0
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == "original"
 
     def test_import_replace_clears_first(self, tmp_db: MemoryDB):
@@ -440,6 +457,7 @@ class TestEdgeCases:
         mid = tmp_db.add("")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == ""
 
     def test_very_long_content(self, tmp_db: MemoryDB):
@@ -448,12 +466,14 @@ class TestEdgeCases:
         mid = tmp_db.add(content)
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == content
 
     def test_unicode_content(self, tmp_db: MemoryDB):
         content = "日本語テスト 한국어 中文 Tiếng Việt 🎉"
         mid = tmp_db.add(content)
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["content"] == content
 
@@ -467,6 +487,7 @@ class TestEdgeCases:
         mid = tmp_db.add(content)
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == content
 
     def test_newlines_in_content(self, tmp_db: MemoryDB):
@@ -474,12 +495,14 @@ class TestEdgeCases:
         mid = tmp_db.add(content)
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == content
 
     def test_many_tags(self, tmp_db: MemoryDB):
         tags = [f"tag{i}" for i in range(50)]
         mid = tmp_db.add("test", tags=tags)
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert json.loads(mem["tags"]) == tags
 
@@ -537,6 +560,7 @@ class TestContentLengthValidation:
         # Original content preserved
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["content"] == "short"
 
     def test_update_at_limit_ok(self, tmp_db: MemoryDB):
@@ -570,6 +594,7 @@ class TestImportanceColumn:
         mid = tmp_db.add("test content")
         mem = tmp_db.get(mid)
         assert mem is not None
+        assert mem is not None
         assert mem["importance"] == 0.5
 
     def test_update_importance(self, tmp_db: MemoryDB):
@@ -577,6 +602,7 @@ class TestImportanceColumn:
         ok = tmp_db.update_importance(mid, 0.9)
         assert ok is True
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["importance"] == 0.9
 
@@ -644,6 +670,7 @@ class TestArchive:
         ok = tmp_db.restore_memory(mid)
         assert ok is True
         mem = tmp_db.get(mid)
+        assert mem is not None
         assert mem is not None
         assert mem["content"] == "to archive"
 

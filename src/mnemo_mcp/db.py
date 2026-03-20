@@ -247,7 +247,7 @@ class MemoryDB:
                     CREATE VIRTUAL TABLE memories_vec
                     USING vec0(
                         id TEXT PRIMARY KEY,
-                        embedding float[{self._embedding_dims}]
+                        embedding float[{int(self._embedding_dims)}]
                     )
                 """)
                 logger.debug("Created memories_vec table")
