@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mnemo-mcp",
+  "version": "1.9.0",
+  "description": "Persistent AI memory server — store, search, and recall knowledge across sessions",
+  "owner": {
+    "name": "n24q02m",
+    "url": "https://github.com/n24q02m"
+  },
+  "plugins": [
+    {
+      "name": "mnemo-mcp",
+      "description": "Persistent AI memory server — store, search, and recall knowledge across sessions",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
