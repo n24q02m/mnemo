@@ -1,7 +1,7 @@
 {
   "name": "mnemo-mcp",
-  "description": "Persistent AI memory server — store, search, and recall knowledge across sessions",
-  "version": "1.9.0",
+  "description": "Persistent AI memory server \u2014 store, search, and recall knowledge across sessions",
+  "version": "1.9.1",
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
@@ -9,11 +9,21 @@
   "homepage": "https://github.com/n24q02m/mnemo-mcp",
   "repository": "https://github.com/n24q02m/mnemo-mcp",
   "license": "MIT",
-  "keywords": ["memory", "knowledge-management", "persistence", "mcp", "claude-code"],
+  "keywords": [
+    "memory",
+    "knowledge-management",
+    "persistence",
+    "mcp",
+    "claude-code"
+  ],
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": ["--python", "3.13", "mnemo-mcp"]
+      "args": [
+        "--python",
+        "3.13",
+        "mnemo-mcp"
+      ]
     }
   }
 }
