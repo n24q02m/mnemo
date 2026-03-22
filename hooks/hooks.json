@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[mnemo-mcp] Persistent memory ready. Tool: memory (add|search|list|update|delete|stats).'"
+            "command": "echo '[mnemo-mcp] Persistent memory ready. Tools: memory (add|search|list|update|delete|export|import|stats|restore|archived|consolidate), config (status|sync|set), help.'"
           }
         ]
       }

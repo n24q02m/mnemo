@@ -1,30 +1,21 @@
+# Pre-commit Hooks Configuration
+# Installation: https://pre-commit.com/
+#
+# Quick start:
+#   1. Install hooks: uv run pre-commit install
+#   2. Run manually: uv run pre-commit run --all-files
+#
+# Bypass checks: git commit --no-verify (use only in emergency)
+
 default_language_version:
   python: python3.13
 
 repos:
-  # Common hooks
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      - id: trailing-whitespace
-        name: trim trailing whitespace
-        exclude_types: [image]
-      - id: check-merge-conflict
-        name: check for merge conflicts
-      - id: check-json
-        name: check JSON files
-        types: [json]
-      - id: check-yaml
-        name: check YAML files
-        types: [yaml]
-      - id: check-toml
-        name: check TOML files
-        types: [toml]
-      - id: end-of-file-fixer
-        name: fix end of files
-        exclude_types: [image]
+  # ============================================================================
+  # Python (Ruff + ty)
+  # ============================================================================
 
-  # Python hooks
+  # Ruff: Fast Python linter and formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.6
     hooks:
@@ -34,6 +25,7 @@ repos:
       - id: ruff-format
         name: ruff format
 
+  # ty: Static type checker for Python
   - repo: local
     hooks:
       - id: ty
@@ -43,14 +35,49 @@ repos:
         types: [python]
         pass_filenames: false
 
+  # Pytest: Run tests
+  - repo: local
+    hooks:
       - id: pytest
-        name: pytest
-        entry: mise exec -- uv run pytest --timeout=30 --tb=short -q
+        name: pytest (Python)
+        entry: mise exec -- uv run pytest --tb=short -q --timeout=30
         language: system
         types: [python]
         pass_filenames: false
 
-  # Commit message enforcement
+  # ============================================================================
+  # Common Checks
+  # ============================================================================
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: trim trailing whitespace
+        exclude_types: [image]
+
+      - id: check-merge-conflict
+        name: check for merge conflicts
+
+      - id: check-json
+        name: check JSON files
+        types: [json]
+
+      - id: check-yaml
+        name: check YAML files
+        types: [yaml]
+
+      - id: check-toml
+        name: check TOML files
+        types: [toml]
+
+      - id: end-of-file-fixer
+        name: fix end of files
+        exclude_types: [image]
+
+  # ============================================================================
+  # Commit Message Enforcement
+  # ============================================================================
   - repo: local
     hooks:
       - id: enforce-commit
