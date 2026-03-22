@@ -128,7 +128,7 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
 | `memory` | `add`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate` | Core memory CRUD, hybrid search, import/export, archival, and LLM consolidation |
-| `config` | `status`, `sync`, `set` | Server status, trigger sync, update runtime settings |
+| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync` | Server status, trigger sync, update settings, pre-download model, authenticate sync provider |
 | `help` | -- | Full documentation for any tool |
 
 ### MCP Resources
@@ -159,6 +159,7 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `RERANK_ENABLED` | No | `true` | Enable reranking (improves search precision) |
 | `RERANK_BACKEND` | No | auto-detect | `litellm` (cloud) or `local` (Qwen3) |
 | `RERANK_MODEL` | No | auto-detect | LiteLLM reranker model name |
+| `RERANK_TOP_N` | No | `10` | Number of top results to keep after reranking |
 | `LLM_MODELS` | No | `gemini/gemini-3-flash-preview` | LLM model for graph extraction, importance scoring, consolidation |
 | `ARCHIVE_ENABLED` | No | `true` | Enable auto-archiving of old low-importance memories |
 | `ARCHIVE_AFTER_DAYS` | No | `90` | Days before a memory is eligible for auto-archive |
