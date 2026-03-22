@@ -27,8 +27,8 @@ uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
 # Build & Run
 uv build
 uv run mnemo-mcp
-uv run mnemo-mcp warmup            # pre-download embedding model
-uv run mnemo-mcp setup-sync drive  # pre-authenticate rclone
+uv run mnemo-mcp warmup            # pre-download embedding model (also: config action=warmup)
+uv run mnemo-mcp setup-sync drive  # pre-authenticate rclone (also: config action=setup_sync)
 
 # Mise shortcuts
 mise run setup     # full dev setup
