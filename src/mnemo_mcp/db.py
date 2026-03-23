@@ -213,6 +213,13 @@ class MemoryDB:
                 PRIMARY KEY (memory_id, entity_id)
             );
 
+            -- Bolt Performance Optimization:
+            -- Index on entity_id to eliminate full table scans during knowledge graph
+            -- traversal in find_related_memory_ids. Improves search performance significantly
+            -- as the database grows.
+            CREATE INDEX IF NOT EXISTS idx_memory_entities_entity_id
+                ON memory_entities(entity_id);
+
             -- Archive table
             CREATE TABLE IF NOT EXISTS archived_memories (
                 id TEXT PRIMARY KEY NOT NULL,
