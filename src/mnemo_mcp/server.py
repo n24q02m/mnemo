@@ -807,22 +807,18 @@ async def memory(
         case "consolidate":
             return await _handle_consolidate(db, category)
         case _:
+            import difflib
+
+            valid_actions = [
+                "add", "archived", "consolidate", "delete", "export",
+                "import", "list", "restore", "search", "stats", "update",
+            ]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": [
-                        "add",
-                        "search",
-                        "list",
-                        "update",
-                        "delete",
-                        "export",
-                        "import",
-                        "stats",
-                        "restore",
-                        "archived",
-                        "consolidate",
-                    ],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                     "hint": "Common actions: 'add' to store new info, 'search' to find existing, 'update' to modify by ID.",
                 }
             )
@@ -944,14 +940,15 @@ async def config(
             )
 
         case _:
+            import difflib
+
+            valid_actions = ["set", "status", "sync"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": [
-                        "status",
-                        "sync",
-                        "set",
-                    ],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                 }
             )
 
@@ -1001,13 +998,15 @@ async def setup(
             return _json(result)
 
         case _:
+            import difflib
+
+            valid_actions = ["setup_sync", "warmup"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": [
-                        "warmup",
-                        "setup_sync",
-                    ],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                 }
             )
 
@@ -1029,9 +1028,13 @@ async def help(topic: str = "memory") -> str:
 
     filename = valid_topics.get(topic)
     if not filename:
+        import difflib
+
+        closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
+        suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
         return _json(
             {
-                "error": f"Unknown topic: {topic}",
+                "error": f"Unknown topic '{topic}'.{suggestion}",
                 "valid_topics": list(valid_topics.keys()),
             }
         )
