@@ -85,7 +85,7 @@ async def mcp_session(tmp_path):
 class TestMeta:
     async def test_list_tools(self, mcp_session: ClientSession):
         result = await mcp_session.list_tools()
-        tool_names = set(t.name for t in result.tools)
+        tool_names = {t.name for t in result.tools}
         expected = {"memory", "config", "help", "setup"}
         assert tool_names >= expected, (
             f"Missing tools: {expected - tool_names}, got {tool_names}"
@@ -112,9 +112,9 @@ class TestHelp:
     async def test_help_invalid_topic(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool("help", {"topic": "nonexistent"})
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "not found", "unknown")
-        ), f"Expected error response, got: {text[:80]}"
+        assert any(w in text.lower() for w in ("error", "not found", "unknown")), (
+            f"Expected error response, got: {text[:80]}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -137,18 +137,18 @@ class TestConfig:
             "config", {"action": "set", "key": "log_level", "value": "DEBUG"}
         )
         text = parse(r)
-        assert any(w in text.lower() for w in ("updated", "set", "log_level")), (
-            text[:80]
-        )
+        assert any(w in text.lower() for w in ("updated", "set", "log_level")), text[
+            :80
+        ]
 
     async def test_config_set_invalid_key(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool(
             "config", {"action": "set", "key": "invalid_key", "value": "x"}
         )
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "invalid", "valid")
-        ), f"Expected error for invalid key, got: {text[:80]}"
+        assert any(w in text.lower() for w in ("error", "invalid", "valid")), (
+            f"Expected error for invalid key, got: {text[:80]}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +166,9 @@ class TestSetup:
     async def test_setup_invalid_action(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool("setup", {"action": "invalid"})
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "unknown", "invalid")
-        ), text[:80]
+        assert any(w in text.lower() for w in ("error", "unknown", "invalid")), text[
+            :80
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -310,9 +310,7 @@ class TestMemoryHappyPath:
             },
         )
         text = parse(r)
-        assert any(
-            w in text.lower() for w in ("import", "merge", "success")
-        ), text[:80]
+        assert any(w in text.lower() for w in ("import", "merge", "success")), text[:80]
 
 
 # ---------------------------------------------------------------------------
@@ -327,25 +325,25 @@ class TestErrorPaths:
             r = await mcp_session.call_tool("memory", {})
             text = parse_allow_error(r)
             # Should contain error info
-            assert any(
-                w in text.lower() for w in ("error", "action", "required")
-            ), f"Expected error, got: {text[:80]}"
+            assert any(w in text.lower() for w in ("error", "action", "required")), (
+                f"Expected error, got: {text[:80]}"
+            )
         except Exception:
             pass  # Error raised is also acceptable
 
     async def test_memory_invalid_action(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool("memory", {"action": "invalid_action"})
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "unknown", "invalid")
-        ), f"Expected error, got: {text[:80]}"
+        assert any(w in text.lower() for w in ("error", "unknown", "invalid")), (
+            f"Expected error, got: {text[:80]}"
+        )
 
     async def test_memory_add_no_content(self, mcp_session: ClientSession):
         r = await mcp_session.call_tool("memory", {"action": "add"})
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "content", "required")
-        ), f"Expected error, got: {text[:80]}"
+        assert any(w in text.lower() for w in ("error", "content", "required")), (
+            f"Expected error, got: {text[:80]}"
+        )
 
 
 # ---------------------------------------------------------------------------

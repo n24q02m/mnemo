@@ -231,7 +231,9 @@ class TestFullMemoryArchive:
         """memory.archived -- returns empty list on fresh DB."""
         r = await mcp_session.call_tool("memory", {"action": "archived"})
         data = parse_json(r)
-        assert "count" in data or "results" in data, f"Unexpected archived response: {data}"
+        assert "count" in data or "results" in data, (
+            f"Unexpected archived response: {data}"
+        )
 
     async def test_restore_not_found(self, mcp_session: ClientSession):
         """memory.restore -- error when no archived memory exists."""
@@ -239,9 +241,9 @@ class TestFullMemoryArchive:
             "memory", {"action": "restore", "memory_id": "nonexistent-id"}
         )
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "not found", "archived")
-        ), text[:120]
+        assert any(w in text.lower() for w in ("error", "not found", "archived")), text[
+            :120
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +294,9 @@ class TestFullConfig:
             "config", {"action": "set", "key": "log_level", "value": "DEBUG"}
         )
         text = parse(r)
-        assert any(w in text.lower() for w in ("updated", "set", "log_level")), text[:120]
+        assert any(w in text.lower() for w in ("updated", "set", "log_level")), text[
+            :120
+        ]
 
     async def test_config_sync_status(self, mcp_session: ClientSession):
         """config.sync -- show sync status (no rclone needed)."""
@@ -313,15 +317,17 @@ class TestFullSetup:
         """setup.warmup -- download/verify embedding models."""
         r = await mcp_session.call_tool("setup", {"action": "warmup"})
         data = parse_json(r)
-        assert "status" in data or "embedding" in data, f"Unexpected warmup result: {data}"
+        assert "status" in data or "embedding" in data, (
+            f"Unexpected warmup result: {data}"
+        )
 
     async def test_setup_invalid_action(self, mcp_session: ClientSession):
         """setup with invalid action returns error."""
         r = await mcp_session.call_tool("setup", {"action": "invalid"})
         text = parse_allow_error(r)
-        assert any(
-            w in text.lower() for w in ("error", "unknown", "invalid")
-        ), text[:120]
+        assert any(w in text.lower() for w in ("error", "unknown", "invalid")), text[
+            :120
+        ]
 
 
 # ---------------------------------------------------------------------------

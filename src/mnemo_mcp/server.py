@@ -810,8 +810,17 @@ async def memory(
             import difflib
 
             valid_actions = [
-                "add", "archived", "consolidate", "delete", "export",
-                "import", "list", "restore", "search", "stats", "update",
+                "add",
+                "archived",
+                "consolidate",
+                "delete",
+                "export",
+                "import",
+                "list",
+                "restore",
+                "search",
+                "stats",
+                "update",
             ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
