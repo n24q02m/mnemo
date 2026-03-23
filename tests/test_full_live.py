@@ -373,3 +373,78 @@ class TestFullSecurity:
         )
         text = parse_allow_error(r)
         assert text, "Server crashed on special characters"
+
+
+# ---------------------------------------------------------------------------
+# Cloud embedding mode (SDK mode via API_KEYS)
+# ---------------------------------------------------------------------------
+
+API_KEYS = os.environ.get("API_KEYS", "")
+
+
+@pytest.mark.skipif(not API_KEYS, reason="API_KEYS not set")
+@pytest.mark.timeout(120)
+class TestFullCloudMode:
+    """Tests with cloud embedding via API_KEYS (SDK mode)."""
+
+    @pytest.fixture
+    async def cloud_session(self, tmp_path):
+        """MCP session using cloud SDK mode via API_KEYS."""
+        db_path = str(tmp_path / "cloud_test.db")
+        server_params = StdioServerParameters(
+            command="uv",
+            args=["run", "mnemo-mcp"],
+            env={
+                **os.environ,
+                "DB_PATH": db_path,
+                "LOG_LEVEL": "WARNING",
+                "SYNC_ENABLED": "false",
+                "API_KEYS": API_KEYS,
+            },
+        )
+        try:
+            async with stdio_client(server_params) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    yield session
+        except (RuntimeError, ExceptionGroup) as exc:
+            msg = str(exc).lower()
+            if "cancel scope" in msg or "different task" in msg:
+                warnings.warn(
+                    f"Suppressed teardown error: {exc}",
+                    RuntimeWarning,
+                    stacklevel=1,
+                )
+            else:
+                raise
+
+    async def test_search_cloud_embed(self, cloud_session: ClientSession):
+        """Add memory then search with cloud embedding."""
+        # Add a memory
+        r = await cloud_session.call_tool(
+            "memory",
+            {
+                "action": "add",
+                "content": "Cloud embedding test: Rust ownership model prevents data races.",
+                "category": "tech",
+                "tags": ["rust", "cloud"],
+            },
+        )
+        data = parse_json(r)
+        assert data.get("status") == "saved", f"Expected saved, got: {data}"
+
+        # Search for it
+        r = await cloud_session.call_tool(
+            "memory", {"action": "search", "query": "Rust ownership data races"}
+        )
+        data = parse_json(r)
+        memories = data.get("memories", data.get("results", []))
+        assert len(memories) >= 1, f"No search results with cloud embedding: {data}"
+
+    async def test_config_status_shows_cloud(self, cloud_session: ClientSession):
+        """config.status should show cloud/sdk embedding mode."""
+        r = await cloud_session.call_tool("config", {"action": "status"})
+        data = parse_json(r)
+        embedding = data.get("embedding", {})
+        backend = embedding.get("backend", "")
+        assert backend != "local", f"Expected cloud backend, got: {backend}"
