@@ -32,7 +32,7 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.5.0",
+    "qwen3-embed>=1.5.1",
 ]
 
 [dependency-groups]
@@ -43,7 +43,7 @@ dev = [
     "ruff",
     "ty",
     "pre-commit",
-    "pytest-cov>=7.0.0",
+    "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "syrupy>=5.1.0",
 ]
