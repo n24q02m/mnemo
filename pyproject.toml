@@ -49,7 +49,7 @@ dev = [
 ]
 
 [project.scripts]
-mnemo-mcp = "mnemo_mcp.__main__:_cli"
+mnemo-mcp = "mnemo_mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/mnemo-mcp"

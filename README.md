@@ -97,12 +97,20 @@ claude plugin add n24q02m/mnemo-mcp
 
 ### Pre-install (optional)
 
-```bash
-# Pre-download embedding model (~570MB) and validate API keys
-uvx mnemo-mcp warmup
+Pre-download the embedding model (~570 MB) to avoid first-run delays.
+Use the `setup` MCP tool after connecting:
 
-# With cloud embedding (validates API key, skips local download if cloud works)
-API_KEYS="JINA_AI_API_KEY:jina_..." uvx mnemo-mcp warmup
+```
+setup(action="warmup")
+```
+
+Or with cloud embedding (validates API key, skips local download if cloud works):
+
+```jsonc
+{
+  "env": { "API_KEYS": "JINA_AI_API_KEY:jina_..." }
+}
+// Then: setup(action="warmup")
 ```
 
 ### Sync setup
@@ -128,7 +136,8 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
 | `memory` | `add`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate` | Core memory CRUD, hybrid search, import/export, archival, and LLM consolidation |
-| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync` | Server status, trigger sync, update settings, pre-download model, authenticate sync provider |
+| `config` | `status`, `sync`, `set` | Server status, trigger sync, update settings |
+| `setup` | `warmup`, `setup_sync` | Pre-download embedding model, authenticate sync provider |
 | `help` | -- | Full documentation for any tool |
 
 ### MCP Resources

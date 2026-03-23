@@ -31,10 +31,9 @@ Requires `SYNC_ENABLED=true` and `SYNC_REMOTE` configured.
 - `push`: Success/failure of push operation
 
 **Sync prerequisites:**
-1. Get a token: call `config(action="setup_sync", provider="drive")` (downloads rclone + opens browser)
-   - Or CLI: `uvx mnemo-mcp setup-sync drive`
+1. Get a token: call `setup(action="setup_sync", provider="drive")` (downloads rclone + opens browser)
 2. Set `SYNC_ENABLED=true` in your MCP config environment
-3. The server auto-loads the saved token from `~/.mnemo-mcp/tokens/` — no env vars needed
+3. The server auto-loads the saved token from `~/.mnemo-mcp/tokens/` -- no env vars needed
 
 ### `set` - Update a configuration value
 
@@ -55,33 +54,6 @@ Change runtime settings. Changes persist for the current session.
 ```json
 {"action": "set", "key": "sync_interval", "value": "300"}
 ```
-
-### `warmup` - Pre-download embedding model
-
-Downloads the embedding model (~570 MB) so the first real connection does not timeout.
-If cloud API keys are configured, validates them instead of downloading the local model.
-
-**Parameters:** None
-
-**Returns:**
-- `status`: "ready" or "error"
-- `backend`: "cloud" or "local"
-- `model`: Model name used
-- `dims`: Embedding dimensions
-
-### `setup_sync` - Authenticate sync provider
-
-Downloads rclone and opens a browser for OAuth authentication. Saves the token
-locally so no env vars are needed for sync.
-
-**Parameters:**
-- `provider` (optional): rclone provider type (default: "drive"). Options: drive, dropbox, s3, onedrive, etc.
-
-**Returns:**
-- `status`: "authenticated" or "error"
-- `provider`: Provider name
-- `token_path`: Path to saved token file
-- `next_steps`: Env vars to set in MCP config
 
 ## Environment Variables
 

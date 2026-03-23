@@ -837,127 +837,10 @@ async def memory(
             )
 
 
-def _run_warmup() -> dict:
-    """Pre-download embedding model (blocking, run via asyncio.to_thread)."""
-    keys = settings.setup_api_keys()
-    if keys:
-        from mnemo_mcp.embedder import init_backend
-
-        model = settings.resolve_embedding_model()
-        candidates = [model] if model else _EMBEDDING_CANDIDATES
-
-        for candidate in candidates:
-            try:
-                backend = init_backend("litellm", candidate)
-                dims = backend.check_available()
-                if dims > 0:
-                    return {
-                        "status": "ready",
-                        "backend": "cloud",
-                        "model": candidate,
-                        "dims": dims,
-                    }
-            except Exception:
-                continue
-
-    local_model = settings.resolve_local_embedding_model()
-    from qwen3_embed import TextEmbedding
-
-    try:
-        model_obj = TextEmbedding(model_name=local_model)
-        result = list(model_obj.embed(["warmup test"]))
-        if result:
-            return {
-                "status": "ready",
-                "backend": "local",
-                "model": local_model,
-                "dims": len(result[0]),
-            }
-        return {"status": "error", "error": "Embedding test returned empty result"}
-    except Exception as exc:
-        if "NO_SUCHFILE" in str(exc) or "doesn't exist" in str(exc):
-            from mnemo_mcp.__main__ import _clear_model_cache
-
-            _clear_model_cache(local_model)
-            model_obj = TextEmbedding(model_name=local_model)
-            result = list(model_obj.embed(["warmup test"]))
-            if result:
-                return {
-                    "status": "ready",
-                    "backend": "local",
-                    "model": local_model,
-                    "dims": len(result[0]),
-                    "note": "Cache was corrupted, re-downloaded",
-                }
-            return {"status": "error", "error": "Embedding failed after cache clear"}
-        return {"status": "error", "error": str(exc)}
-
-
-async def _run_setup_sync(provider: str) -> dict:
-    """Authenticate sync provider via rclone (opens browser for OAuth)."""
-    import json as json_mod
-
-    from mnemo_mcp.sync import _download_rclone, _extract_token, _get_rclone_path
-    from mnemo_mcp.token_store import get_token_path, save_token
-
-    rclone_path = _get_rclone_path()
-    if not rclone_path:
-        rclone_path = await _download_rclone()
-        if not rclone_path:
-            return {"status": "error", "error": "Failed to download rclone"}
-
-    import subprocess
-
-    result = await asyncio.to_thread(
-        lambda: subprocess.run(
-            [str(rclone_path), "authorize", "--", provider],
-            stdout=subprocess.PIPE,
-            text=True,
-            timeout=300,
-        )
-    )
-
-    if result.returncode != 0:
-        return {
-            "status": "error",
-            "error": f"rclone authorize failed (exit {result.returncode})",
-        }
-
-    token_json = _extract_token(result.stdout or "")
-    if not token_json:
-        return {
-            "status": "error",
-            "error": "Could not extract token from rclone output",
-            "hint": "Try with SYNC_ENABLED=true — the server will auto-authenticate",
-        }
-
-    try:
-        token_dict = json_mod.loads(token_json)
-    except json_mod.JSONDecodeError:
-        return {"status": "error", "error": "Invalid token JSON from rclone"}
-
-    save_token(provider, token_dict)
-    remote_name = "gdrive" if provider == "drive" else provider
-    token_path = get_token_path(provider)
-
-    return {
-        "status": "authenticated",
-        "provider": provider,
-        "remote_name": remote_name,
-        "token_path": str(token_path),
-        "next_steps": {
-            "SYNC_ENABLED": "true",
-            **({"SYNC_PROVIDER": provider} if provider != "drive" else {}),
-            **({"SYNC_REMOTE": remote_name} if remote_name != "gdrive" else {}),
-        },
-    }
-
-
 @mcp.tool(
     description=(
-        "Server config and sync. Actions: status|sync|set|warmup|setup_sync. "
-        "status: show config. sync: manual sync. set: change setting. "
-        "warmup: pre-download embedding model. setup_sync: authenticate sync provider."
+        "Server config and sync. Actions: status|sync|set. "
+        "status: show config. sync: manual sync. set: change setting."
     ),
     annotations=ToolAnnotations(
         title="Config",
@@ -971,7 +854,6 @@ async def config(
     action: str,
     key: str | None = None,
     value: str | None = None,
-    provider: str = "drive",
     ctx: Context = None,  # type: ignore[assignment]
 ) -> str:
     """Server configuration and sync control.
@@ -980,8 +862,6 @@ async def config(
     - status: Show current config
     - sync: Trigger manual sync (requires sync_enabled + sync_remote)
     - set: Update setting (key + value required)
-    - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
-    - setup_sync: Authenticate sync provider (opens browser for OAuth)
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
@@ -1072,8 +952,48 @@ async def config(
                 }
             )
 
+        case _:
+            return _json(
+                {
+                    "error": f"Unknown action: {action}",
+                    "valid_actions": [
+                        "status",
+                        "sync",
+                        "set",
+                    ],
+                }
+            )
+
+
+@mcp.tool(
+    description=(
+        "Server setup tasks. Actions: warmup|setup_sync. "
+        "warmup: pre-download embedding model (~570 MB). "
+        "setup_sync: authenticate sync provider (opens browser for OAuth)."
+    ),
+    annotations=ToolAnnotations(
+        title="Setup",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
+async def setup(
+    action: str,
+    provider: str = "drive",
+) -> str:
+    """Server setup: warmup and sync authentication.
+
+    Actions:
+    - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
+    - setup_sync: Authenticate sync provider (opens browser for OAuth)
+    """
+    from mnemo_mcp.setup_tool import run_setup_sync, run_warmup
+
+    match action:
         case "warmup":
-            result = await asyncio.to_thread(_run_warmup)
+            result = await run_warmup()
             return _json(result)
 
         case "setup_sync":
@@ -1086,7 +1006,7 @@ async def config(
                         "valid_providers": sorted(RCLONE_PROVIDERS),
                     }
                 )
-            result = await _run_setup_sync(provider)
+            result = await run_setup_sync(provider)
             return _json(result)
 
         case _:
@@ -1094,9 +1014,6 @@ async def config(
                 {
                     "error": f"Unknown action: {action}",
                     "valid_actions": [
-                        "status",
-                        "sync",
-                        "set",
                         "warmup",
                         "setup_sync",
                     ],
@@ -1105,7 +1022,7 @@ async def config(
 
 
 @mcp.tool(
-    description="Full documentation for memory and config tools. topic: 'memory' | 'config'",
+    description="Full documentation for memory, config, and setup tools. topic: 'memory' | 'config' | 'setup'",
     annotations=ToolAnnotations(
         title="Help",
         readOnlyHint=True,
@@ -1117,7 +1034,7 @@ async def config(
 async def help(topic: str = "memory") -> str:
     """Load full documentation for a tool."""
     docs_package = pkg_resources.files("mnemo_mcp.docs")
-    valid_topics = {"memory": "memory.md", "config": "config.md"}
+    valid_topics = {"memory": "memory.md", "config": "config.md", "setup": "setup.md"}
 
     filename = valid_topics.get(topic)
     if not filename:

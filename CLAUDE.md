@@ -1,7 +1,7 @@
 # CLAUDE.md - mnemo-mcp
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
-Hybrid search: FTS5 + sqlite-vec semantic. 3 tools: memory, config, help.
+Hybrid search: FTS5 + sqlite-vec semantic. 4 tools: memory, config, setup, help.
 2-mode embedding: Proxy/SDK (LiteLLM) > Local (Qwen3 ONNX).
 
 ## Commands
@@ -26,9 +26,7 @@ uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
 
 # Build & Run
 uv build
-uv run mnemo-mcp
-uv run mnemo-mcp warmup            # pre-download embedding model (also: config action=warmup)
-uv run mnemo-mcp setup-sync drive  # pre-authenticate rclone (also: config action=setup_sync)
+uv run mnemo-mcp                    # run server (warmup/setup via MCP setup tool)
 
 # Mise shortcuts
 mise run setup     # full dev setup
@@ -51,6 +49,7 @@ mise run fix       # ruff fix + format
 src/mnemo_mcp/
   config.py        # Pydantic Settings (singleton), env vars khong co prefix
   server.py        # FastMCP server, tools, resources, prompts
+  setup_tool.py    # Warmup + setup-sync logic (MCP setup tool)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
   embedder.py      # Dual-backend: LiteLLM + qwen3-embed local
   sync.py          # Rclone sync (embedded, auto-download)
