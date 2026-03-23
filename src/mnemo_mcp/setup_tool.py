@@ -13,8 +13,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from mnemo_mcp.config import settings
-from mnemo_mcp.server import _EMBEDDING_CANDIDATES
+from mnemo_mcp.config import _EMBEDDING_CANDIDATES, settings
 
 
 def clear_model_cache(model_name: str) -> str | None:

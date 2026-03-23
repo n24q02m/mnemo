@@ -364,4 +364,13 @@ class Settings(BaseSettings):
         )
 
 
+# Embedding models to try during auto-detection (in priority order).
+# LiteLLM validates each against its API key -- first success wins.
+_EMBEDDING_CANDIDATES = [
+    "jina_ai/jina-embeddings-v5-text-small",
+    "gemini/gemini-embedding-001",
+    "text-embedding-3-large",
+    "embed-multilingual-v3.0",
+]
+
 settings = Settings()

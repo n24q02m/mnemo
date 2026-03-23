@@ -19,17 +19,8 @@ from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from mnemo_mcp.config import settings
+from mnemo_mcp.config import _EMBEDDING_CANDIDATES, settings
 from mnemo_mcp.db import MemoryDB
-
-# Embedding models to try during auto-detection (in priority order).
-# LiteLLM validates each against its API key — first success wins.
-_EMBEDDING_CANDIDATES = [
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "text-embedding-3-large",
-    "embed-multilingual-v3.0",
-]
 
 # Constant embedding dimensions for sqlite-vec.
 # All embeddings are truncated to this size so switching models never
