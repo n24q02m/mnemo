@@ -227,6 +227,12 @@ class MemoryDB:
                 last_accessed TEXT NOT NULL,
                 archived_at TEXT NOT NULL
             );
+
+            -- Bolt Performance Optimization:
+            -- Index on archived_at DESC to eliminate O(N log N) file-sort overhead during
+            -- list_archived pagination queries.
+            CREATE INDEX IF NOT EXISTS idx_archived_memories_archived_at
+                ON archived_memories(archived_at DESC);
         """)
 
         # Add importance column to memories (migration for existing DBs)
