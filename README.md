@@ -51,19 +51,7 @@ claude plugin add n24q02m/mnemo-mcp
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": ["mnemo-mcp@latest"],
-      "env": {
-        // -- optional: cloud embedding + reranking (Jina AI recommended)
-        "API_KEYS": "JINA_AI_API_KEY:jina_...",
-        // -- or: "API_KEYS": "GOOGLE_API_KEY:AIza...,COHERE_API_KEY:co-...",
-        // -- without API_KEYS, uses built-in local Qwen3 ONNX models (CPU, ~570MB first download)
-        // -- optional: LiteLLM Proxy (production, selfhosted gateway)
-        // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
-        // "LITELLM_PROXY_KEY": "sk-your-virtual-key",
-        // -- optional: sync memories across machines via rclone
-        "SYNC_ENABLED": "true",                    // default: false
-        "SYNC_INTERVAL": "300"                     // auto-sync every 5min (0 = manual only)
-      }
+      "args": ["mnemo-mcp@latest"]
     }
   }
 }
@@ -82,18 +70,14 @@ claude plugin add n24q02m/mnemo-mcp
         "-v", "mnemo-data:/data",
         "-e", "API_KEYS",
         "-e", "SYNC_ENABLED",
-        "-e", "SYNC_INTERVAL",
         "n24q02m/mnemo-mcp:latest"
-      ],
-      "env": {
-        "API_KEYS": "JINA_AI_API_KEY:jina_...",
-        "SYNC_ENABLED": "true",
-        "SYNC_INTERVAL": "300"
-      }
+      ]
     }
   }
 }
 ```
+
+Configure env vars in `~/.claude/settings.local.json` or your shell profile. See [Environment Variables](#environment-variables) below.
 
 ### Pre-install (optional)
 
@@ -102,15 +86,6 @@ Use the `setup` MCP tool after connecting:
 
 ```
 setup(action="warmup")
-```
-
-Or with cloud embedding (validates API key, skips local download if cloud works):
-
-```jsonc
-{
-  "env": { "API_KEYS": "JINA_AI_API_KEY:jina_..." }
-}
-// Then: setup(action="warmup")
 ```
 
 ### Sync setup
