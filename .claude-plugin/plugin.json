@@ -1,6 +1,6 @@
 {
   "name": "mnemo-mcp",
-  "description": "Persistent AI memory server \u2014 store, search, and recall knowledge across sessions",
+  "description": "Persistent AI memory server — store, search, and recall knowledge across sessions",
   "version": "1.10.0",
   "author": {
     "name": "n24q02m",
@@ -23,7 +23,10 @@
         "--python",
         "3.13",
         "mnemo-mcp"
-      ]
+      ],
+      "env": {
+        "RERANK_ENABLED": "true"
+      }
     }
   },
   "skills": "./skills/"

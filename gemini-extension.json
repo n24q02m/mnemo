@@ -11,9 +11,6 @@
         "mnemo-mcp"
       ],
       "env": {
-        "API_KEYS": "",
-        "LITELLM_PROXY_URL": "",
-        "MNEMO_DB_PATH": "",
         "RERANK_ENABLED": "true"
       }
     }
