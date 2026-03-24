@@ -85,7 +85,7 @@ class TestValidateCloudModels:
         result = _validate_cloud_models(mock_settings)
 
         assert result["cloud_ready"] is True
-        mock_init.assert_called_once_with("litellm", "explicit/model")
+        mock_init.assert_called_once_with("cloud", "explicit/model")
 
     @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["model-a"])
     @patch("mnemo_mcp.embedder.init_backend")

@@ -228,7 +228,7 @@ class TestInitEmbeddingBackendCandidate:
 
         mock_settings.resolve_embedding_model.return_value = None
         mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "litellm"
+        mock_settings.resolve_embedding_backend.return_value = "cloud"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
 
         # All candidates raise exception

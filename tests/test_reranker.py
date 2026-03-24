@@ -6,6 +6,7 @@ import pytest
 
 import mnemo_mcp.reranker as reranker_mod
 from mnemo_mcp.reranker import (
+    CohereReranker,
     LiteLLMReranker,
     Qwen3Reranker,
     get_reranker,
@@ -22,11 +23,10 @@ def _reset_reranker_backend():
     reranker_mod._backend = original
 
 
-class TestLiteLLMReranker:
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_rerank_success(self, _mock_setup):
-        """LiteLLM reranker returns sorted (index, score) tuples."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+class TestCohereReranker:
+    def test_rerank_success(self):
+        """Cohere reranker returns sorted (index, score) tuples."""
+        reranker = CohereReranker(api_key="test-key")
 
         mock_result_0 = MagicMock()
         mock_result_0.index = 0
@@ -43,17 +43,20 @@ class TestLiteLLMReranker:
         mock_response = MagicMock()
         mock_response.results = [mock_result_0, mock_result_1, mock_result_2]
 
-        with patch("litellm.rerank", return_value=mock_response):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
             results = reranker.rerank("test query", ["doc0", "doc1", "doc2"], top_n=2)
 
         assert len(results) == 2
         assert results[0] == (1, 0.9)
         assert results[1] == (2, 0.6)
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_rerank_with_dict_results(self, _mock_setup):
-        """LiteLLM reranker handles dict-style results."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+    def test_rerank_with_dict_results(self):
+        """Cohere reranker handles dict-style results."""
+        reranker = CohereReranker(api_key="test-key")
 
         mock_response = MagicMock()
         mock_response.results = [
@@ -61,71 +64,74 @@ class TestLiteLLMReranker:
             {"index": 1, "relevance_score": 0.5},
         ]
 
-        with patch("litellm.rerank", return_value=mock_response):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
             results = reranker.rerank("query", ["doc0", "doc1"])
 
         assert results[0] == (0, 0.8)
         assert results[1] == (1, 0.5)
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_rerank_empty_docs(self, _mock_setup):
+    def test_rerank_empty_docs(self):
         """Empty documents list returns empty results."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+        reranker = CohereReranker(api_key="test-key")
         results = reranker.rerank("query", [])
         assert results == []
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_rerank_failure_returns_empty(self, _mock_setup):
+    def test_rerank_failure_returns_empty(self):
         """Reranker returns empty list on failure (never raises)."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+        reranker = CohereReranker(api_key="test-key")
 
-        with patch("litellm.rerank", side_effect=Exception("API error")):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.side_effect = Exception("API error")
+            mock_client_cls.return_value = mock_client
+
             results = reranker.rerank("query", ["doc"])
 
         assert results == []
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_check_available_success(self, _mock_setup):
+    def test_check_available_success(self):
         """check_available returns True when API responds."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+        reranker = CohereReranker(api_key="test-key")
 
         mock_response = MagicMock()
         mock_response.results = [MagicMock()]
 
-        with patch("litellm.rerank", return_value=mock_response):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
             assert reranker.check_available() is True
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_check_available_failure(self, _mock_setup):
+    def test_check_available_failure(self):
         """check_available returns False on API failure."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+        reranker = CohereReranker(api_key="test-key")
 
-        with patch("litellm.rerank", side_effect=Exception("connection error")):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.side_effect = Exception("connection error")
+            mock_client_cls.return_value = mock_client
+
             assert reranker.check_available() is False
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_check_available_auth_error(self, _mock_setup):
+    def test_check_available_auth_error(self):
         """check_available logs warning for auth errors."""
-        reranker = LiteLLMReranker("jina_ai/jina-reranker-v3")
+        reranker = CohereReranker(api_key="bad-key")
 
-        with patch("litellm.rerank", side_effect=Exception("401 unauthorized")):
+        with patch("cohere.ClientV2") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.rerank.side_effect = Exception("401 unauthorized")
+            mock_client_cls.return_value = mock_client
+
             assert reranker.check_available() is False
 
-    @patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm")
-    def test_rerank_with_api_base_and_key(self, _mock_setup):
-        """api_base and api_key are passed to litellm.rerank()."""
-        reranker = LiteLLMReranker(
-            "model", api_base="http://proxy:4000", api_key="sk-test"
-        )
-
-        mock_response = MagicMock()
-        mock_response.results = []
-
-        with patch("litellm.rerank", return_value=mock_response) as mock_rerank:
-            reranker.rerank("query", ["doc"])
-            call_kwargs = mock_rerank.call_args[1]
-            assert call_kwargs["api_base"] == "http://proxy:4000"
-            assert call_kwargs["api_key"] == "sk-test"
+    def test_litellm_backward_compat_alias(self):
+        """LiteLLMReranker is an alias for CohereReranker."""
+        assert LiteLLMReranker is CohereReranker
 
 
 class TestQwen3Reranker:
@@ -202,12 +208,16 @@ class TestQwen3Reranker:
 
 
 class TestInitReranker:
-    def test_init_litellm(self):
-        """init_reranker creates LiteLLMReranker."""
-        with patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm"):
-            backend = init_reranker("litellm", "jina_ai/jina-reranker-v3")
+    def test_init_cloud(self):
+        """init_reranker creates CohereReranker for 'cloud'."""
+        backend = init_reranker("cloud", "rerank-v4.0-pro")
+        assert isinstance(backend, CohereReranker)
+        assert get_reranker() is backend
 
-        assert isinstance(backend, LiteLLMReranker)
+    def test_init_litellm_backward_compat(self):
+        """init_reranker creates CohereReranker for 'litellm' (backward compat)."""
+        backend = init_reranker("litellm", "rerank-v4.0-pro")
+        assert isinstance(backend, CohereReranker)
         assert get_reranker() is backend
 
     def test_init_local(self):
@@ -215,11 +225,6 @@ class TestInitReranker:
         backend = init_reranker("local")
         assert isinstance(backend, Qwen3Reranker)
         assert get_reranker() is backend
-
-    def test_init_litellm_requires_model(self):
-        """init_reranker raises ValueError without model for litellm."""
-        with pytest.raises(ValueError, match="model is required"):
-            init_reranker("litellm")
 
     def test_init_unknown_backend(self):
         """init_reranker raises ValueError for unknown backend."""
@@ -230,17 +235,15 @@ class TestInitReranker:
         """get_reranker returns None before init."""
         assert get_reranker() is None
 
-    def test_init_litellm_with_kwargs(self):
-        """init_reranker passes api_base/api_key to LiteLLMReranker."""
-        with patch("mnemo_mcp.reranker.LiteLLMReranker._setup_litellm"):
-            backend = init_reranker(
-                "litellm",
-                "model",
-                api_base="http://proxy:4000",
-                api_key="sk-test",
-            )
-
-        assert isinstance(backend, LiteLLMReranker)
+    def test_init_cloud_with_kwargs(self):
+        """init_reranker passes api_base/api_key to CohereReranker."""
+        backend = init_reranker(
+            "cloud",
+            "model",
+            api_base="http://proxy:4000",
+            api_key="sk-test",
+        )
+        assert isinstance(backend, CohereReranker)
         assert backend.api_base == "http://proxy:4000"
         assert backend.api_key == "sk-test"
 

@@ -1,10 +1,97 @@
 """Lightweight knowledge graph: entity extraction + relation management."""
 
 import json
+import os
 import uuid
 from datetime import UTC, datetime
 
 from loguru import logger
+
+
+def _has_llm_provider() -> bool:
+    """Check if any LLM provider API key is available."""
+    return bool(
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("XAI_API_KEY")
+    )
+
+
+def _resolve_llm_model(settings_obj) -> str:
+    """Resolve the LLM model to use from settings."""
+    models = [m.strip() for m in settings_obj.llm_models.split(",") if m.strip()]
+    return models[0] if models else "gemini/gemini-3-flash-preview"
+
+
+async def _llm_completion(
+    model: str,
+    messages: list[dict],
+    temperature: float = 0,
+    max_tokens: int = 500,
+    response_format: dict | None = None,
+) -> str:
+    """Call LLM completion using native SDK (google-genai or openai).
+
+    Supports gemini/ models via google-genai, and other models via openai SDK.
+    Returns the response text content.
+    """
+    # Strip provider prefix for SDK routing
+    raw_model = model
+    if "/" in model:
+        provider_prefix, model_name = model.split("/", 1)
+    else:
+        provider_prefix, model_name = "", model
+
+    is_gemini = provider_prefix in ("gemini", "") and (
+        "gemini" in model_name or provider_prefix == "gemini"
+    )
+
+    if is_gemini:
+        from google import genai
+
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        client = genai.Client(api_key=api_key)
+
+        # Build config
+        config_kwargs: dict = {
+            "temperature": temperature,
+            "max_output_tokens": max_tokens,
+        }
+        if response_format and response_format.get("type") == "json_object":
+            config_kwargs["response_mime_type"] = "application/json"
+
+        # Flatten messages to a single prompt for Gemini
+        prompt = messages[-1]["content"] if messages else ""
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=config_kwargs,
+        )
+        return response.text or ""
+    else:
+        # Use openai SDK for OpenAI, xAI, and other providers
+        import openai
+
+        # Determine API key and base URL
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("XAI_API_KEY")
+        base_url = None
+        if os.getenv("XAI_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+            base_url = "https://api.x.ai/v1"
+
+        client = openai.OpenAI(api_key=api_key, base_url=base_url)
+
+        kwargs: dict = {
+            "model": model_name if not provider_prefix else raw_model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content or ""
 
 
 async def extract_entities(content: str) -> dict | None:
@@ -15,22 +102,13 @@ async def extract_entities(content: str) -> dict | None:
     from mnemo_mcp.config import settings
 
     mode = settings.resolve_litellm_mode()
-    if mode == "local":
+    if mode == "local" and not _has_llm_provider():
         return None
 
     try:
-        from litellm import acompletion
+        model = _resolve_llm_model(settings)
 
-        llm_kwargs: dict = {}
-        if settings.litellm_proxy_url:
-            llm_kwargs["api_base"] = settings.litellm_proxy_url
-            if settings.litellm_proxy_key:
-                llm_kwargs["api_key"] = settings.litellm_proxy_key
-
-        models = [m.strip() for m in settings.llm_models.split(",") if m.strip()]
-        model = models[0] if models else "gemini/gemini-3-flash-preview"
-
-        response = await acompletion(
+        text = await _llm_completion(
             model=model,
             messages=[
                 {
@@ -50,10 +128,8 @@ async def extract_entities(content: str) -> dict | None:
             response_format={"type": "json_object"},
             temperature=0,
             max_tokens=500,
-            **llm_kwargs,
         )
 
-        text = response.choices[0].message.content
         data = json.loads(text)
         if "entities" not in data:
             return None
@@ -99,22 +175,13 @@ async def score_importance(content: str) -> float:
     from mnemo_mcp.config import settings
 
     mode = settings.resolve_litellm_mode()
-    if mode == "local":
+    if mode == "local" and not _has_llm_provider():
         return 0.5
 
     try:
-        from litellm import acompletion
+        model = _resolve_llm_model(settings)
 
-        llm_kwargs: dict = {}
-        if settings.litellm_proxy_url:
-            llm_kwargs["api_base"] = settings.litellm_proxy_url
-            if settings.litellm_proxy_key:
-                llm_kwargs["api_key"] = settings.litellm_proxy_key
-
-        models = [m.strip() for m in settings.llm_models.split(",") if m.strip()]
-        model = models[0] if models else "gemini/gemini-3-flash-preview"
-
-        response = await acompletion(
+        text = await _llm_completion(
             model=model,
             messages=[
                 {
@@ -131,11 +198,9 @@ async def score_importance(content: str) -> float:
             ],
             temperature=0,
             max_tokens=10,
-            **llm_kwargs,
         )
 
-        text = response.choices[0].message.content.strip()
-        score = float(text)
+        score = float(text.strip())
         return max(0.0, min(1.0, score))
     except Exception as e:
         logger.debug(f"Importance scoring failed: {e}")

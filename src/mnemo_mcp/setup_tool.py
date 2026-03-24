@@ -44,7 +44,7 @@ def _validate_cloud_models(settings_obj) -> dict:
 
     for candidate in candidates:
         try:
-            backend = init_backend("litellm", candidate)
+            backend = init_backend("cloud", candidate)
             dims = backend.check_available()
             if dims > 0:
                 return {

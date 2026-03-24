@@ -27,8 +27,11 @@ dependencies = [
     "pydantic-settings",
     # Logging
     "loguru",
-    # LLM (for auto-detecting providers + embedding)
-    "litellm",
+    # Cloud embedding + reranking (Cohere SDK)
+    "cohere>=5.20",
+    # LLM completion (native SDKs)
+    "google-genai>=1.0",
+    "openai>=1.50",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)

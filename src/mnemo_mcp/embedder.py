@@ -1,14 +1,14 @@
-"""Dual-backend embedding: LiteLLM (cloud) + qwen3-embed (local).
+"""Dual-backend embedding: Cloud (Cohere) + qwen3-embed (local).
 
 Supports two backends:
-- **litellm**: Cloud providers via LiteLLM (OpenAI, Gemini, Mistral, Cohere).
-  Requires API keys. Auto-detects provider from API_KEYS config.
+- **cloud**: Cloud embedding via Cohere SDK (embed-multilingual-v3.0).
+  Requires COHERE_API_KEY or CO_API_KEY. Backward compat: "litellm" alias.
 - **local**: Local inference via qwen3-embed. GGUF if GPU + llama-cpp-python,
   ONNX otherwise. No API keys needed, ~0.5GB model download on first use.
 
 Backend selection (always returns a valid backend):
 1. Explicit EMBEDDING_BACKEND env var
-2. 'litellm' if API keys are configured
+2. 'cloud' if API keys are configured
 3. 'local' (default, always available)
 
 Embeddings are truncated to fixed dims in server._embed().
@@ -17,7 +17,6 @@ Embeddings are truncated to fixed dims in server._embed().
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from typing import Protocol
 
@@ -109,33 +108,25 @@ class EmbeddingBackend(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# LiteLLM Backend (cloud)
+# Cloud Embedding Backend (Cohere SDK)
 # ---------------------------------------------------------------------------
 
 
-class LiteLLMBackend:
-    """Cloud embedding via LiteLLM (OpenAI, Gemini, Mistral, Cohere)."""
+class CloudEmbeddingBackend:
+    """Cloud embedding via Cohere SDK (embed-multilingual-v3.0)."""
 
-    # Gemini API: max 100 texts per batch request.
-    MAX_BATCH_SIZE = 100
+    # Cohere API: max 96 texts per batch request.
+    MAX_BATCH_SIZE = 96
 
     def __init__(
-        self, model: str, api_base: str | None = None, api_key: str | None = None
+        self,
+        model: str | None = None,
+        api_base: str | None = None,
+        api_key: str | None = None,
     ):
-        self.model = model
-        self.api_base = api_base
-        self.api_key = api_key
-        self._setup_litellm()
-
-    def _setup_litellm(self) -> None:
-        """Silence LiteLLM logging."""
-        os.environ.setdefault("LITELLM_LOG", "ERROR")
-        import litellm
-
-        litellm.suppress_debug_info = True  # type: ignore[assignment]
-        litellm.set_verbose = False
-        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-        logging.getLogger("LiteLLM").handlers = [logging.NullHandler()]
+        self.model = model or os.getenv("EMBEDDING_MODEL", "embed-multilingual-v3.0")
+        self.api_key = api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
+        self.api_base = api_base  # reserved for future use
 
     async def _embed_batch_inner(
         self,
@@ -146,28 +137,29 @@ class LiteLLMBackend:
 
         Tries server-side MRL truncation first (``dimensions`` param).
         If the provider rejects ``dimensions``, retries without it and
-        truncates locally. This ensures Gemini, Cohere, and other
-        providers that don't support ``dimensions`` still work.
+        truncates locally.
         """
-        from litellm import aembedding as litellm_aembedding
-
-        kwargs: dict = {
-            "model": self.model,
-            "input": texts,
-        }
-        if dimensions:
-            kwargs["dimensions"] = dimensions
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
+        use_dimensions = dimensions
 
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                response = await litellm_aembedding(**kwargs)
-                data = sorted(response.data, key=lambda x: x["index"])
-                embeddings = [d["embedding"] for d in data]
+                import cohere
+
+                client = cohere.ClientV2(api_key=self.api_key)
+                kwargs: dict = {
+                    "model": self.model,
+                    "texts": texts,
+                    "input_type": "search_document",
+                    "embedding_types": ["float"],
+                    "truncate": "END",
+                }
+                if use_dimensions:
+                    kwargs["output_dimension"] = use_dimensions
+
+                response = client.embed(**kwargs)
+                embeddings = response.embeddings.float_
+
                 # Truncate locally if server returned more dims than requested
                 if dimensions and embeddings and len(embeddings[0]) > dimensions:
                     embeddings = [e[:dimensions] for e in embeddings]
@@ -176,7 +168,7 @@ class LiteLLMBackend:
                 # If the provider rejects `dimensions`, retry without it
                 # and truncate locally instead.
                 if (
-                    "dimensions" in kwargs
+                    use_dimensions
                     and not _is_retryable(e)
                     and _is_unsupported_param(e, "dimensions")
                 ):
@@ -184,7 +176,7 @@ class LiteLLMBackend:
                         f"Provider does not support dimensions param, "
                         f"will truncate locally: {e}"
                     )
-                    kwargs.pop("dimensions")
+                    use_dimensions = None
                     continue
 
                 last_exc = e
@@ -242,22 +234,24 @@ class LiteLLMBackend:
         return results[0]
 
     def check_available(self) -> int:
-        """Check if the LiteLLM model is available via test request.
+        """Check if the Cohere model is available via test request.
 
         Distinguishes between invalid API keys (warning) and other
         failures (debug) so users know when their keys are wrong.
         """
         try:
-            from litellm import embedding as litellm_embedding
+            import cohere
 
-            kwargs = {"model": self.model, "input": ["test"]}
-            if self.api_base:
-                kwargs["api_base"] = self.api_base
-            if self.api_key:
-                kwargs["api_key"] = self.api_key
-            response = litellm_embedding(**kwargs)
-            if response.data:
-                dim = len(response.data[0]["embedding"])
+            client = cohere.ClientV2(api_key=self.api_key)
+            response = client.embed(
+                model=self.model,
+                texts=["test"],
+                input_type="search_document",
+                embedding_types=["float"],
+                truncate="END",
+            )
+            if response.embeddings.float_:
+                dim = len(response.embeddings.float_[0])
                 logger.info(f"Embedding model {self.model} available (dims={dim})")
                 return dim
             return 0
@@ -273,6 +267,10 @@ class LiteLLMBackend:
             else:
                 logger.debug(f"Embedding model {self.model} not available: {e}")
             return 0
+
+
+# Backward compatibility alias
+LiteLLMBackend = CloudEmbeddingBackend
 
 
 # ---------------------------------------------------------------------------
@@ -395,20 +393,18 @@ def init_backend(
     """Initialize and cache the embedding backend.
 
     Args:
-        backend_type: 'litellm' or 'local'
-        model: Model name (required for litellm, optional for local)
-        api_base: Custom API base URL (for litellm backend)
-        api_key: Custom API key (for litellm backend)
+        backend_type: 'cloud', 'litellm' (backward compat), or 'local'
+        model: Model name (optional for cloud, optional for local)
+        api_base: Custom API base URL (for cloud backend)
+        api_key: Custom API key (for cloud backend)
 
     Returns:
         Initialized backend instance.
     """
     global _backend
 
-    if backend_type == "litellm":
-        if not model:
-            raise ValueError("model is required for litellm backend")
-        _backend = LiteLLMBackend(model, api_base=api_base, api_key=api_key)
+    if backend_type in ("cloud", "litellm"):
+        _backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
     elif backend_type == "local":
         _backend = Qwen3EmbedBackend(model)
     else:
@@ -430,7 +426,7 @@ async def embed_single(
     api_key: str | None = None,
 ) -> list[float]:
     """Embed a single text (legacy interface)."""
-    backend = LiteLLMBackend(model, api_base=api_base, api_key=api_key)
+    backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
     return await backend.embed_single(text, dimensions)
 
 
@@ -438,5 +434,5 @@ def check_embedding_available(
     model: str, api_base: str | None = None, api_key: str | None = None
 ) -> int:
     """Check if an embedding model is available (legacy interface)."""
-    backend = LiteLLMBackend(model, api_base=api_base, api_key=api_key)
+    backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
     return backend.check_available()

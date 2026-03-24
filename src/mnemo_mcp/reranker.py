@@ -1,4 +1,4 @@
-"""Dual-backend reranking: LiteLLM (cloud) + qwen3-embed (local ONNX).
+"""Dual-backend reranking: Cohere (cloud) + qwen3-embed (local ONNX).
 
 Reranker takes search results and re-scores them with a cross-encoder
 for better precision. Pipeline: retrieve top-N*3 -> rerank -> return top-N.
@@ -6,7 +6,6 @@ for better precision. Pipeline: retrieve top-N*3 -> rerank -> return top-N.
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Protocol
 
@@ -30,55 +29,35 @@ class RerankerBackend(Protocol):
         ...
 
 
-class LiteLLMReranker:
-    """Cloud reranking via LiteLLM rerank() API."""
+class CohereReranker:
+    """Cloud reranking via Cohere SDK rerank API."""
 
     def __init__(
         self,
-        model: str,
+        model: str | None = None,
         api_base: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model
-        self.api_base = api_base
-        self.api_key = api_key
-        self._setup_litellm()
-
-    def _setup_litellm(self) -> None:
-        """Silence LiteLLM logging."""
-        os.environ.setdefault("LITELLM_LOG", "ERROR")
-        import litellm
-
-        litellm.suppress_debug_info = True  # type: ignore[assignment]
-        litellm.set_verbose = False
-        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-        logging.getLogger("LiteLLM").handlers = [logging.NullHandler()]
-
-    def _build_kwargs(self, query: str, documents: list[str], top_n: int) -> dict:
-        """Build kwargs dict for litellm.rerank()."""
-        kwargs: dict = {
-            "model": self.model,
-            "query": query,
-            "documents": documents,
-            "top_n": top_n,
-        }
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-        return kwargs
+        self.model = model or "rerank-v4.0-pro"
+        self.api_base = api_base  # reserved for future use
+        self.api_key = api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
 
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
     ) -> list[tuple[int, float]]:
-        """Rerank documents via LiteLLM cloud API."""
+        """Rerank documents via Cohere cloud API."""
         if not documents:
             return []
         try:
-            import litellm
+            import cohere
 
-            kwargs = self._build_kwargs(query, documents, top_n)
-            response = litellm.rerank(**kwargs)
+            client = cohere.ClientV2(api_key=self.api_key)
+            response = client.rerank(
+                model=self.model,
+                query=query,
+                documents=documents,
+                top_n=top_n,
+            )
             results: list[tuple[int, float]] = []
             for item in response.results:
                 if isinstance(item, dict):
@@ -88,16 +67,21 @@ class LiteLLMReranker:
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_n]
         except Exception as e:
-            logger.warning(f"LiteLLM reranking failed: {e}")
+            logger.warning(f"Cohere reranking failed: {e}")
             return []
 
     def check_available(self) -> bool:
         """Check if the cloud reranker model is reachable."""
         try:
-            import litellm
+            import cohere
 
-            kwargs = self._build_kwargs("test", ["test"], 1)
-            response = litellm.rerank(**kwargs)
+            client = cohere.ClientV2(api_key=self.api_key)
+            response = client.rerank(
+                model=self.model,
+                query="test",
+                documents=["test"],
+                top_n=1,
+            )
             return bool(response.results)
         except Exception as e:
             msg = str(e).lower()
@@ -108,6 +92,10 @@ class LiteLLMReranker:
             else:
                 logger.debug(f"Reranker {self.model} not available: {e}")
             return False
+
+
+# Backward compatibility alias
+LiteLLMReranker = CohereReranker
 
 
 class Qwen3Reranker:
@@ -183,20 +171,18 @@ def init_reranker(
     """Initialize and cache the reranker backend.
 
     Args:
-        backend_type: 'litellm' or 'local'
-        model: Model name (required for litellm, optional for local)
-        api_base: Custom API base URL (for litellm backend)
-        api_key: Custom API key (for litellm backend)
+        backend_type: 'cloud', 'litellm' (backward compat), or 'local'
+        model: Model name (optional for cloud, optional for local)
+        api_base: Custom API base URL (for cloud backend)
+        api_key: Custom API key (for cloud backend)
 
     Returns:
         Initialized backend instance.
     """
     global _backend
 
-    if backend_type == "litellm":
-        if not model:
-            raise ValueError("model is required for litellm reranker")
-        _backend = LiteLLMReranker(model, api_base=api_base, api_key=api_key)
+    if backend_type in ("cloud", "litellm"):
+        _backend = CohereReranker(model, api_base=api_base, api_key=api_key)
     elif backend_type == "local":
         _backend = Qwen3Reranker(model)
     else:

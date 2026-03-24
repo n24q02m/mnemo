@@ -45,8 +45,8 @@ def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
 
 
 _RERANK_PROVIDERS: dict[str, str] = {
-    "JINA_AI_API_KEY": "jina_ai/jina-reranker-v3",
-    "COHERE_API_KEY": "cohere/rerank-multilingual-v3.0",
+    "COHERE_API_KEY": "rerank-v4.0-pro",
+    "CO_API_KEY": "rerank-v4.0-pro",
 }
 
 RCLONE_PROVIDERS = {
@@ -84,13 +84,13 @@ class Settings(BaseSettings):
     - DB_PATH: Path to SQLite database (default: ~/.mnemo-mcp/memories.db)
     - API_KEYS: Provider API keys, supports multiple providers
         Format: "ENV_VAR:key,ENV_VAR:key,..."
-        Example: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
-        Embedding providers: Google, OpenAI, Cohere
-    - LITELLM_PROXY_URL: LiteLLM Proxy URL (e.g. http://10.0.0.20:4000)
-    - LITELLM_PROXY_KEY: LiteLLM Proxy virtual key
-    - EMBEDDING_MODEL: LiteLLM embedding model (auto-detected if not set)
+        Example: "COHERE_API_KEY:co-...,GEMINI_API_KEY:AIza..."
+        Embedding/rerank: Cohere. LLM: Gemini, OpenAI, xAI.
+    - LITELLM_PROXY_URL: Proxy URL (legacy, kept for backward compat)
+    - LITELLM_PROXY_KEY: Proxy virtual key (legacy)
+    - EMBEDDING_MODEL: Embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
-    - EMBEDDING_BACKEND: "litellm" | "local" (auto: API_KEYS -> litellm, else local)
+    - EMBEDDING_BACKEND: "cloud" | "local" (auto: API_KEYS -> cloud, else local)
         Local: GGUF if GPU + llama-cpp-python, else ONNX
     - SYNC_ENABLED: Enable rclone sync (default: false)
     - SYNC_PROVIDER: rclone provider type (default: "drive" for Google Drive)
@@ -258,24 +258,20 @@ class Settings(BaseSettings):
         return "local"
 
     def setup_litellm(self) -> str:
-        """One-time LiteLLM configuration. Call once during lifespan startup.
+        """One-time provider configuration. Call once during lifespan startup.
 
         Returns mode string: 'proxy', 'sdk', or 'local'.
+        Kept method name for backward compatibility.
         """
         mode = self.resolve_litellm_mode()
 
         if mode == "proxy":
-            import litellm
-
-            os.environ["LITELLM_PROXY_API_BASE"] = self.litellm_proxy_url
-            os.environ["LITELLM_PROXY_API_KEY"] = self.litellm_proxy_key
-            litellm.use_litellm_proxy = True
-            logger.info(f"LiteLLM Proxy mode: {self.litellm_proxy_url}")
+            logger.info(f"Proxy mode: {self.litellm_proxy_url}")
         elif mode == "sdk":
             self.setup_api_keys()
-            logger.info("LiteLLM SDK direct mode")
+            logger.info("SDK direct mode (native provider SDKs)")
         else:
-            logger.info("Local mode (no LiteLLM)")
+            logger.info("Local mode (no cloud API)")
 
         return mode
 
@@ -297,47 +293,48 @@ class Settings(BaseSettings):
         )
 
     def resolve_embedding_backend(self) -> str:
-        """Resolve embedding backend: 'local' or 'litellm'.
+        """Resolve embedding backend: 'local' or 'cloud'.
 
         Always returns a valid backend (never empty).
+        Returns 'litellm' for backward compat when explicitly set.
 
         Auto-detect order:
         1. Explicit EMBEDDING_BACKEND setting
-        2. 'litellm' if in proxy/sdk mode (API keys or proxy configured)
+        2. 'cloud' if in proxy/sdk mode (API keys or proxy configured)
         3. 'local' (qwen3-embed built-in, always available)
         """
         if self.embedding_backend:
             return self.embedding_backend
         mode = self.resolve_litellm_mode()
         if mode in ("proxy", "sdk"):
-            return "litellm"
+            return "cloud"
         return "local"
 
     def resolve_rerank_backend(self) -> str:
-        """Resolve reranker backend: 'litellm', 'local', or '' (disabled).
+        """Resolve reranker backend: 'cloud', 'local', or '' (disabled).
+
+        Returns 'litellm' for backward compat when explicitly set.
 
         Auto-detect order:
         1. Disabled if rerank_enabled is False
         2. Explicit rerank_backend setting
-        3. 'litellm' if in proxy/sdk mode or rerank_model set
-        4. 'litellm' if a known rerank provider key is in env or API_KEYS
+        3. 'cloud' if rerank_model set
+        4. 'cloud' if a known rerank provider key is in env or API_KEYS
         5. 'local' (qwen3-embed cross-encoder, always available)
         """
         if not self.rerank_enabled:
             return ""
         if self.rerank_backend:
             return self.rerank_backend
-        if self.litellm_proxy_url:
-            return "litellm"
         if self.rerank_model:
-            return "litellm"
+            return "cloud"
         for key in _RERANK_PROVIDERS:
             if os.environ.get(key):
-                return "litellm"
+                return "cloud"
         if self.api_keys:
             for key in _RERANK_PROVIDERS:
                 if key in self.api_keys:
-                    return "litellm"
+                    return "cloud"
         return "local"
 
     def resolve_rerank_model(self) -> str | None:
@@ -365,11 +362,8 @@ class Settings(BaseSettings):
 
 
 # Embedding models to try during auto-detection (in priority order).
-# LiteLLM validates each against its API key -- first success wins.
+# Cloud backend validates each against its API key -- first success wins.
 _EMBEDDING_CANDIDATES = [
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "text-embedding-3-large",
     "embed-multilingual-v3.0",
 ]
 

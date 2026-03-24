@@ -1,9 +1,8 @@
-"""Additional tests for mnemo_mcp.config — covering uncovered lines.
+"""Additional tests for mnemo_mcp.config -- covering uncovered lines.
 
 Targets: setup_litellm (proxy/sdk/local branches), resolve_litellm_mode.
 """
 
-import os
 from unittest.mock import patch
 
 from mnemo_mcp.config import Settings
@@ -11,28 +10,18 @@ from mnemo_mcp.config import Settings
 
 class TestSetupLitellm:
     def test_proxy_mode(self, monkeypatch):
-        """setup_litellm configures LiteLLM for proxy mode."""
+        """setup_litellm returns 'proxy' when proxy URL is set."""
         s = Settings(
             litellm_proxy_url="http://localhost:4000",
             litellm_proxy_key="sk-test",
             api_keys=None,
         )
 
-        with patch("litellm.use_litellm_proxy", False):
-            import litellm
-
-            mode = s.setup_litellm()
-            assert mode == "proxy"
-            assert os.environ.get("LITELLM_PROXY_API_BASE") == "http://localhost:4000"
-            assert os.environ.get("LITELLM_PROXY_API_KEY") == "sk-test"
-            assert litellm.use_litellm_proxy is True
-
-        # Cleanup
-        monkeypatch.delenv("LITELLM_PROXY_API_BASE", raising=False)
-        monkeypatch.delenv("LITELLM_PROXY_API_KEY", raising=False)
+        mode = s.setup_litellm()
+        assert mode == "proxy"
 
     def test_sdk_mode(self, monkeypatch):
-        """setup_litellm configures LiteLLM for SDK mode with API keys."""
+        """setup_litellm configures SDK mode with API keys."""
         s = Settings(
             api_keys="GOOGLE_API_KEY:test-key",
             litellm_proxy_url="",
@@ -90,13 +79,13 @@ class TestResolveLocalEmbeddingModel:
 
 class TestResolveEmbeddingBackendAuto:
     def test_auto_detect_with_proxy(self):
-        """Auto-detect returns 'litellm' when proxy URL is set."""
+        """Auto-detect returns 'cloud' when proxy URL is set."""
         s = Settings(
             litellm_proxy_url="http://localhost:4000",
             embedding_backend="",
             api_keys=None,
         )
-        assert s.resolve_embedding_backend() == "litellm"
+        assert s.resolve_embedding_backend() == "cloud"
 
     def test_auto_detect_with_no_config(self):
         """Auto-detect returns 'local' when nothing is configured."""

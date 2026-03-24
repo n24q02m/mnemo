@@ -1,70 +1,45 @@
-"""Additional tests for mnemo_mcp.embedder — covering uncovered lines.
+"""Additional tests for mnemo_mcp.embedder -- covering uncovered lines.
 
-Targets: LiteLLMBackend with api_base/api_key, Qwen3EmbedBackend._get_model,
+Targets: CloudEmbeddingBackend with api_base/api_key, Qwen3EmbedBackend._get_model,
 embed_texts inner function, embed_single_query, check_available result empty.
 """
 
 from unittest.mock import MagicMock, patch
 
-from mnemo_mcp.embedder import LiteLLMBackend, Qwen3EmbedBackend, _is_retryable
+from mnemo_mcp.embedder import CloudEmbeddingBackend, Qwen3EmbedBackend, _is_retryable
 
 # ---------------------------------------------------------------------------
-# LiteLLMBackend with api_base/api_key
+# CloudEmbeddingBackend with custom endpoint
 # ---------------------------------------------------------------------------
 
 
-class TestLiteLLMBackendCustomEndpoint:
-    @patch("litellm.aembedding")
-    async def test_passes_api_base(self, mock_embed):
-        """api_base is passed through to litellm embedding call."""
-        mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
-        backend = LiteLLMBackend("model", api_base="https://custom.api.com")
+class TestCloudEmbeddingBackendCustomEndpoint:
+    @patch("cohere.ClientV2")
+    async def test_passes_api_key(self, mock_client_cls):
+        """api_key is passed through to Cohere client."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.embeddings.float_ = [[0.1]]
+        mock_client.embed.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        backend = CloudEmbeddingBackend(api_key="sk-custom")
         await backend.embed_texts(["test"])
-        mock_embed.assert_called_once_with(
-            model="model", input=["test"], api_base="https://custom.api.com"
-        )
+        mock_client_cls.assert_called_with(api_key="sk-custom")
 
-    @patch("litellm.aembedding")
-    async def test_passes_api_key(self, mock_embed):
-        """api_key is passed through to litellm embedding call."""
-        mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
-        backend = LiteLLMBackend("model", api_key="sk-custom")
-        await backend.embed_texts(["test"])
-        mock_embed.assert_called_once_with(
-            model="model", input=["test"], api_key="sk-custom"
-        )
+    @patch("cohere.ClientV2")
+    def test_check_available_with_api_key(self, mock_client_cls):
+        """check_available passes api_key for validation."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.embeddings.float_ = [[0.1]]
+        mock_client.embed.return_value = mock_response
+        mock_client_cls.return_value = mock_client
 
-    @patch("litellm.aembedding")
-    async def test_passes_both_api_base_and_key(self, mock_embed):
-        """Both api_base and api_key are passed through."""
-        mock_embed.return_value = MagicMock(data=[{"index": 0, "embedding": [0.1]}])
-        backend = LiteLLMBackend("model", api_base="https://api.com", api_key="sk-key")
-        await backend.embed_texts(["test"])
-        mock_embed.assert_called_once_with(
-            model="model", input=["test"], api_base="https://api.com", api_key="sk-key"
-        )
-
-    @patch("litellm.embedding")
-    def test_check_available_with_api_base(self, mock_embed):
-        """check_available passes api_base for custom endpoint validation."""
-        mock_embed.return_value = MagicMock(data=[{"embedding": [0.1, 0.2]}])
-        backend = LiteLLMBackend("model", api_base="https://api.com")
-        dims = backend.check_available()
-        assert dims == 2
-        mock_embed.assert_called_once_with(
-            model="model", input=["test"], api_base="https://api.com"
-        )
-
-    @patch("litellm.embedding")
-    def test_check_available_with_api_key(self, mock_embed):
-        """check_available passes api_key for custom endpoint validation."""
-        mock_embed.return_value = MagicMock(data=[{"embedding": [0.1]}])
-        backend = LiteLLMBackend("model", api_key="sk-key")
+        backend = CloudEmbeddingBackend(api_key="sk-key")
         dims = backend.check_available()
         assert dims == 1
-        mock_embed.assert_called_once_with(
-            model="model", input=["test"], api_key="sk-key"
-        )
+        mock_client_cls.assert_called_with(api_key="sk-key")
 
 
 # ---------------------------------------------------------------------------

@@ -303,9 +303,12 @@ class TestMemoryConsolidate:
         db.add("mem1", category="tech")
         db.add("mem2", category="tech")
         # Default mode is local (no API keys)
-        result = json.loads(
-            await memory(action="consolidate", category="tech", ctx=ctx)
-        )
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
+        ):
+            mock_settings.resolve_litellm_mode.return_value = "local"
+            result = json.loads(await _handle_consolidate(db, "tech"))
         assert "error" in result
         assert "LLM" in result["error"]
 
@@ -621,21 +624,15 @@ class TestConsolidate:
         db.add("Python is great", category="tech")
         db.add("Python is awesome", category="tech")
 
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "Python is excellent"
-
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch(
-                "litellm.acompletion",
+                "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,
-                return_value=mock_response,
+                return_value="Python is excellent",
             ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "proxy"
-            mock_settings.litellm_proxy_url = "http://proxy:4000"
-            mock_settings.litellm_proxy_key = "sk-test"
             mock_settings.llm_models = "gpt-4o,gemini-flash"
             result = json.loads(await _handle_consolidate(db, "tech"))
 
@@ -652,14 +649,12 @@ class TestConsolidate:
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch(
-                "litellm.acompletion",
+                "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("LLM error"),
             ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = None
-            mock_settings.litellm_proxy_key = None
             mock_settings.llm_models = "gpt-4o"
             result = json.loads(await _handle_consolidate(db, "tech"))
         assert "error" in result

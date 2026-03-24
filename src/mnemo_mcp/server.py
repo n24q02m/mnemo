@@ -49,12 +49,12 @@ async def _init_embedding_backend(
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
 
-    if embedding_backend_type == "litellm":
+    if embedding_backend_type in ("cloud", "litellm"):
         if embedding_model:
             # Explicit model -- validate it
             try:
                 backend = await asyncio.to_thread(
-                    init_backend, "litellm", embedding_model
+                    init_backend, "cloud", embedding_model
                 )
                 native_dims = await asyncio.to_thread(backend.check_available)
                 if native_dims > 0:
@@ -77,9 +77,7 @@ async def _init_embedding_backend(
             # Auto-detect: try candidate models
             for candidate in _EMBEDDING_CANDIDATES:
                 try:
-                    backend = await asyncio.to_thread(
-                        init_backend, "litellm", candidate
-                    )
+                    backend = await asyncio.to_thread(init_backend, "cloud", candidate)
                     native_dims = await asyncio.to_thread(backend.check_available)
                     if native_dims > 0:
                         embedding_model = candidate
@@ -133,11 +131,11 @@ async def _init_reranker_backend(mode: str) -> None:
         logger.debug("Reranking disabled")
         return
 
-    if backend_type == "litellm":
+    if backend_type in ("cloud", "litellm"):
         model = settings.resolve_rerank_model()
         if model:
             try:
-                backend = await asyncio.to_thread(init_reranker, "litellm", model)
+                backend = await asyncio.to_thread(init_reranker, "cloud", model)
                 available = await asyncio.to_thread(backend.check_available)
                 if available:
                     logger.info(f"Reranker: {model}")
@@ -652,8 +650,10 @@ async def _handle_consolidate(
     category: str | None,
 ) -> str:
     """Consolidate similar memories in a category using LLM summarization."""
+    from mnemo_mcp.graph import _has_llm_provider
+
     mode = settings.resolve_litellm_mode()
-    if mode == "local":
+    if mode == "local" and not _has_llm_provider():
         return _json({"error": "Consolidation requires LLM (proxy or SDK mode)"})
 
     if not category:
@@ -666,22 +666,15 @@ async def _handle_consolidate(
         )
 
     try:
-        from litellm import acompletion
+        from mnemo_mcp.graph import _llm_completion, _resolve_llm_model
 
-        llm_kwargs: dict = {}
-        if settings.litellm_proxy_url:
-            llm_kwargs["api_base"] = settings.litellm_proxy_url
-            if settings.litellm_proxy_key:
-                llm_kwargs["api_key"] = settings.litellm_proxy_key
-
-        models = [m.strip() for m in settings.llm_models.split(",") if m.strip()]
-        model = models[0] if models else "gemini/gemini-3-flash-preview"
+        model = _resolve_llm_model(settings)
 
         content_list = "\n---\n".join(
             f"[{m['id'][:8]}] {m['content']}" for m in memories[:20]
         )
 
-        response = await acompletion(
+        summary = await _llm_completion(
             model=model,
             messages=[
                 {
@@ -695,16 +688,14 @@ async def _handle_consolidate(
             ],
             temperature=0,
             max_tokens=1000,
-            **llm_kwargs,
         )
 
-        summary = response.choices[0].message.content.strip()
         return _json(
             {
                 "status": "consolidated",
                 "category": category,
                 "original_count": len(memories),
-                "summary": summary,
+                "summary": summary.strip(),
                 "note": "Review the summary and use add/delete to apply changes.",
             }
         )

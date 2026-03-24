@@ -16,7 +16,7 @@ def mock_settings():
         m.setup_litellm.return_value = "sdk"
         m.resolve_embedding_model.return_value = "test-model"
         m.resolve_embedding_dims.return_value = 0
-        m.resolve_embedding_backend.return_value = "litellm"
+        m.resolve_embedding_backend.return_value = "cloud"
         m.sync_enabled = False
         m.get_db_path.return_value = "test.db"
         m.resolve_local_embedding_model.return_value = "local-model"
@@ -56,7 +56,7 @@ async def test_lifespan_happy_path_cloud(
     mock_settings, mock_db, mock_embedder, mock_sync
 ):
     """Test normal startup with cloud embedding."""
-    mock_settings.resolve_embedding_backend.return_value = "litellm"
+    mock_settings.resolve_embedding_backend.return_value = "cloud"
     mock_settings.resolve_embedding_model.return_value = "cloud-model"
     mock_settings.resolve_embedding_dims.return_value = 128
 
@@ -129,7 +129,7 @@ async def test_lifespan_explicit_cloud_exception_fallback(
     mock_settings, mock_db, mock_embedder, mock_sync
 ):
     """Test fallback when explicit cloud model initialization raises exception."""
-    mock_settings.resolve_embedding_backend.return_value = "litellm"
+    mock_settings.resolve_embedding_backend.return_value = "cloud"
     mock_settings.resolve_embedding_model.return_value = "crash-model"
     mock_settings.resolve_embedding_dims.return_value = 0
 
@@ -152,7 +152,7 @@ async def test_lifespan_all_backends_fail(
     mock_settings, mock_db, mock_embedder, mock_sync
 ):
     """Test behavior when both cloud and local backends fail."""
-    mock_settings.resolve_embedding_backend.return_value = "litellm"
+    mock_settings.resolve_embedding_backend.return_value = "cloud"
     mock_settings.resolve_embedding_model.return_value = "crash-model"
 
     # Cloud raises, Local raises

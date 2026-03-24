@@ -1,9 +1,10 @@
-"""Tests for mnemo_mcp.graph — entity extraction, relations, graph traversal."""
+"""Tests for mnemo_mcp.graph -- entity extraction, relations, graph traversal."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.graph import (
+    _has_llm_provider,
     create_relations,
     extract_entities,
     find_related_memory_ids,
@@ -13,31 +14,46 @@ from mnemo_mcp.graph import (
 )
 
 
+class TestHasLlmProvider:
+    def test_no_keys(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        assert _has_llm_provider() is False
+
+    def test_gemini_key(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test")
+        assert _has_llm_provider() is True
+
+    def test_openai_key(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test")
+        assert _has_llm_provider() is True
+
+
 class TestExtractEntities:
-    async def test_returns_none_in_local_mode(self):
-        with patch("mnemo_mcp.config.settings") as mock_settings:
+    async def test_returns_none_in_local_mode_no_keys(self):
+        with (
+            patch("mnemo_mcp.config.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
+        ):
             mock_settings.resolve_litellm_mode.return_value = "local"
             result = await extract_entities("Python is a programming language")
             assert result is None
 
     async def test_success_with_llm(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[
-            0
-        ].message.content = (
-            '{"entities": [{"name": "Python", "type": "tool"}], "relations": []}'
-        )
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value='{"entities": [{"name": "Python", "type": "tool"}], "relations": []}',
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             result = await extract_entities("Python is a programming language")
             assert result is not None
@@ -47,137 +63,116 @@ class TestExtractEntities:
     async def test_handles_llm_error(self):
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                side_effect=Exception("API error"),
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.side_effect = Exception("API error")
 
             result = await extract_entities("test content")
             assert result is None
 
     async def test_handles_invalid_json(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "not json"
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value="not json",
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             result = await extract_entities("test content")
             assert result is None
 
     async def test_handles_missing_entities_key(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"relations": []}'
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value='{"relations": []}',
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             result = await extract_entities("test content")
             assert result is None
 
-    async def test_proxy_mode_passes_kwargs(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[
-            0
-        ].message.content = (
-            '{"entities": [{"name": "Test", "type": "concept"}], "relations": []}'
-        )
-
+    async def test_proxy_mode_calls_llm(self):
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value='{"entities": [{"name": "Test", "type": "concept"}], "relations": []}',
+            ) as mock_llm,
         ):
             mock_settings.resolve_litellm_mode.return_value = "proxy"
-            mock_settings.litellm_proxy_url = "http://localhost:4000"
-            mock_settings.litellm_proxy_key = "sk-test"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             result = await extract_entities("test content")
             assert result is not None
             mock_llm.assert_called_once()
-            call_kwargs = mock_llm.call_args
-            assert call_kwargs.kwargs["api_base"] == "http://localhost:4000"
-            assert call_kwargs.kwargs["api_key"] == "sk-test"
 
 
 class TestScoreImportance:
-    async def test_returns_default_in_local_mode(self):
-        with patch("mnemo_mcp.config.settings") as mock_settings:
+    async def test_returns_default_in_local_mode_no_keys(self):
+        with (
+            patch("mnemo_mcp.config.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
+        ):
             mock_settings.resolve_litellm_mode.return_value = "local"
             score = await score_importance("some content")
             assert score == 0.5
 
     async def test_success_with_llm(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "0.8"
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value="0.8",
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             score = await score_importance("critical information")
             assert score == 0.8
 
     async def test_clamps_to_range(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "1.5"
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value="1.5",
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             score = await score_importance("test")
             assert score == 1.0
 
     async def test_clamps_negative(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "-0.3"
-
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                return_value="-0.3",
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.return_value = mock_response
 
             score = await score_importance("test")
             assert score == 0.0
@@ -185,13 +180,14 @@ class TestScoreImportance:
     async def test_handles_error(self):
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
-            patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm,
+            patch(
+                "mnemo_mcp.graph._llm_completion",
+                new_callable=AsyncMock,
+                side_effect=Exception("API error"),
+            ),
         ):
             mock_settings.resolve_litellm_mode.return_value = "sdk"
-            mock_settings.litellm_proxy_url = ""
-            mock_settings.litellm_proxy_key = ""
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
-            mock_llm.side_effect = Exception("API error")
 
             score = await score_importance("test")
             assert score == 0.5
