@@ -16,8 +16,12 @@
         "LITELLM_PROXY_URL": "",
         "LITELLM_PROXY_KEY": "",
         "DB_PATH": "",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": "",
+        "RERANK_MODEL": "",
+        "RERANK_BACKEND": "",
         "RERANK_ENABLED": "true",
-        "SYNC_ENABLED": "false"
+        "SYNC_ENABLED": "true"
       }
     },
     "mnemo-pipx": {
@@ -28,8 +32,12 @@
         "LITELLM_PROXY_URL": "",
         "LITELLM_PROXY_KEY": "",
         "DB_PATH": "",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": "",
+        "RERANK_MODEL": "",
+        "RERANK_BACKEND": "",
         "RERANK_ENABLED": "true",
-        "SYNC_ENABLED": "false"
+        "SYNC_ENABLED": "true"
       }
     },
     "mnemo-docker": {
@@ -40,8 +48,12 @@
         "LITELLM_PROXY_URL": "",
         "LITELLM_PROXY_KEY": "",
         "DB_PATH": "/data/storage.db",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": "",
+        "RERANK_MODEL": "",
+        "RERANK_BACKEND": "",
         "RERANK_ENABLED": "true",
-        "SYNC_ENABLED": "false"
+        "SYNC_ENABLED": "true"
       }
     }
   },
