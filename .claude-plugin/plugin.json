@@ -1,21 +1,12 @@
 {
   "name": "mnemo-mcp",
-  "description": "Persistent AI memory server — store, search, and recall knowledge across sessions",
+  "description": "Persistent AI memory — store, search, and recall knowledge across sessions",
   "version": "1.10.0",
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
   },
   "homepage": "https://github.com/n24q02m/mnemo-mcp",
-  "repository": "https://github.com/n24q02m/mnemo-mcp",
-  "license": "MIT",
-  "keywords": [
-    "memory",
-    "knowledge-management",
-    "persistence",
-    "mcp",
-    "claude-code"
-  ],
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
@@ -26,6 +17,20 @@
       ],
       "env": {
         "RERANK_ENABLED": "true"
+      }
+    },
+    "mnemo-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "mnemo-data:/data",
+        "n24q02m/mnemo-mcp:latest"
+      ],
+      "env": {
+        "DB_PATH": "/data/storage.db"
       }
     }
   },
