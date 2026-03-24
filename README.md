@@ -51,7 +51,7 @@ claude plugin add n24q02m/mnemo-mcp
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": ["mnemo-mcp@latest"]
+      "args": ["--python", "3.13", "mnemo-mcp@latest"]
     }
   }
 }
