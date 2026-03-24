@@ -67,6 +67,30 @@ Configure env vars in `~/.claude/settings.local.json` or shell profile. See [Env
 }
 ```
 
+<details>
+<summary>Other MCP clients (Cursor, Codex, Gemini CLI)</summary>
+
+```jsonc
+// Cursor (~/.cursor/mcp.json), Windsurf, Cline, Amp, OpenCode
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "mnemo-mcp@latest"]
+    }
+  }
+}
+```
+
+```toml
+# Codex (~/.codex/config.toml)
+[mcp_servers.mnemo]
+command = "uvx"
+args = ["--python", "3.13", "mnemo-mcp@latest"]
+```
+
+</details>
+
 #### Option 2: Docker
 
 ```jsonc
@@ -177,6 +201,13 @@ Both embedding and reranking are **always available** -- local models are built-
 - **Reranking priority**: Jina AI > Cohere. Local Qwen3 fallback always available
 - **GPU auto-detection**: CUDA/DirectML auto-detected, uses GGUF models for better performance
 - All embeddings stored at **768 dims**. Switching providers never breaks the vector table
+
+### Security
+
+- **Graceful fallbacks** -- Cloud → Local embedding, no cross-mode fallback
+- **Sync token security** -- OAuth tokens stored at `~/.mnemo-mcp/tokens/` with 600 permissions
+- **Input validation** -- Sync provider, folder, remote validated against allowlists
+- **Error sanitization** -- No credentials in error messages
 
 ## Build from Source
 
