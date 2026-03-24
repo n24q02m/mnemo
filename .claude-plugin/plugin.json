@@ -1,7 +1,7 @@
 {
   "name": "mnemo-mcp",
   "description": "Persistent AI memory server \u2014 store, search, and recall knowledge across sessions",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
@@ -25,5 +25,6 @@
         "mnemo-mcp"
       ]
     }
-  }
+  },
+  "skills": "./skills/"
 }
