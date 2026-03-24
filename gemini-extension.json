@@ -1,0 +1,22 @@
+{
+  "name": "mnemo-mcp",
+  "version": "1.10.0",
+  "description": "Persistent AI memory — store, search, and recall knowledge across sessions",
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.13",
+        "mnemo-mcp"
+      ],
+      "env": {
+        "API_KEYS": "",
+        "LITELLM_PROXY_URL": "",
+        "MNEMO_DB_PATH": "",
+        "RERANK_ENABLED": "true"
+      }
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}
