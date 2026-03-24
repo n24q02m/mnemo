@@ -41,13 +41,15 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 Via marketplace (includes skills: /session-handoff, /knowledge-audit):
 
 ```bash
-/plugins add n24q02m/claude-plugins
+/plugin marketplace add n24q02m/claude-plugins
+/plugin install mnemo-mcp@claude-plugins
 ```
 
 Or install this plugin only:
 
 ```bash
-claude plugin add n24q02m/mnemo-mcp
+/plugin marketplace add n24q02m/mnemo-mcp
+/plugin install mnemo-mcp
 ```
 
 Configure env vars in `~/.claude/settings.local.json` or shell profile. See [Environment Variables](#environment-variables).
