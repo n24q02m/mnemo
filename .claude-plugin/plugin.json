@@ -10,27 +10,38 @@
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": [
-        "--python",
-        "3.13",
-        "mnemo-mcp"
-      ],
+      "args": ["--python", "3.13", "mnemo-mcp"],
       "env": {
-        "RERANK_ENABLED": "true"
+        "API_KEYS": "",
+        "LITELLM_PROXY_URL": "",
+        "LITELLM_PROXY_KEY": "",
+        "DB_PATH": "",
+        "RERANK_ENABLED": "true",
+        "SYNC_ENABLED": "false"
+      }
+    },
+    "mnemo-pipx": {
+      "command": "pipx",
+      "args": ["run", "--python", "3.13", "mnemo-mcp"],
+      "env": {
+        "API_KEYS": "",
+        "LITELLM_PROXY_URL": "",
+        "LITELLM_PROXY_KEY": "",
+        "DB_PATH": "",
+        "RERANK_ENABLED": "true",
+        "SYNC_ENABLED": "false"
       }
     },
     "mnemo-docker": {
       "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "-v",
-        "mnemo-data:/data",
-        "n24q02m/mnemo-mcp:latest"
-      ],
+      "args": ["run", "--rm", "-i", "-v", "mnemo-data:/data", "n24q02m/mnemo-mcp:latest"],
       "env": {
-        "DB_PATH": "/data/storage.db"
+        "API_KEYS": "",
+        "LITELLM_PROXY_URL": "",
+        "LITELLM_PROXY_KEY": "",
+        "DB_PATH": "/data/storage.db",
+        "RERANK_ENABLED": "true",
+        "SYNC_ENABLED": "false"
       }
     }
   },
