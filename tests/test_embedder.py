@@ -423,7 +423,7 @@ class TestLegacyCompat:
         mock_client.embed.return_value = mock_response
         mock_client_cls.return_value = mock_client
 
-        result = await embed_single("test", "model", api_key="key")
+        result = await embed_single("test", "embed-multilingual-v3.0", api_key="key")
         assert result == [0.1, 0.2]
 
     @patch("cohere.ClientV2")
@@ -434,4 +434,4 @@ class TestLegacyCompat:
         mock_client.embed.return_value = mock_response
         mock_client_cls.return_value = mock_client
 
-        assert check_embedding_available("model", api_key="key") == 1
+        assert check_embedding_available("embed-multilingual-v3.0", api_key="key") == 1

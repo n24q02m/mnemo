@@ -36,7 +36,7 @@ async def _init_embedding_backend(
 ) -> None:
     """Initialize embedding backend in background.
 
-    Tries cloud (LiteLLM) first if API keys are available, then falls back
+    Tries cloud providers first if API keys are available, then falls back
     to local (qwen3-embed ONNX). Updates ``ctx`` dict in-place so tools
     pick up the model/dims as soon as they are ready.
 
@@ -73,7 +73,7 @@ async def _init_embedding_backend(
             except Exception as e:
                 logger.warning(f"Embedding model {embedding_model} not available: {e}")
                 embedding_model = None
-        elif mode in ("proxy", "sdk"):
+        elif mode == "sdk":
             # Auto-detect: try candidate models
             for candidate in _EMBEDDING_CANDIDATES:
                 try:
@@ -120,7 +120,7 @@ async def _init_embedding_backend(
 async def _init_reranker_backend(mode: str) -> None:
     """Initialize reranker backend in background.
 
-    Tries cloud (LiteLLM) first if API keys are available, then falls back
+    Tries cloud providers first if API keys are available, then falls back
     to local (qwen3-embed cross-encoder). Best-effort: if both fail, search
     still works without reranking.
     """
@@ -165,8 +165,8 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     connections immediately. Tools gracefully degrade to FTS5-only search
     until the embedding model is ready.
     """
-    # 1. Setup LiteLLM mode (proxy/sdk/local)
-    mode = settings.setup_litellm()
+    # 1. Setup provider mode (sdk/local)
+    mode = settings.setup_providers()
 
     # 2. Resolve initial embedding dims (may be refined by background task)
     embedding_dims = settings.resolve_embedding_dims()
@@ -653,9 +653,9 @@ async def _handle_consolidate(
     """Consolidate similar memories in a category using LLM summarization."""
     from mnemo_mcp.graph import _has_llm_provider
 
-    mode = settings.resolve_litellm_mode()
+    mode = settings.resolve_provider_mode()
     if mode == "local" and not _has_llm_provider():
-        return _json({"error": "Consolidation requires LLM (proxy or SDK mode)"})
+        return _json({"error": "Consolidation requires LLM (SDK mode with API keys)"})
 
     if not category:
         return _json({"error": "category is required for consolidate"})

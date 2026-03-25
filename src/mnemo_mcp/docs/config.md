@@ -63,8 +63,8 @@ Configure via environment variables before starting the server:
 |----------|---------|-------------|
 | `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path |
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
-| `EMBEDDING_BACKEND` | (auto-detect) | `local` (qwen3-embed ONNX/GGUF), `litellm` (API), or empty (auto) |
-| `EMBEDDING_MODEL` | (auto-detect) | LiteLLM model name or GGUF model ID |
+| `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (qwen3-embed ONNX/GGUF), or empty (auto) |
+| `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
 | `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
 | `SYNC_ENABLED` | `false` | Enable rclone sync |
 | `SYNC_REMOTE` | (none) | Rclone remote name |

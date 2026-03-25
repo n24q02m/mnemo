@@ -39,7 +39,7 @@ class TestExtractEntities:
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "local"
+            mock_settings.resolve_provider_mode.return_value = "local"
             result = await extract_entities("Python is a programming language")
             assert result is None
 
@@ -52,7 +52,7 @@ class TestExtractEntities:
                 return_value='{"entities": [{"name": "Python", "type": "tool"}], "relations": []}',
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("Python is a programming language")
@@ -69,7 +69,7 @@ class TestExtractEntities:
                 side_effect=Exception("API error"),
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
@@ -84,7 +84,7 @@ class TestExtractEntities:
                 return_value="not json",
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
@@ -99,7 +99,7 @@ class TestExtractEntities:
                 return_value='{"relations": []}',
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
@@ -114,7 +114,7 @@ class TestExtractEntities:
                 return_value='{"entities": [{"name": "Test", "type": "concept"}], "relations": []}',
             ) as mock_llm,
         ):
-            mock_settings.resolve_litellm_mode.return_value = "proxy"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
@@ -128,7 +128,7 @@ class TestScoreImportance:
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "local"
+            mock_settings.resolve_provider_mode.return_value = "local"
             score = await score_importance("some content")
             assert score == 0.5
 
@@ -141,7 +141,7 @@ class TestScoreImportance:
                 return_value="0.8",
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             score = await score_importance("critical information")
@@ -156,7 +156,7 @@ class TestScoreImportance:
                 return_value="1.5",
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             score = await score_importance("test")
@@ -171,7 +171,7 @@ class TestScoreImportance:
                 return_value="-0.3",
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             score = await score_importance("test")
@@ -186,7 +186,7 @@ class TestScoreImportance:
                 side_effect=Exception("API error"),
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             score = await score_importance("test")

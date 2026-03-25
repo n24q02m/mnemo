@@ -307,7 +307,7 @@ class TestMemoryConsolidate:
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "local"
+            mock_settings.resolve_provider_mode.return_value = "local"
             result = json.loads(await _handle_consolidate(db, "tech"))
         assert "error" in result
         assert "LLM" in result["error"]
@@ -603,7 +603,7 @@ class TestConsolidate:
         """Cover line 637-638: no category error when mode is not local."""
         ctx, db = ctx_with_db
         with patch("mnemo_mcp.server.settings") as mock_settings:
-            mock_settings.resolve_litellm_mode.return_value = "proxy"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             result = json.loads(await _handle_consolidate(db, None))
         assert "error" in result
         assert "category is required" in result["error"]
@@ -613,7 +613,7 @@ class TestConsolidate:
         ctx, db = ctx_with_db
         db.add("only one", category="tech")
         with patch("mnemo_mcp.server.settings") as mock_settings:
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             result = json.loads(await _handle_consolidate(db, "tech"))
         assert "error" in result
         assert "at least 2" in result["error"]
@@ -632,7 +632,7 @@ class TestConsolidate:
                 return_value="Python is excellent",
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "proxy"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o,gemini-flash"
             result = json.loads(await _handle_consolidate(db, "tech"))
 
@@ -654,7 +654,7 @@ class TestConsolidate:
                 side_effect=RuntimeError("LLM error"),
             ),
         ):
-            mock_settings.resolve_litellm_mode.return_value = "sdk"
+            mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o"
             result = json.loads(await _handle_consolidate(db, "tech"))
         assert "error" in result

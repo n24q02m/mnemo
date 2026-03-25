@@ -44,7 +44,16 @@ def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
     return onnx_name
 
 
+_EMBEDDING_PROVIDERS: dict[str, str] = {
+    "JINA_AI_API_KEY": "jina_ai/jina-embeddings-v5-text-small",
+    "GEMINI_API_KEY": "gemini/gemini-embedding-2-preview",
+    "GOOGLE_API_KEY": "gemini/gemini-embedding-2-preview",
+    "OPENAI_API_KEY": "text-embedding-3-large",
+    "COHERE_API_KEY": "embed-multilingual-v3.0",
+}
+
 _RERANK_PROVIDERS: dict[str, str] = {
+    "JINA_AI_API_KEY": "jina_ai/jina-reranker-v3",
     "COHERE_API_KEY": "rerank-v4.0-pro",
     "CO_API_KEY": "rerank-v4.0-pro",
 }
@@ -85,13 +94,10 @@ class Settings(BaseSettings):
     - API_KEYS: Provider API keys, supports multiple providers
         Format: "ENV_VAR:key,ENV_VAR:key,..."
         Example: "COHERE_API_KEY:co-...,GEMINI_API_KEY:AIza..."
-        Embedding/rerank: Cohere. LLM: Gemini, OpenAI, xAI.
-    - LITELLM_PROXY_URL: Proxy URL (legacy, kept for backward compat)
-    - LITELLM_PROXY_KEY: Proxy virtual key (legacy)
+        Embedding: Jina > Gemini > OpenAI > Cohere. LLM: Gemini, OpenAI, xAI.
     - EMBEDDING_MODEL: Embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "cloud" | "local" (auto: API_KEYS -> cloud, else local)
-        Local: GGUF if GPU + llama-cpp-python, else ONNX
     - SYNC_ENABLED: Enable rclone sync (default: false)
     - SYNC_PROVIDER: rclone provider type (default: "drive" for Google Drive)
     - SYNC_REMOTE: Rclone remote name (default: "gdrive")
@@ -102,23 +108,19 @@ class Settings(BaseSettings):
     # Database
     db_path: str = ""
 
-    # LLM API Keys: "ENV_VAR:key,ENV_VAR:key,..."
+    # Provider API Keys: "ENV_VAR:key,ENV_VAR:key,..."
     api_keys: str | None = None
 
-    # LiteLLM Proxy (selfhosted gateway)
-    litellm_proxy_url: str = ""  # e.g. http://10.0.0.20:4000
-    litellm_proxy_key: str = ""
-
-    # Embedding model (LiteLLM format, auto-detected from API_KEYS if not set)
+    # Embedding model (auto-detected from API_KEYS if not set)
     embedding_model: str = ""
     embedding_dims: int = 0  # 0 = use server default (768)
     embedding_backend: str = (
-        ""  # "litellm" | "local" | "" (auto: API_KEYS->litellm, else local)
+        ""  # "cloud" | "local" | "" (auto: API_KEYS->cloud, else local)
     )
 
     # Reranking
     rerank_enabled: bool = True
-    rerank_backend: str = ""  # "litellm" | "local" | "" (auto)
+    rerank_backend: str = ""  # "cloud" | "local" | "" (auto)
     rerank_model: str = ""
     rerank_top_n: int = 10
     # Sync (rclone)
@@ -141,7 +143,7 @@ class Settings(BaseSettings):
     # Temporal decay
     recency_half_life_days: int = 7
 
-    # LLM for graph/importance (reuse existing proxy/SDK config)
+    # LLM for graph/importance (reuse existing SDK config)
     llm_models: str = "gemini/gemini-3-flash-preview"
 
     # Logging
@@ -203,18 +205,18 @@ class Settings(BaseSettings):
         """Get data directory (parent of db file)."""
         return self.get_db_path().parent
 
-    # LiteLLM uses different env vars for embeddings vs completions
+    # Env var aliases for provider SDKs
     _ENV_ALIASES: dict[str, str] = {
         "GOOGLE_API_KEY": "GEMINI_API_KEY",
     }
 
     def setup_api_keys(self) -> dict[str, list[str]]:
-        """Parse API_KEYS and set env vars for LiteLLM.
+        """Parse API_KEYS and set env vars for provider SDKs.
 
         Format: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
 
-        Also sets aliases (e.g., GOOGLE_API_KEY → GEMINI_API_KEY)
-        because LiteLLM embedding uses GEMINI_API_KEY for gemini/ models.
+        Also sets aliases (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
+        because Gemini SDK uses GEMINI_API_KEY for gemini/ models.
 
         Returns:
             Dict mapping env var name to list of API keys.
@@ -238,36 +240,44 @@ class Settings(BaseSettings):
 
             keys_by_env.setdefault(env_var, []).append(key)
 
-        # Set first key of each env var (LiteLLM reads from env)
+        # Set first key of each env var (provider SDKs read from env)
         for env_var, keys in keys_by_env.items():
             if keys:
                 os.environ[env_var] = keys[0]
-                # Set alias if defined (e.g., GOOGLE_API_KEY → GEMINI_API_KEY)
+                # Set alias if defined (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
                 alias = self._ENV_ALIASES.get(env_var)
                 if alias and alias not in os.environ:
                     os.environ[alias] = keys[0]
 
         return keys_by_env
 
-    def resolve_litellm_mode(self) -> str:
-        """Detect LiteLLM mode: 'proxy', 'sdk', or 'local'."""
-        if self.litellm_proxy_url:
-            return "proxy"
+    def resolve_provider_mode(self) -> str:
+        """Detect provider mode: 'sdk' or 'local'."""
         if self.api_keys:
+            return "sdk"
+        if any(
+            os.getenv(k)
+            for k in (
+                "JINA_AI_API_KEY",
+                "GEMINI_API_KEY",
+                "GOOGLE_API_KEY",
+                "OPENAI_API_KEY",
+                "COHERE_API_KEY",
+                "CO_API_KEY",
+                "XAI_API_KEY",
+            )
+        ):
             return "sdk"
         return "local"
 
-    def setup_litellm(self) -> str:
+    def setup_providers(self) -> str:
         """One-time provider configuration. Call once during lifespan startup.
 
-        Returns mode string: 'proxy', 'sdk', or 'local'.
-        Kept method name for backward compatibility.
+        Returns mode string: 'sdk' or 'local'.
         """
-        mode = self.resolve_litellm_mode()
+        mode = self.resolve_provider_mode()
 
-        if mode == "proxy":
-            logger.info(f"Proxy mode: {self.litellm_proxy_url}")
-        elif mode == "sdk":
+        if mode == "sdk":
             self.setup_api_keys()
             logger.info("SDK direct mode (native provider SDKs)")
         else:
@@ -296,24 +306,24 @@ class Settings(BaseSettings):
         """Resolve embedding backend: 'local' or 'cloud'.
 
         Always returns a valid backend (never empty).
-        Returns 'litellm' for backward compat when explicitly set.
 
         Auto-detect order:
         1. Explicit EMBEDDING_BACKEND setting
-        2. 'cloud' if in proxy/sdk mode (API keys or proxy configured)
+        2. 'cloud' if in sdk mode (API keys configured)
         3. 'local' (qwen3-embed built-in, always available)
         """
         if self.embedding_backend:
+            # Backward compat: 'litellm' maps to 'cloud'
+            if self.embedding_backend == "litellm":
+                return "cloud"
             return self.embedding_backend
-        mode = self.resolve_litellm_mode()
-        if mode in ("proxy", "sdk"):
+        mode = self.resolve_provider_mode()
+        if mode == "sdk":
             return "cloud"
         return "local"
 
     def resolve_rerank_backend(self) -> str:
         """Resolve reranker backend: 'cloud', 'local', or '' (disabled).
-
-        Returns 'litellm' for backward compat when explicitly set.
 
         Auto-detect order:
         1. Disabled if rerank_enabled is False
@@ -325,6 +335,9 @@ class Settings(BaseSettings):
         if not self.rerank_enabled:
             return ""
         if self.rerank_backend:
+            # Backward compat: 'litellm' maps to 'cloud'
+            if self.rerank_backend == "litellm":
+                return "cloud"
             return self.rerank_backend
         if self.rerank_model:
             return "cloud"
@@ -364,6 +377,9 @@ class Settings(BaseSettings):
 # Embedding models to try during auto-detection (in priority order).
 # Cloud backend validates each against its API key -- first success wins.
 _EMBEDDING_CANDIDATES = [
+    "jina_ai/jina-embeddings-v5-text-small",
+    "gemini/gemini-embedding-2-preview",
+    "text-embedding-3-large",
     "embed-multilingual-v3.0",
 ]
 

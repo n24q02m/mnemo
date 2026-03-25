@@ -6,6 +6,7 @@ import pytest
 
 import mnemo_mcp.reranker as reranker_mod
 from mnemo_mcp.reranker import (
+    CloudReranker,
     CohereReranker,
     LiteLLMReranker,
     Qwen3Reranker,
@@ -130,8 +131,12 @@ class TestCohereReranker:
             assert reranker.check_available() is False
 
     def test_litellm_backward_compat_alias(self):
-        """LiteLLMReranker is an alias for CohereReranker."""
-        assert LiteLLMReranker is CohereReranker
+        """LiteLLMReranker is an alias for CloudReranker."""
+        assert LiteLLMReranker is CloudReranker
+
+    def test_cohere_backward_compat_alias(self):
+        """CohereReranker is an alias for CloudReranker."""
+        assert CohereReranker is CloudReranker
 
 
 class TestQwen3Reranker:

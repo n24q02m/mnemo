@@ -103,7 +103,7 @@ async def extract_entities(content: str) -> dict | None:
     """
     from mnemo_mcp.config import settings
 
-    mode = settings.resolve_litellm_mode()
+    mode = settings.resolve_provider_mode()
     if mode == "local" and not _has_llm_provider():
         return None
 
@@ -176,7 +176,7 @@ async def score_importance(content: str) -> float:
     """Score memory importance 0.0-1.0 via LLM. Returns 0.5 if unavailable."""
     from mnemo_mcp.config import settings
 
-    mode = settings.resolve_litellm_mode()
+    mode = settings.resolve_provider_mode()
     if mode == "local" and not _has_llm_provider():
         return 0.5
 

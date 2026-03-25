@@ -29,7 +29,7 @@ class TestWarmupInitEmbeddingBackend:
     )
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
-    async def test_litellm_explicit_model_success(
+    async def test_cloud_explicit_model_success(
         self, mock_settings, mock_init, _mock_thread
     ):
         """When explicit model works, ctx is updated in-place."""
@@ -61,7 +61,7 @@ class TestWarmupInitEmbeddingBackend:
     )
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
-    async def test_litellm_auto_detect_candidates(
+    async def test_cloud_auto_detect_candidates(
         self, mock_settings, mock_init, _mock_thread
     ):
         """Auto-detect iterates through _EMBEDDING_CANDIDATES."""
