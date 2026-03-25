@@ -36,6 +36,8 @@ dependencies = [
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
     "qwen3-embed>=1.5.1",
+    # Zero-env-config credential relay
+    "mcp-relay-core>=0.1.0",
 ]
 
 [dependency-groups]
