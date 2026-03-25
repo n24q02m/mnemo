@@ -96,7 +96,7 @@ from mnemo_mcp.db import MemoryDB
 | Element            | Convention       | Example                          |
 |--------------------|------------------|----------------------------------|
 | Functions/methods  | snake_case       | `setup_api_keys()`, `_build_fts_queries()` |
-| Classes            | PascalCase       | `Settings`, `MemoryDB`, `LiteLLMBackend` |
+| Classes            | PascalCase       | `Settings`, `MemoryDB`, `CloudEmbeddingBackend` |
 | Constants          | UPPER_SNAKE_CASE | `MAX_RETRIES`, `_DEFAULT_EMBEDDING_DIMS` |
 | Private            | Leading `_`      | `_backend`, `_sync_task`, `_embed()` |
 | Test classes       | `Test` + feature | `TestAdd`, `TestSearch`          |
@@ -118,7 +118,7 @@ src/mnemo_mcp/
   config.py                   # Pydantic Settings (singleton)
   server.py                   # FastMCP server, tools, resources, prompts
   db.py                       # SQLite: CRUD, FTS5, vector search
-  embedder.py                 # Dual-backend: LiteLLM + qwen3-embed
+  embedder.py                 # Dual-backend: Cohere cloud + qwen3-embed local
   sync.py                     # Rclone sync management
   docs/                       # Tool documentation markdown
 tests/                        # One test file per source module (1:1 mapping)
