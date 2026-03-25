@@ -63,10 +63,12 @@ async def _llm_completion(
 
         # Flatten messages to a single prompt for Gemini
         prompt = messages[-1]["content"] if messages else ""
+        from google.genai import types
+
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
-            config=config_kwargs,
+            config=types.GenerateContentConfig(**config_kwargs),
         )
         return response.text or ""
     else:

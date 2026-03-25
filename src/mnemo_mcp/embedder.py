@@ -163,7 +163,7 @@ class CloudEmbeddingBackend:
                 # Truncate locally if server returned more dims than requested
                 if dimensions and embeddings and len(embeddings[0]) > dimensions:
                     embeddings = [e[:dimensions] for e in embeddings]
-                return embeddings
+                return embeddings or []
             except Exception as e:
                 # If the provider rejects `dimensions`, retry without it
                 # and truncate locally instead.
