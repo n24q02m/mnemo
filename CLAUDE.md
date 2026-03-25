@@ -52,6 +52,8 @@ src/mnemo_mcp/
   setup_tool.py    # Warmup + setup-sync logic (MCP setup tool)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
   embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
+  relay_setup.py   # Zero-config relay: create session, poll for config
+  relay_schema.py  # Relay form schema (local + cloud modes)
   sync.py          # Rclone sync (embedded, auto-download)
   docs/            # Tool documentation markdown
 tests/             # 1:1 mapping voi source modules
