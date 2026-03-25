@@ -191,7 +191,9 @@ class CloudEmbeddingBackend:
                     break
 
         logger.error(f"Embedding failed ({self.model}): {last_exc}")
-        raise last_exc  # type: ignore[misc]
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"Embedding failed ({self.model}): no retries attempted")
 
     async def embed_texts(
         self,

@@ -244,7 +244,7 @@ mcp = FastMCP(
 # --- Helper ---
 
 
-def _get_ctx(ctx: Context) -> tuple[MemoryDB, str | None, int]:
+def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
     """Extract db, model, dims from context."""
     lc = ctx.request_context.lifespan_context
     return lc["db"], lc["embedding_model"], lc["embedding_dims"]
@@ -589,6 +589,7 @@ async def _handle_import(
 
     # Bolt Performance Optimization: Pass raw list/dict directly to database layer.
     # Avoids unnecessary JSON serialization and deserialization cycles for parsed inputs.
+    assert data is not None  # guarded above
     result = await asyncio.to_thread(db.import_jsonl, data, mode=mode)
     return _json(
         {
@@ -742,7 +743,7 @@ async def memory(
     limit: int = 5,
     data: str | list | None = None,
     mode: str = "merge",
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context | None = None,
 ) -> str:
     """Execute a memory action.
 
@@ -841,7 +842,7 @@ async def config(
     action: str,
     key: str | None = None,
     value: str | None = None,
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context | None = None,
 ) -> str:
     """Server configuration and sync control.
 
@@ -1048,7 +1049,7 @@ async def help(topic: str = "memory") -> str:
 
 
 @mcp.resource("mnemo://stats")
-async def stats_resource(ctx: Context = None) -> str:  # type: ignore[assignment]
+async def stats_resource(ctx: Context | None = None) -> str:
     """Database statistics and server status."""
     db, embedding_model, embedding_dims = _get_ctx(ctx)
     s = await asyncio.to_thread(db.stats)
@@ -1058,7 +1059,7 @@ async def stats_resource(ctx: Context = None) -> str:  # type: ignore[assignment
 
 
 @mcp.resource("mnemo://recent")
-async def recent_resource(ctx: Context = None) -> str:  # type: ignore[assignment]
+async def recent_resource(ctx: Context | None = None) -> str:
     """10 most recently updated memories."""
     db, _, _ = _get_ctx(ctx)
     results = await asyncio.to_thread(db.list_memories, limit=10)
