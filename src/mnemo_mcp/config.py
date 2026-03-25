@@ -46,8 +46,8 @@ def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
 
 _EMBEDDING_PROVIDERS: dict[str, str] = {
     "JINA_AI_API_KEY": "jina_ai/jina-embeddings-v5-text-small",
-    "GEMINI_API_KEY": "gemini/gemini-embedding-2-preview",
-    "GOOGLE_API_KEY": "gemini/gemini-embedding-2-preview",
+    "GEMINI_API_KEY": "gemini/gemini-embedding-001",
+    "GOOGLE_API_KEY": "gemini/gemini-embedding-001",
     "OPENAI_API_KEY": "text-embedding-3-large",
     "COHERE_API_KEY": "embed-multilingual-v3.0",
 }
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     recency_half_life_days: int = 7
 
     # LLM for graph/importance (reuse existing SDK config)
-    llm_models: str = "gemini/gemini-3-flash-preview"
+    llm_models: str = "gemini/gemini-3-flash-preview,openai/gpt-5.4-mini-2026-03-17"
 
     # Logging
     log_level: str = "INFO"
@@ -378,7 +378,7 @@ class Settings(BaseSettings):
 # Cloud backend validates each against its API key -- first success wins.
 _EMBEDDING_CANDIDATES = [
     "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-2-preview",
+    "gemini/gemini-embedding-001",
     "text-embedding-3-large",
     "embed-multilingual-v3.0",
 ]
