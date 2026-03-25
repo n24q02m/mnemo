@@ -175,11 +175,11 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | `GEMINI_API_KEY` | No | -- | Google Gemini API key (LLM + embedding) |
 | `OPENAI_API_KEY` | No | -- | OpenAI API key (LLM + embedding) |
 | `DB_PATH` | No | `~/.mnemo-mcp/memories.db` | Database location |
-| `EMBEDDING_BACKEND` | No | auto-detect | `cloud` or `local` (Qwen3). `litellm` is alias for `cloud` |
+| `EMBEDDING_BACKEND` | No | auto-detect | `cloud` (auto-detect from API keys: Jina > Gemini > OpenAI > Cohere) or `local` (Qwen3) |
 | `EMBEDDING_MODEL` | No | auto-detect | Cloud embedding model name |
 | `EMBEDDING_DIMS` | No | `0` (auto=768) | Embedding dimensions |
 | `RERANK_ENABLED` | No | `true` | Enable reranking (improves search precision) |
-| `RERANK_BACKEND` | No | auto-detect | `cloud` or `local` (Qwen3). `litellm` is alias for `cloud` |
+| `RERANK_BACKEND` | No | auto-detect | `cloud` (auto-detect from API keys: Jina > Cohere) or `local` (Qwen3) |
 | `RERANK_MODEL` | No | auto-detect | Cloud reranker model name |
 | `RERANK_TOP_N` | No | `10` | Number of top results to keep after reranking |
 | `LLM_MODELS` | No | `gemini-3-flash-preview` | LLM model for graph extraction, importance scoring, consolidation (google-genai or openai) |

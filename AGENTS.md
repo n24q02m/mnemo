@@ -118,7 +118,7 @@ src/mnemo_mcp/
   config.py                   # Pydantic Settings (singleton)
   server.py                   # FastMCP server, tools, resources, prompts
   db.py                       # SQLite: CRUD, FTS5, vector search
-  embedder.py                 # Dual-backend: Cohere cloud + qwen3-embed local
+  embedder.py                 # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
   sync.py                     # Rclone sync management
   docs/                       # Tool documentation markdown
 tests/                        # One test file per source module (1:1 mapping)
