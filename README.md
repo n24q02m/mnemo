@@ -170,17 +170,19 @@ For non-Google Drive providers, set `SYNC_PROVIDER` and `SYNC_REMOTE`:
 | Variable | Required | Default | Description |
 |:---------|:---------|:--------|:------------|
 | `API_KEYS` | No | -- | API keys (`ENV:key,ENV:key`). Enables cloud embedding + reranking |
-| `LITELLM_PROXY_URL` | No | -- | LiteLLM Proxy URL. Enables proxy mode |
-| `LITELLM_PROXY_KEY` | No | -- | LiteLLM Proxy virtual key |
+| `COHERE_API_KEY` | No | -- | Cohere API key (embedding + reranking) |
+| `JINA_AI_API_KEY` | No | -- | Jina AI API key (embedding + reranking) |
+| `GEMINI_API_KEY` | No | -- | Google Gemini API key (LLM + embedding) |
+| `OPENAI_API_KEY` | No | -- | OpenAI API key (LLM + embedding) |
 | `DB_PATH` | No | `~/.mnemo-mcp/memories.db` | Database location |
-| `EMBEDDING_BACKEND` | No | auto-detect | `litellm` (cloud) or `local` (Qwen3) |
-| `EMBEDDING_MODEL` | No | auto-detect | LiteLLM embedding model name |
+| `EMBEDDING_BACKEND` | No | auto-detect | `cloud` or `local` (Qwen3). `litellm` is alias for `cloud` |
+| `EMBEDDING_MODEL` | No | auto-detect | Cloud embedding model name |
 | `EMBEDDING_DIMS` | No | `0` (auto=768) | Embedding dimensions |
 | `RERANK_ENABLED` | No | `true` | Enable reranking (improves search precision) |
-| `RERANK_BACKEND` | No | auto-detect | `litellm` (cloud) or `local` (Qwen3) |
-| `RERANK_MODEL` | No | auto-detect | LiteLLM reranker model name |
+| `RERANK_BACKEND` | No | auto-detect | `cloud` or `local` (Qwen3). `litellm` is alias for `cloud` |
+| `RERANK_MODEL` | No | auto-detect | Cloud reranker model name |
 | `RERANK_TOP_N` | No | `10` | Number of top results to keep after reranking |
-| `LLM_MODELS` | No | `gemini/gemini-3-flash-preview` | LLM model for graph extraction, importance scoring, consolidation |
+| `LLM_MODELS` | No | `gemini-3-flash-preview` | LLM model for graph extraction, importance scoring, consolidation (google-genai or openai) |
 | `ARCHIVE_ENABLED` | No | `true` | Enable auto-archiving of old low-importance memories |
 | `ARCHIVE_AFTER_DAYS` | No | `90` | Days before a memory is eligible for auto-archive |
 | `ARCHIVE_IMPORTANCE_THRESHOLD` | No | `0.3` | Memories below this importance score are auto-archived |
