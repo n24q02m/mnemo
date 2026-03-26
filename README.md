@@ -42,15 +42,10 @@ Via marketplace (includes skills: /session-handoff, /knowledge-audit):
 
 ```bash
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install mnemo-mcp@claude-plugins
+/plugin install mnemo-mcp@n24q02m-plugins
 ```
 
-Or install this plugin only:
 
-```bash
-/plugin marketplace add n24q02m/mnemo-mcp
-/plugin install mnemo-mcp
-```
 
 Configure env vars in `~/.claude/settings.local.json` or shell profile. See [Environment Variables](#environment-variables).
 
