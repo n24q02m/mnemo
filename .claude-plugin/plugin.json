@@ -10,8 +10,11 @@
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
-      "args": ["--python", "3.13", "mnemo-mcp"]
+      "args": [
+        "--python",
+        "3.13",
+        "mnemo-mcp"
+      ]
     }
-  },
-  "skills": "./skills/"
+  }
 }
