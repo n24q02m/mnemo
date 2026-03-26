@@ -70,14 +70,29 @@ def save_token(provider: str, token: dict) -> None:
             pass
 
     path = get_token_path(provider)
-    path.write_text(json.dumps(token, indent=2), encoding="utf-8")
+    token_json = json.dumps(token, indent=2)
 
-    # Secure file permissions (Unix only)
     if os.name != "nt":
         try:
-            path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+            # Prevent TOCTOU vulnerability by setting permissions on creation
+            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+            mode = stat.S_IRUSR | stat.S_IWUSR  # 0600
+            fd = os.open(path, flags, mode)
+            try:
+                # Ensure existing files also get their permissions restricted
+                os.fchmod(fd, mode)
+            except OSError:
+                pass
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(token_json)
         except OSError:
-            pass
+            path.write_text(token_json, encoding="utf-8")
+            try:
+                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                pass
+    else:
+        path.write_text(token_json, encoding="utf-8")
 
     logger.info(f"Token saved: {path}")
 
