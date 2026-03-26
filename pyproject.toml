@@ -31,7 +31,7 @@ dependencies = [
     "cohere>=5.21.1",
     # LLM completion (native SDKs)
     "google-genai>=1.68.0",
-    "openai>=1.109.1",
+    "openai>=2.30.0",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
