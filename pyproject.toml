@@ -28,10 +28,10 @@ dependencies = [
     # Logging
     "loguru",
     # Cloud embedding + reranking (Cohere SDK)
-    "cohere>=5.20",
+    "cohere>=5.21.1",
     # LLM completion (native SDKs)
-    "google-genai>=1.0",
-    "openai>=1.50",
+    "google-genai>=1.68.0",
+    "openai>=1.109.1",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
