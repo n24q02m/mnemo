@@ -212,28 +212,51 @@ async def score_importance(content: str) -> float:
 def upsert_entities(conn, entities: list[dict]) -> list[str]:
     """Insert or update entities. Returns list of entity IDs."""
     now = datetime.now(UTC).isoformat()
-    ids = []
+
+    unique_ents = {}
+    ordered_ents = []
+
     for ent in entities:
         name = ent.get("name", "").strip()
-        etype = ent.get("type", "concept").strip().lower()
         if not name:
             continue
+        etype = ent.get("type", "concept").strip().lower()
+        key = (name, etype)
+        ordered_ents.append(key)
+        if key not in unique_ents:
+            unique_ents[key] = None
+
+    if not ordered_ents:
+        return []
+
+    unique_keys = list(unique_ents.keys())
+
+    to_insert = []
+    to_update = []
+
+    for key in unique_keys:
         row = conn.execute(
-            "SELECT id FROM entities WHERE name = ? AND entity_type = ?",
-            (name, etype),
+            "SELECT id FROM entities WHERE name = ? AND entity_type = ?", key
         ).fetchone()
         if row:
             eid = row[0]
-            conn.execute("UPDATE entities SET updated_at = ? WHERE id = ?", (now, eid))
+            unique_ents[key] = eid
+            to_update.append((now, eid))
         else:
             eid = str(uuid.uuid4())
-            conn.execute(
-                "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (eid, name, etype, now, now),
-            )
-        ids.append(eid)
-    return ids
+            unique_ents[key] = eid
+            to_insert.append((eid, key[0], key[1], now, now))
+
+    if to_update:
+        conn.executemany("UPDATE entities SET updated_at = ? WHERE id = ?", to_update)
+    if to_insert:
+        conn.executemany(
+            "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            to_insert,
+        )
+
+    return [unique_ents[key] for key in ordered_ents]
 
 
 def create_relations(
