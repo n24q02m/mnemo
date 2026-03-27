@@ -51,7 +51,16 @@ class TestEnsureConfig:
     """Test ensure_config async function."""
 
     @patch("mcp_relay_core.storage.resolver.resolve_config")
-    async def test_returns_config_from_file(self, mock_resolve):
+    async def test_returns_config_from_file(self, mock_resolve, monkeypatch):
+        # Clear env vars so ensure_config reaches step 2 (config file)
+        for key in [
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "API_KEYS",
+        ]:
+            monkeypatch.delenv(key, raising=False)
         mock_resolve.return_value = MagicMock(
             config={"GEMINI_API_KEY": "AIza_test"},
             source="file",
@@ -72,8 +81,16 @@ class TestEnsureConfig:
     @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
     @patch("mcp_relay_core.storage.resolver.resolve_config")
     async def test_relay_setup_success(
-        self, mock_resolve, mock_session, mock_poll, mock_write
+        self, mock_resolve, mock_session, mock_poll, mock_write, monkeypatch
     ):
+        for key in [
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "API_KEYS",
+        ]:
+            monkeypatch.delenv(key, raising=False)
         mock_resolve.return_value = MagicMock(config=None, source=None)
         mock_session.return_value = MagicMock(
             relay_url="https://mnemo-mcp.n24q02m.com/#k=abc&p=xyz"
