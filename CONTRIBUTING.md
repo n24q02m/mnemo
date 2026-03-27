@@ -162,7 +162,7 @@ mnemo-mcp/
 │       ├── server.py          # MCP server (FastMCP + tools)
 │       ├── db.py              # SQLite engine (FTS5 + sqlite-vec)
 │       ├── embedder.py        # Embedding provider (LiteLLM)
-│       ├── sync.py            # Embedded rclone sync
+│       ├── sync.py            # Google Drive sync (OAuth Device Code)
 │       └── docs/              # Tool documentation (Markdown)
 ├── tests/
 ├── pyproject.toml

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `setup` tool handles server setup tasks: pre-downloading models and authenticating sync providers.
+The `setup` tool handles server setup tasks: pre-downloading models and authenticating Google Drive sync.
 These actions prepare the server for optimal performance and avoid first-run delays.
 
 ## Actions
@@ -31,30 +31,29 @@ If cloud API keys are configured, validates them instead of downloading the loca
 {"action": "warmup"}
 ```
 
-### `setup_sync` - Authenticate sync provider
+### `setup_sync` - Authenticate Google Drive
 
-Downloads rclone and opens a browser for OAuth authentication. Saves the token
-locally so no env vars are needed for sync.
+Runs a Device Code OAuth flow to authenticate Google Drive access. Saves the token
+locally so no extra env vars are needed for sync.
 
-**Parameters:**
-- `provider` (optional): rclone provider type (default: "drive"). Options: drive, dropbox, s3, onedrive, b2, sftp
+**Parameters:** None (requires `GOOGLE_DRIVE_CLIENT_ID` env var)
 
 **Returns:**
 - `status`: "authenticated" or "error"
-- `provider`: Provider name
-- `remote_name`: rclone remote name
+- `provider`: "google_drive"
 - `token_path`: Path to saved token file
 - `next_steps`: Env vars to set in MCP config
 
 **Workflow:**
-1. Downloads rclone if not available
-2. Runs `rclone authorize` which opens a browser for OAuth
-3. Saves the token to `~/.mnemo-mcp/tokens/<provider>.json`
-4. Returns env vars to set in your MCP config
+1. Requests a device code from Google OAuth
+2. Displays a URL and code for user to enter in their browser
+3. Polls for authorization completion
+4. Saves the token to `~/.mnemo-mcp/tokens/google_drive.json`
+5. Returns env vars to set in your MCP config
 
 **Example:**
 ```json
-{"action": "setup_sync", "provider": "drive"}
+{"action": "setup_sync"}
 ```
 
 ## CLI Equivalents
@@ -64,4 +63,4 @@ These MCP tool actions replace the former CLI subcommands:
 | CLI (removed) | MCP Tool |
 |:--------------|:---------|
 | `uvx mnemo-mcp warmup` | `setup(action="warmup")` |
-| `uvx mnemo-mcp setup-sync drive` | `setup(action="setup_sync", provider="drive")` |
+| `uvx mnemo-mcp setup-sync` | `setup(action="setup_sync")` |

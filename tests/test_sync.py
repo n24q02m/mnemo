@@ -1,70 +1,372 @@
-"""Tests for mnemo_mcp.sync — rclone management and sync operations."""
+"""Tests for mnemo_mcp.sync -- Google Drive sync operations."""
 
-import base64
-import json
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 
 import mnemo_mcp.sync
 from mnemo_mcp.sync import (
-    _extract_token,
-    _get_platform_info,
-    _prepare_rclone_env,
+    _download_file,
+    _find_file_in_folder,
+    _find_or_create_folder,
+    _has_token_available,
+    _upload_file,
+    check_health,
     setup_sync,
     start_auto_sync,
     sync_full,
+    sync_pull,
+    sync_push,
 )
 
 
-class TestPlatformInfo:
-    @patch("mnemo_mcp.sync.platform")
-    def test_linux_amd64(self, mock_plat):
-        mock_plat.system.return_value = "Linux"
-        mock_plat.machine.return_value = "x86_64"
-        os_name, arch, ext = _get_platform_info()
-        assert os_name == "linux"
-        assert arch == "amd64"
-        assert ext == ""
+class TestTokenManagement:
+    def test_has_token_false_when_no_token(self):
+        with patch("mnemo_mcp.sync._load_token", return_value=None):
+            assert _has_token_available() is False
 
-    @patch("mnemo_mcp.sync.platform")
-    def test_darwin_arm64(self, mock_plat):
-        mock_plat.system.return_value = "Darwin"
-        mock_plat.machine.return_value = "arm64"
-        os_name, arch, ext = _get_platform_info()
-        assert os_name == "osx"
-        assert arch == "arm64"
-        assert ext == ""
+    def test_has_token_true_when_token_exists(self):
+        with patch(
+            "mnemo_mcp.sync._load_token",
+            return_value={"access_token": "ya29.abc"},
+        ):
+            assert _has_token_available() is True
 
-    @patch("mnemo_mcp.sync.platform")
-    def test_windows(self, mock_plat):
-        mock_plat.system.return_value = "Windows"
-        mock_plat.machine.return_value = "AMD64"
-        os_name, arch, ext = _get_platform_info()
-        assert os_name == "windows"
-        assert arch == "amd64"
-        assert ext == ".exe"
+    async def test_refresh_token_success(self):
+        from mnemo_mcp.sync import _refresh_token
 
-    @patch("mnemo_mcp.sync.platform")
-    def test_linux_arm64(self, mock_plat):
-        mock_plat.system.return_value = "Linux"
-        mock_plat.machine.return_value = "aarch64"
-        os_name, arch, ext = _get_platform_info()
-        assert os_name == "linux"
-        assert arch == "arm64"
+        token = {
+            "access_token": "old",
+            "refresh_token": "refresh123",
+            "client_id": "client123",
+        }
 
-    @patch("mnemo_mcp.sync.platform")
-    def test_unknown_arch_fallback(self, mock_plat):
-        mock_plat.system.return_value = "Linux"
-        mock_plat.machine.return_value = "riscv64"
-        _, arch, _ = _get_platform_info()
-        assert arch == "amd64"  # Fallback
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "new_access",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
 
-    @patch("mnemo_mcp.sync.platform")
-    def test_i686_maps_to_386(self, mock_plat):
-        mock_plat.system.return_value = "Linux"
-        mock_plat.machine.return_value = "i686"
-        _, arch, _ = _get_platform_info()
-        assert arch == "386"
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch("mnemo_mcp.sync._save_token") as mock_save,
+        ):
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await _refresh_token(token)
+
+        assert result is not None
+        assert result["access_token"] == "new_access"
+        assert result["refresh_token"] == "refresh123"
+        mock_save.assert_called_once()
+
+    async def test_refresh_token_failure(self):
+        from mnemo_mcp.sync import _refresh_token
+
+        token = {
+            "access_token": "old",
+            "refresh_token": "refresh123",
+            "client_id": "client123",
+        }
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.text = "invalid_grant"
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await _refresh_token(token)
+
+        assert result is None
+
+    async def test_refresh_token_missing_refresh_token(self):
+        from mnemo_mcp.sync import _refresh_token
+
+        token = {"access_token": "old", "client_id": "client123"}
+        result = await _refresh_token(token)
+        assert result is None
+
+    async def test_get_valid_token_no_token(self):
+        from mnemo_mcp.sync import _get_valid_token
+
+        with patch("mnemo_mcp.sync._load_token", return_value=None):
+            result = await _get_valid_token()
+        assert result is None
+
+    async def test_get_valid_token_not_expired(self):
+        import time
+
+        from mnemo_mcp.sync import _get_valid_token
+
+        token = {
+            "access_token": "valid",
+            "expiry": time.time() + 3600,
+        }
+        with patch("mnemo_mcp.sync._load_token", return_value=token):
+            result = await _get_valid_token()
+        assert result == token
+
+    async def test_get_valid_token_expired_refreshes(self):
+        import time
+
+        from mnemo_mcp.sync import _get_valid_token
+
+        token = {
+            "access_token": "expired",
+            "refresh_token": "refresh123",
+            "expiry": time.time() - 100,
+        }
+        refreshed = {"access_token": "new", "expiry": time.time() + 3600}
+        with (
+            patch("mnemo_mcp.sync._load_token", return_value=token),
+            patch(
+                "mnemo_mcp.sync._refresh_token",
+                new_callable=AsyncMock,
+                return_value=refreshed,
+            ),
+        ):
+            result = await _get_valid_token()
+        assert result == refreshed
+
+
+class TestDriveHelpers:
+    async def test_find_or_create_folder_found(self):
+        token = {"access_token": "test"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"files": [{"id": "folder123"}]}
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _find_or_create_folder(token, "test-folder")
+        assert result == "folder123"
+
+    async def test_find_or_create_folder_creates(self):
+        token = {"access_token": "test"}
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {"files": []}
+
+        create_resp = MagicMock()
+        create_resp.status_code = 200
+        create_resp.json.return_value = {"id": "new_folder"}
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            side_effect=[search_resp, create_resp],
+        ):
+            result = await _find_or_create_folder(token, "new-folder")
+        assert result == "new_folder"
+
+    async def test_find_file_in_folder_found(self):
+        token = {"access_token": "test"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "files": [
+                {"id": "file123", "name": "db.sqlite", "modifiedTime": "2026-01-01"}
+            ]
+        }
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _find_file_in_folder(token, "folder1", "db.sqlite")
+        assert result is not None
+        assert result["id"] == "file123"
+
+    async def test_find_file_in_folder_not_found(self):
+        token = {"access_token": "test"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"files": []}
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _find_file_in_folder(token, "folder1", "db.sqlite")
+        assert result is None
+
+    async def test_upload_file_new(self, tmp_path):
+        token = {"access_token": "test"}
+        db_file = tmp_path / "test.db"
+        db_file.write_bytes(b"test data")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": "new_file"}
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _upload_file(token, db_file, "folder1")
+        assert result is True
+
+    async def test_upload_file_update(self, tmp_path):
+        token = {"access_token": "test"}
+        db_file = tmp_path / "test.db"
+        db_file.write_bytes(b"updated data")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _upload_file(token, db_file, "folder1", "existing123")
+        assert result is True
+
+    async def test_upload_file_failure(self, tmp_path):
+        token = {"access_token": "test"}
+        db_file = tmp_path / "test.db"
+        db_file.write_bytes(b"data")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _upload_file(token, db_file, "folder1")
+        assert result is False
+
+    async def test_download_file(self, tmp_path):
+        token = {"access_token": "test"}
+        dest = tmp_path / "downloaded.db"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"file contents"
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _download_file(token, "file123", dest)
+        assert result is True
+        assert dest.read_bytes() == b"file contents"
+
+    async def test_download_file_failure(self, tmp_path):
+        token = {"access_token": "test"}
+        dest = tmp_path / "downloaded.db"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+
+        with patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await _download_file(token, "file123", dest)
+        assert result is False
+
+
+class TestSyncPush:
+    async def test_no_token(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"data")
+        with patch(
+            "mnemo_mcp.sync._get_valid_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await sync_push(db_path, "folder")
+        assert result is False
+
+    async def test_success(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        db_path.write_bytes(b"data")
+        token = {"access_token": "valid"}
+
+        with (
+            patch(
+                "mnemo_mcp.sync._get_valid_token",
+                new_callable=AsyncMock,
+                return_value=token,
+            ),
+            patch(
+                "mnemo_mcp.sync._find_or_create_folder",
+                new_callable=AsyncMock,
+                return_value="folder_id",
+            ),
+            patch(
+                "mnemo_mcp.sync._find_file_in_folder",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "mnemo_mcp.sync._upload_file",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            result = await sync_push(db_path, "folder")
+        assert result is True
+
+
+class TestSyncPull:
+    async def test_no_token(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        with patch(
+            "mnemo_mcp.sync._get_valid_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await sync_pull(db_path, "folder")
+        assert result is None
+
+    async def test_no_remote_file(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        token = {"access_token": "valid"}
+
+        with (
+            patch(
+                "mnemo_mcp.sync._get_valid_token",
+                new_callable=AsyncMock,
+                return_value=token,
+            ),
+            patch(
+                "mnemo_mcp.sync._find_or_create_folder",
+                new_callable=AsyncMock,
+                return_value="folder_id",
+            ),
+            patch(
+                "mnemo_mcp.sync._find_file_in_folder",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            result = await sync_pull(db_path, "folder")
+        assert result is None
 
 
 class TestSyncFull:
@@ -72,233 +374,129 @@ class TestSyncFull:
         """Sync returns disabled when not configured."""
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.sync_enabled = False
-            mock_settings.sync_remote = ""
             result = await sync_full(tmp_db)
             assert result["status"] == "disabled"
 
-    async def test_no_rclone(self, tmp_db):
-        """Sync errors when rclone is not available."""
+    async def test_no_client_id(self, tmp_db):
+        """Sync errors when client ID is not set."""
+        with patch("mnemo_mcp.sync.settings") as mock_settings:
+            mock_settings.sync_enabled = True
+            mock_settings.google_drive_client_id = ""
+            result = await sync_full(tmp_db)
+            assert result["status"] == "error"
+            assert "GOOGLE_DRIVE_CLIENT_ID" in result["message"]
+
+    async def test_no_token(self, tmp_db):
+        """Sync errors when no token is available."""
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync._has_token_available", return_value=False),
+        ):
+            mock_settings.sync_enabled = True
+            mock_settings.google_drive_client_id = "client123"
+            result = await sync_full(tmp_db)
+            assert result["status"] == "error"
+            assert "token" in result["message"].lower()
+
+    async def test_token_expired_refresh_failed(self, tmp_db):
+        """Sync errors when token refresh fails."""
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
-                "mnemo_mcp.sync.ensure_rclone",
+                "mnemo_mcp.sync._get_valid_token",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
         ):
             mock_settings.sync_enabled = True
-            mock_settings.sync_remote = "test-remote"
+            mock_settings.google_drive_client_id = "client123"
             result = await sync_full(tmp_db)
             assert result["status"] == "error"
-            assert "rclone" in result["message"].lower()
+            assert "expired" in result["message"].lower()
 
-    async def test_remote_not_configured(self, tmp_db, tmp_path):
-        """Sync errors when rclone remote is not set up."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
+
+class TestCheckHealth:
+    async def test_no_token(self):
+        with patch(
+            "mnemo_mcp.sync._get_valid_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            assert await check_health() is False
+
+    async def test_success(self):
+        token = {"access_token": "valid"}
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
         with (
-            patch("mnemo_mcp.sync.settings") as mock_settings,
             patch(
-                "mnemo_mcp.sync.ensure_rclone",
+                "mnemo_mcp.sync._get_valid_token",
                 new_callable=AsyncMock,
-                return_value=rclone_path,
+                return_value=token,
             ),
-            patch("mnemo_mcp.sync._has_token_available", return_value=True),
             patch(
-                "mnemo_mcp.sync.check_remote_configured",
+                "mnemo_mcp.sync._drive_request",
                 new_callable=AsyncMock,
-                return_value=False,
+                return_value=mock_response,
             ),
         ):
-            mock_settings.sync_enabled = True
-            mock_settings.sync_remote = "gdrive"
-            result = await sync_full(tmp_db)
-            assert result["status"] == "error"
-            assert "gdrive" in result["message"]
+            assert await check_health() is True
 
+    async def test_failure(self):
+        token = {"access_token": "valid"}
+        mock_response = MagicMock()
+        mock_response.status_code = 403
 
-class TestExtractToken:
-    def test_between_dashes(self):
-        output = (
-            "Paste the following into your remote machine config\n"
-            "--------------------\n"
-            '{"access_token":"ya29.abc","token_type":"Bearer"}\n'
-            "--------------------\n"
-        )
-        token = _extract_token(output)
-        assert token is not None
-        assert '"access_token"' in token
-
-    def test_fallback_access_token(self):
-        output = 'Some text {"access_token":"ya29.abc","token_type":"Bearer"} more text'
-        token = _extract_token(output)
-        assert token is not None
-        assert '"access_token"' in token
-
-    def test_no_token(self):
-        assert _extract_token("no token here") is None
-
-    def test_empty(self):
-        assert _extract_token("") is None
-
-
-class TestPrepareRcloneEnv:
-    def test_decode_base64_token(self):
-        """Base64-encoded token is decoded for rclone."""
-        token = json.dumps({"access_token": "ya29.abc", "token_type": "Bearer"})
-        b64 = base64.b64encode(token.encode()).decode()
-        with patch.dict(os.environ, {"RCLONE_CONFIG_GDRIVE_TOKEN": b64}):
-            env = _prepare_rclone_env()
-            assert env["RCLONE_CONFIG_GDRIVE_TOKEN"] == token
-
-    def test_raw_json_passthrough(self):
-        """Raw JSON token is passed through unchanged."""
-        token = '{"access_token": "ya29.abc", "token_type": "Bearer"}'
-        with patch.dict(os.environ, {"RCLONE_CONFIG_GDRIVE_TOKEN": token}):
-            env = _prepare_rclone_env()
-            assert env["RCLONE_CONFIG_GDRIVE_TOKEN"] == token
-
-    def test_invalid_base64_passthrough(self):
-        """Invalid base64 value is left unchanged."""
-        with patch.dict(os.environ, {"RCLONE_CONFIG_GDRIVE_TOKEN": "not-valid!!!"}):
-            env = _prepare_rclone_env()
-            assert env["RCLONE_CONFIG_GDRIVE_TOKEN"] == "not-valid!!!"
-
-    def test_non_token_vars_unchanged(self):
-        """Non-TOKEN rclone config vars are not modified."""
-        with patch.dict(os.environ, {"RCLONE_CONFIG_GDRIVE_TYPE": "drive"}):
-            env = _prepare_rclone_env()
-            assert env["RCLONE_CONFIG_GDRIVE_TYPE"] == "drive"
+        with (
+            patch(
+                "mnemo_mcp.sync._get_valid_token",
+                new_callable=AsyncMock,
+                return_value=token,
+            ),
+            patch(
+                "mnemo_mcp.sync._drive_request",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+        ):
+            assert await check_health() is False
 
 
 class TestSetupSync:
-    def _mock_result(self, returncode: int = 0, stdout: str = ""):
-        return MagicMock(returncode=returncode, stdout=stdout)
+    def test_no_client_id(self, capsys):
+        """setup_sync exits when GOOGLE_DRIVE_CLIENT_ID is not set."""
+        import pytest
 
-    def test_rclone_found(self, tmp_path, capsys):
-        """setup_sync uses existing rclone and runs authorize."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
-        with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(),
-            ) as mock_run,
-        ):
-            setup_sync("drive")
-            mock_run.assert_called_once()
-            args = mock_run.call_args
-            assert args[0][0] == [str(rclone_path), "authorize", "--", "drive"]
-
-    def test_rclone_downloaded(self, tmp_path, capsys):
-        """setup_sync downloads rclone when not found."""
-        rclone_path = tmp_path / "rclone"
-        with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=None),
-            patch("mnemo_mcp.sync.asyncio.run", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(),
-            ),
-        ):
-            setup_sync("drive")
-            captured = capsys.readouterr()
-            assert "Downloading rclone" in captured.out
-
-    def test_download_fails(self, capsys):
-        """setup_sync exits when rclone download fails."""
-        with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=None),
-            patch("mnemo_mcp.sync.asyncio.run", return_value=None),
-        ):
-            import pytest
-
+        with patch("mnemo_mcp.sync.settings") as mock_settings:
+            mock_settings.google_drive_client_id = ""
             with pytest.raises(SystemExit, match="1"):
-                setup_sync("drive")
+                setup_sync()
 
-    def test_authorize_fails(self, tmp_path):
-        """setup_sync exits when rclone authorize fails."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
+    def test_success(self, capsys):
+        """setup_sync prints success on successful auth."""
         with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(returncode=1),
-            ),
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.run", return_value=True),
         ):
-            import pytest
-
-            with pytest.raises(SystemExit, match="1"):
-                setup_sync("drive")
-
-    def test_fallback_instructions(self, tmp_path, capsys):
-        """setup_sync shows manual instructions when token not extracted."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
-        with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(stdout="no token here"),
-            ),
-        ):
-            setup_sync("s3")
-            captured = capsys.readouterr()
-            assert "MANUAL SETUP" in captured.out
-
-    def test_auto_extract_token(self, tmp_path, capsys):
-        """setup_sync saves token locally and shows simplified config."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
-        token_json = '{"access_token":"ya29.abc","token_type":"Bearer"}'
-        token_output = f"--------------------\n{token_json}\n--------------------\n"
-        with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(stdout=token_output),
-            ),
-            patch("mnemo_mcp.token_store.save_token") as mock_save,
-        ):
-            setup_sync("drive")
-            mock_save.assert_called_once()
+            mock_settings.google_drive_client_id = "client123"
+            setup_sync()
             captured = capsys.readouterr()
             assert "SUCCESS" in captured.out
             assert "SYNC_ENABLED" in captured.out
 
-    def test_json_decode_error(self, tmp_path, capsys):
-        """setup_sync falls back to manual base64 token if JSON parsing fails."""
-        rclone_path = tmp_path / "rclone"
-        rclone_path.touch()
-
-        # This string looks like the right format but contains invalid JSON
-        invalid_json = (
-            '{"access_token":"ya29.abc", "token_type":Bearer"}'  # Missing quote
-        )
-        token_output = f"--------------------\n{invalid_json}\n--------------------\n"
+    def test_failure(self, capsys):
+        """setup_sync exits on auth failure."""
+        import pytest
 
         with (
-            patch("mnemo_mcp.sync._get_rclone_path", return_value=rclone_path),
-            patch(
-                "mnemo_mcp.sync.subprocess.run",
-                return_value=self._mock_result(stdout=token_output),
-            ),
-            patch("mnemo_mcp.token_store.save_token") as mock_save,
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("mnemo_mcp.sync.asyncio.run", return_value=False),
         ):
-            setup_sync("drive")
-
-            # Save should not be called since JSON is invalid
-            mock_save.assert_not_called()
-
-            # Check that fallback message is printed
-            captured = capsys.readouterr()
-            assert "Token saved but could not parse JSON. Base64 token:" in captured.out
-
-            # The base64 output should be present
-            expected_b64 = base64.b64encode(invalid_json.encode()).decode()
-            assert expected_b64 in captured.out
+            mock_settings.google_drive_client_id = "client123"
+            with pytest.raises(SystemExit, match="1"):
+                setup_sync()
 
 
 class TestStartAutoSync:
@@ -368,3 +566,28 @@ class TestStartAutoSync:
             # Verify the global var was set
             assert mnemo_mcp.sync._sync_task == dummy_task
             mock_loop.assert_called_once_with(tmp_db)
+
+
+class TestDriveRequest:
+    async def test_authenticated_request(self):
+        from mnemo_mcp.sync import _drive_request
+
+        token = {"access_token": "test_token"}
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 200
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await _drive_request("GET", "https://example.com", token)
+
+        assert result.status_code == 200
+        # Verify auth header was set
+        call_kwargs = mock_client.request.call_args
+        assert "Authorization" in call_kwargs.kwargs.get(
+            "headers", {}
+        ) or "Authorization" in call_kwargs[1].get("headers", {})

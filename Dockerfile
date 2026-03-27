@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for mnemo-mcp
-# Python 3.13 + sqlite-vec + rclone
-# All-in-one: persistent memory with embedded sync
+# Python 3.13 + sqlite-vec
+# All-in-one: persistent memory with Google Drive sync
 
 # ========================
 # Stage 1: Builder
@@ -33,9 +33,6 @@ LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
 
 WORKDIR /app
-
-# Install rclone for sync support
-COPY --from=rclone/rclone:1.73.3@sha256:66af24d7c8809af336dc16068149257cf447c80f8c60aa9f5679153f42017b85 --chmod=755 /usr/local/bin/rclone /usr/bin/rclone
 
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv

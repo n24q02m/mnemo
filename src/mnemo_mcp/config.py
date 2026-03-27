@@ -1,11 +1,9 @@
 """Configuration settings for Mnemo MCP Server."""
 
 import os
-import re
 from pathlib import Path
 
 from loguru import logger
-from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -58,33 +56,6 @@ _RERANK_PROVIDERS: dict[str, str] = {
     "CO_API_KEY": "rerank-v4.0-pro",
 }
 
-RCLONE_PROVIDERS = {
-    "drive",
-    "dropbox",
-    "s3",
-    "b2",
-    "onedrive",
-    "box",
-    "ftp",
-    "sftp",
-    "webdav",
-    "local",
-    "azureblob",
-    "jottacloud",
-    "mega",
-    "pcloud",
-    "smb",
-    "koofr",
-    "yandex",
-    "hidrive",
-    "mailru",
-    "putio",
-    "premiumizeme",
-    "seafile",
-    "sugar",
-    "uptobox",
-}
-
 
 class Settings(BaseSettings):
     """Mnemo MCP Server configuration.
@@ -98,11 +69,10 @@ class Settings(BaseSettings):
     - EMBEDDING_MODEL: Embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "cloud" | "local" (auto: API_KEYS -> cloud, else local)
-    - SYNC_ENABLED: Enable rclone sync (default: false)
-    - SYNC_PROVIDER: rclone provider type (default: "drive" for Google Drive)
-    - SYNC_REMOTE: Rclone remote name (default: "gdrive")
-    - SYNC_FOLDER: Remote folder name (default: "mnemo-mcp")
+    - SYNC_ENABLED: Enable Google Drive sync (default: false)
+    - SYNC_FOLDER: Google Drive folder name (default: "mnemo-mcp")
     - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)
+    - GOOGLE_DRIVE_CLIENT_ID: OAuth client ID for Google Drive sync
     """
 
     # Database
@@ -123,13 +93,11 @@ class Settings(BaseSettings):
     rerank_backend: str = ""  # "cloud" | "local" | "" (auto)
     rerank_model: str = ""
     rerank_top_n: int = 10
-    # Sync (rclone)
+    # Sync (Google Drive API)
     sync_enabled: bool = False
-    sync_provider: str = "drive"  # rclone provider type (drive, dropbox, s3, etc.)
-    sync_remote: str = "gdrive"  # rclone remote name
-    sync_folder: str = "mnemo-mcp"
+    sync_folder: str = "mnemo-mcp"  # Google Drive folder name
     sync_interval: int = 300  # seconds, 0 = manual only
-    rclone_version: str = "v1.68.2"
+    google_drive_client_id: str = ""  # OAuth client ID (required for sync)
 
     # Archive
     archive_enabled: bool = True
@@ -154,46 +122,6 @@ class Settings(BaseSettings):
         "case_sensitive": False,
         "validate_assignment": True,
     }
-
-    @field_validator("sync_provider")
-    @classmethod
-    def validate_sync_provider(cls, v: str) -> str:
-        """Validate sync_provider against allowlist to prevent argument injection."""
-        if not v:
-            return v
-        if v not in RCLONE_PROVIDERS:
-            raise ValueError(
-                f"Invalid sync_provider '{v}'. Must be one of: {', '.join(sorted(RCLONE_PROVIDERS))}"
-            )
-        return v
-
-    @field_validator("sync_folder")
-    @classmethod
-    def validate_sync_folder(cls, v: str) -> str:
-        """Validate sync_folder to prevent path traversal in rclone args."""
-        if not v:
-            return v
-        if ".." in v or v.startswith("/"):
-            raise ValueError("sync_folder must not contain '..' or start with '/'")
-        if not re.match(r"^[a-zA-Z0-9_./\- ]*$", v):
-            raise ValueError(
-                "sync_folder can only contain alphanumeric characters, dashes, underscores, dots, slashes, and spaces"
-            )
-        return v
-
-    @field_validator("sync_remote")
-    @classmethod
-    def validate_sync_remote(cls, v: str) -> str:
-        """Validate sync_remote to prevent argument injection."""
-        if not v:
-            return v
-        if v.startswith("-"):
-            raise ValueError("sync_remote must not start with a hyphen (-)")
-        if not re.match(r"^[a-zA-Z0-9_.-]*$", v):
-            raise ValueError(
-                "sync_remote can only contain alphanumeric characters, dashes, underscores, and dots"
-            )
-        return v
 
     def get_db_path(self) -> Path:
         """Get resolved database path."""

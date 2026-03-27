@@ -299,7 +299,7 @@ class TestFullConfig:
         ]
 
     async def test_config_sync_status(self, mcp_session: ClientSession):
-        """config.sync -- show sync status (no rclone needed)."""
+        """config.sync -- show sync status."""
         r = await mcp_session.call_tool("config", {"action": "sync"})
         text = parse_allow_error(r)
         # Should return status or error about sync not enabled

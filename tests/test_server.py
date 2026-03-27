@@ -349,19 +349,6 @@ class TestConfigTool:
         assert "error" in result
         assert "valid_keys" in result
 
-    async def test_set_sync_remote_rejected(self, ctx_with_db):
-        ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(
-                action="set",
-                key="sync_remote",
-                value="bad-remote",
-                ctx=ctx,
-            )
-        )
-        assert "error" in result
-        assert "valid_keys" in result
-
     async def test_set_sync_enabled(self, ctx_with_db):
         ctx, _ = ctx_with_db
         result = json.loads(

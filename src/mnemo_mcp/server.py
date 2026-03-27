@@ -212,7 +212,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
         start_auto_sync(db)
         logger.info(
-            f"Sync: {settings.sync_remote}:{settings.sync_folder} "
+            f"Sync: Google Drive/{settings.sync_folder} "
             f"(interval={settings.sync_interval}s)"
         )
 
@@ -628,7 +628,7 @@ async def _handle_stats(
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
     s["sync_enabled"] = settings.sync_enabled
-    s["sync_remote"] = settings.sync_remote
+    s["sync_folder"] = settings.sync_folder
     return _json(s)
 
 
@@ -868,7 +868,7 @@ async def config(
 
     Actions:
     - status: Show current config
-    - sync: Trigger manual sync (requires sync_enabled + sync_remote)
+    - sync: Trigger manual Google Drive sync (requires sync_enabled + google_drive_client_id)
     - set: Update setting (key + value required)
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
@@ -891,7 +891,7 @@ async def config(
                     },
                     "sync": {
                         "enabled": settings.sync_enabled,
-                        "remote": settings.sync_remote,
+                        "provider": "google_drive",
                         "folder": settings.sync_folder,
                         "interval": settings.sync_interval,
                     },
@@ -978,7 +978,7 @@ async def config(
     description=(
         "Server setup tasks. Actions: warmup|setup_sync. "
         "warmup: pre-download embedding model (~570 MB). "
-        "setup_sync: authenticate sync provider (opens browser for OAuth)."
+        "setup_sync: authenticate Google Drive via Device Code OAuth."
     ),
     annotations=ToolAnnotations(
         title="Setup",
@@ -990,13 +990,12 @@ async def config(
 )
 async def setup(
     action: str,
-    provider: str = "drive",
 ) -> str:
     """Server setup: warmup and sync authentication.
 
     Actions:
     - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
-    - setup_sync: Authenticate sync provider (opens browser for OAuth)
+    - setup_sync: Authenticate Google Drive via Device Code OAuth flow
     """
     from mnemo_mcp.setup_tool import run_setup_sync, run_warmup
 
@@ -1006,16 +1005,7 @@ async def setup(
             return _json(result)
 
         case "setup_sync":
-            from mnemo_mcp.config import RCLONE_PROVIDERS
-
-            if provider not in RCLONE_PROVIDERS:
-                return _json(
-                    {
-                        "error": f"Invalid provider: {provider}",
-                        "valid_providers": sorted(RCLONE_PROVIDERS),
-                    }
-                )
-            result = await run_setup_sync(provider)
+            result = await run_setup_sync()
             return _json(result)
 
         case _:

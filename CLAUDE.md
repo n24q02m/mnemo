@@ -54,7 +54,7 @@ src/mnemo_mcp/
   embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
   relay_setup.py   # Zero-config relay: create session, poll for config
   relay_schema.py  # Relay form schema (local + cloud modes)
-  sync.py          # Rclone sync (embedded, auto-download)
+  sync.py          # Google Drive sync (OAuth Device Code, httpx)
   docs/            # Tool documentation markdown
 tests/             # 1:1 mapping voi source modules
 ```
@@ -72,9 +72,8 @@ Khong co prefix (khac voi cac project khac):
 - `EMBEDDING_MODEL` -- Cloud embedding model name
 - `EMBEDDING_DIMS` -- default 768 (0 = auto)
 - `SYNC_ENABLED` -- `true`/`false`, default false
-- `SYNC_PROVIDER` -- rclone provider (default: `drive`)
-- `SYNC_REMOTE` -- rclone remote name (default: `gdrive`)
-- `SYNC_FOLDER` -- remote folder (default: `mnemo-mcp`)
+- `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID (required for sync)
+- `SYNC_FOLDER` -- Google Drive folder name (default: `mnemo-mcp`)
 - `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
 
 ## Embedding architecture
@@ -92,7 +91,7 @@ PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry
 - Tools tra ve `_json({"error": "..."})`, khong raise exception.
 - `match action:` pattern cho routing.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
-- Sync: rclone auto-downloaded, JSONL-based merge. OAuth token luu tai `~/.mnemo-mcp/tokens/` (600).
+- Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
 - Dependencies: `qwen3-embed>=1.2.0`, `cohere`, `sqlite-vec`.
 - Pre-commit: ruff lint + format, ty check, pytest.

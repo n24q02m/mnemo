@@ -17,12 +17,12 @@ Returns database stats, embedding model info, and sync status.
 - `total_memories`: Total memory count
 - `categories`: Memory count by category
 - `embedding`: Model name, dimensions, availability
-- `sync`: Enabled, remote, folder, interval, rclone status
+- `sync`: Enabled, provider, folder, interval
 
 ### `sync` - Trigger manual sync
 
 Performs a full sync cycle: pull remote changes, merge, push local changes.
-Requires `SYNC_ENABLED=true` and `SYNC_REMOTE` configured.
+Requires `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` configured.
 
 **Parameters:** None
 
@@ -31,9 +31,9 @@ Requires `SYNC_ENABLED=true` and `SYNC_REMOTE` configured.
 - `push`: Success/failure of push operation
 
 **Sync prerequisites:**
-1. Get a token: call `setup(action="setup_sync", provider="drive")` (downloads rclone + opens browser)
-2. Set `SYNC_ENABLED=true` in your MCP config environment
-3. The server auto-loads the saved token from `~/.mnemo-mcp/tokens/` -- no env vars needed
+1. Get a token: call `setup(action="setup_sync")` (Device Code OAuth flow)
+2. Set `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` in your MCP config environment
+3. The server auto-loads the saved token from `~/.mnemo-mcp/tokens/google_drive.json` -- no extra env vars needed
 
 ### `set` - Update a configuration value
 
@@ -45,8 +45,6 @@ Change runtime settings. Changes persist for the current session.
 
 **Available settings:**
 - `sync_enabled`: Enable/disable sync ("true" / "false")
-- `sync_remote`: Rclone remote name
-- `sync_folder`: Remote folder name
 - `sync_interval`: Auto-sync interval in seconds (0 = manual)
 - `log_level`: Logging level ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -66,10 +64,10 @@ Configure via environment variables before starting the server:
 | `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (qwen3-embed ONNX/GGUF), or empty (auto) |
 | `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
 | `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
-| `SYNC_ENABLED` | `false` | Enable rclone sync |
-| `SYNC_REMOTE` | (none) | Rclone remote name |
-| `SYNC_FOLDER` | `mnemo-mcp` | Remote folder name |
-| `SYNC_INTERVAL` | `0` | Auto-sync interval (seconds) |
+| `SYNC_ENABLED` | `false` | Enable Google Drive sync |
+| `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID for Google Drive |
+| `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
+| `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
 
 ### API_KEYS Format

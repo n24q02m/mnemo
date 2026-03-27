@@ -270,33 +270,14 @@ class TestRerankSettings:
         assert "Qwen3-Reranker-0.6B" in model
 
 
-class TestRcloneVersion:
-    def test_default(self):
+class TestGoogleDriveClientId:
+    def test_default_empty(self):
         s = Settings(api_keys=None)
-        assert s.rclone_version == "v1.68.2"
+        assert s.google_drive_client_id == ""
 
     def test_env_override(self, monkeypatch):
-        monkeypatch.setenv("RCLONE_VERSION", "v1.99.9")
+        monkeypatch.setenv(
+            "GOOGLE_DRIVE_CLIENT_ID", "123456.apps.googleusercontent.com"
+        )
         s = Settings(api_keys=None)
-        assert s.rclone_version == "v1.99.9"
-
-
-class TestSyncProviderValidation:
-    def test_valid_sync_provider(self):
-        """Valid sync_provider values should be accepted."""
-        from mnemo_mcp.config import RCLONE_PROVIDERS
-
-        for provider in list(RCLONE_PROVIDERS)[:3]:
-            s = Settings(sync_provider=provider, api_keys=None)
-            assert s.sync_provider == provider
-
-    def test_invalid_sync_provider(self):
-        """Invalid sync_provider values should be rejected."""
-        from pydantic import ValidationError
-
-        invalid_providers = ["invalid_provider", "drive; rm -rf /", "-drive"]
-        for provider in invalid_providers:
-            with __import__("pytest").raises(
-                ValidationError, match="Invalid sync_provider"
-            ):
-                Settings(sync_provider=provider, api_keys=None)
+        assert s.google_drive_client_id == "123456.apps.googleusercontent.com"

@@ -263,127 +263,44 @@ class TestRunSetupSync:
     """run_setup_sync() async function for MCP tool."""
 
     @patch("mnemo_mcp.token_store.get_token_path")
-    @patch("mnemo_mcp.token_store.save_token")
-    @patch("mnemo_mcp.sync._extract_token")
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_success_drive(
-        self, mock_get_path, mock_extract, mock_save, mock_token_path
-    ):
+    @patch("mnemo_mcp.sync.setup_google_auth", new_callable=MagicMock)
+    @patch("mnemo_mcp.setup_tool.settings")
+    async def test_success(self, mock_settings, mock_auth, mock_token_path):
+        from unittest.mock import AsyncMock
+
         from mnemo_mcp.setup_tool import run_setup_sync
 
-        mock_rclone = MagicMock()
-        mock_get_path.return_value = mock_rclone
+        mock_settings.google_drive_client_id = "client123"
+        mock_auth.return_value = AsyncMock(return_value=True)()
+        mock_token_path.return_value = "/home/user/.mnemo-mcp/tokens/google_drive.json"
 
-        mock_extract.return_value = '{"access_token": "abc"}'
-        mock_token_path.return_value = "/home/user/.mnemo-mcp/tokens/drive.json"
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout='{"access_token": "abc"}'
-            )
-            result = await run_setup_sync("drive")
+        result = await run_setup_sync()
 
         assert result["status"] == "authenticated"
-        assert result["provider"] == "drive"
-        assert result["remote_name"] == "gdrive"
-        mock_save.assert_called_once()
+        assert result["provider"] == "google_drive"
 
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    @patch("mnemo_mcp.sync._download_rclone")
-    async def test_rclone_download_failure(self, mock_download, mock_get_path):
+    @patch("mnemo_mcp.setup_tool.settings")
+    async def test_no_client_id(self, mock_settings):
         from mnemo_mcp.setup_tool import run_setup_sync
 
-        mock_get_path.return_value = None
-        mock_download.return_value = None
+        mock_settings.google_drive_client_id = ""
 
-        result = await run_setup_sync("drive")
+        result = await run_setup_sync()
 
         assert result["status"] == "error"
-        assert "download rclone" in result["error"].lower()
+        assert "GOOGLE_DRIVE_CLIENT_ID" in result["error"]
 
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_authorize_fails(self, mock_get_path):
+    @patch("mnemo_mcp.sync.setup_google_auth", new_callable=MagicMock)
+    @patch("mnemo_mcp.setup_tool.settings")
+    async def test_auth_failure(self, mock_settings, mock_auth):
+        from unittest.mock import AsyncMock
+
         from mnemo_mcp.setup_tool import run_setup_sync
 
-        mock_get_path.return_value = MagicMock()
+        mock_settings.google_drive_client_id = "client123"
+        mock_auth.return_value = AsyncMock(return_value=False)()
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stdout="")
-            result = await run_setup_sync("drive")
+        result = await run_setup_sync()
 
         assert result["status"] == "error"
         assert "failed" in result["error"].lower()
-
-    @patch("mnemo_mcp.sync._extract_token")
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_token_extraction_failure(self, mock_get_path, mock_extract):
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_get_path.return_value = MagicMock()
-        mock_extract.return_value = None
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="no token here")
-            result = await run_setup_sync("drive")
-
-        assert result["status"] == "error"
-        assert "extract token" in result["error"].lower()
-
-    @patch("mnemo_mcp.sync._extract_token")
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_invalid_token_json(self, mock_get_path, mock_extract):
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_get_path.return_value = MagicMock()
-        mock_extract.return_value = "not valid json {"
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="output")
-            result = await run_setup_sync("drive")
-
-        assert result["status"] == "error"
-        assert "invalid token" in result["error"].lower()
-
-    @patch("mnemo_mcp.token_store.get_token_path")
-    @patch("mnemo_mcp.token_store.save_token")
-    @patch("mnemo_mcp.sync._extract_token")
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_non_drive_provider(
-        self, mock_get_path, mock_extract, mock_save, mock_token_path
-    ):
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_get_path.return_value = MagicMock()
-        mock_extract.return_value = '{"access_token": "xyz"}'
-        mock_token_path.return_value = "/tokens/dropbox.json"
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="token output")
-            result = await run_setup_sync("dropbox")
-
-        assert result["status"] == "authenticated"
-        assert result["provider"] == "dropbox"
-        assert result["remote_name"] == "dropbox"
-        assert result["next_steps"]["SYNC_PROVIDER"] == "dropbox"
-
-    @patch("mnemo_mcp.token_store.get_token_path")
-    @patch("mnemo_mcp.token_store.save_token")
-    @patch("mnemo_mcp.sync._extract_token")
-    @patch("mnemo_mcp.sync._download_rclone")
-    @patch("mnemo_mcp.sync._get_rclone_path")
-    async def test_downloads_rclone_when_not_found(
-        self, mock_get_path, mock_download, mock_extract, mock_save, mock_token_path
-    ):
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_get_path.return_value = None
-        mock_download.return_value = MagicMock()
-        mock_extract.return_value = '{"access_token": "abc"}'
-        mock_token_path.return_value = "/tokens/drive.json"
-
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="output")
-            result = await run_setup_sync("drive")
-
-        assert result["status"] == "authenticated"
-        mock_download.assert_called_once()

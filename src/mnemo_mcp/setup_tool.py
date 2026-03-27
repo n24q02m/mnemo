@@ -5,7 +5,6 @@ async functions that return structured dicts for MCP tool responses.
 """
 
 import asyncio
-import json as json_mod
 import os
 import shutil
 import tempfile
@@ -153,66 +152,36 @@ async def run_warmup() -> dict:
     }
 
 
-async def run_setup_sync(provider: str = "drive") -> dict:
-    """Authenticate sync provider via rclone (opens browser for OAuth).
+async def run_setup_sync() -> dict:
+    """Authenticate Google Drive via Device Code OAuth flow.
 
     Returns a structured dict with setup results.
     """
-    from mnemo_mcp.config import RCLONE_PROVIDERS
-    from mnemo_mcp.sync import _download_rclone, _extract_token, _get_rclone_path
-    from mnemo_mcp.token_store import get_token_path, save_token
+    from mnemo_mcp.sync import setup_google_auth
+    from mnemo_mcp.token_store import get_token_path
 
-    if provider not in RCLONE_PROVIDERS:
-        return {"status": "error", "error": f"Invalid provider: {provider}"}
-
-    rclone_path = _get_rclone_path()
-    if not rclone_path:
-        rclone_path = await _download_rclone()
-        if not rclone_path:
-            return {"status": "error", "error": "Failed to download rclone"}
-
-    import subprocess
-
-    result = await asyncio.to_thread(
-        lambda: subprocess.run(
-            [str(rclone_path), "authorize", "--", provider],
-            stdout=subprocess.PIPE,
-            text=True,
-            timeout=300,
-        )
-    )
-
-    if result.returncode != 0:
+    client_id = settings.google_drive_client_id
+    if not client_id:
         return {
             "status": "error",
-            "error": f"rclone authorize failed (exit {result.returncode})",
+            "error": "GOOGLE_DRIVE_CLIENT_ID not configured. "
+            "Create an OAuth client ID at console.cloud.google.com/apis/credentials",
         }
 
-    token_json = _extract_token(result.stdout or "")
-    if not token_json:
+    success = await setup_google_auth()
+    if not success:
         return {
             "status": "error",
-            "error": "Could not extract token from rclone output",
-            "hint": "Try with SYNC_ENABLED=true -- the server will auto-authenticate",
+            "error": "Google Drive authentication failed. Please try again.",
         }
 
-    try:
-        token_dict = json_mod.loads(token_json)
-    except json_mod.JSONDecodeError:
-        return {"status": "error", "error": "Invalid token JSON from rclone"}
-
-    save_token(provider, token_dict)
-    remote_name = "gdrive" if provider == "drive" else provider
-    token_path = get_token_path(provider)
-
+    token_path = get_token_path("google_drive")
     return {
         "status": "authenticated",
-        "provider": provider,
-        "remote_name": remote_name,
+        "provider": "google_drive",
         "token_path": str(token_path),
         "next_steps": {
             "SYNC_ENABLED": "true",
-            **({"SYNC_PROVIDER": provider} if provider != "drive" else {}),
-            **({"SYNC_REMOTE": remote_name} if remote_name != "gdrive" else {}),
+            "GOOGLE_DRIVE_CLIENT_ID": client_id,
         },
     }
