@@ -47,14 +47,18 @@ mise run fix       # ruff fix + format
 
 ```
 src/mnemo_mcp/
+  __main__.py      # python -m mnemo_mcp entrypoint
   config.py        # Pydantic Settings (singleton), env vars khong co prefix
   server.py        # FastMCP server, tools, resources, prompts
   setup_tool.py    # Warmup + setup-sync logic (MCP setup tool)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
   embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
+  reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (qwen3-embed cross-encoder)
+  graph.py         # Knowledge graph: entity/relation extraction via LLM
   relay_setup.py   # Zero-config relay: create session, poll for config
   relay_schema.py  # Relay form schema (local + cloud modes)
   sync.py          # Google Drive sync (OAuth Device Code, httpx)
+  token_store.py   # OAuth token storage (secure file-based, chmod 600)
   docs/            # Tool documentation markdown
 tests/             # 1:1 mapping voi source modules
 ```
@@ -75,6 +79,18 @@ Khong co prefix (khac voi cac project khac):
 - `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID (required for sync)
 - `SYNC_FOLDER` -- Google Drive folder name (default: `mnemo-mcp`)
 - `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
+- `RERANK_ENABLED` -- `true`/`false`, default true
+- `RERANK_BACKEND` -- `cloud`, `local`, hoac auto-detect
+- `RERANK_MODEL` -- Cloud rerank model name (auto-detected: Jina > Cohere)
+- `RERANK_TOP_N` -- so ket qua rerank giu lai (default: 10)
+- `ARCHIVE_ENABLED` -- `true`/`false`, default true
+- `ARCHIVE_AFTER_DAYS` -- so ngay truoc khi archive (default: 90)
+- `ARCHIVE_IMPORTANCE_THRESHOLD` -- nguong importance de giu lai (default: 0.3)
+- `DEDUP_THRESHOLD` -- nguong similarity de coi la duplicate (default: 0.9)
+- `DEDUP_WARN_THRESHOLD` -- nguong similarity de canh bao (default: 0.7)
+- `RECENCY_HALF_LIFE_DAYS` -- half-life cho temporal decay scoring (default: 7)
+- `LLM_MODELS` -- danh sach LLM models, format `provider/model,...` (default: gemini + openai)
+- `LOG_LEVEL` -- log level (default: INFO)
 
 ## Embedding architecture
 
@@ -93,6 +109,6 @@ PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `qwen3-embed>=1.2.0`, `cohere`, `sqlite-vec`.
+- Dependencies: `qwen3-embed>=1.5.1`, `cohere`, `sqlite-vec`.
 - Pre-commit: ruff lint + format, ty check, pytest.
 - Infisical project: `65a85ae6-61e2-4188-9266-00dca21b9c00`
