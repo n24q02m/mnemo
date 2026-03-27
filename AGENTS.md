@@ -119,7 +119,7 @@ src/mnemo_mcp/
   server.py                   # FastMCP server, tools, resources, prompts
   db.py                       # SQLite: CRUD, FTS5, vector search
   embedder.py                 # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
-  sync.py                     # Rclone sync management
+  sync.py                     # Google Drive sync (OAuth Device Code, httpx)
   docs/                       # Tool documentation markdown
 tests/                        # One test file per source module (1:1 mapping)
   conftest.py                 # Shared fixtures
