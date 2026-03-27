@@ -91,7 +91,6 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish
-        env:
 
   # ============================================================================
   # Build Docker (multi-arch)
