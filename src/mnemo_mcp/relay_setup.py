@@ -1,14 +1,10 @@
-"""Relay-first setup flow for mnemo-mcp.
+"""Credential resolution for mnemo-mcp.
 
-Always shows the relay URL at startup so users can configure cloud providers
-via browser. If the user skips or relay is unreachable, falls back to local
-ONNX mode (Qwen3-Embedding, works without any credentials).
-
-Resolution order:
-1. Environment variables (highest priority, checked by pydantic Settings)
-2. Encrypted config file (~/.config/mcp/config.enc)
-3. Relay setup (browser-based form, 30s timeout for optional-cred server)
-4. Local mode fallback (Qwen3-Embedding ONNX)
+Resolution order (relay only when ALL local sources are empty):
+1. ENV VARS          -- User explicitly set (highest priority, skip everything)
+2. RELAY CONFIG      -- Saved from previous relay setup (~/.config/mcp/config.enc)
+3. RELAY SETUP       -- Interactive, ONLY when steps 1-2 are ALL empty (30s timeout)
+4. LOCAL MODE        -- Fallback (Qwen3-Embedding ONNX)
 """
 
 from __future__ import annotations
@@ -56,23 +52,23 @@ def load_relay_config() -> dict[str, str] | None:
 async def ensure_config() -> dict[str, str] | None:
     """Resolve config: env vars -> config file -> relay setup -> local fallback.
 
-    Always shows relay URL at startup for relay-first design.
+    Relay is ONLY triggered when steps 1-2 are ALL empty.
     Uses 30s timeout since mnemo-mcp works locally without credentials.
 
     Returns:
         Config dict with credential keys, or None if skipped/failed (local mode).
     """
-    # 1. Check if env vars already provide cloud keys
+    # 1. Check if env vars already provide cloud keys (highest priority)
     if any(os.environ.get(k) for k in ALL_POSSIBLE_FIELDS):
-        logger.info("Cloud API keys found in environment")
+        logger.info("Cloud API keys found in environment, skipping relay")
         return None  # env vars take priority, no relay needed
 
-    # 2. Check config file
+    # 2. Check saved relay config file
     config = load_relay_config()
     if config is not None:
         return config
 
-    # 3. Always trigger relay setup (relay-first design)
+    # 3. No local credentials found -- trigger relay setup
     logger.info("No cloud credentials found. Starting relay setup...")
 
     relay_url = DEFAULT_RELAY_URL
