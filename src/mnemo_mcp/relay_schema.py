@@ -1,8 +1,10 @@
 """Config schema for relay page setup."""
 
-from mcp_relay_core.schema.types import RelayConfigSchema
+from __future__ import annotations
 
-RELAY_SCHEMA: RelayConfigSchema = {
+from typing import Any
+
+RELAY_SCHEMA: dict[str, Any] = {
     "server": "mnemo-mcp",
     "displayName": "Mnemo MCP",
     "modes": [

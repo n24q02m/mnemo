@@ -77,7 +77,7 @@ async def ensure_config() -> dict[str, str] | None:
 
         from .relay_schema import RELAY_SCHEMA
 
-        session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)
+        session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)  # ty: ignore[invalid-argument-type]
     except Exception:
         logger.debug("Cannot reach relay server at {}. Using local mode.", relay_url)
         return None
