@@ -165,11 +165,11 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     connections immediately. Tools gracefully degrade to FTS5-only search
     until the embedding model is ready.
     """
-    # 0. Try relay config if no cloud API keys are set
+    # 0. Relay-first: try env -> config file -> relay setup -> local fallback
     try:
-        from mnemo_mcp.relay_setup import load_relay_config
+        from mnemo_mcp.relay_setup import ensure_config
 
-        relay_config = load_relay_config()
+        relay_config = await ensure_config()
         if relay_config:
             import os
 
@@ -181,7 +181,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
             ):
                 if relay_config.get(key) and not os.environ.get(key):
                     os.environ[key] = relay_config[key]
-            logger.info("Cloud API keys loaded from relay config file")
+            logger.info("Cloud API keys loaded from relay config")
     except Exception as e:
         logger.debug(f"Relay config not available: {e}")
 

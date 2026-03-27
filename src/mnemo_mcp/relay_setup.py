@@ -1,25 +1,25 @@
-"""Zero-env-config relay setup flow.
+"""Relay-first setup flow for mnemo-mcp.
 
-When no env vars are set, this module resolves config from the encrypted
-config file or triggers the relay page setup to collect credentials from the
-user via a browser-based form.
+Always shows the relay URL at startup so users can configure cloud providers
+via browser. If the user skips or relay is unreachable, falls back to local
+ONNX mode (Qwen3-Embedding, works without any credentials).
 
-For mnemo-mcp, relay is optional -- local mode works without any config.
-Cloud mode credentials (provider API keys) are resolved via relay when not set in env.
+Resolution order:
+1. Environment variables (highest priority, checked by pydantic Settings)
+2. Encrypted config file (~/.config/mcp/config.enc)
+3. Relay setup (browser-based form, 30s timeout for optional-cred server)
+4. Local mode fallback (Qwen3-Embedding ONNX)
 """
 
 from __future__ import annotations
 
+import os
 import sys
 
 from loguru import logger
-from mcp_relay_core.relay.client import create_session, poll_for_result
-from mcp_relay_core.storage.config_file import write_config
-from mcp_relay_core.storage.resolver import resolve_config
-
-from .relay_schema import RELAY_SCHEMA
 
 DEFAULT_RELAY_URL = "https://mnemo-mcp.n24q02m.com"
+SERVER_NAME = "mnemo-mcp"
 REQUIRED_FIELDS = ["JINA_AI_API_KEY"]  # At least one provider key needed
 ALL_POSSIBLE_FIELDS = [
     "JINA_AI_API_KEY",
@@ -27,6 +27,9 @@ ALL_POSSIBLE_FIELDS = [
     "OPENAI_API_KEY",
     "COHERE_API_KEY",
 ]
+
+# Shorter timeout for optional-credential servers (user can skip)
+RELAY_TIMEOUT_S = 30.0
 
 
 def load_relay_config() -> dict[str, str] | None:
@@ -38,62 +41,77 @@ def load_relay_config() -> dict[str, str] | None:
     Returns:
         Config dict with API_KEYS, or None if no config file found.
     """
-    result = resolve_config("mnemo-mcp", REQUIRED_FIELDS)
-    if result.config is not None:
-        logger.info("Relay config loaded from {}", result.source)
-        return result.config
-    return None
+    try:
+        from mcp_relay_core.storage.resolver import resolve_config
+
+        result = resolve_config(SERVER_NAME, REQUIRED_FIELDS)
+        if result.config is not None:
+            logger.info("Relay config loaded from {}", result.source)
+            return result.config
+        return None
+    except Exception:
+        return None
 
 
 async def ensure_config() -> dict[str, str] | None:
-    """Resolve cloud config or trigger relay setup.
+    """Resolve config: env vars -> config file -> relay setup -> local fallback.
 
-    Resolution order:
-    1. Encrypted config file (~/.config/mcp/config.enc)
-    2. Relay setup (browser-based form via relay server)
+    Always shows relay URL at startup for relay-first design.
+    Uses 30s timeout since mnemo-mcp works locally without credentials.
 
     Returns:
-        Config dict with credential keys, or None if setup fails/times out.
-
-    Note:
-        Environment variables are NOT checked here -- pydantic-settings in
-        Settings already handles that. This function is only called when
-        the user explicitly wants to configure cloud mode via the setup tool.
+        Config dict with credential keys, or None if skipped/failed (local mode).
     """
-    # Check config file
+    # 1. Check if env vars already provide cloud keys
+    if any(os.environ.get(k) for k in ALL_POSSIBLE_FIELDS):
+        logger.info("Cloud API keys found in environment")
+        return None  # env vars take priority, no relay needed
+
+    # 2. Check config file
     config = load_relay_config()
     if config is not None:
         return config
 
-    # No config found -- trigger relay setup
+    # 3. Always trigger relay setup (relay-first design)
     logger.info("No cloud credentials found. Starting relay setup...")
 
     relay_url = DEFAULT_RELAY_URL
     try:
-        session = await create_session(relay_url, "mnemo-mcp", RELAY_SCHEMA)
+        from mcp_relay_core.relay.client import create_session, poll_for_result
+
+        from .relay_schema import RELAY_SCHEMA
+
+        session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)
     except Exception:
-        logger.warning(
-            "Cannot reach relay server at {}. "
-            "Set provider API keys manually or use local mode (default).",
-            relay_url,
-        )
+        logger.debug("Cannot reach relay server at {}. Using local mode.", relay_url)
         return None
 
     # Log URL to stderr (visible to user in MCP client)
     print(
-        f"\nSetup required. Open this URL to configure:\n{session.relay_url}\n",
+        f"\nConfigure cloud providers (optional, 30s timeout):"
+        f"\n{session.relay_url}"
+        f"\nSkip to use local mode (Qwen3-Embedding ONNX).\n",
         file=sys.stderr,
         flush=True,
     )
 
-    # Poll for result
+    # Poll for result with shorter timeout
     try:
-        config = await poll_for_result(relay_url, session)
-    except RuntimeError:
-        logger.error("Relay setup timed out or session expired")
-        return None
+        from mcp_relay_core.relay.client import poll_for_result
+        from mcp_relay_core.storage.config_file import write_config
 
-    # Save to config file
-    write_config("mnemo-mcp", config)
-    logger.info("Cloud config saved successfully")
-    return config
+        config = await poll_for_result(relay_url, session, timeout_s=RELAY_TIMEOUT_S)
+
+        # Save to config file
+        write_config(SERVER_NAME, config)
+        logger.info("Cloud config saved successfully")
+        return config
+
+    except RuntimeError as e:
+        if "RELAY_SKIPPED" in str(e):
+            logger.info("Relay setup skipped by user. Using local mode.")
+        elif "timed out" in str(e).lower():
+            logger.info("Relay setup timed out. Using local mode.")
+        else:
+            logger.debug("Relay setup ended: {}", e)
+        return None
