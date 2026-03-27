@@ -7,6 +7,7 @@ and other edge cases.
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -409,7 +410,8 @@ class TestImportJsonlEdgeCases:
 
     def test_import_invalid_type(self, tmp_db: MemoryDB):
         """Import with unsupported type returns empty result."""
-        result = tmp_db.import_jsonl(12345, mode="merge")  # type: ignore[arg-type]
+        invalid_input: Any = 12345
+        result = tmp_db.import_jsonl(invalid_input, mode="merge")
         assert result["imported"] == 0
         assert result["skipped"] == 0
 
