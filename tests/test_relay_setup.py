@@ -30,7 +30,7 @@ class TestConstants:
 class TestLoadRelayConfig:
     """Test load_relay_config function."""
 
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     def test_returns_config_from_file(self, mock_resolve):
         mock_resolve.return_value = MagicMock(
             config={"JINA_AI_API_KEY": "jina_test"},
@@ -40,7 +40,7 @@ class TestLoadRelayConfig:
         assert result == {"JINA_AI_API_KEY": "jina_test"}
         mock_resolve.assert_called_once_with("mnemo-mcp", REQUIRED_FIELDS)
 
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     def test_returns_none_when_no_config(self, mock_resolve):
         mock_resolve.return_value = MagicMock(config=None, source=None)
         result = load_relay_config()
@@ -50,7 +50,7 @@ class TestLoadRelayConfig:
 class TestEnsureConfig:
     """Test ensure_config async function."""
 
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     async def test_returns_config_from_file(self, mock_resolve):
         mock_resolve.return_value = MagicMock(
             config={"GEMINI_API_KEY": "AIza_test"},
@@ -59,18 +59,18 @@ class TestEnsureConfig:
         result = await ensure_config()
         assert result == {"GEMINI_API_KEY": "AIza_test"}
 
-    @patch("mnemo_mcp.relay_setup.create_session", new_callable=AsyncMock)
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     async def test_relay_setup_fails_gracefully(self, mock_resolve, mock_session):
         mock_resolve.return_value = MagicMock(config=None, source=None)
         mock_session.side_effect = ConnectionError("Cannot reach server")
         result = await ensure_config()
         assert result is None
 
-    @patch("mnemo_mcp.relay_setup.write_config")
-    @patch("mnemo_mcp.relay_setup.poll_for_result", new_callable=AsyncMock)
-    @patch("mnemo_mcp.relay_setup.create_session", new_callable=AsyncMock)
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.storage.config_file.write_config")
+    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     async def test_relay_setup_success(
         self, mock_resolve, mock_session, mock_poll, mock_write
     ):
@@ -92,9 +92,9 @@ class TestEnsureConfig:
             {"JINA_AI_API_KEY": "jina_test", "GEMINI_API_KEY": "AIza_test"},
         )
 
-    @patch("mnemo_mcp.relay_setup.poll_for_result", new_callable=AsyncMock)
-    @patch("mnemo_mcp.relay_setup.create_session", new_callable=AsyncMock)
-    @patch("mnemo_mcp.relay_setup.resolve_config")
+    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_relay_core.storage.resolver.resolve_config")
     async def test_relay_setup_timeout(self, mock_resolve, mock_session, mock_poll):
         mock_resolve.return_value = MagicMock(config=None, source=None)
         mock_session.return_value = MagicMock(relay_url="https://example.com")
