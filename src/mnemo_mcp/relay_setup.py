@@ -16,8 +16,7 @@ from loguru import logger
 
 DEFAULT_RELAY_URL = "https://mnemo-mcp.n24q02m.com"
 SERVER_NAME = "mnemo-mcp"
-REQUIRED_FIELDS = ["JINA_AI_API_KEY"]  # At least one provider key needed
-ALL_POSSIBLE_FIELDS = [
+CLOUD_KEYS = [
     "JINA_AI_API_KEY",
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
@@ -35,15 +34,15 @@ def load_relay_config() -> dict[str, str] | None:
     in Settings. This is a synchronous, non-blocking check.
 
     Returns:
-        Config dict with API_KEYS, or None if no config file found.
+        Config dict with cloud API keys, or None if no config file found.
     """
     try:
-        from mcp_relay_core.storage.resolver import resolve_config
+        from mcp_relay_core.storage.config_file import read_config
 
-        result = resolve_config(SERVER_NAME, REQUIRED_FIELDS)
-        if result.config is not None:
-            logger.info("Relay config loaded from {}", result.source)
-            return result.config
+        saved = read_config(SERVER_NAME)
+        if saved and any(saved.get(k) for k in CLOUD_KEYS):
+            logger.info("Config loaded from file")
+            return saved
         return None
     except Exception:
         return None
@@ -59,7 +58,7 @@ async def ensure_config() -> dict[str, str] | None:
         Config dict with credential keys, or None if skipped/failed (local mode).
     """
     # 1. Check if env vars already provide cloud keys (highest priority)
-    if any(os.environ.get(k) for k in ALL_POSSIBLE_FIELDS):
+    if any(os.environ.get(k) for k in CLOUD_KEYS):
         logger.info("Cloud API keys found in environment, skipping relay")
         return None  # env vars take priority, no relay needed
 
