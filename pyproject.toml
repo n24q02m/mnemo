@@ -37,7 +37,7 @@ dependencies = [
     # Local ONNX embedding (auto-fallback when no cloud API)
     "qwen3-embed>=1.5.1",
     # Zero-env-config credential relay
-    "mcp-relay-core>=0.1.0",
+    "mcp-relay-core>=1.0.5",
 ]
 
 [dependency-groups]
