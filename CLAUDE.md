@@ -40,7 +40,7 @@ mise run fix       # ruff fix + format
 - `asyncio_mode = "auto"` -- khong can `@pytest.mark.asyncio`
 - Timeout: 30s/test
 - Integration marker: `@pytest.mark.integration` (can network/services)
-- Default: `-m 'not integration'`
+- Default: `-m 'not integration and not live and not full'`
 - Snapshot testing: syrupy
 
 ## Cau truc thu muc
@@ -71,7 +71,7 @@ Khong co prefix (khac voi cac project khac):
 - `GEMINI_API_KEY` -- Google Gemini API key (embedding + LLM)
 - `OPENAI_API_KEY` -- OpenAI API key (embedding)
 - `COHERE_API_KEY` -- Cohere API key (embedding + reranking)
-- `API_KEYS` -- SDK mode, format `ENV:key,ENV:key` (VD: `JINA_AI_API_KEY:jina_...`)
+- `XAI_API_KEY` -- xAI/Grok API key (LLM)
 - `EMBEDDING_BACKEND` -- `cloud` hoac `local` (auto-detect)
 - `EMBEDDING_MODEL` -- Cloud embedding model name
 - `EMBEDDING_DIMS` -- default 768 (0 = auto)
