@@ -86,7 +86,7 @@ class TestMeta:
     async def test_list_tools(self, mcp_session: ClientSession):
         result = await mcp_session.list_tools()
         tool_names = {t.name for t in result.tools}
-        expected = {"memory", "config", "help", "setup"}
+        expected = {"memory", "config", "help"}
         assert tool_names >= expected, (
             f"Missing tools: {expected - tool_names}, got {tool_names}"
         )
@@ -103,7 +103,7 @@ class TestMeta:
 
 
 class TestHelp:
-    @pytest.mark.parametrize("topic", ["memory", "config", "setup"])
+    @pytest.mark.parametrize("topic", ["memory", "config"])
     async def test_help_topics(self, mcp_session: ClientSession, topic: str):
         r = await mcp_session.call_tool("help", {"topic": topic})
         text = parse(r)
@@ -152,19 +152,19 @@ class TestConfig:
 
 
 # ---------------------------------------------------------------------------
-# Setup tool (offline -- warmup only)
+# Config tool -- warmup action (offline)
 # ---------------------------------------------------------------------------
 
 
-class TestSetup:
-    async def test_setup_warmup(self, mcp_session: ClientSession):
-        r = await mcp_session.call_tool("setup", {"action": "warmup"})
+class TestConfigWarmup:
+    async def test_config_warmup(self, mcp_session: ClientSession):
+        r = await mcp_session.call_tool("config", {"action": "warmup"})
         text = parse(r)
         data = json.loads(text)
         assert "status" in data or "error" not in data, text[:120]
 
-    async def test_setup_invalid_action(self, mcp_session: ClientSession):
-        r = await mcp_session.call_tool("setup", {"action": "invalid"})
+    async def test_config_invalid_action(self, mcp_session: ClientSession):
+        r = await mcp_session.call_tool("config", {"action": "invalid"})
         text = parse_allow_error(r)
         assert any(w in text.lower() for w in ("error", "unknown", "invalid")), text[
             :80

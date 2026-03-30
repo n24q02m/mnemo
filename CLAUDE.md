@@ -1,7 +1,7 @@
 # CLAUDE.md - mnemo-mcp
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
-Hybrid search: FTS5 + sqlite-vec semantic. 4 tools: memory, config, setup, help.
+Hybrid search: FTS5 + sqlite-vec semantic. 3 tools: memory, config, help.
 2-mode embedding: Cloud (Jina > Gemini > OpenAI > Cohere) > Local (Qwen3 ONNX). LLM: google-genai + openai.
 
 ## Commands
@@ -26,7 +26,7 @@ uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
 
 # Build & Run
 uv build
-uv run mnemo-mcp                    # run server (warmup/setup via MCP setup tool)
+uv run mnemo-mcp                    # run server (warmup/setup_sync via config tool)
 
 # Mise shortcuts
 mise run setup     # full dev setup
@@ -50,7 +50,7 @@ src/mnemo_mcp/
   __main__.py      # python -m mnemo_mcp entrypoint
   config.py        # Pydantic Settings (singleton), env vars khong co prefix
   server.py        # FastMCP server, tools, resources, prompts
-  setup_tool.py    # Warmup + setup-sync logic (MCP setup tool)
+  setup_tool.py    # Warmup + setup-sync logic (config tool actions)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
   embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
   reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (qwen3-embed cross-encoder)

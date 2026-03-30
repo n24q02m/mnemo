@@ -2,7 +2,7 @@
 
 MCP Interface:
 - memory tool: add/search/list/update/delete/export/import/stats
-- config tool: status/sync/set
+- config tool: status/sync/set/warmup/setup_sync
 - help tool: full documentation on demand
 - Resources: mnemo://stats, mnemo://recent
 - Prompts: save_summary, recall_context
@@ -847,8 +847,10 @@ async def memory(
 
 @mcp.tool(
     description=(
-        "Server config and sync. Actions: status|sync|set. "
-        "status: show config. sync: manual sync. set: change setting."
+        "Server config, sync, and setup. Actions: status|sync|set|warmup|setup_sync. "
+        "status: show config. sync: manual sync. set: change setting. "
+        "warmup: pre-download embedding model (~570 MB). "
+        "setup_sync: authenticate Google Drive via Device Code OAuth."
     ),
     annotations=ToolAnnotations(
         title="Config",
@@ -864,12 +866,14 @@ async def config(
     value: str | None = None,
     ctx: Context | None = None,
 ) -> str:
-    """Server configuration and sync control.
+    """Server configuration, sync control, and setup.
 
     Actions:
     - status: Show current config
     - sync: Trigger manual Google Drive sync (requires sync_enabled + google_drive_client_id)
     - set: Update setting (key + value required)
+    - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
+    - setup_sync: Authenticate Google Drive via Device Code OAuth flow
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
@@ -960,58 +964,22 @@ async def config(
                 }
             )
 
-        case _:
-            import difflib
-
-            valid_actions = ["set", "status", "sync"]
-            closest = difflib.get_close_matches(action, valid_actions, n=1)
-            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
-
-
-@mcp.tool(
-    description=(
-        "Server setup tasks. Actions: warmup|setup_sync. "
-        "warmup: pre-download embedding model (~570 MB). "
-        "setup_sync: authenticate Google Drive via Device Code OAuth."
-    ),
-    annotations=ToolAnnotations(
-        title="Setup",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
-    ),
-)
-async def setup(
-    action: str,
-) -> str:
-    """Server setup: warmup and sync authentication.
-
-    Actions:
-    - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
-    - setup_sync: Authenticate Google Drive via Device Code OAuth flow
-    """
-    from mnemo_mcp.setup_tool import run_setup_sync, run_warmup
-
-    match action:
         case "warmup":
+            from mnemo_mcp.setup_tool import run_warmup
+
             result = await run_warmup()
             return _json(result)
 
         case "setup_sync":
+            from mnemo_mcp.setup_tool import run_setup_sync
+
             result = await run_setup_sync()
             return _json(result)
 
         case _:
             import difflib
 
-            valid_actions = ["setup_sync", "warmup"]
+            valid_actions = ["set", "setup_sync", "status", "sync", "warmup"]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
@@ -1023,7 +991,7 @@ async def setup(
 
 
 @mcp.tool(
-    description="Full documentation for memory, config, and setup tools. topic: 'memory' | 'config' | 'setup'",
+    description="Full documentation for memory and config tools. topic: 'memory' | 'config'",
     annotations=ToolAnnotations(
         title="Help",
         readOnlyHint=True,
@@ -1035,7 +1003,11 @@ async def setup(
 async def help(topic: str = "memory") -> str:
     """Load full documentation for a tool."""
     docs_package = pkg_resources.files("mnemo_mcp.docs")
-    valid_topics = {"memory": "memory.md", "config": "config.md", "setup": "setup.md"}
+    valid_topics = {"memory": "memory.md", "config": "config.md"}
+
+    # Backward compatibility: redirect "setup" to "config"
+    if topic == "setup":
+        topic = "config"
 
     filename = valid_topics.get(topic)
     if not filename:

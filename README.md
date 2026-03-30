@@ -107,8 +107,7 @@ Configure env vars in `~/.claude/settings.local.json` or your shell profile. See
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
 | `memory` | `add`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate` | Core memory CRUD, hybrid search, import/export, archival, and LLM consolidation |
-| `config` | `status`, `sync`, `set` | Server status, trigger sync, update settings |
-| `setup` | `warmup`, `setup_sync` | Pre-download embedding model, authenticate sync provider |
+| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider |
 | `help` | -- | Full documentation for any tool |
 
 ### MCP Resources
@@ -143,10 +142,10 @@ For CI/automation, you can still use environment variables (see below).
 ### Pre-install (optional)
 
 Pre-download the embedding model (~570 MB) to avoid first-run delays.
-Use the `setup` MCP tool after connecting:
+Use the `config` MCP tool after connecting:
 
 ```
-setup(action="warmup")
+config(action="warmup")
 ```
 
 ### Sync setup
