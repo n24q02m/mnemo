@@ -257,11 +257,12 @@ class MemoryDB:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_vec'"
             ).fetchone()
             if not row:
+                dims = int(self._embedding_dims)
                 self._conn.execute(f"""
                     CREATE VIRTUAL TABLE memories_vec
                     USING vec0(
                         id TEXT PRIMARY KEY,
-                        embedding float[{int(self._embedding_dims)}]
+                        embedding float[{dims}]
                     )
                 """)
                 logger.debug("Created memories_vec table")
@@ -336,6 +337,9 @@ class MemoryDB:
         Returns:
             List of memory dicts sorted by relevance.
         """
+        if isinstance(limit, int):
+            limit = max(1, min(limit, 100))
+
         # 1. FTS5 search
         results = self._search_fts(query, category, tags, limit)
 
@@ -547,6 +551,9 @@ class MemoryDB:
         offset: int = 0,
     ) -> list[dict]:
         """List memories with optional category filter."""
+        if isinstance(limit, int):
+            limit = max(1, min(limit, 100))
+
         if category:
             rows = self._conn.execute(
                 """SELECT * FROM memories
@@ -875,6 +882,8 @@ class MemoryDB:
 
     def list_archived(self, limit: int = 20) -> list[dict]:
         """List archived memories."""
+        if isinstance(limit, int):
+            limit = max(1, min(limit, 100))
         cursor = self._conn.cursor()
         rows = cursor.execute(
             "SELECT id, content, category, tags, importance, archived_at "
