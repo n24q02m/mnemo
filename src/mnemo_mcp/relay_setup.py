@@ -103,22 +103,9 @@ async def ensure_config() -> dict[str, str] | None:
         write_config(SERVER_NAME, config)
         logger.info("Cloud config saved successfully")
 
-        # Trigger GDrive OAuth Device Code using default client ID from settings
-        from mnemo_mcp.config import settings as _settings
+        apply_config(config)
 
-        if _settings.google_drive_client_id:
-            logger.info("Starting Google Drive OAuth setup...")
-            try:
-                from mnemo_mcp.sync import setup_google_auth
-
-                await setup_google_auth(
-                    relay_url=relay_url,
-                    session_id=session.session_id,
-                )
-            except Exception as e:
-                logger.warning(f"GDrive OAuth setup failed: {e}")
-
-        # Notify relay page that setup is complete
+        # Notify relay page: config saved (info, NOT complete — GDrive OAuth follows)
         try:
             import httpx
 
@@ -126,9 +113,36 @@ async def ensure_config() -> dict[str, str] | None:
                 await http.post(
                     f"{relay_url}/api/sessions/{session.session_id}/messages",
                     json={
-                        "type": "complete",
-                        "text": "mnemo-mcp config saved. Setup complete!",
+                        "type": "info",
+                        "text": "API keys saved. Starting Google Drive sync setup...",
                     },
+                )
+        except Exception:
+            pass
+
+        # Trigger GDrive OAuth Device Code using default client ID from settings
+        from mnemo_mcp.config import settings as _settings
+
+        gdrive_ok = False
+        if _settings.google_drive_client_id:
+            logger.info("Starting Google Drive OAuth setup...")
+            try:
+                from mnemo_mcp.sync import setup_google_auth
+
+                gdrive_ok = await setup_google_auth(
+                    relay_url=relay_url,
+                    session_id=session.session_id,
+                )
+            except Exception as e:
+                logger.warning(f"GDrive OAuth setup failed: {e}")
+
+        # NOW send complete (after GDrive OAuth finishes or skips)
+        try:
+            async with httpx.AsyncClient() as http:
+                msg = "Setup complete!" if gdrive_ok else "API keys saved. Google Drive sync can be configured later via config tool."
+                await http.post(
+                    f"{relay_url}/api/sessions/{session.session_id}/messages",
+                    json={"type": "complete", "text": msg},
                 )
         except Exception:
             pass
