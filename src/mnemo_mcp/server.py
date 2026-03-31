@@ -181,6 +181,12 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
             ):
                 if relay_config.get(key) and not os.environ.get(key):
                     os.environ[key] = relay_config[key]
+
+            # Apply Google Drive client ID from relay config
+            gdrive_id = relay_config.get("GOOGLE_DRIVE_CLIENT_ID")
+            if gdrive_id and not settings.google_drive_client_id:
+                settings.google_drive_client_id = gdrive_id
+
             logger.info("Cloud API keys loaded from relay config")
     except Exception as e:
         logger.debug(f"Relay config not available: {e}")
@@ -206,8 +212,8 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
 
-    # 4. Start auto-sync if configured
-    if settings.sync_enabled:
+    # 4. Start auto-sync if configured (requires Google Drive client ID)
+    if settings.google_drive_client_id:
         from mnemo_mcp.sync import start_auto_sync
 
         start_auto_sync(db)

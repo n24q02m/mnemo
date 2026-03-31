@@ -410,9 +410,6 @@ async def sync_full(db: MemoryDB) -> dict:
     """
     from mnemo_mcp.db import MemoryDB
 
-    if not settings.sync_enabled:
-        return {"status": "disabled", "message": "Sync not configured"}
-
     if not settings.google_drive_client_id:
         return {
             "status": "error",
@@ -667,7 +664,7 @@ def start_auto_sync(db: MemoryDB) -> None:
     """Start background auto-sync task."""
     global _sync_task
 
-    if not settings.sync_enabled or settings.sync_interval <= 0:
+    if not settings.google_drive_client_id or settings.sync_interval <= 0:
         return
 
     if _sync_task and not _sync_task.done():

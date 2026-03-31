@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     - EMBEDDING_MODEL: Embedding model (auto-detected if not set)
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
     - EMBEDDING_BACKEND: "cloud" | "local" (auto: API_KEYS -> cloud, else local)
-    - SYNC_ENABLED: Enable Google Drive sync (default: false)
+    - SYNC_ENABLED: Enable Google Drive sync (default: true)
     - SYNC_FOLDER: Google Drive folder name (default: "mnemo-mcp")
     - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)
     - GOOGLE_DRIVE_CLIENT_ID: OAuth client ID for Google Drive sync
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     rerank_model: str = ""
     rerank_top_n: int = 10
     # Sync (Google Drive API)
-    sync_enabled: bool = False
+    sync_enabled: bool = True
     sync_folder: str = "mnemo-mcp"  # Google Drive folder name
     sync_interval: int = 300  # seconds, 0 = manual only
     google_drive_client_id: str = ""  # OAuth client ID (required for sync)

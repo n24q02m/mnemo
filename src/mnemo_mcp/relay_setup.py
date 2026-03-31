@@ -22,6 +22,8 @@ CLOUD_KEYS = [
     "OPENAI_API_KEY",
     "COHERE_API_KEY",
 ]
+# All config keys that indicate a valid saved config
+_ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]
 
 # Shorter timeout for optional-credential servers (user can skip)
 RELAY_TIMEOUT_S = 120.0
@@ -40,7 +42,7 @@ def load_relay_config() -> dict[str, str] | None:
         from mcp_relay_core.storage.config_file import read_config
 
         saved = read_config(SERVER_NAME)
-        if saved and any(saved.get(k) for k in CLOUD_KEYS):
+        if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
             logger.info("Config loaded from file")
             return saved
         return None
@@ -100,6 +102,24 @@ async def ensure_config() -> dict[str, str] | None:
         # Save to config file
         write_config(SERVER_NAME, config)
         logger.info("Cloud config saved successfully")
+
+        # Trigger GDrive OAuth Device Code if client ID was provided
+        gdrive_client_id = config.get("GOOGLE_DRIVE_CLIENT_ID")
+        if gdrive_client_id:
+            logger.info("Google Drive client ID provided, starting OAuth setup...")
+            try:
+                from mnemo_mcp.config import settings as _settings
+
+                _settings.google_drive_client_id = gdrive_client_id
+
+                from mnemo_mcp.sync import setup_google_auth
+
+                await setup_google_auth(
+                    relay_url=relay_url,
+                    session_id=session.session_id,
+                )
+            except Exception as e:
+                logger.warning(f"GDrive OAuth setup failed: {e}")
 
         # Notify relay page that setup is complete
         try:
