@@ -65,12 +65,13 @@ class TestEnsureConfig:
         result = await ensure_config()
         assert result is None
 
+    @patch("mnemo_mcp.relay_setup.apply_config")
     @patch("mcp_relay_core.storage.config_file.write_config")
     @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
     @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
     @patch("mcp_relay_core.storage.config_file.read_config")
     async def test_relay_setup_success(
-        self, mock_read, mock_session, mock_poll, mock_write, monkeypatch
+        self, mock_read, mock_session, mock_poll, mock_write, mock_apply, monkeypatch
     ):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
@@ -79,19 +80,26 @@ class TestEnsureConfig:
             relay_url="https://mnemo-mcp.n24q02m.com/#k=abc&p=xyz",
             session_id="test-session",
         )
-        mock_poll.return_value = {
+        config = {
             "JINA_AI_API_KEY": "jina_test",
             "GEMINI_API_KEY": "AIza_test",
         }
-        result = await ensure_config()
-        assert result == {
-            "JINA_AI_API_KEY": "jina_test",
-            "GEMINI_API_KEY": "AIza_test",
-        }
-        mock_write.assert_called_once_with(
-            "mnemo-mcp",
-            {"JINA_AI_API_KEY": "jina_test", "GEMINI_API_KEY": "AIza_test"},
-        )
+        mock_poll.return_value = config
+
+        with (
+            patch("httpx.AsyncClient") as mock_httpx,
+            patch("mnemo_mcp.config.settings") as mock_settings,
+        ):
+            mock_client = AsyncMock()
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_settings.google_drive_client_id = ""
+
+            result = await ensure_config()
+
+        assert result == config
+        mock_write.assert_called_once_with("mnemo-mcp", config)
+        mock_apply.assert_called_once_with(config)
 
     @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
     @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)

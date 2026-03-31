@@ -11,9 +11,9 @@ class TestSettingsDefaults:
         s = Settings(api_keys=None)
         assert s.db_path == ""
 
-    def test_sync_disabled(self):
+    def test_sync_enabled_default(self):
         s = Settings(api_keys=None)
-        assert s.sync_enabled is False
+        assert s.sync_enabled is True
 
     def test_sync_folder(self):
         s = Settings(api_keys=None)
@@ -271,9 +271,10 @@ class TestRerankSettings:
 
 
 class TestGoogleDriveClientId:
-    def test_default_empty(self):
+    def test_default_ships_oauth_client_id(self):
         s = Settings(api_keys=None)
-        assert s.google_drive_client_id == ""
+        assert s.google_drive_client_id != ""
+        assert "apps.googleusercontent.com" in s.google_drive_client_id
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv(

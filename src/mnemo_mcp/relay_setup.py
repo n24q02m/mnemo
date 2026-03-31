@@ -50,6 +50,14 @@ def load_relay_config() -> dict[str, str] | None:
         return None
 
 
+def apply_config(config: dict[str, str]) -> None:
+    """Apply config dict to environment variables."""
+    for key, value in config.items():
+        if value and key not in os.environ:
+            os.environ[key] = value
+            logger.debug("Applied relay config: {}", key)
+
+
 async def ensure_config() -> dict[str, str] | None:
     """Resolve config: env vars -> config file -> relay setup -> local fallback.
 
@@ -139,7 +147,11 @@ async def ensure_config() -> dict[str, str] | None:
         # NOW send complete (after GDrive OAuth finishes or skips)
         try:
             async with httpx.AsyncClient() as http:
-                msg = "Setup complete!" if gdrive_ok else "API keys saved. Google Drive sync can be configured later via config tool."
+                msg = (
+                    "Setup complete!"
+                    if gdrive_ok
+                    else "API keys saved. Google Drive sync can be configured later via config tool."
+                )
                 await http.post(
                     f"{relay_url}/api/sessions/{session.session_id}/messages",
                     json={"type": "complete", "text": msg},
