@@ -26,7 +26,7 @@ CLOUD_KEYS = [
 _ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]
 
 # Shorter timeout for optional-credential servers (user can skip)
-RELAY_TIMEOUT_S = 120.0
+RELAY_TIMEOUT_S = 300.0
 
 
 def load_relay_config() -> dict[str, str] | None:
@@ -103,15 +103,12 @@ async def ensure_config() -> dict[str, str] | None:
         write_config(SERVER_NAME, config)
         logger.info("Cloud config saved successfully")
 
-        # Trigger GDrive OAuth Device Code if client ID was provided
-        gdrive_client_id = config.get("GOOGLE_DRIVE_CLIENT_ID")
-        if gdrive_client_id:
-            logger.info("Google Drive client ID provided, starting OAuth setup...")
+        # Trigger GDrive OAuth Device Code using default client ID from settings
+        from mnemo_mcp.config import settings as _settings
+
+        if _settings.google_drive_client_id:
+            logger.info("Starting Google Drive OAuth setup...")
             try:
-                from mnemo_mcp.config import settings as _settings
-
-                _settings.google_drive_client_id = gdrive_client_id
-
                 from mnemo_mcp.sync import setup_google_auth
 
                 await setup_google_auth(
