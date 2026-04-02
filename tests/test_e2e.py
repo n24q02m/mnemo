@@ -92,31 +92,21 @@ async def session(request, tmp_path):
     errlog_kwargs = {"errlog": capture} if capture else {}
 
     try:
-        async with stdio_client(params, **errlog_kwargs) as (read_stream, write_stream):
+        async with stdio_client(params, **errlog_kwargs) as (read_stream, write_stream):  # ty: ignore[invalid-argument-type]
             async with ClientSession(read_stream, write_stream) as s:
-                await s.initialize()
-
                 if setup_mode == "relay" and capture:
-                    relay_url = capture.get_relay_url(timeout=15)
+                    # mnemo-mcp auto-triggers relay during lifespan,
+                    # blocking initialize(). Open browser in parallel.
+                    init_task = asyncio.create_task(s.initialize())
+                    relay_url = await asyncio.to_thread(capture.get_relay_url, 90)
                     if relay_url:
                         print(f"\n>>> Open relay in browser: {relay_url}", flush=True)
                         open_browser(relay_url, browser_name)
-
-                    # Poll config status until configured
-                    deadline = asyncio.get_event_loop().time() + 120
-                    while asyncio.get_event_loop().time() < deadline:
-                        try:
-                            r = await s.call_tool("config", {"action": "status"})
-                            text = parse_result_allow_error(r)
-                            if any(
-                                k in text.lower()
-                                for k in ["jina", "gemini", "openai", "cohere", "cloud"]
-                            ):
-                                print("\n>>> Relay config received.", flush=True)
-                                break
-                        except Exception:
-                            pass
-                        await asyncio.sleep(2)
+                    # Wait for initialize to complete (user submits in browser)
+                    await asyncio.wait_for(init_task, timeout=300)
+                    print(">>> Relay config received.", flush=True)
+                else:
+                    await s.initialize()
 
                 yield s
     except (RuntimeError, ExceptionGroup) as exc:
@@ -510,51 +500,39 @@ async def test_relay_all_tools(request, tmp_path):
     capture = StderrCapture()
 
     try:
-        async with stdio_client(params, errlog=capture) as (read_stream, write_stream):
+        async with stdio_client(params, errlog=capture) as (read_stream, write_stream):  # ty: ignore[invalid-argument-type]
             async with ClientSession(read_stream, write_stream) as s:
-                await s.initialize()
-
-                relay_url = capture.get_relay_url(timeout=15)
-                assert relay_url, "No relay URL detected"
+                # mnemo-mcp auto-triggers relay during lifespan,
+                # blocking initialize(). Open browser in parallel.
+                init_task = asyncio.create_task(s.initialize())
+                relay_url = await asyncio.to_thread(capture.get_relay_url, 90)
+                assert relay_url, "No relay URL detected in stderr"
                 print(f"\n>>> RELAY URL: {relay_url}", flush=True)
                 open_browser(relay_url, browser_name)
 
                 print(
-                    ">>> Waiting for credentials (enter API keys in browser)...",
+                    ">>> Enter API keys in browser, then submit...",
                     flush=True,
                 )
-                import asyncio
-
-                deadline = asyncio.get_event_loop().time() + 180
-                while asyncio.get_event_loop().time() < deadline:
-                    try:
-                        r = await s.call_tool("config", {"action": "status"})
-                        text = parse_result_allow_error(r)
-                        if any(
-                            k in text.lower()
-                            for k in ["jina", "gemini", "openai", "cohere", "cloud"]
-                        ):
-                            print(">>> Credentials received!", flush=True)
-                            break
-                    except Exception:
-                        pass
-                    await asyncio.sleep(2)
+                # Wait for initialize to complete (user submits in browser)
+                await asyncio.wait_for(init_task, timeout=300)
+                print(">>> Relay config applied!", flush=True)
 
                 # memory lifecycle
-                r = await s.call_tool(
+                await s.call_tool(
                     "memory",
                     {"action": "add", "content": "Relay E2E test", "category": "test"},
                 )
                 print("  memory.add: OK")
-                r = await s.call_tool("memory", {"action": "search", "query": "relay"})
+                await s.call_tool("memory", {"action": "search", "query": "relay"})
                 print("  memory.search: OK")
-                r = await s.call_tool("memory", {"action": "list", "limit": 5})
+                await s.call_tool("memory", {"action": "list", "limit": 5})
                 print("  memory.list: OK")
                 # config
-                r = await s.call_tool("config", {"action": "status"})
+                await s.call_tool("config", {"action": "status"})
                 print("  config.status: OK")
                 # help
-                r = await s.call_tool("help", {"topic": "memory"})
+                await s.call_tool("help", {"topic": "memory"})
                 print("  help: OK")
 
                 print(">>> ALL RELAY TESTS PASSED", flush=True)
@@ -572,6 +550,7 @@ async def test_relay_all_tools(request, tmp_path):
 
 
 @pytest.mark.e2e
+@pytest.mark.slow
 @pytest.mark.timeout(300)
 async def test_gdrive_oauth(request, tmp_path):
     """GDrive OAuth Device Code: call setup_sync, user authorizes via Google.
