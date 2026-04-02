@@ -88,8 +88,10 @@ markers = [
     "integration: integration tests (require network/services)",
     "live: live MCP protocol tests (spawn real server via stdio)",
     "full: full live tests with real services",
+    "e2e: end-to-end MCP protocol tests (3 setup modes)",
+    "slow: slow tests (skippable with -m 'not slow')",
 ]
-addopts = "-m 'not integration and not live and not full'"
+addopts = "-m 'not integration and not live and not full and not e2e'"
 
 [tool.ty]
 rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore" }

@@ -8,6 +8,8 @@ import pytest
 
 from mnemo_mcp.db import MemoryDB
 
+pytest_plugins = ["conftest_e2e"]
+
 
 @pytest.fixture
 def tmp_db(tmp_path: Path) -> Generator[MemoryDB]:
