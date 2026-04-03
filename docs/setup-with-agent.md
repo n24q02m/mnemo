@@ -124,7 +124,7 @@ All environment variables are **optional**. The server works in local mode (ONNX
 
 | Variable | Required | Default | Description |
 |:---------|:---------|:--------|:------------|
-| `LLM_MODELS` | No | `gemini-3-flash-preview` | LLM model for importance scoring, graph extraction, consolidation |
+| `LLM_MODELS` | No | auto-detect | LLM model for importance scoring, graph extraction, consolidation (LiteLLM format) |
 
 ### Memory Management
 
