@@ -94,6 +94,10 @@ class MemoryDB:
                 f"embedding_dims must be an integer, got {type(embedding_dims).__name__}"
             )
         self._embedding_dims = embedding_dims
+        if not (0 <= embedding_dims <= 10000):
+            raise ValueError(
+                f"embedding_dims must be between 0 and 10000, got {embedding_dims}"
+            )
         self._recency_half_life = float(recency_half_life_days)
 
         # Create parent directory
@@ -257,7 +261,14 @@ class MemoryDB:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_vec'"
             ).fetchone()
             if not row:
+                # Validate and cast dimensions before f-string interpolation
+                # to prevent potential SQL injection if the source ever becomes
+                # untrusted.
                 dims = int(self._embedding_dims)
+                if not (0 <= dims <= 10000):
+                    raise ValueError(
+                        f"embedding_dims must be between 0 and 10000, got {dims}"
+                    )
                 self._conn.execute(f"""
                     CREATE VIRTUAL TABLE memories_vec
                     USING vec0(
@@ -420,45 +431,66 @@ class MemoryDB:
         tags: list[str] | None = None,
         limit: int = 5,
     ) -> dict[str, dict]:
-        """Execute FTS5 search with tiered queries and BM25 column weights."""
+        """Execute FTS5 search with tiered queries and BM25 column weights.
+
+        Combines PHRASE, AND, and OR tiers into a single UNION ALL query
+        with a CTE to select only the highest-priority tier with matches,
+        eliminating N+1 query overhead from the tiered fallback loop.
+        """
         results: dict[str, dict] = {}
         fts_queries = _build_fts_queries(query)
+        if not fts_queries:
+            return results
 
-        for fts_query in fts_queries:
-            try:
-                fts_sql = """
-                    SELECT m.*,
-                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
-                    FROM memories_fts f
-                    JOIN memories m ON f.id = m.id
-                    WHERE memories_fts MATCH ?
-                """
-                fts_params: list = [fts_query]
+        subqueries = []
+        fts_params: list = []
 
-                if category:
-                    fts_sql += " AND m.category = ?"
-                    fts_params.append(category)
+        filter_sql = ""
+        filter_params: list = []
+        if category:
+            filter_sql += " AND m.category = ?"
+            filter_params.append(category)
+        if tags:
+            tag_placeholders = ",".join("?" for _ in tags)
+            filter_sql += f" AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
+            filter_params.extend(tags)
 
-                if tags:
-                    tag_placeholders = ",".join("?" for _ in tags)
-                    fts_sql += f" AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({tag_placeholders}))"
-                    fts_params.extend(tags)
+        for idx, fts_query in enumerate(fts_queries):
+            subqueries.append(f"""
+                SELECT m.*,
+                       bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score,
+                       {idx} as tier_idx
+                FROM memories_fts f
+                JOIN memories m ON f.id = m.id
+                WHERE memories_fts MATCH ? {filter_sql}
+            """)
+            fts_params.append(fts_query)
+            fts_params.extend(filter_params)
 
-                fts_sql += " ORDER BY bm25_score LIMIT ?"
-                fts_params.append(limit * 3)
+        union_sql = " UNION ALL ".join(subqueries)
+        fts_sql = f"""
+            WITH all_matches AS (
+                {union_sql}
+            )
+            SELECT *
+            FROM all_matches
+            WHERE tier_idx = (SELECT MIN(tier_idx) FROM all_matches)
+            ORDER BY bm25_score
+            LIMIT ?
+        """
+        fts_params.append(limit * 3)
 
-                rows = self._conn.execute(fts_sql, fts_params).fetchall()
-                if rows:
-                    for row in rows:
-                        mid = row["id"]
-                        results[mid] = {
-                            **dict(row),
-                            "fts_score": -row["bm25_score"],
-                            "vec_score": 0.0,
-                        }
-                    break
-            except Exception:
-                continue
+        try:
+            rows = self._conn.execute(fts_sql, fts_params).fetchall()
+            for row in rows:
+                mid = row["id"]
+                results[mid] = {
+                    **dict(row),
+                    "fts_score": -row["bm25_score"],
+                    "vec_score": 0.0,
+                }
+        except Exception as e:
+            logger.error(f"FTS search failed: {e}")
 
         fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
         if fts_vals:
@@ -618,6 +650,13 @@ class MemoryDB:
         updates.append("updated_at = ?")
         params.append(now)
         params.append(memory_id)
+
+        # Validate updates against allowlist before string joining
+        # to ensure no unexpected column names are injected.
+        _ALLOWED = {"content = ?", "category = ?", "tags = ?", "updated_at = ?"}
+        if not all(u in _ALLOWED for u in updates):
+            invalid = [u for u in updates if u not in _ALLOWED]
+            raise ValueError(f"Unauthorized update columns detected: {invalid}")
 
         self._conn.execute(
             f"UPDATE memories SET {', '.join(updates)} WHERE id = ?",

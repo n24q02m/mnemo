@@ -35,9 +35,9 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.5.1",
+    "qwen3-embed>=1.6.0",
     # Zero-env-config credential relay
-    "mcp-relay-core>=1.0.5",
+    "mcp-relay-core>=1.2.0",
 ]
 
 [dependency-groups]

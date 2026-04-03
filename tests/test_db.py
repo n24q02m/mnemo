@@ -737,3 +737,13 @@ class TestDBInitSecurity:
 
         with pytest.raises(ValueError, match="embedding_dims must be an integer"):
             MemoryDB(db_path, embedding_dims=1536.5)  # type: ignore
+
+
+def test_invalid_embedding_dims_bounds(tmp_path):
+    """Test that out-of-bounds embedding dimensions raise ValueError."""
+    from mnemo_mcp.db import MemoryDB
+
+    with pytest.raises(ValueError, match="embedding_dims must be between 0 and 10000"):
+        MemoryDB(tmp_path / "fail.db", embedding_dims=20000)
+    with pytest.raises(ValueError, match="embedding_dims must be between 0 and 10000"):
+        MemoryDB(tmp_path / "fail2.db", embedding_dims=-1)

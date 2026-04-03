@@ -231,30 +231,29 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
 
     unique_keys = list(unique_ents.keys())
 
-    to_insert = []
-    to_update = []
+    # Use UPSERT (INSERT ... ON CONFLICT) for bulk write in one pass.
+    # This eliminates N+1 SELECTs and conditional INSERT/UPDATE overhead.
+    upsert_data = [(str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys]
+    conn.executemany(
+        "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
+        upsert_data,
+    )
 
-    for key in unique_keys:
-        row = conn.execute(
-            "SELECT id FROM entities WHERE name = ? AND entity_type = ?", key
-        ).fetchone()
-        if row:
-            eid = row[0]
-            unique_ents[key] = eid
-            to_update.append((now, eid))
-        else:
-            eid = str(uuid.uuid4())
-            unique_ents[key] = eid
-            to_insert.append((eid, key[0], key[1], now, now))
-
-    if to_update:
-        conn.executemany("UPDATE entities SET updated_at = ? WHERE id = ?", to_update)
-    if to_insert:
-        conn.executemany(
-            "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            to_insert,
-        )
+    # Fetch all IDs in bulk. Batch to stay under SQLITE_MAX_VARIABLE_NUMBER.
+    BATCH_SIZE = 400
+    for i in range(0, len(unique_keys), BATCH_SIZE):
+        batch = unique_keys[i : i + BATCH_SIZE]
+        placeholders = ", ".join(["(?, ?)"] * len(batch))
+        params = [val for key in batch for val in key]
+        rows = conn.execute(
+            "SELECT name, entity_type, id FROM entities "
+            f"WHERE (name, entity_type) IN (VALUES {placeholders})",
+            params,
+        ).fetchall()
+        for r_name, r_type, r_id in rows:
+            unique_ents[(r_name, r_type)] = r_id
 
     return [unique_ents[key] for key in ordered_ents]
 
@@ -323,44 +322,33 @@ def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
 
 
 def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[str]:
-    """Find memory IDs related via shared entities (up to max_depth hops)."""
-    entity_ids = [
-        r[0]
-        for r in conn.execute(
-            "SELECT entity_id FROM memory_entities WHERE memory_id = ?",
-            (memory_id,),
-        ).fetchall()
-    ]
+    """Find memory IDs related via shared entities (up to max_depth hops).
 
-    if not entity_ids:
-        return []
-
-    visited_entities = set(entity_ids)
-    all_entity_ids = list(entity_ids)
-
-    # Walk relations up to max_depth hops
-    for _depth in range(max_depth - 1):
-        if not all_entity_ids:
-            break
-        placeholders = ",".join("?" * len(all_entity_ids))
-        neighbor_rows = conn.execute(
-            f"SELECT target_id FROM relations WHERE source_id IN ({placeholders}) "
-            f"UNION SELECT source_id FROM relations WHERE target_id IN ({placeholders})",
-            (*all_entity_ids, *all_entity_ids),
-        ).fetchall()
-        new_ids = [r[0] for r in neighbor_rows if r[0] not in visited_entities]
-        if not new_ids:
-            break
-        visited_entities.update(new_ids)
-        all_entity_ids = new_ids
-
-    # Find memories sharing any of the discovered entities
-    all_eids = list(visited_entities)
-    placeholders = ",".join("?" * len(all_eids))
-    rows = conn.execute(
-        f"SELECT DISTINCT memory_id FROM memory_entities "
-        f"WHERE entity_id IN ({placeholders}) AND memory_id != ?",
-        (*all_eids, memory_id),
-    ).fetchall()
+    Uses a recursive CTE to traverse the knowledge graph in a single query,
+    eliminating N+1 loop overhead and reducing database round-trips to O(1).
+    """
+    query = """
+        WITH RECURSIVE traverse(entity_id, depth) AS (
+            -- Seed with initial entities linked to the memory
+            SELECT entity_id, 1 FROM memory_entities WHERE memory_id = ?
+            UNION
+            -- Follow relations forward
+            SELECT r.target_id, t.depth + 1
+            FROM relations r
+            JOIN traverse t ON r.source_id = t.entity_id
+            WHERE t.depth < ?
+            UNION
+            -- Follow relations backward (undirected graph)
+            SELECT r.source_id, t.depth + 1
+            FROM relations r
+            JOIN traverse t ON r.target_id = t.entity_id
+            WHERE t.depth < ?
+        )
+        SELECT DISTINCT me.memory_id
+        FROM memory_entities me
+        JOIN traverse t ON me.entity_id = t.entity_id
+        WHERE me.memory_id != ?
+    """
+    rows = conn.execute(query, (memory_id, max_depth, max_depth, memory_id)).fetchall()
 
     return [r[0] for r in rows]
