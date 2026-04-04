@@ -3,9 +3,10 @@
 Targets: setup_providers (sdk/local branches), resolve_provider_mode.
 """
 
-from unittest.mock import patch
+import sys
+from unittest.mock import MagicMock, patch
 
-from mnemo_mcp.config import Settings
+from mnemo_mcp.config import Settings, _detect_gpu
 
 
 class TestSetupProviders:
@@ -125,3 +126,17 @@ class TestResolveEmbeddingBackendAuto:
         """'litellm' rerank_backend maps to 'cloud'."""
         s = Settings(rerank_backend="litellm", api_keys=None)
         assert s.resolve_rerank_backend() == "cloud"
+
+
+class TestGpuDetectionErrorPaths:
+    def test_detect_gpu_import_error(self):
+        """_detect_gpu returns False when onnxruntime is not installed."""
+        with patch.dict(sys.modules, {"onnxruntime": None}):
+            assert _detect_gpu() is False
+
+    def test_detect_gpu_runtime_exception(self):
+        """_detect_gpu returns False when get_available_providers raises."""
+        mock_ort = MagicMock()
+        mock_ort.get_available_providers.side_effect = Exception("Runtime error")
+        with patch.dict(sys.modules, {"onnxruntime": mock_ort}):
+            assert _detect_gpu() is False
