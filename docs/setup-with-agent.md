@@ -156,7 +156,9 @@ All environment variables are **optional**. The server works in local mode (ONNX
 
 ## Authentication
 
-### Zero-Config Relay (Default)
+### Zero-Config Relay (BETA, Optional)
+
+> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Environment Variables** above. The relay blocks server startup on first run and may time out in some MCP clients.
 
 On first run without any API keys in environment:
 
@@ -179,7 +181,7 @@ Leave all empty to use pure local mode (Qwen3 ONNX models).
 
 After relay setup, if `GOOGLE_DRIVE_CLIENT_ID` is configured, OAuth Device Code flow starts automatically. For other providers (Dropbox, S3), set `SYNC_PROVIDER` and `SYNC_REMOTE`.
 
-### Environment Variables (CI/Automation)
+### Environment Variables (Recommended)
 
 Set API keys directly as environment variables to skip relay entirely.
 

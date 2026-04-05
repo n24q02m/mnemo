@@ -114,7 +114,20 @@ For Claude Code users, the plugin approach is the simplest.
 
 ## Credential Setup
 
-### Option A: Zero-Config Relay (Recommended)
+### Option A: Environment Variables (Recommended)
+
+Set API keys in your shell profile or MCP client settings:
+
+```bash
+export JINA_AI_API_KEY="jina_..."
+export GEMINI_API_KEY="AIza..."
+```
+
+When environment variables are set, the relay is skipped entirely.
+
+### Option B: Zero-Config Relay (BETA)
+
+> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Option A: Environment Variables**. The relay currently blocks MCP server startup on first run and may time out in some MCP clients -- see [upcoming redesign](https://github.com/n24q02m/claude-plugins/issues).
 
 No manual configuration needed. On first start:
 
@@ -127,17 +140,6 @@ No manual configuration needed. On first start:
    - **Cohere API Key** -- enables embedding and reranking ([get key](https://dashboard.cohere.com/api-keys))
 4. All fields are optional -- leave empty for pure local mode
 5. Credentials are encrypted and stored at `~/.config/mcp/config.enc`
-
-### Option B: Environment Variables
-
-Set API keys in your shell profile or MCP client settings:
-
-```bash
-export JINA_AI_API_KEY="jina_..."
-export GEMINI_API_KEY="AIza..."
-```
-
-When environment variables are set, the relay is skipped entirely.
 
 ### Sync Setup (Optional)
 
