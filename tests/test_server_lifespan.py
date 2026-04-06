@@ -63,59 +63,53 @@ class TestInitRerankerBackend:
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
     @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_unavailable_falls_to_local(
+    async def test_cloud_reranker_unavailable_no_local_fallback(
         self, mock_settings, _mock_thread
     ):
-        """Cloud reranker not available falls back to local."""
+        """Cloud reranker not available does NOT fall back to local (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
         mock_settings.resolve_rerank_model.return_value = "rerank-v4.0-pro"
-        mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
 
         cloud_backend = MagicMock()
         cloud_backend.check_available.return_value = False
-
-        local_backend = MagicMock()
-        local_backend.check_available.return_value = True
 
         call_count = 0
 
         def mock_init(backend_type, model=None, **kwargs):
             nonlocal call_count
             call_count += 1
-            if backend_type == "cloud":
-                return cloud_backend
-            return local_backend
+            return cloud_backend
 
         with patch("mnemo_mcp.reranker.init_reranker", side_effect=mock_init):
             await _init_reranker_backend("sdk")
+
+        # Only the cloud backend should have been tried (no local fallback)
+        assert call_count == 1
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
     @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_exception_falls_to_local(
+    async def test_cloud_reranker_exception_no_local_fallback(
         self, mock_settings, _mock_thread
     ):
-        """Cloud reranker exception falls back to local."""
+        """Cloud reranker exception does NOT fall back to local (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
         mock_settings.resolve_rerank_model.return_value = "rerank-v4.0-pro"
-        mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
-
-        local_backend = MagicMock()
-        local_backend.check_available.return_value = True
 
         call_count = 0
 
         def mock_init(backend_type, model=None, **kwargs):
             nonlocal call_count
             call_count += 1
-            if backend_type == "cloud":
-                raise Exception("Cloud init failed")
-            return local_backend
+            raise Exception("Cloud init failed")
 
         with patch("mnemo_mcp.reranker.init_reranker", side_effect=mock_init):
             await _init_reranker_backend("sdk")
+
+        # Only the cloud backend should have been tried (no local fallback)
+        assert call_count == 1
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
@@ -165,17 +159,15 @@ class TestInitRerankerBackend:
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
     @patch("mnemo_mcp.server.settings")
-    async def test_cloud_no_model_falls_to_local(self, mock_settings, _mock_thread):
-        """Cloud reranker with no model falls to local."""
+    async def test_cloud_no_model_no_local_fallback(self, mock_settings, _mock_thread):
+        """Cloud reranker with no model logs error, no local fallback (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
         mock_settings.resolve_rerank_model.return_value = None
-        mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
 
-        local_backend = MagicMock()
-        local_backend.check_available.return_value = True
-
-        with patch("mnemo_mcp.reranker.init_reranker", return_value=local_backend):
+        with patch("mnemo_mcp.reranker.init_reranker") as mock_init:
             await _init_reranker_backend("sdk")
+            # No backend should have been initialized (no model + no local fallback)
+            mock_init.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

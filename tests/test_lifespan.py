@@ -124,26 +124,22 @@ async def test_lifespan_api_keys_logging(
 
 
 @pytest.mark.asyncio
-async def test_lifespan_explicit_cloud_exception_fallback(
+async def test_lifespan_explicit_cloud_exception_no_local_fallback(
     mock_settings, mock_db, mock_embedder, mock_sync
 ):
-    """Test fallback when explicit cloud model initialization raises exception."""
+    """Test no local fallback when explicit cloud model init raises exception."""
     mock_settings.resolve_embedding_backend.return_value = "cloud"
     mock_settings.resolve_embedding_model.return_value = "crash-model"
     mock_settings.resolve_embedding_dims.return_value = 0
 
-    # First call (cloud) raises Exception
-    # Second call (local) succeeds
-    backend_local = MagicMock()
-    backend_local.check_available.return_value = 384
-
-    mock_embedder.side_effect = [Exception("API Error"), backend_local]
+    # Cloud raises exception -- no local fallback in CONFIGURED state
+    mock_embedder.side_effect = Exception("API Error")
 
     server = MagicMock()
     async with lifespan(server) as ctx:
         await asyncio.sleep(0.01)
-        assert ctx["embedding_model"] == "__local__"
-        assert ctx["embedding_dims"] == 768
+        # Model stays None since cloud failed and no local fallback
+        assert ctx["embedding_model"] is None
 
 
 @pytest.mark.asyncio

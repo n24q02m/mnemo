@@ -93,10 +93,10 @@ class TestWarmupInitEmbeddingBackend:
     )
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
-    async def test_local_fallback_when_cloud_unavailable(
+    async def test_cloud_unavailable_no_local_fallback(
         self, mock_settings, mock_init, _mock_thread
     ):
-        """Falls back to local when no cloud model works."""
+        """When cloud model not available, no local fallback in CONFIGURED state."""
         from unittest.mock import MagicMock
 
         from mnemo_mcp.server import _init_embedding_backend
@@ -104,20 +104,20 @@ class TestWarmupInitEmbeddingBackend:
         mock_settings.resolve_embedding_model.return_value = "model"
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
-        mock_settings.resolve_local_embedding_model.return_value = "local/model"
 
-        # Cloud fails, local succeeds
+        # Cloud returns 0 dims (not available)
         cloud_backend = MagicMock()
         cloud_backend.check_available.return_value = 0
-        local_backend = MagicMock()
-        local_backend.check_available.return_value = 1024
-        mock_init.side_effect = [cloud_backend, local_backend]
+        mock_init.return_value = cloud_backend
 
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
 
         await _init_embedding_backend("sdk", ctx)
 
-        assert ctx["embedding_model"] == "__local__"
+        # No local fallback -- model stays None
+        assert ctx["embedding_model"] is None
+        # Only cloud was tried (1 call)
+        assert mock_init.call_count == 1
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",

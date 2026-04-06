@@ -223,23 +223,22 @@ class TestInitEmbeddingBackendCandidate:
     async def test_candidate_exception_continues(
         self, mock_settings, mock_init, _mock_thread
     ):
-        """When a candidate raises exception, continues to next."""
+        """When a candidate raises exception, continues to next (no local fallback)."""
+        from mnemo_mcp.config import _EMBEDDING_CANDIDATES
         from mnemo_mcp.server import _init_embedding_backend
 
         mock_settings.resolve_embedding_model.return_value = None
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
 
         # All candidates raise exception
         mock_init.side_effect = Exception("API Error")
 
-        # Local backend also fails
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
         await _init_embedding_backend("sdk", ctx)
 
-        # Should have tried multiple candidates + local
-        assert mock_init.call_count >= 2
+        # Should have tried all cloud candidates only -- no local fallback
+        assert mock_init.call_count == len(_EMBEDDING_CANDIDATES)
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
@@ -342,34 +341,25 @@ class TestInitRerankerBackend:
     )
     @patch("mnemo_mcp.reranker.init_reranker")
     @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_not_available_fallback(
+    async def test_cloud_reranker_not_available_no_local_fallback(
         self, mock_settings, mock_init, _mock_thread
     ):
-        """When cloud reranker is not available, logs warning and falls back."""
+        """When cloud reranker is not available, logs error (no local fallback)."""
         from mnemo_mcp.server import _init_reranker_backend
 
         mock_settings.resolve_rerank_backend.return_value = "cloud"
         mock_settings.resolve_rerank_model.return_value = "cloud-model"
-        mock_settings.resolve_local_rerank_model.return_value = "local-model"
 
-        def side_effect(backend_type, model):
-            if backend_type == "cloud":
-                raise Exception("Cloud failed")
-            mock_backend = MagicMock()
-            mock_backend.check_available.return_value = True
-            return mock_backend
-
-        mock_init.side_effect = side_effect
+        mock_init.side_effect = Exception("Cloud failed")
 
         with patch("mnemo_mcp.server.logger") as mock_logger:
             await _init_reranker_backend("sdk")
-            mock_logger.warning.assert_any_call(
+            mock_logger.warning.assert_called_with(
                 "Reranker cloud-model not available: Cloud failed"
             )
-            mock_logger.warning.assert_any_call(
-                "Cloud reranker not available, using local fallback"
+            mock_logger.error.assert_called_with(
+                "Cloud reranker not available and local fallback is disabled"
             )
-            mock_logger.info.assert_called_with("Reranker: local local-model")
 
 
 # ---------------------------------------------------------------------------

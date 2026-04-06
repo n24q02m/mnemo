@@ -11,6 +11,29 @@ from mnemo_mcp.db import MemoryDB
 pytest_plugins = ["conftest_e2e"]
 
 
+@pytest.fixture(autouse=True)
+def _set_credential_state_configured():
+    """Set credential state to CONFIGURED for all tests.
+
+    Prevents _init_embedding_backend / _init_reranker_backend from skipping
+    in AWAITING_SETUP mode. Also mocks resolve_credential_state so the
+    lifespan startup doesn't reset the state during unit tests.
+    Tests that specifically test credential state should call set_state()
+    themselves and patch resolve_credential_state separately.
+    """
+    from unittest.mock import patch
+
+    from mnemo_mcp.credential_state import CredentialState, set_state
+
+    set_state(CredentialState.CONFIGURED)
+    with patch(
+        "mnemo_mcp.credential_state.resolve_credential_state",
+        return_value=CredentialState.CONFIGURED,
+    ):
+        yield
+    set_state(CredentialState.CONFIGURED)
+
+
 @pytest.fixture
 def tmp_db(tmp_path: Path) -> Generator[MemoryDB]:
     """Temporary MemoryDB without embeddings."""

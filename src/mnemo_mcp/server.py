@@ -35,96 +35,99 @@ async def _init_embedding_backend(
     mode: str,
     ctx: dict,
 ) -> None:
-    """Initialize embedding backend in background.
+    """Initialize embedding backend based on credential state.
 
-    Tries cloud providers first if API keys are available, then falls back
-    to local (qwen3-embed ONNX). Updates ``ctx`` dict in-place so tools
-    pick up the model/dims as soon as they are ready.
+    AWAITING_SETUP: skip (FTS5-only mode until user configures credentials).
+    LOCAL: local-only path (qwen3-embed ONNX).
+    CONFIGURED: cloud-only path -- no silent local fallback.
 
     Running this as a background task lets the MCP server accept connections
-    immediately instead of blocking on model download (~570 MB on first run).
+    immediately instead of blocking on model download or cloud API validation.
     """
+    from mnemo_mcp.credential_state import CredentialState, get_state
     from mnemo_mcp.embedder import init_backend
+
+    cred_state = get_state()
+
+    if cred_state == CredentialState.AWAITING_SETUP:
+        logger.info("Embedding: skipped (credentials not configured, FTS5 mode)")
+        return
 
     embedding_model = settings.resolve_embedding_model()
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
 
-    if embedding_backend_type in ("cloud", "litellm"):
-        if embedding_model:
-            # Explicit model -- validate it
-            try:
-                backend = await asyncio.to_thread(
-                    init_backend, "cloud", embedding_model
+    if cred_state == CredentialState.LOCAL or embedding_backend_type == "local":
+        # Local-only path
+        local_model = settings.resolve_local_embedding_model()
+        try:
+            backend = await asyncio.to_thread(init_backend, "local", local_model)
+            native_dims = await asyncio.to_thread(backend.check_available)
+            if native_dims > 0:
+                if embedding_dims == 0:
+                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                logger.info(
+                    f"Embedding: local {local_model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
                 )
+                ctx["embedding_model"] = "__local__"
+                ctx["embedding_dims"] = embedding_dims
+            else:
+                logger.error("Local embedding model not available")
+        except Exception as e:
+            logger.error(f"Local embedding init failed: {e}")
+        return
+
+    # CONFIGURED + cloud backend -- no local fallback
+    if embedding_model:
+        # Explicit model -- validate it
+        try:
+            backend = await asyncio.to_thread(init_backend, "cloud", embedding_model)
+            native_dims = await asyncio.to_thread(backend.check_available)
+            if native_dims > 0:
+                if embedding_dims == 0:
+                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                logger.info(
+                    f"Embedding: {embedding_model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
+                )
+                ctx["embedding_model"] = embedding_model
+                ctx["embedding_dims"] = embedding_dims
+                return
+            else:
+                logger.warning(f"Embedding model {embedding_model} not available")
+        except Exception as e:
+            logger.warning(f"Embedding model {embedding_model} not available: {e}")
+    elif mode == "sdk":
+        # Auto-detect: try candidate models
+        for candidate in _EMBEDDING_CANDIDATES:
+            try:
+                backend = await asyncio.to_thread(init_backend, "cloud", candidate)
                 native_dims = await asyncio.to_thread(backend.check_available)
                 if native_dims > 0:
                     if embedding_dims == 0:
                         embedding_dims = _DEFAULT_EMBEDDING_DIMS
                     logger.info(
-                        f"Embedding: {embedding_model} "
+                        f"Embedding: {candidate} "
                         f"(native={native_dims}, stored={embedding_dims})"
                     )
-                    ctx["embedding_model"] = embedding_model
+                    ctx["embedding_model"] = candidate
                     ctx["embedding_dims"] = embedding_dims
                     return
-                else:
-                    logger.warning(f"Embedding model {embedding_model} not available")
-                    embedding_model = None
-            except Exception as e:
-                logger.warning(f"Embedding model {embedding_model} not available: {e}")
-                embedding_model = None
-        elif mode == "sdk":
-            # Auto-detect: try candidate models
-            for candidate in _EMBEDDING_CANDIDATES:
-                try:
-                    backend = await asyncio.to_thread(init_backend, "cloud", candidate)
-                    native_dims = await asyncio.to_thread(backend.check_available)
-                    if native_dims > 0:
-                        embedding_model = candidate
-                        if embedding_dims == 0:
-                            embedding_dims = _DEFAULT_EMBEDDING_DIMS
-                        logger.info(
-                            f"Embedding: {embedding_model} "
-                            f"(native={native_dims}, stored={embedding_dims})"
-                        )
-                        ctx["embedding_model"] = embedding_model
-                        ctx["embedding_dims"] = embedding_dims
-                        return
-                except Exception:
-                    continue
+            except Exception:
+                continue
 
-        # Cloud not available -- fallback to local
-        if not embedding_model:
-            logger.warning("Cloud embedding not available, using local fallback")
-
-    # Local backend (always available)
-    local_model = settings.resolve_local_embedding_model()
-    try:
-        backend = await asyncio.to_thread(init_backend, "local", local_model)
-        native_dims = await asyncio.to_thread(backend.check_available)
-        if native_dims > 0:
-            if embedding_dims == 0:
-                embedding_dims = _DEFAULT_EMBEDDING_DIMS
-            logger.info(
-                f"Embedding: local {local_model} "
-                f"(native={native_dims}, stored={embedding_dims})"
-            )
-            ctx["embedding_model"] = "__local__"
-            ctx["embedding_dims"] = embedding_dims
-        else:
-            logger.error("Local embedding model not available")
-    except Exception as e:
-        logger.error(f"Local embedding init failed: {e}")
+    logger.error("Cloud embedding not available and local fallback is disabled")
 
 
 async def _init_reranker_backend(mode: str) -> None:
-    """Initialize reranker backend in background.
+    """Initialize reranker backend based on credential state.
 
-    Tries cloud providers first if API keys are available, then falls back
-    to local (qwen3-embed cross-encoder). Best-effort: if both fail, search
-    still works without reranking.
+    AWAITING_SETUP: skip (search works without reranking).
+    LOCAL: local-only path.
+    CONFIGURED: cloud-only path -- no silent local fallback.
     """
+    from mnemo_mcp.credential_state import CredentialState, get_state
     from mnemo_mcp.reranker import init_reranker
 
     backend_type = settings.resolve_rerank_backend()
@@ -132,6 +135,27 @@ async def _init_reranker_backend(mode: str) -> None:
         logger.debug("Reranking disabled")
         return
 
+    cred_state = get_state()
+
+    if cred_state == CredentialState.AWAITING_SETUP:
+        logger.info("Reranker: skipped (credentials not configured)")
+        return
+
+    if cred_state == CredentialState.LOCAL or backend_type == "local":
+        # Local-only path
+        local_model = settings.resolve_local_rerank_model()
+        try:
+            backend = await asyncio.to_thread(init_reranker, "local", local_model)
+            available = await asyncio.to_thread(backend.check_available)
+            if available:
+                logger.info(f"Reranker: local {local_model}")
+            else:
+                logger.error("Local reranker not available")
+        except Exception as e:
+            logger.error(f"Local reranker init failed: {e}")
+        return
+
+    # CONFIGURED + cloud backend -- no local fallback
     if backend_type in ("cloud", "litellm"):
         model = settings.resolve_rerank_model()
         if model:
@@ -143,19 +167,7 @@ async def _init_reranker_backend(mode: str) -> None:
                     return
             except Exception as e:
                 logger.warning(f"Reranker {model} not available: {e}")
-        logger.warning("Cloud reranker not available, using local fallback")
-
-    # Local fallback
-    local_model = settings.resolve_local_rerank_model()
-    try:
-        backend = await asyncio.to_thread(init_reranker, "local", local_model)
-        available = await asyncio.to_thread(backend.check_available)
-        if available:
-            logger.info(f"Reranker: local {local_model}")
-        else:
-            logger.error("Local reranker not available")
-    except Exception as e:
-        logger.error(f"Local reranker init failed: {e}")
+        logger.error("Cloud reranker not available and local fallback is disabled")
 
 
 @asynccontextmanager
