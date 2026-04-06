@@ -1087,7 +1087,7 @@ async def config(
             if state == CredentialState.CONFIGURED and ctx is not None:
                 lc = ctx.request_context.lifespan_context
                 if lc.get("embedding_model") is None:
-                    mode = settings.resolve_embedding_backend() or "cloud"
+                    mode = settings.setup_providers()
                     await _init_embedding_backend(mode, lc)
 
             return _json(
