@@ -1073,11 +1073,23 @@ async def config(
             )
 
         case "setup_complete":
-            from mnemo_mcp.credential_state import get_state, resolve_credential_state
+            from mnemo_mcp.credential_state import (
+                CredentialState,
+                get_state,
+                resolve_credential_state,
+            )
 
             resolve_credential_state()
             state = get_state()
             settings.setup_providers()
+
+            # Re-init embedding backend if now configured and not yet initialized
+            if state == CredentialState.CONFIGURED and ctx is not None:
+                lc = ctx.request_context.lifespan_context
+                if lc.get("embedding_model") is None:
+                    mode = settings.resolve_embedding_backend() or "cloud"
+                    await _init_embedding_backend(mode, lc)
+
             return _json(
                 {
                     "status": "ok",
