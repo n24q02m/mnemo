@@ -10,6 +10,7 @@ MCP Interface:
 
 import asyncio
 import json
+import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -165,31 +166,15 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     connections immediately. Tools gracefully degrade to FTS5-only search
     until the embedding model is ready.
     """
-    # 0. Relay-first: try env -> config file -> relay setup -> local fallback
+    # 0. Non-blocking credential resolution (fast, <10ms)
+    # Replaces the old blocking ensure_config() which waited 300s for relay.
+    # Relay is now triggered lazily on first tool call via _maybe_include_setup_hint().
     try:
-        from mnemo_mcp.relay_setup import ensure_config
+        from mnemo_mcp.credential_state import resolve_credential_state
 
-        relay_config = await ensure_config()
-        if relay_config:
-            import os
-
-            for key in (
-                "JINA_AI_API_KEY",
-                "GEMINI_API_KEY",
-                "OPENAI_API_KEY",
-                "COHERE_API_KEY",
-            ):
-                if relay_config.get(key) and not os.environ.get(key):
-                    os.environ[key] = relay_config[key]
-
-            # Apply Google Drive client ID from relay config
-            gdrive_id = relay_config.get("GOOGLE_DRIVE_CLIENT_ID")
-            if gdrive_id and not settings.google_drive_client_id:
-                settings.google_drive_client_id = gdrive_id
-
-            logger.info("Cloud API keys loaded from relay config")
+        resolve_credential_state()
     except Exception as e:
-        logger.debug(f"Relay config not available: {e}")
+        logger.debug(f"Credential resolution not available: {e}")
 
     # 1. Setup provider mode (sdk/local)
     mode = settings.setup_providers()
@@ -279,6 +264,23 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
 def _json(obj: object) -> str:
     """Serialize to readable JSON."""
     return json.dumps(obj, indent=2)
+
+
+async def _maybe_include_setup_hint(result: dict) -> dict:
+    """If in awaiting_setup, trigger lazy relay and add hint to response."""
+    from mnemo_mcp.credential_state import (
+        CredentialState,
+        get_state,
+        trigger_relay_setup,
+    )
+
+    if get_state() == CredentialState.AWAITING_SETUP:
+        url = await trigger_relay_setup()
+        if url:
+            result["_setup_hint"] = (
+                f"Cloud features available. Configure API keys: {url}"
+            )
+    return result
 
 
 def _format_memory(mem: dict) -> dict:
@@ -505,6 +507,7 @@ async def _handle_search(
             "or use action='list' to browse all memories."
         )
 
+    response = await _maybe_include_setup_hint(response)
     return _json(response)
 
 
@@ -982,10 +985,120 @@ async def config(
             result = await run_setup_sync()
             return _json(result)
 
+        case "setup_status":
+            from mnemo_mcp.credential_state import get_setup_url, get_state
+
+            state = get_state()
+            return _json(
+                {
+                    "state": state.value,
+                    "setup_url": get_setup_url(),
+                    "cloud_keys_in_env": [
+                        k
+                        for k in (
+                            "JINA_AI_API_KEY",
+                            "GEMINI_API_KEY",
+                            "OPENAI_API_KEY",
+                            "COHERE_API_KEY",
+                        )
+                        if os.environ.get(k)
+                    ],
+                }
+            )
+
+        case "setup_start":
+            from mnemo_mcp.credential_state import (
+                CredentialState,
+                get_state,
+                trigger_relay_setup,
+            )
+
+            if get_state() == CredentialState.CONFIGURED and not (
+                key and key.lower() == "force"
+            ):
+                return _json(
+                    {
+                        "status": "already_configured",
+                        "message": "Already configured. Use key='force' to reconfigure.",
+                    }
+                )
+            url = await trigger_relay_setup(force=True)
+            if url:
+                return _json(
+                    {
+                        "status": "setup_started",
+                        "setup_url": url,
+                        "message": "Open this URL to configure API keys.",
+                    }
+                )
+            return _json(
+                {"status": "error", "message": "Failed to start relay session."}
+            )
+
+        case "setup_skip":
+            from mcp_relay_core import set_local_mode
+
+            from mnemo_mcp.credential_state import CredentialState, set_state
+
+            set_local_mode("mnemo-mcp")
+            set_state(CredentialState.LOCAL)
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Local mode set. Relay will not trigger on restart.",
+                }
+            )
+
+        case "setup_reset":
+            from mnemo_mcp.credential_state import reset_state
+
+            reset_state()
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Credentials cleared. Next tool call will offer setup.",
+                }
+            )
+
+        case "setup_complete":
+            from mnemo_mcp.credential_state import get_state, resolve_credential_state
+
+            resolve_credential_state()
+            state = get_state()
+            settings.setup_providers()
+            return _json(
+                {
+                    "status": "ok",
+                    "state": state.value,
+                    "message": "Credential state refreshed.",
+                }
+            )
+
+        case "setup_relay":
+            # Backward compat alias for setup_start
+            from mnemo_mcp.credential_state import trigger_relay_setup
+
+            url = await trigger_relay_setup(force=True)
+            if url:
+                return _json({"status": "setup_started", "setup_url": url})
+            return _json({"status": "error", "message": "Relay setup failed."})
+
         case _:
             import difflib
 
-            valid_actions = ["set", "setup_sync", "status", "sync", "warmup"]
+            valid_actions = [
+                "set",
+                "setup_complete",
+                "setup_relay",
+                "setup_reset",
+                "setup_skip",
+                "setup_start",
+                "setup_status",
+                "setup_sync",
+                "status",
+                "sync",
+                "warmup",
+            ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(

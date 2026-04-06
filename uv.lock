@@ -564,16 +564,16 @@ cli = [
 
 [[package]]
 name = "mcp-relay-core"
-version = "1.2.0"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
     { name = "platformdirs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/01/4cfe9eb44dc725caaae047dafc98706d1a4562b24ffdea195ad539ab072d/mcp_relay_core-1.2.0.tar.gz", hash = "sha256:833cbf01858771f30406ae384e88d67924cb92b0945990d85c3731e30df67a54", size = 61277, upload-time = "2026-03-31T12:15:51.511Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/e7/52c2c559e6edd9f73b0af715c2f3bc2c8dd0cef53c1f31af462be4254340/mcp_relay_core-1.4.0.tar.gz", hash = "sha256:cef2bad3ffff862620d6c896a6639760ffbad92ebb9345b45057e3706fb1aedb", size = 67007, upload-time = "2026-04-06T00:45:30.263Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/4e/b4612a4683a4f735ef5bbf2a221939837b5a83b56bd7e5629f42cb817925/mcp_relay_core-1.2.0-py3-none-any.whl", hash = "sha256:92a06530659c9914fca13e3d43d2c773b0d155c173ebc3988080ad3b188744b5", size = 41300, upload-time = "2026-03-31T12:15:50.329Z" },
+    { url = "https://files.pythonhosted.org/packages/89/be/f8b284742c25b900d50aa317b055569a72fdb6402df1d5c209c29b673942/mcp_relay_core-1.4.0-py3-none-any.whl", hash = "sha256:ed6ae8f610ee5dff48e67f42548403846f0119211687254fb8e54f638945f37d", size = 45159, upload-time = "2026-04-06T00:45:31.211Z" },
 ]
 
 [[package]]
@@ -623,7 +623,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"] },
-    { name = "mcp-relay-core", specifier = ">=1.2.0" },
+    { name = "mcp-relay-core", specifier = ">=1.4.0" },
     { name = "openai", specifier = ">=2.30.0" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
