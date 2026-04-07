@@ -1083,12 +1083,12 @@ async def config(
             state = get_state()
             settings.setup_providers()
 
-            # Re-init embedding backend if now configured and not yet initialized
+            # Re-init embedding backend when configured (always, in case
+            # credentials changed or backend was cleared by reset)
             if state == CredentialState.CONFIGURED and ctx is not None:
                 lc = ctx.request_context.lifespan_context
-                if lc.get("embedding_model") is None:
-                    mode = settings.setup_providers()
-                    await _init_embedding_backend(mode, lc)
+                mode = settings.setup_providers()
+                await _init_embedding_backend(mode, lc)
 
             return _json(
                 {
