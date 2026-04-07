@@ -141,16 +141,26 @@ class TestTokenManagement:
 
 
 class TestDriveHelpers:
+    def setup_method(self):
+        """Clear folder ID cache between tests."""
+        import mnemo_mcp.sync as sync_mod
+
+        sync_mod._folder_id_cache.clear()
+
     async def test_find_or_create_folder_found(self):
         token = {"access_token": "test"}
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"files": [{"id": "folder123"}]}
 
-        with patch(
-            "mnemo_mcp.sync._drive_request",
-            new_callable=AsyncMock,
-            return_value=mock_response,
+        with (
+            patch(
+                "mnemo_mcp.sync._drive_request",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch("mnemo_mcp.sync._load_folder_id", return_value=None),
+            patch("mnemo_mcp.sync._save_folder_id"),
         ):
             result = await _find_or_create_folder(token, "test-folder")
         assert result == "folder123"
@@ -165,10 +175,14 @@ class TestDriveHelpers:
         create_resp.status_code = 200
         create_resp.json.return_value = {"id": "new_folder"}
 
-        with patch(
-            "mnemo_mcp.sync._drive_request",
-            new_callable=AsyncMock,
-            side_effect=[search_resp, create_resp],
+        with (
+            patch(
+                "mnemo_mcp.sync._drive_request",
+                new_callable=AsyncMock,
+                side_effect=[search_resp, create_resp],
+            ),
+            patch("mnemo_mcp.sync._load_folder_id", return_value=None),
+            patch("mnemo_mcp.sync._save_folder_id"),
         ):
             result = await _find_or_create_folder(token, "new-folder")
         assert result == "new_folder"
