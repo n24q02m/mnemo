@@ -179,10 +179,11 @@ class TestDriveHelpers:
             patch(
                 "mnemo_mcp.sync._drive_request",
                 new_callable=AsyncMock,
-                side_effect=[search_resp, create_resp],
+                side_effect=[search_resp, search_resp, search_resp, create_resp],
             ),
             patch("mnemo_mcp.sync._load_folder_id", return_value=None),
             patch("mnemo_mcp.sync._save_folder_id"),
+            patch("asyncio.sleep", return_value=None),
         ):
             result = await _find_or_create_folder(token, "new-folder")
         assert result == "new_folder"

@@ -344,10 +344,13 @@ class TestFindOrCreateFolderCoverage:
         create_resp.status_code = 500
         create_resp.text = "Server error"
 
-        with patch(
-            "mnemo_mcp.sync._drive_request",
-            new_callable=AsyncMock,
-            side_effect=[search_resp, create_resp],
+        with (
+            patch(
+                "mnemo_mcp.sync._drive_request",
+                new_callable=AsyncMock,
+                side_effect=[search_resp, search_resp, search_resp, create_resp],
+            ),
+            patch("asyncio.sleep", return_value=None),
         ):
             result = await _find_or_create_folder(token, "folder")
         assert result is None
