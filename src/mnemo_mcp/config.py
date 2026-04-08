@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     google_drive_client_id: str = (
         "147668446467-olf2cf6e49rshqv9quvhq639110oc6hc.apps.googleusercontent.com"
     )
-    google_drive_client_secret: str = "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"
+    google_drive_client_secret: str = ""
 
     # Archive
     archive_enabled: bool = True

@@ -28,7 +28,10 @@ async def test_token_refresh_preserves_refresh_token():
     with (
         patch("httpx.AsyncClient") as mock_client_cls,
         patch("mnemo_mcp.sync._save_token") as mock_save,
+        patch("mnemo_mcp.sync.settings") as mock_settings,
     ):
+        mock_settings.google_drive_client_secret = "secret123"
+        mock_settings.google_drive_client_id = "client123"
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -68,7 +71,10 @@ async def test_token_refresh_updates_refresh_token():
     with (
         patch("httpx.AsyncClient") as mock_client_cls,
         patch("mnemo_mcp.sync._save_token"),
+        patch("mnemo_mcp.sync.settings") as mock_settings,
     ):
+        mock_settings.google_drive_client_secret = "secret123"
+        mock_settings.google_drive_client_id = "client123"
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -105,6 +111,7 @@ async def test_token_refresh_uses_settings_client_id():
         patch("mnemo_mcp.sync.settings") as mock_settings,
     ):
         mock_settings.google_drive_client_id = "settings_client_id"
+        mock_settings.google_drive_client_secret = "secret123"
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)

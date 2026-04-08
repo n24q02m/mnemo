@@ -52,7 +52,10 @@ class TestTokenManagement:
         with (
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("mnemo_mcp.sync._save_token") as mock_save,
+            patch("mnemo_mcp.sync.settings") as mock_settings,
         ):
+            mock_settings.google_drive_client_secret = "secret123"
+            mock_settings.google_drive_client_id = "client123"
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

@@ -88,8 +88,10 @@ async def _refresh_token(token: dict) -> dict | None:
     client_id = token.get("client_id", settings.google_drive_client_id)
     client_secret = settings.google_drive_client_secret
 
-    if not refresh_token or not client_id:
-        logger.warning("Cannot refresh token: missing refresh_token or client_id")
+    if not refresh_token or not client_id or not client_secret:
+        logger.warning(
+            "Cannot refresh token: missing refresh_token, client_id, or client_secret"
+        )
         return None
 
     try:
