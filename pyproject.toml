@@ -38,6 +38,8 @@ dependencies = [
     "qwen3-embed>=1.6.0",
     # Zero-env-config credential relay
     "mcp-relay-core>=1.4.0",
+    # Pin Pygments to fix ReDoS (CVE in <2.20.0)
+    "Pygments>=2.20.0",
 ]
 
 [dependency-groups]
