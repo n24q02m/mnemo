@@ -450,6 +450,9 @@ class MemoryDB:
         subqueries = []
         fts_params: list = []
 
+        # Bolt Performance Optimization:
+        # Deferred join pattern. We only select m.id in the inner CTE instead of
+        # m.* to avoid evaluating large columns for rows that will be filtered out by LIMIT.
         filter_sql = ""
         filter_params: list = []
         if category:
@@ -461,7 +464,7 @@ class MemoryDB:
 
         for idx, fts_query in enumerate(fts_queries):
             subqueries.append(f"""
-                SELECT m.*,
+                SELECT m.id,
                        bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score,
                        {idx} as tier_idx
                 FROM memories_fts f
@@ -475,12 +478,18 @@ class MemoryDB:
         fts_sql = f"""
             WITH all_matches AS (
                 {union_sql}
+            ),
+            best_tier AS (
+                SELECT id, bm25_score
+                FROM all_matches
+                WHERE tier_idx = (SELECT MIN(tier_idx) FROM all_matches)
+                ORDER BY bm25_score
+                LIMIT ?
             )
-            SELECT *
-            FROM all_matches
-            WHERE tier_idx = (SELECT MIN(tier_idx) FROM all_matches)
-            ORDER BY bm25_score
-            LIMIT ?
+            SELECT m.*, b.bm25_score
+            FROM best_tier b
+            JOIN memories m ON b.id = m.id
+            ORDER BY b.bm25_score
         """
         fts_params.append(limit * 3)
 
