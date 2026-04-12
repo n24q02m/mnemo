@@ -39,7 +39,7 @@ def load_relay_config() -> dict[str, str] | None:
         Config dict with cloud API keys, or None if no config file found.
     """
     try:
-        from mcp_relay_core.storage.config_file import read_config
+        from mcp_core.storage.config_file import read_config
 
         saved = read_config(SERVER_NAME)
         if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
@@ -82,7 +82,7 @@ async def ensure_config() -> dict[str, str] | None:
 
     relay_url = DEFAULT_RELAY_URL
     try:
-        from mcp_relay_core.relay.client import create_session, poll_for_result
+        from mcp_core.relay.client import create_session, poll_for_result
 
         from .relay_schema import RELAY_SCHEMA
 
@@ -102,8 +102,8 @@ async def ensure_config() -> dict[str, str] | None:
 
     # Poll for result with shorter timeout
     try:
-        from mcp_relay_core.relay.client import poll_for_result
-        from mcp_relay_core.storage.config_file import write_config
+        from mcp_core.relay.client import poll_for_result
+        from mcp_core.storage.config_file import write_config
 
         config = await poll_for_result(relay_url, session, timeout_s=RELAY_TIMEOUT_S)
 

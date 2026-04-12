@@ -37,7 +37,7 @@ dependencies = [
     # Local ONNX embedding (auto-fallback when no cloud API)
     "qwen3-embed>=1.8.0",
     # Zero-env-config credential relay
-    "mcp-relay-core>=1.4.0",
+    "n24q02m-mcp-core>=1.0.0b3",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
 ]

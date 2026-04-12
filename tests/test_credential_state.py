@@ -75,7 +75,7 @@ class TestResolveCredentialState:
 
         mock_config = {"JINA_AI_API_KEY": "from_config", "GEMINI_API_KEY": "gem_key"}
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value=mock_config,
         ):
             result = resolve_credential_state()
@@ -95,10 +95,10 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 return_value=None,
             ),
-            patch("mcp_relay_core.get_mode", return_value="local"),
+            patch("mcp_core.get_mode", return_value="local"),
         ):
             result = resolve_credential_state()
 
@@ -112,10 +112,10 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 return_value=None,
             ),
-            patch("mcp_relay_core.get_mode", return_value="local"),
+            patch("mcp_core.get_mode", return_value="local"),
         ):
             result = resolve_credential_state()
 
@@ -129,10 +129,10 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 return_value=None,
             ),
-            patch("mcp_relay_core.get_mode", return_value=None),
+            patch("mcp_core.get_mode", return_value=None),
         ):
             result = resolve_credential_state()
 
@@ -146,10 +146,10 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 side_effect=Exception("read error"),
             ),
-            patch("mcp_relay_core.get_mode", return_value=None),
+            patch("mcp_core.get_mode", return_value=None),
         ):
             result = resolve_credential_state()
 
@@ -163,10 +163,10 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 return_value=None,
             ),
-            patch("mcp_relay_core.get_mode", side_effect=Exception("no mode")),
+            patch("mcp_core.get_mode", side_effect=Exception("no mode")),
         ):
             result = resolve_credential_state()
 
@@ -181,7 +181,7 @@ class TestResolveCredentialState:
         mock_config = {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}
         with (
             patch(
-                "mcp_relay_core.storage.config_file.read_config",
+                "mcp_core.storage.config_file.read_config",
                 return_value=mock_config,
             ),
             patch(
@@ -232,20 +232,20 @@ class TestTriggerRelaySetup:
 
         with (
             patch(
-                "mcp_relay_core.acquire_session_lock",
+                "mcp_core.acquire_session_lock",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch(
-                "mcp_relay_core.relay.client.create_session",
+                "mcp_core.relay.client.create_session",
                 new_callable=AsyncMock,
                 return_value=mock_session,
             ),
             patch(
-                "mcp_relay_core.write_session_lock",
+                "mcp_core.write_session_lock",
                 new_callable=AsyncMock,
             ),
-            patch("mcp_relay_core.try_open_browser"),
+            patch("mcp_core.try_open_browser"),
             patch("asyncio.create_task"),
         ):
             result = await trigger_relay_setup(force=True)
@@ -260,7 +260,7 @@ class TestTriggerRelaySetup:
         existing_session.relay_url = "https://reused.url"
 
         with patch(
-            "mcp_relay_core.acquire_session_lock",
+            "mcp_core.acquire_session_lock",
             new_callable=AsyncMock,
             return_value=existing_session,
         ):
@@ -273,7 +273,7 @@ class TestTriggerRelaySetup:
         set_state(CredentialState.AWAITING_SETUP)
 
         with patch(
-            "mcp_relay_core.acquire_session_lock",
+            "mcp_core.acquire_session_lock",
             new_callable=AsyncMock,
             side_effect=Exception("network error"),
         ):
@@ -301,11 +301,11 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch("mnemo_mcp.credential_state._share_cloud_keys_to_peers"),
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
@@ -313,11 +313,11 @@ class TestPollRelayBackground:
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
         ):
@@ -334,7 +334,7 @@ class TestPollRelayBackground:
         set_state(CredentialState.SETUP_IN_PROGRESS)
 
         with patch(
-            "mcp_relay_core.relay.client.poll_for_result",
+            "mcp_core.relay.client.poll_for_result",
             new_callable=AsyncMock,
             side_effect=RuntimeError("RELAY_SKIPPED"),
         ):
@@ -349,7 +349,7 @@ class TestPollRelayBackground:
         set_state(CredentialState.SETUP_IN_PROGRESS)
 
         with patch(
-            "mcp_relay_core.relay.client.poll_for_result",
+            "mcp_core.relay.client.poll_for_result",
             new_callable=AsyncMock,
             side_effect=RuntimeError("some other error"),
         ):
@@ -364,7 +364,7 @@ class TestPollRelayBackground:
         set_state(CredentialState.SETUP_IN_PROGRESS)
 
         with patch(
-            "mcp_relay_core.relay.client.poll_for_result",
+            "mcp_core.relay.client.poll_for_result",
             new_callable=AsyncMock,
             side_effect=Exception("connection lost"),
         ):
@@ -384,11 +384,11 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch("mnemo_mcp.credential_state._share_cloud_keys_to_peers"),
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
@@ -396,11 +396,11 @@ class TestPollRelayBackground:
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
         ):
@@ -422,11 +422,11 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch("mnemo_mcp.credential_state._share_cloud_keys_to_peers"),
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
@@ -435,11 +435,11 @@ class TestPollRelayBackground:
                 side_effect=Exception("OAuth failed"),
             ),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
         ):
@@ -462,11 +462,11 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch("mnemo_mcp.credential_state._share_cloud_keys_to_peers"),
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
@@ -474,12 +474,12 @@ class TestPollRelayBackground:
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
                 side_effect=Exception("send failed"),
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
         ):
@@ -497,12 +497,12 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("RELAY_SKIPPED"),
             ),
             patch(
-                "mcp_relay_core.set_local_mode",
+                "mcp_core.set_local_mode",
                 side_effect=Exception("fs error"),
             ),
         ):
@@ -521,15 +521,15 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch("mnemo_mcp.credential_state._share_cloud_keys_to_peers"),
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
         ):
@@ -550,7 +550,7 @@ class TestShareCloudKeysToPeers:
         """Shares cloud keys to wet-mcp and better-code-review-graph."""
         config = {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}
 
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
 
         assert mock_write.call_count == 2
@@ -566,7 +566,7 @@ class TestShareCloudKeysToPeers:
         """When no cloud keys in config, returns early."""
         config = {"GOOGLE_DRIVE_CLIENT_ID": "some-id"}
 
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
 
         mock_write.assert_not_called()
@@ -576,7 +576,7 @@ class TestShareCloudKeysToPeers:
         config = {"JINA_AI_API_KEY": "key1"}
 
         with patch(
-            "mcp_relay_core.storage.config_file.write_config",
+            "mcp_core.storage.config_file.write_config",
             side_effect=[Exception("fs error"), None],
         ):
             # Should not raise
@@ -587,7 +587,7 @@ class TestShareCloudKeysToPeers:
         config = {"JINA_AI_API_KEY": "key1"}
 
         with patch(
-            "mcp_relay_core.storage.config_file.write_config",
+            "mcp_core.storage.config_file.write_config",
             side_effect=ImportError("module not found"),
         ):
             # Should not raise
@@ -597,7 +597,7 @@ class TestShareCloudKeysToPeers:
         """Empty string values are not shared."""
         config = {"JINA_AI_API_KEY": "", "GEMINI_API_KEY": "key2"}
 
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
 
         # Only GEMINI_API_KEY should be shared
@@ -620,8 +620,8 @@ class TestResetState:
         cs._setup_url = "https://some.url"
 
         with (
-            patch("mcp_relay_core.clear_mode"),
-            patch("mcp_relay_core.storage.config_file.delete_config"),
+            patch("mcp_core.clear_mode"),
+            patch("mcp_core.storage.config_file.delete_config"),
         ):
             reset_state()
 
@@ -633,9 +633,9 @@ class TestResetState:
         set_state(CredentialState.CONFIGURED)
 
         with (
-            patch("mcp_relay_core.clear_mode", side_effect=Exception("err")),
+            patch("mcp_core.clear_mode", side_effect=Exception("err")),
             patch(
-                "mcp_relay_core.storage.config_file.delete_config",
+                "mcp_core.storage.config_file.delete_config",
                 side_effect=Exception("err"),
             ),
         ):

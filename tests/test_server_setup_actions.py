@@ -140,7 +140,7 @@ class TestSetupSkip:
         """setup_skip sets LOCAL state and local mode marker."""
         ctx, _ = ctx_with_db
 
-        with patch("mcp_relay_core.set_local_mode") as mock_set:
+        with patch("mcp_core.set_local_mode") as mock_set:
             result = json.loads(await config(action="setup_skip", ctx=ctx))
 
         assert result["status"] == "ok"
@@ -160,8 +160,8 @@ class TestSetupReset:
         set_state(CredentialState.CONFIGURED)
 
         with (
-            patch("mcp_relay_core.clear_mode"),
-            patch("mcp_relay_core.storage.config_file.delete_config"),
+            patch("mcp_core.clear_mode"),
+            patch("mcp_core.storage.config_file.delete_config"),
         ):
             result = json.loads(await config(action="setup_reset", ctx=ctx))
 

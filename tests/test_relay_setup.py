@@ -26,20 +26,20 @@ class TestConstants:
 class TestLoadRelayConfig:
     """Test load_relay_config function."""
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_config_from_file(self, mock_read):
         mock_read.return_value = {"GEMINI_API_KEY": "AIza_test"}
         result = load_relay_config()
         assert result == {"GEMINI_API_KEY": "AIza_test"}
         mock_read.assert_called_once_with("mnemo-mcp")
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_none_when_no_config(self, mock_read):
         mock_read.return_value = None
         result = load_relay_config()
         assert result is None
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_none_when_no_cloud_keys(self, mock_read):
         mock_read.return_value = {"UNKNOWN_KEY": "value"}
         result = load_relay_config()
@@ -49,7 +49,7 @@ class TestLoadRelayConfig:
 class TestEnsureConfig:
     """Test ensure_config async function."""
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_returns_config_from_file(self, mock_read, monkeypatch):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
@@ -57,8 +57,8 @@ class TestEnsureConfig:
         result = await ensure_config()
         assert result == {"GEMINI_API_KEY": "AIza_test"}
 
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_setup_fails_gracefully(self, mock_read, mock_session):
         mock_read.return_value = None
         mock_session.side_effect = ConnectionError("Cannot reach server")
@@ -66,10 +66,10 @@ class TestEnsureConfig:
         assert result is None
 
     @patch("mnemo_mcp.relay_setup.apply_config")
-    @patch("mcp_relay_core.storage.config_file.write_config")
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.write_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_setup_success(
         self, mock_read, mock_session, mock_poll, mock_write, mock_apply, monkeypatch
     ):
@@ -101,9 +101,9 @@ class TestEnsureConfig:
         mock_write.assert_called_once_with("mnemo-mcp", config)
         mock_apply.assert_called_once_with(config)
 
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_setup_timeout(self, mock_read, mock_session, mock_poll):
         mock_read.return_value = None
         mock_session.return_value = MagicMock(relay_url="https://example.com")

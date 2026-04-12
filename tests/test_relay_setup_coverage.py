@@ -79,28 +79,28 @@ class TestApplyConfig:
 
 
 class TestLoadRelayConfigCoverage:
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_none_on_import_error(self, mock_read):
-        """Returns None when mcp_relay_core raises."""
-        mock_read.side_effect = ImportError("No module named 'mcp_relay_core'")
+        """Returns None when mcp_core raises."""
+        mock_read.side_effect = ImportError("No module named 'mcp_core'")
         result = load_relay_config()
         assert result is None
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_none_on_generic_exception(self, mock_read):
         """Returns None on any exception."""
         mock_read.side_effect = RuntimeError("Unexpected error")
         result = load_relay_config()
         assert result is None
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_config_with_gdrive_key(self, mock_read):
         """Returns config when only GOOGLE_DRIVE_CLIENT_ID is present."""
         mock_read.return_value = {"GOOGLE_DRIVE_CLIENT_ID": "client123"}
         result = load_relay_config()
         assert result == {"GOOGLE_DRIVE_CLIENT_ID": "client123"}
 
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.read_config")
     def test_returns_none_when_all_values_empty(self, mock_read):
         """Returns None when saved config has keys but all values are empty."""
         mock_read.return_value = {
@@ -132,9 +132,9 @@ class TestEnsureConfigCoverage:
         result = await ensure_config()
         assert result is None
 
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_skipped_by_user(
         self, mock_read, mock_session, mock_poll, monkeypatch
     ):
@@ -148,9 +148,9 @@ class TestEnsureConfigCoverage:
         result = await ensure_config()
         assert result is None
 
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_timed_out(
         self, mock_read, mock_session, mock_poll, monkeypatch
     ):
@@ -164,9 +164,9 @@ class TestEnsureConfigCoverage:
         result = await ensure_config()
         assert result is None
 
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_generic_runtime_error(
         self, mock_read, mock_session, mock_poll, monkeypatch
     ):
@@ -181,10 +181,10 @@ class TestEnsureConfigCoverage:
         assert result is None
 
     @patch("mnemo_mcp.relay_setup.apply_config")
-    @patch("mcp_relay_core.storage.config_file.write_config")
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.write_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_success_with_gdrive_oauth(
         self, mock_read, mock_session, mock_poll, mock_write, mock_apply, monkeypatch
     ):
@@ -222,10 +222,10 @@ class TestEnsureConfigCoverage:
         )
 
     @patch("mnemo_mcp.relay_setup.apply_config")
-    @patch("mcp_relay_core.storage.config_file.write_config")
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.write_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_success_gdrive_oauth_fails(
         self, mock_read, mock_session, mock_poll, mock_write, mock_apply, monkeypatch
     ):
@@ -258,8 +258,8 @@ class TestEnsureConfigCoverage:
 
         assert result == config
 
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_create_session_connection_error(
         self, mock_read, mock_session, monkeypatch
     ):
@@ -273,10 +273,10 @@ class TestEnsureConfigCoverage:
         assert result is None
 
     @patch("mnemo_mcp.relay_setup.apply_config")
-    @patch("mcp_relay_core.storage.config_file.write_config")
-    @patch("mcp_relay_core.relay.client.poll_for_result", new_callable=AsyncMock)
-    @patch("mcp_relay_core.relay.client.create_session", new_callable=AsyncMock)
-    @patch("mcp_relay_core.storage.config_file.read_config")
+    @patch("mcp_core.storage.config_file.write_config")
+    @patch("mcp_core.relay.client.poll_for_result", new_callable=AsyncMock)
+    @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
+    @patch("mcp_core.storage.config_file.read_config")
     async def test_relay_success_httpx_message_fails_silently(
         self, mock_read, mock_session, mock_poll, mock_write, mock_apply, monkeypatch
     ):
