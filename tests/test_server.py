@@ -1,6 +1,7 @@
 """Tests for mnemo_mcp.server — MCP tools, prompts, resources."""
 
 import json
+import os
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -678,6 +679,7 @@ class TestMain:
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch("mnemo_mcp.server.mcp") as mock_mcp,
+            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
             mock_settings.log_level = "BOGUS"
             main()

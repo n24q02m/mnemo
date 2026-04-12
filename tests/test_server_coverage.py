@@ -7,6 +7,7 @@ candidate exception.
 """
 
 import json
+import os
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -195,11 +196,12 @@ class TestResources:
 
 class TestMainFunction:
     def test_main_calls_mcp_run(self):
-        """main() configures logger and calls mcp.run()."""
+        """main() in stdio mode configures logger and calls mcp.run()."""
         with (
             patch("mnemo_mcp.server.logger") as mock_logger,
             patch("mnemo_mcp.server.mcp") as mock_mcp,
             patch("mnemo_mcp.server.settings") as mock_settings,
+            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
             mock_settings.log_level = "INFO"
             main()
