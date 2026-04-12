@@ -1221,15 +1221,19 @@ async def run_http(port: int = 0) -> None:
     """Run as HTTP server with local OAuth 2.1 AS."""
     from mcp_core.transport.local_server import run_local_server
 
-    from mnemo_mcp.credential_state import save_credentials
+    from mnemo_mcp.credential_state import (
+        save_credentials,
+        set_gdrive_complete_callback,
+    )
     from mnemo_mcp.relay_schema import RELAY_SCHEMA
 
     await run_local_server(
-        mcp,
+        mcp,  # ty: ignore[invalid-argument-type]
         server_name="mnemo-mcp",
         relay_schema=RELAY_SCHEMA,
         port=port,
         on_credentials_saved=save_credentials,
+        setup_complete_hook=set_gdrive_complete_callback,
     )
 
 

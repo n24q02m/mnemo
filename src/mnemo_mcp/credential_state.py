@@ -11,6 +11,7 @@ happens while in awaiting_setup state.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from enum import Enum
 
 from loguru import logger
@@ -38,6 +39,13 @@ class CredentialState(Enum):
 # Module-level state
 _state = CredentialState.AWAITING_SETUP
 _setup_url: str | None = None
+_on_gdrive_complete: Callable[[], None] | None = None
+
+
+def set_gdrive_complete_callback(cb: Callable[[], None]) -> None:
+    """Set callback for when GDrive OAuth completes (used by HTTP server)."""
+    global _on_gdrive_complete
+    _on_gdrive_complete = cb
 
 
 def get_state() -> CredentialState:
@@ -312,7 +320,112 @@ def save_credentials(config: dict[str, str]) -> dict | None:
         )
 
     _share_cloud_keys_to_peers(config)
+
+    # Trigger GDrive OAuth Device Code flow if configured
+    try:
+        from mnemo_mcp.config import settings as s
+
+        if s.google_drive_client_id and s.google_drive_client_secret:
+            import httpx
+
+            response = httpx.post(
+                "https://oauth2.googleapis.com/device/code",
+                data={
+                    "client_id": s.google_drive_client_id,
+                    "scope": "https://www.googleapis.com/auth/drive.file",
+                },
+                timeout=15.0,
+            )
+            if response.status_code == 200:
+                device_data = response.json()
+                logger.info(
+                    "GDrive device code requested, user_code={}",
+                    device_data.get("user_code"),
+                )
+
+                import asyncio
+                import threading
+
+                def _poll_gdrive_token():
+                    asyncio.run(
+                        _gdrive_token_poll(
+                            s.google_drive_client_id,
+                            s.google_drive_client_secret,
+                            device_data["device_code"],
+                            device_data.get("interval", 5),
+                            device_data.get("expires_in", 1800),
+                        )
+                    )
+
+                threading.Thread(target=_poll_gdrive_token, daemon=True).start()
+
+                return {
+                    "type": "oauth_device_code",
+                    "verification_url": device_data["verification_url"],
+                    "user_code": device_data["user_code"],
+                }
+    except Exception:
+        logger.opt(exception=True).debug(
+            "GDrive device code request failed (non-fatal)"
+        )
+
     return None
+
+
+async def _gdrive_token_poll(
+    client_id: str,
+    client_secret: str,
+    device_code: str,
+    interval: int,
+    expires_in: int,
+) -> None:
+    """Background poll Google OAuth for device code token completion."""
+    import asyncio
+    import time
+
+    import httpx
+
+    deadline = time.time() + expires_in
+    async with httpx.AsyncClient() as client:
+        while time.time() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                resp = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "device_code": device_code,
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    },
+                    timeout=15.0,
+                )
+                data = resp.json()
+                if "access_token" in data:
+                    from mnemo_mcp.token_store import save_token
+
+                    save_token("google_drive", data)
+                    logger.info("GDrive OAuth token saved successfully")
+                    logger.info(
+                        "GDrive authorized. Sync will start on next server restart."
+                    )
+                    if _on_gdrive_complete:
+                        try:
+                            _on_gdrive_complete()
+                        except Exception:
+                            logger.opt(exception=True).debug(
+                                "GDrive complete callback failed"
+                            )
+                    return
+                elif data.get("error") == "authorization_pending":
+                    continue
+                elif data.get("error") == "slow_down":
+                    interval += 5
+                else:
+                    logger.warning("GDrive token poll error: {}", data.get("error"))
+                    return
+            except Exception:
+                logger.opt(exception=True).debug("GDrive token poll request failed")
 
 
 def set_state(state: CredentialState) -> None:
