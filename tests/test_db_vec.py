@@ -1,11 +1,24 @@
 """Tests for mnemo_mcp.db with vector search enabled."""
 
+import sqlite3
 import struct
 from pathlib import Path
 
 import pytest
 
 from mnemo_mcp.db import MemoryDB
+
+# Skip this entire module when the runtime Python was built without
+# --enable-loadable-sqlite-extensions (common on macOS hosted runners).
+# sqlite-vec cannot load without that capability, so MemoryDB will run
+# with vec_enabled=False and these tests become inapplicable.
+pytestmark = pytest.mark.skipif(
+    not hasattr(sqlite3.Connection, "enable_load_extension"),
+    reason=(
+        "sqlite3 built without --enable-loadable-sqlite-extensions; "
+        "sqlite-vec cannot load on this runner"
+    ),
+)
 
 
 def _serialize_f32(vec: list[float]) -> bytes:
