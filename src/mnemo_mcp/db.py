@@ -297,6 +297,12 @@ class MemoryDB:
                     self._embedding_dims = detected_dims
             return
 
+        # Validate dimension bounds before f-string interpolation to prevent
+        # SQL injection via crafted dims and to fail fast on invalid values.
+        # sqlite-vec enforces a maximum of 8192 dimensions per vector column.
+        if not (1 <= dims <= 8192):
+            raise ValueError(f"embedding_dims must be between 1 and 8192, got {dims}")
+
         # Create table if not exists
         self._conn.execute(f"""
             CREATE VIRTUAL TABLE memories_vec
