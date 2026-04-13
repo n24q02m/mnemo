@@ -369,8 +369,8 @@ async def _handle_add(
             dedup_warning = dedup_result
         elif dedup_result and dedup_result.get("similar"):
             dedup_warning = dedup_result
-    except Exception:
-        pass  # Non-blocking, ignore errors
+    except Exception as e:
+        logger.warning(f"Dedup check failed (non-blocking): {e}")
 
     embedding = await _embed(content, embedding_model, embedding_dims)
     try:
@@ -503,8 +503,8 @@ async def _handle_search(
                 for r in results:
                     if r["id"] in related_set:
                         r["graph_related"] = True
-        except Exception:
-            pass  # Non-blocking
+        except Exception as e:
+            logger.warning(f"Graph boost failed (non-blocking): {e}")
 
     response: dict = {
         "count": len(results),
