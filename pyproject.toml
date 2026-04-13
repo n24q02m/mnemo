@@ -28,7 +28,7 @@ dependencies = [
     # Logging
     "loguru",
     # Cloud embedding + reranking (Cohere SDK)
-    "cohere>=5.21.1",
+    "cohere>=6.1.0",
     # LLM completion (native SDKs)
     "google-genai>=1.71.0",
     "openai>=2.31.0",
