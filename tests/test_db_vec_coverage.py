@@ -183,3 +183,137 @@ class TestInitSchemaVecCreateBranch:
         with pytest.raises(ValueError, match="embedding_dims must be between"):
             db._init_schema()
         db.close()
+
+
+class TestSearchVecBranch:
+    """Cover the MATCH-based semantic search branch by proxying the
+    connection so that the vec_sql SELECT returns a synthetic result set
+    without needing sqlite-vec to be present at runtime."""
+
+    def test_search_with_embedding_executes_vec_branch(self, tmp_path: Path):
+        db = MemoryDB(tmp_path / "vec_search.db", embedding_dims=3)
+        db._vec_enabled = True
+        real_conn = db._conn
+
+        # Pre-seed a memory row on the real DB so the JOIN / merge path has
+        # data to return.
+        mid = db.add("alpha beta gamma")
+
+        class _ConnProxy:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if "FROM memories_vec v" in sql and "MATCH" in sql:
+                    # Fabricate a result row that looks like a vec hit.
+                    class _Cursor:
+                        def fetchall(self_):
+                            return [{"id": mid, "distance": 0.1}]
+
+                        def fetchone(self_):
+                            return {"id": mid, "distance": 0.1}
+
+                    return _Cursor()
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def executescript(self, sql):
+                return self._inner.executescript(sql)
+
+            def commit(self):
+                return self._inner.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        try:
+            results = db.search(
+                query="alpha",
+                embedding=[0.1, 0.2, 0.3],
+                limit=5,
+            )
+            assert isinstance(results, list)
+        finally:
+            db._conn = real_conn
+            db.close()
+
+    def test_search_with_embedding_and_category_filter(self, tmp_path: Path):
+        """Exercise the `if category` branch inside the vec SQL builder."""
+        db = MemoryDB(tmp_path / "vec_cat.db", embedding_dims=3)
+        db._vec_enabled = True
+        real_conn = db._conn
+        mid = db.add("alpha beta gamma", category="notes")
+
+        class _ConnProxy:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if "FROM memories_vec v" in sql and "MATCH" in sql:
+
+                    class _Cursor:
+                        def fetchall(self_):
+                            return [{"id": mid, "distance": 0.2}]
+
+                        def fetchone(self_):
+                            return {"id": mid, "distance": 0.2}
+
+                    return _Cursor()
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def executescript(self, sql):
+                return self._inner.executescript(sql)
+
+            def commit(self):
+                return self._inner.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        try:
+            results = db.search(
+                query="alpha",
+                embedding=[0.1, 0.2, 0.3],
+                category="notes",
+                tags=["foo"],
+                limit=5,
+            )
+            assert isinstance(results, list)
+        finally:
+            db._conn = real_conn
+            db.close()
+
+    def test_search_vec_query_raises_exception(self, tmp_path: Path):
+        """Vector search block swallows exceptions and logs at debug."""
+        db = MemoryDB(tmp_path / "vec_err.db", embedding_dims=3)
+        db._vec_enabled = True
+        real_conn = db._conn
+        db.add("alpha beta")
+
+        class _ConnProxy:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if "FROM memories_vec v" in sql and "MATCH" in sql:
+                    raise RuntimeError("vec query failed")
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def executescript(self, sql):
+                return self._inner.executescript(sql)
+
+            def commit(self):
+                return self._inner.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        try:
+            # Must not raise -- exception swallowed + logged
+            results = db.search(query="alpha", embedding=[0.1, 0.2, 0.3], limit=5)
+            assert isinstance(results, list)
+        finally:
+            db._conn = real_conn
+            db.close()
