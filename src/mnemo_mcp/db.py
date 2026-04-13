@@ -641,39 +641,33 @@ class MemoryDB:
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
 
-        existing = self.get(memory_id)
-        if not existing:
-            return False
-
         now = _now_iso()
-        updates = []
-        params: list = []
 
-        if content is not None:
-            updates.append("content = ?")
-            params.append(content)
-        if category is not None:
-            updates.append("category = ?")
-            params.append(category)
-        if tags is not None:
-            updates.append("tags = ?")
-            params.append(json.dumps(tags))
-
-        updates.append("updated_at = ?")
-        params.append(now)
-        params.append(memory_id)
-
-        # Validate updates against allowlist before string joining
-        # to ensure no unexpected column names are injected.
-        _ALLOWED = {"content = ?", "category = ?", "tags = ?", "updated_at = ?"}
-        if not all(u in _ALLOWED for u in updates):
-            invalid = [u for u in updates if u not in _ALLOWED]
-            raise ValueError(f"Unauthorized update columns detected: {invalid}")
-
-        self._conn.execute(
-            f"UPDATE memories SET {', '.join(updates)} WHERE id = ?",
-            params,
+        # Use static parameterized query with CASE WHEN for safe partial updates.
+        # This prevents SQL injection and ensures only specified fields are changed.
+        cursor = self._conn.execute(
+            """
+            UPDATE memories SET
+                content = CASE WHEN :content_provided THEN :content ELSE content END,
+                category = CASE WHEN :category_provided THEN :category ELSE category END,
+                tags = CASE WHEN :tags_provided THEN :tags ELSE tags END,
+                updated_at = :now
+            WHERE id = :id
+            """,
+            {
+                "id": memory_id,
+                "now": now,
+                "content": content,
+                "content_provided": content is not None,
+                "category": category,
+                "category_provided": category is not None,
+                "tags": json.dumps(tags) if tags is not None else None,
+                "tags_provided": tags is not None,
+            },
         )
+
+        if cursor.rowcount == 0:
+            return False
 
         # Update embedding if provided
         if embedding and self._vec_enabled:

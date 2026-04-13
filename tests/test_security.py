@@ -27,3 +27,27 @@ def test_max_tags_limit(tmp_db: MemoryDB):
     large_tags = [f"tag{i}" for i in range(51)]
     with pytest.raises(ValueError, match="Maximum of 50 tags allowed in search filter"):
         tmp_db.search("memory", tags=large_tags)
+
+
+def test_update_security(tmp_db: MemoryDB):
+    """Verify update method robustness."""
+    mid = tmp_db.add("content", category="cat")
+
+    # Verify that we cannot update internal columns even if we try to be clever
+    # The new implementation doesn'\''t even take a list of columns, so it'\''s
+    # much harder to exploit.
+
+    # Normal update works
+    assert tmp_db.update(mid, content="new content") is True
+    mem = tmp_db.get(mid)
+    assert mem is not None
+    assert mem["content"] == "new content"
+
+    # Try to inject something into a parameter (though it'\''s already safe due to placeholders)
+    # This is more of a sanity check.
+    malicious_content = "content', category='pwned"
+    tmp_db.update(mid, content=malicious_content)
+    mem = tmp_db.get(mid)
+    assert mem is not None
+    assert mem["content"] == malicious_content
+    assert mem["category"] == "cat"  # Category remains unchanged
