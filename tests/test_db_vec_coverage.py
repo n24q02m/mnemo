@@ -90,3 +90,96 @@ class TestStatsWithForcedVec:
     def test_stats_reports_vec_enabled(self, _forced_vec_db):
         stats = _forced_vec_db.stats()
         assert stats["vec_enabled"] is True
+
+
+class TestInitSchemaVecCreateBranch:
+    """Cover the `CREATE VIRTUAL TABLE memories_vec` branch in _init_schema.
+
+    Normally this branch only runs when sqlite-vec loaded successfully. On
+    runners without that capability, flip _vec_enabled manually and re-run
+    _init_schema with a stubbed execute() that records the CREATE VIRTUAL
+    TABLE call without actually needing sqlite-vec to be present.
+    """
+
+    def test_init_schema_creates_vec_table_when_missing(self, tmp_path: Path):
+        """Wrap _conn in a proxy so we can intercept CREATE VIRTUAL TABLE.
+
+        Uses a fresh sqlite connection that does NOT have sqlite-vec loaded,
+        so the CREATE VIRTUAL TABLE USING vec0(...) attempt would normally
+        fail. The proxy intercepts and redirects to a plain table, letting
+        the _init_schema branch execute to completion for coverage purposes.
+        """
+        import sqlite3
+
+        db = MemoryDB(tmp_path / "reinit.db", embedding_dims=3)
+        db._vec_enabled = True
+        real_conn = db._conn
+        # Drop any existing memories_vec on the real connection
+        try:
+            real_conn.execute("DROP TABLE IF EXISTS memories_vec")
+            real_conn.commit()
+        except Exception:
+            pass
+
+        # Swap to a brand-new connection without sqlite-vec loaded so
+        # CREATE VIRTUAL TABLE vec0(...) would fail; proxy intercepts.
+        plain_conn = sqlite3.connect(":memory:", check_same_thread=False)
+        plain_conn.row_factory = sqlite3.Row
+        # Seed with the minimum schema _init_schema expects
+        plain_conn.executescript(
+            """
+            CREATE TABLE memories (
+                id TEXT PRIMARY KEY, content TEXT, category TEXT,
+                tags TEXT, source TEXT, created_at TEXT, updated_at TEXT,
+                access_count INT, last_accessed TEXT, importance REAL
+            );
+            """
+        )
+
+        recorded_sql: list[str] = []
+
+        class _ConnProxy:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                if "CREATE VIRTUAL TABLE" in sql:
+                    recorded_sql.append(sql)
+                    return self._inner.execute(
+                        "CREATE TABLE memories_vec "
+                        "(id TEXT PRIMARY KEY, embedding BLOB)"
+                    )
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def executescript(self, sql):
+                return self._inner.executescript(sql)
+
+            def commit(self):
+                return self._inner.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        db._conn = _ConnProxy(plain_conn)  # type: ignore[assignment]
+        try:
+            db._init_schema()
+            assert any("CREATE VIRTUAL TABLE" in s for s in recorded_sql)
+        finally:
+            db._conn = real_conn
+            plain_conn.close()
+            db.close()
+
+    def test_init_schema_rejects_invalid_dims(self, tmp_path: Path):
+        """Lines 270-273: dimension validation before f-string interpolation."""
+        db = MemoryDB(tmp_path / "baddims.db", embedding_dims=3)
+        db._vec_enabled = True
+        db._embedding_dims = 99999  # Above valid range
+        try:
+            db._conn.execute("DROP TABLE IF EXISTS memories_vec")
+        except Exception:
+            pass
+        db._conn.commit()
+
+        with pytest.raises(ValueError, match="embedding_dims must be between"):
+            db._init_schema()
+        db.close()
