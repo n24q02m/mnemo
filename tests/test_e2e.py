@@ -405,6 +405,9 @@ class TestConfig:
         text = parse_result(r)
         assert isinstance(text, str)
 
+    import pytest
+
+    @pytest.mark.timeout(300)
     async def test_warmup(self, session):
         """Warmup pre-downloads embedding model."""
         r = await session.call_tool("config", {"action": "warmup"})

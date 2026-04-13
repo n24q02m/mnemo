@@ -344,10 +344,14 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
             JOIN traverse t ON r.target_id = t.entity_id
             WHERE t.depth < ?
         )
-        SELECT DISTINCT me.memory_id
-        FROM memory_entities me
-        JOIN traverse t ON me.entity_id = t.entity_id
-        WHERE me.memory_id != ?
+        -- Bolt Performance Optimization:
+        -- Replaced `JOIN traverse t` with an `IN (SELECT entity_id FROM traverse)` semi-join.
+        -- This prevents row multiplication caused by CTEs yielding the same entity_id at multiple depths,
+        -- allowing the SQLite engine to short-circuit evaluation early for significant speedups
+        -- on highly-connected graphs.
+        SELECT DISTINCT memory_id
+        FROM memory_entities
+        WHERE memory_id != ? AND entity_id IN (SELECT entity_id FROM traverse)
     """
     rows = conn.execute(query, (memory_id, max_depth, max_depth, memory_id)).fetchall()
 
