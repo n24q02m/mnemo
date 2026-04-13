@@ -10,6 +10,7 @@ Provides:
 import io
 import json
 import math
+import re
 import sqlite3
 import struct
 import uuid
@@ -22,12 +23,21 @@ from loguru import logger
 _STRUCT_CACHE: dict[int, struct.Struct] = {}
 
 
-def _serialize_f32(vec: list[float]) -> bytes:
+def _serialize_f32(vec: list[float], target_dims: int = 0) -> bytes:
     """Serialize float list to bytes for sqlite-vec.
+
+    Ensures vector consistency with the database schema by truncating or
+    zero-padding input vectors to match target_dims if provided.
 
     Uses a cached struct.Struct instance to avoid recompiling the format
     string on every vector insertion or search, providing a ~30% speedup.
     """
+    if target_dims > 0:
+        if len(vec) > target_dims:
+            vec = vec[:target_dims]
+        elif len(vec) < target_dims:
+            vec = vec + [0.0] * (target_dims - len(vec))
+
     n = len(vec)
     try:
         s = _STRUCT_CACHE[n]
@@ -256,31 +266,46 @@ class MemoryDB:
         except Exception:
             pass  # Column already exists
 
-        # sqlite-vec virtual table (only if enabled)
-        if self._vec_enabled and self._embedding_dims > 0:
-            # Check if vec table exists
-            row = self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_vec'"
-            ).fetchone()
-            if not row:
-                # Validate and cast dimensions before f-string interpolation
-                # to prevent potential SQL injection if the source ever becomes
-                # untrusted.
-                dims = int(self._embedding_dims)
-                if not (0 <= dims <= 10000):
-                    raise ValueError(
-                        f"embedding_dims must be between 0 and 10000, got {dims}"
-                    )
-                self._conn.execute(f"""
-                    CREATE VIRTUAL TABLE memories_vec
-                    USING vec0(
-                        id TEXT PRIMARY KEY,
-                        embedding float[{dims}]
-                    )
-                """)
-                logger.debug("Created memories_vec table")
+        self._ensure_vec_table(self._embedding_dims)
 
         self._conn.commit()
+
+    def _ensure_vec_table(self, dims: int) -> None:
+        """Idempotently ensure the vector table exists with correct dimensions.
+
+        Attempts to detect existing dimensions from sqlite_master to maintain
+        schema consistency.
+        """
+        if not self._vec_enabled or dims <= 0:
+            return
+
+        # Try to detect dimension from existing table
+        row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_vec'"
+        ).fetchone()
+
+        if row:
+            # Extract dimension from 'float[N]'
+            match = re.search(r"float\s*\[\s*(\d+)\s*\]", row["sql"], re.IGNORECASE)
+            if match:
+                detected_dims = int(match.group(1))
+                if detected_dims != dims:
+                    logger.warning(
+                        f"memories_vec dimension mismatch: requested {dims}, "
+                        f"found {detected_dims}. Using detected dimension."
+                    )
+                    self._embedding_dims = detected_dims
+            return
+
+        # Create table if not exists
+        self._conn.execute(f"""
+            CREATE VIRTUAL TABLE memories_vec
+            USING vec0(
+                id TEXT PRIMARY KEY,
+                embedding float[{dims}]
+            )
+        """)
+        logger.debug(f"Created memories_vec table with {dims} dims")
 
     @property
     def vec_enabled(self) -> bool:
@@ -323,7 +348,7 @@ class MemoryDB:
         if embedding and self._vec_enabled:
             self._conn.execute(
                 "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                (memory_id, _serialize_f32(embedding)),
+                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
             )
 
         self._conn.commit()
@@ -370,7 +395,7 @@ class MemoryDB:
                     JOIN memories m ON v.id = m.id
                     WHERE v.embedding MATCH ?
                 """
-                vec_params: list = [_serialize_f32(embedding)]
+                vec_params: list = [_serialize_f32(embedding, self._embedding_dims)]
 
                 if category:
                     vec_sql += " AND m.category = ?"
@@ -674,7 +699,7 @@ class MemoryDB:
             self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
             self._conn.execute(
                 "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                (memory_id, _serialize_f32(embedding)),
+                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
             )
 
         self._conn.commit()
