@@ -902,18 +902,25 @@ class MemoryDB:
     ) -> int:
         """Move old, low-importance memories to archive. Returns count archived."""
         cursor = self._conn.cursor()
+
+        # Precompute the cutoff timestamp once so SQLite does not re-evaluate
+        # datetime('now', ...) for every row in the WHERE clause.
+        cutoff_date = cursor.execute(
+            "SELECT datetime('now', ?)", (f"-{days} days",)
+        ).fetchone()[0]
+
         rows = cursor.execute(
             """SELECT id, content, category, tags, source, importance,
                       created_at, updated_at, access_count, last_accessed
                FROM memories
-               WHERE last_accessed < datetime('now', ? || ' days')
-                 AND importance < ?""",
-            (f"-{days}", importance_threshold),
+               WHERE last_accessed < ? AND importance < ?""",
+            (cutoff_date, importance_threshold),
         ).fetchall()
 
-        now = _now_iso()
         if not rows:
             return 0
+
+        now = _now_iso()
 
         insert_data = [(*row, now) for row in rows]
         delete_data = [(row[0],) for row in rows]
