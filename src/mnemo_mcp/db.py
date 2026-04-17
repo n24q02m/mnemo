@@ -138,7 +138,20 @@ class MemoryDB:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        """Initialize database schema."""
+        """Initialize database schema.
+
+        Delegates to focused sub-initializers so each concern (core memory
+        tables, knowledge graph, archive, vector index) owns its own SQL
+        script and can be read / tested in isolation.
+        """
+        self._init_memory_schema()
+        self._init_graph_schema()
+        self._init_archive_schema()
+        self._ensure_vec_table(self._embedding_dims)
+        self._conn.commit()
+
+    def _init_memory_schema(self) -> None:
+        """Initialize core memory tables, indexes, FTS5, and importance column."""
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -200,7 +213,16 @@ class MemoryDB:
             END;
         """)
 
-        # Knowledge graph tables
+        # Add importance column to memories (migration for existing DBs)
+        try:
+            self._conn.execute(
+                "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.5"
+            )
+        except Exception:
+            pass  # Column already exists
+
+    def _init_graph_schema(self) -> None:
+        """Initialize knowledge graph tables (entities, relations, memory_entities)."""
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS entities (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -235,8 +257,11 @@ class MemoryDB:
             -- as the database grows.
             CREATE INDEX IF NOT EXISTS idx_memory_entities_entity_id
                 ON memory_entities(entity_id);
+        """)
 
-            -- Archive table
+    def _init_archive_schema(self) -> None:
+        """Initialize archive tables and pagination-supporting indexes."""
+        self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS archived_memories (
                 id TEXT PRIMARY KEY NOT NULL,
                 content TEXT NOT NULL,
@@ -257,18 +282,6 @@ class MemoryDB:
             CREATE INDEX IF NOT EXISTS idx_archived_memories_archived_at
                 ON archived_memories(archived_at DESC);
         """)
-
-        # Add importance column to memories (migration for existing DBs)
-        try:
-            self._conn.execute(
-                "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.5"
-            )
-        except Exception:
-            pass  # Column already exists
-
-        self._ensure_vec_table(self._embedding_dims)
-
-        self._conn.commit()
 
     def _ensure_vec_table(self, dims: int) -> None:
         """Idempotently ensure the vector table exists with correct dimensions.
