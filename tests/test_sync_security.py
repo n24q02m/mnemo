@@ -8,11 +8,10 @@ from mnemo_mcp.config import Settings
 
 
 def test_google_drive_client_id_default(monkeypatch):
-    """Default google_drive_client_id ships OAuth app ID for Device Code flow."""
+    """Default google_drive_client_id is an empty string for security."""
     monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_ID", raising=False)
     s = Settings(api_keys=None)
-    assert s.google_drive_client_id != ""
-    assert "apps.googleusercontent.com" in s.google_drive_client_id
+    assert s.google_drive_client_id == ""
 
 
 def test_google_drive_client_id_from_env(monkeypatch):
