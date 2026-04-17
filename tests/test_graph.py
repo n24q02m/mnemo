@@ -121,6 +121,77 @@ class TestExtractEntities:
             assert result is not None
             mock_llm.assert_called_once()
 
+    async def test_llm_completion_gemini_no_prefix(self):
+        with (
+            patch(
+                "mnemo_mcp.graph.os.getenv",
+                side_effect=lambda k, d=None: "test-key" if "KEY" in k else d,
+            ),
+            patch("google.genai.Client") as mock_genai,
+        ):
+            mock_genai.return_value.models.generate_content.return_value.text = (
+                "gemini response"
+            )
+            from mnemo_mcp.graph import _llm_completion
+
+            res = await _llm_completion(
+                "gemini-pro", [{"role": "user", "content": "hi"}]
+            )
+            assert res == "gemini response"
+
+    async def test_llm_completion_openai_with_prefix(self):
+        with (
+            patch(
+                "mnemo_mcp.graph.os.getenv",
+                side_effect=lambda k, d=None: "test-key" if "KEY" in k else d,
+            ),
+            patch("openai.OpenAI") as mock_openai,
+        ):
+            mock_openai.return_value.chat.completions.create.return_value.choices[
+                0
+            ].message.content = "openai response"
+            from mnemo_mcp.graph import _llm_completion
+
+            res = await _llm_completion(
+                "openai/gpt-4", [{"role": "user", "content": "hi"}]
+            )
+            assert res == "openai response"
+
+    async def test_llm_completion_xai_routing(self):
+        def mock_getenv(k, d=None):
+            if k == "XAI_API_KEY":
+                return "xai-key"
+            if k == "OPENAI_API_KEY":
+                return None
+            return d
+
+        with (
+            patch("mnemo_mcp.graph.os.getenv", side_effect=mock_getenv),
+            patch("openai.OpenAI") as mock_openai,
+        ):
+            from mnemo_mcp.graph import _llm_completion
+
+            await _llm_completion("gpt-4", [{"role": "user", "content": "hi"}])
+            # Verify base_url was set for xAI
+            _, kwargs = mock_openai.call_args
+            assert kwargs["base_url"] == "https://api.x.ai/v1"
+
+    async def test_resolve_llm_model_custom(self):
+        from mnemo_mcp.graph import _resolve_llm_model
+
+        class MockSettings:
+            llm_models = " custom/model , other/model "
+
+        assert _resolve_llm_model(MockSettings()) == "custom/model"
+
+    async def test_resolve_llm_model_empty(self):
+        from mnemo_mcp.graph import _resolve_llm_model
+
+        class MockSettings:
+            llm_models = ""
+
+        assert _resolve_llm_model(MockSettings()) == "gemini/gemini-3-flash-preview"
+
 
 class TestScoreImportance:
     async def test_returns_default_in_local_mode_no_keys(self):
@@ -216,6 +287,16 @@ class TestUpsertEntities:
         ids2 = upsert_entities(conn, entities)
         assert ids1[0] == ids2[0]  # Same ID
 
+    def test_duplicate_entities_in_same_batch(self, tmp_db: MemoryDB):
+        conn = tmp_db._conn
+        entities = [
+            {"name": "Python", "type": "tool"},
+            {"name": "Python", "type": "tool"},
+        ]
+        ids = upsert_entities(conn, entities)
+        assert len(ids) == 2
+        assert ids[0] == ids[1]
+
     def test_skips_empty_name(self, tmp_db: MemoryDB):
         conn = tmp_db._conn
         entities = [{"name": "", "type": "tool"}, {"name": "Valid", "type": "concept"}]
@@ -231,6 +312,10 @@ class TestUpsertEntities:
             "SELECT entity_type FROM entities WHERE id = ?", (ids[0],)
         ).fetchone()
         assert row["entity_type"] == "concept"
+
+    def test_upsert_entities_empty_list(self, tmp_db: MemoryDB):
+        conn = tmp_db._conn
+        assert upsert_entities(conn, []) == []
 
 
 class TestCreateRelations:
@@ -287,6 +372,19 @@ class TestCreateRelations:
         count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         assert count == 1
 
+    def test_duplicate_relations_in_same_batch(self, tmp_db: MemoryDB):
+        conn = tmp_db._conn
+        entities = [{"name": "A"}, {"name": "B"}]
+        ids = upsert_entities(conn, entities)
+        name_to_id = {"A": ids[0], "B": ids[1]}
+        relations = [
+            {"source": "A", "target": "B", "type": "related_to"},
+            {"source": "A", "target": "B", "type": "related_to"},
+        ]
+        create_relations(conn, relations, name_to_id)
+        count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        assert count == 1
+
 
 class TestLinkMemoryEntities:
     def test_links_memory_to_entities(self, tmp_db: MemoryDB):
@@ -325,7 +423,7 @@ class TestLinkMemoryEntities:
         ).fetchone()[0]
         assert count == 0
 
-    def test_exception_is_caught_and_logged(self, tmp_db: MemoryDB):
+    def test_exception_is_caught_and_logged(self):
         """Exception during linking is caught and logged with details."""
         conn = MagicMock()
         conn.executemany.side_effect = Exception("DB error")
