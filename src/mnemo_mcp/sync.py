@@ -577,29 +577,8 @@ async def check_health() -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def setup_google_auth(
-    relay_url: str | None = None,
-    session_id: str | None = None,
-) -> bool:
-    """Interactive Google OAuth setup via Device Code flow.
-
-    If relay_url + session_id provided, send device code via relay messaging.
-    Otherwise print to stderr.
-
-    Returns True on success, False on failure.
-    """
-    import sys
-
-    client_id = settings.google_drive_client_id
-    client_secret = settings.google_drive_client_secret
-    if not client_id:
-        logger.error("GOOGLE_DRIVE_CLIENT_ID not configured")
-        return False
-    if not client_secret:
-        logger.error("GOOGLE_DRIVE_CLIENT_SECRET not configured")
-        return False
-
-    # 1. Request device code
+async def _request_device_code(client_id: str) -> dict | None:
+    """Request a device code from Google OAuth2."""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -613,28 +592,24 @@ async def setup_google_auth(
 
             if response.status_code != 200:
                 logger.error(f"Device code request failed: {response.text}")
-                return False
+                return None
 
-            device_data = response.json()
+            return response.json()
 
     except Exception as e:
         logger.error(f"Device code request error: {e}")
-        return False
+        return None
 
-    device_code = device_data["device_code"]
-    user_code = device_data["user_code"]
-    verification_url = device_data["verification_url"]
-    interval = device_data.get("interval", 5)
-    expires_in = device_data.get("expires_in", 1800)
 
-    # Do NOT auto-open the browser from the background sync path: this
-    # function is also hit by the periodic sync loop (every SYNC_INTERVAL
-    # seconds) whenever the refresh token is missing or revoked, and we
-    # don't want to surprise an idle user with repeated tabs. The
-    # user-initiated form path (credential_state.gdrive_next_step) is the
-    # correct place to open the browser; here we just log the URL.
+async def _present_user_code(
+    user_code: str,
+    verification_url: str,
+    relay_url: str | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Present the device code to the user (via relay or stderr)."""
+    import sys
 
-    # 2. Present code to user
     auth_message = (
         f"Google Drive Authorization\n"
         f"Visit: {verification_url}\n"
@@ -661,7 +636,15 @@ async def setup_google_auth(
     else:
         print(f"\n{auth_message}\n", file=sys.stderr, flush=True)
 
-    # 3. Poll for token
+
+async def _poll_for_token(
+    client_id: str,
+    client_secret: str,
+    device_code: str,
+    interval: int,
+    expires_in: int,
+) -> bool:
+    """Poll Google's token endpoint until the user authorizes."""
     deadline = time.time() + expires_in
 
     while time.time() < deadline:
@@ -714,6 +697,43 @@ async def setup_google_auth(
 
     logger.error("Device code expired")
     return False
+
+
+async def setup_google_auth(
+    relay_url: str | None = None,
+    session_id: str | None = None,
+) -> bool:
+    """Interactive Google OAuth setup via Device Code flow.
+
+    If relay_url + session_id provided, send device code via relay messaging.
+    Otherwise print to stderr.
+
+    Returns True on success, False on failure.
+    """
+    client_id = settings.google_drive_client_id
+    client_secret = settings.google_drive_client_secret
+    if not client_id or not client_secret:
+        logger.error("GOOGLE_DRIVE_CLIENT_ID or CLIENT_SECRET not configured")
+        return False
+
+    # 1. Request device code
+    device_data = await _request_device_code(client_id)
+    if not device_data:
+        return False
+
+    device_code = device_data["device_code"]
+    user_code = device_data["user_code"]
+    verification_url = device_data["verification_url"]
+    interval = device_data.get("interval", 5)
+    expires_in = device_data.get("expires_in", 1800)
+
+    # 2. Present code to user
+    await _present_user_code(user_code, verification_url, relay_url, session_id)
+
+    # 3. Poll for token
+    return await _poll_for_token(
+        client_id, client_secret, device_code, interval, expires_in
+    )
 
 
 # ---------------------------------------------------------------------------
