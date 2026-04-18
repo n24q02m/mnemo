@@ -424,7 +424,7 @@ class MemoryDB:
                     vec_sql += " AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
                     vec_params.append(json.dumps(tags))
 
-                vec_sql += " ORDER BY distance LIMIT ?"
+                vec_sql += " AND k = ? ORDER BY distance"
                 vec_params.append(limit * 3)
 
                 vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()

@@ -36,55 +36,7 @@ def vec_db(tmp_path: Path):
 
 @pytest.fixture
 def mock_db_with_fixed_sql(vec_db: MemoryDB):
-    """Wrap vec_db._conn to fix the vec SQL for testing.
-
-    sqlite-vec requires parameters to be bound, but sometimes our code
-    might pass things differently. This wrapper ensures tests pass.
-    """
-    original_conn = vec_db._conn
-
-    class ConnProxy:
-        """Proxy that intercepts execute() and cursor() to rewrite vec queries."""
-
-        def __getattr__(self, name):
-            return getattr(original_conn, name)
-
-        def cursor(self):
-            return CursorProxy(original_conn.cursor())
-
-        def execute(self, sql, params=None):
-            return _execute_fixed(original_conn, sql, params)
-
-    def _execute_fixed(target, sql, params=None):
-        if (
-            "memories_vec" in sql
-            and "MATCH" in sql
-            and "ORDER BY distance LIMIT ?" in sql
-        ):
-            fixed_sql = sql.replace(
-                "ORDER BY distance LIMIT ?",
-                "AND k = ? ORDER BY distance",
-            )
-            if params:
-                return target.execute(fixed_sql, params)
-            return target.execute(fixed_sql)
-        if params:
-            return target.execute(sql, params)
-        return target.execute(sql)
-
-    class CursorProxy:
-        """Proxy that intercepts execute() for cursors."""
-
-        def __init__(self, original_cursor):
-            self._cursor = original_cursor
-
-        def __getattr__(self, name):
-            return getattr(self._cursor, name)
-
-        def execute(self, sql, params=None):
-            return _execute_fixed(self._cursor, sql, params)
-
-    vec_db._conn = ConnProxy()
+    """MemoryDB fixture for testing."""
     return vec_db
 
 
