@@ -160,7 +160,7 @@ class TestInitSchemaVecCreateBranch:
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
-        db._conn = _ConnProxy(plain_conn)  # type: ignore[assignment]
+        db._conn = _ConnProxy(plain_conn)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         try:
             db._init_schema()
             assert any("CREATE VIRTUAL TABLE" in s for s in recorded_sql)
@@ -225,7 +225,7 @@ class TestSearchVecBranch:
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
-        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         try:
             results = db.search(
                 query="alpha",
@@ -270,7 +270,7 @@ class TestSearchVecBranch:
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
-        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         try:
             results = db.search(
                 query="alpha",
@@ -309,7 +309,7 @@ class TestSearchVecBranch:
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
-        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         try:
             # Must not raise -- exception swallowed + logged
             results = db.search(query="alpha", embedding=[0.1, 0.2, 0.3], limit=5)
