@@ -257,3 +257,39 @@ class TestGetTokenPath:
             m.get_data_dir.return_value = token_dir.parent
             path = get_token_path("drive")
         assert path == token_dir / "drive.json"
+
+
+class TestAsyncTokenStore:
+    @pytest.mark.asyncio
+    async def test_async_load_valid_token(self, token_dir):
+        from mnemo_mcp.token_store import async_load_token
+
+        token = {"access_token": "async123", "token_type": "Bearer"}
+        (token_dir / "async_drive.json").write_text(json.dumps(token))
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = token_dir.parent
+            result = await async_load_token("async_drive")
+        assert result == token
+
+    @pytest.mark.asyncio
+    async def test_async_save_creates_file(self, token_dir):
+        from mnemo_mcp.token_store import async_save_token
+
+        token = {"access_token": "async_save", "token_type": "Bearer"}
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = token_dir.parent
+            await async_save_token("async_drive_save", token)
+
+        saved = json.loads((token_dir / "async_drive_save.json").read_text())
+        assert saved["access_token"] == "async_save"
+
+    @pytest.mark.asyncio
+    async def test_async_delete_existing(self, token_dir):
+        from mnemo_mcp.token_store import async_delete_token
+
+        (token_dir / "async_delete.json").write_text("{}")
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = token_dir.parent
+            assert await async_delete_token("async_delete") is True
+        assert not (token_dir / "async_delete.json").exists()

@@ -22,20 +22,24 @@ from mnemo_mcp.sync import (
 
 
 class TestTokenWrappers:
-    def test_load_token_delegates_to_store(self):
+    async def test_load_token_delegates_to_store(self):
         """_load_token calls token_store.load_token with 'google_drive'."""
         with patch(
-            "mnemo_mcp.token_store.load_token", return_value={"access_token": "abc"}
+            "mnemo_mcp.token_store.async_load_token",
+            new_callable=AsyncMock,
+            return_value={"access_token": "abc"},
         ) as mock:
-            result = _load_token()
+            result = await _load_token()
             assert result == {"access_token": "abc"}
             mock.assert_called_once_with("google_drive")
 
-    def test_save_token_delegates_to_store(self):
+    async def test_save_token_delegates_to_store(self):
         """_save_token calls token_store.save_token with 'google_drive'."""
         token = {"access_token": "xyz"}
-        with patch("mnemo_mcp.token_store.save_token") as mock:
-            _save_token(token)
+        with patch(
+            "mnemo_mcp.token_store.async_save_token", new_callable=AsyncMock
+        ) as mock:
+            await _save_token(token)
             mock.assert_called_once_with("google_drive", token)
 
 
@@ -162,7 +166,7 @@ class TestSetupGoogleAuthFull:
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("mnemo_mcp.sync._save_token"),
+            patch("mnemo_mcp.sync._save_token", new_callable=AsyncMock),
             patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock),
         ):
             mock_settings.google_drive_client_id = "client123"
@@ -204,7 +208,7 @@ class TestSetupGoogleAuthFull:
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("mnemo_mcp.sync._save_token"),
+            patch("mnemo_mcp.sync._save_token", new_callable=AsyncMock),
             patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock),
         ):
             mock_settings.google_drive_client_id = "client123"
@@ -250,7 +254,7 @@ class TestSetupGoogleAuthFull:
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("mnemo_mcp.sync._save_token"),
+            patch("mnemo_mcp.sync._save_token", new_callable=AsyncMock),
             patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock),
         ):
             mock_settings.google_drive_client_id = "client123"
@@ -428,7 +432,7 @@ class TestSetupGoogleAuthFull:
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
             patch("httpx.AsyncClient") as mock_client_cls,
-            patch("mnemo_mcp.sync._save_token"),
+            patch("mnemo_mcp.sync._save_token", new_callable=AsyncMock),
             patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock),
         ):
             mock_settings.google_drive_client_id = "client123"
@@ -535,7 +539,11 @@ class TestSyncFullMergeSuccess:
 
         with (
             patch("mnemo_mcp.sync.settings") as mock_settings,
-            patch("mnemo_mcp.sync._has_token_available", return_value=True),
+            patch(
+                "mnemo_mcp.sync._has_token_available",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
             patch(
                 "mnemo_mcp.sync._get_valid_token",
                 new_callable=AsyncMock,

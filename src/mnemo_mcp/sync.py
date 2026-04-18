@@ -60,23 +60,23 @@ _folder_id_cache: dict[str, str] = {}
 # ---------------------------------------------------------------------------
 
 
-def _load_token() -> dict | None:
+async def _load_token() -> dict | None:
     """Load Google Drive OAuth token from local storage."""
-    from mnemo_mcp.token_store import load_token
+    from mnemo_mcp.token_store import async_load_token
 
-    return load_token(_TOKEN_PROVIDER)
+    return await async_load_token(_TOKEN_PROVIDER)
 
 
-def _save_token(token: dict) -> None:
+async def _save_token(token: dict) -> None:
     """Save Google Drive OAuth token to local storage."""
-    from mnemo_mcp.token_store import save_token
+    from mnemo_mcp.token_store import async_save_token
 
-    save_token(_TOKEN_PROVIDER, token)
+    await async_save_token(_TOKEN_PROVIDER, token)
 
 
-def _has_token_available() -> bool:
+async def _has_token_available() -> bool:
     """Check if a Google Drive token is available."""
-    return _load_token() is not None
+    return await _load_token() is not None
 
 
 async def _refresh_token(token: dict) -> dict | None:
@@ -121,7 +121,7 @@ async def _refresh_token(token: dict) -> dict | None:
                 "client_id": client_id,
                 "token_type": data.get("token_type", "Bearer"),
             }
-            _save_token(updated)
+            await _save_token(updated)
             logger.debug("Token refreshed successfully")
             return updated
 
@@ -135,7 +135,7 @@ async def _get_valid_token() -> dict | None:
 
     Returns token dict with valid access_token, or None.
     """
-    token = _load_token()
+    token = await _load_token()
     if not token:
         return None
 
@@ -494,7 +494,7 @@ async def sync_full(db: MemoryDB) -> dict:
         }
 
     # Check for valid token
-    if not _has_token_available():
+    if not await _has_token_available():
         return {
             "status": "error",
             "message": "No Google Drive token available. "
@@ -674,7 +674,7 @@ async def _poll_for_token(
                         "client_id": client_id,
                         "token_type": data.get("token_type", "Bearer"),
                     }
-                    _save_token(token)
+                    await _save_token(token)
                     logger.info("Google Drive authentication successful!")
                     return True
 

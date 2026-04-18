@@ -409,9 +409,9 @@ async def _gdrive_token_poll(
                 )
                 data = resp.json()
                 if "access_token" in data:
-                    from mnemo_mcp.token_store import save_token
+                    from mnemo_mcp.token_store import async_save_token
 
-                    save_token("google_drive", data)
+                    await async_save_token("google_drive", data)
                     logger.info("GDrive OAuth token saved successfully")
                     logger.info(
                         "GDrive authorized. Sync will start on next server restart."
