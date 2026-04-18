@@ -302,6 +302,16 @@ class TestRerankSettings:
         s = Settings()
         assert s.resolve_rerank_model() is None
 
+    def test_resolve_rerank_backend_non_rerank_api_keys(self):
+        """Returns 'local' when api_keys set but no reranker keys present."""
+        s = Settings(api_keys="OPENAI_API_KEY:test-key")
+        assert s.resolve_rerank_backend() == "local"
+
+    def test_resolve_rerank_model_non_rerank_api_keys(self):
+        """Returns None when api_keys set but no reranker keys present."""
+        s = Settings(api_keys="OPENAI_API_KEY:test-key")
+        assert s.resolve_rerank_model() is None
+
     def test_resolve_local_rerank_model(self):
         s = Settings()
         model = s.resolve_local_rerank_model()

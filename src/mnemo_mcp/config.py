@@ -172,12 +172,11 @@ class Settings(BaseSettings):
 
         # Set first key of each env var (provider SDKs read from env)
         for env_var, keys in keys_by_env.items():
-            if keys:
-                os.environ[env_var] = keys[0]
-                # Set alias if defined (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
-                alias = self._ENV_ALIASES.get(env_var)
-                if alias and alias not in os.environ:
-                    os.environ[alias] = keys[0]
+            os.environ[env_var] = keys[0]
+            # Set alias if defined (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
+            alias = self._ENV_ALIASES.get(env_var)
+            if alias and alias not in os.environ:
+                os.environ[alias] = keys[0]
 
         return keys_by_env
 
