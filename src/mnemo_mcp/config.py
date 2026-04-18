@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     - SYNC_FOLDER: Google Drive folder name (default: "mnemo-mcp")
     - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)
     - GOOGLE_DRIVE_CLIENT_ID: OAuth client ID for Google Drive sync
+    - GOOGLE_DRIVE_CLIENT_SECRET: OAuth client secret for Google Drive sync
     """
 
     # Database

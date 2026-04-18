@@ -309,17 +309,20 @@ class TestRerankSettings:
         assert "Qwen3-Reranker-0.6B" in model
 
 
-class TestGoogleDriveClientId:
-    def test_default_empty_client_id(self):
+class TestGoogleDriveCredentials:
+    def test_default_ships_empty_credentials(self):
         s = Settings()
         assert s.google_drive_client_id == ""
+        assert s.google_drive_client_secret == ""
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv(
             "GOOGLE_DRIVE_CLIENT_ID", "123456.apps.googleusercontent.com"
         )
+        monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_SECRET", "test-secret")
         s = Settings()
         assert s.google_drive_client_id == "123456.apps.googleusercontent.com"
+        assert s.google_drive_client_secret == "test-secret"
 
 
 class TestSetupProviders:

@@ -8,17 +8,21 @@ from mnemo_mcp.config import Settings
 
 
 def test_google_drive_client_id_default(monkeypatch):
-    """Default google_drive_client_id is an empty string for security."""
+    """Default google_drive_client_id and secret should be empty strings."""
     monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_SECRET", raising=False)
     s = Settings(api_keys=None)
     assert s.google_drive_client_id == ""
+    assert s.google_drive_client_secret == ""
 
 
-def test_google_drive_client_id_from_env(monkeypatch):
-    """google_drive_client_id should be settable via env."""
+def test_google_drive_credentials_from_env(monkeypatch):
+    """google_drive credentials should be settable via env."""
     monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "test.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_SECRET", "test-secret")
     s = Settings(api_keys=None)
     assert s.google_drive_client_id == "test.apps.googleusercontent.com"
+    assert s.google_drive_client_secret == "test-secret"
 
 
 @pytest.mark.asyncio
