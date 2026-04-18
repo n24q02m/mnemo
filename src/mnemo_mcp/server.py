@@ -914,213 +914,27 @@ async def config(
 
     match action:
         case "status":
-            s = await asyncio.to_thread(db.stats)
-            return _json(
-                {
-                    "database": {
-                        "path": str(settings.get_db_path()),
-                        "total_memories": s["total_memories"],
-                        "categories": s["categories"],
-                        "vec_enabled": s["vec_enabled"],
-                    },
-                    "embedding": {
-                        "model": embedding_model,
-                        "dims": embedding_dims,
-                        "available": embedding_model is not None,
-                    },
-                    "sync": {
-                        "enabled": settings.sync_enabled,
-                        "provider": "google_drive",
-                        "folder": settings.sync_folder,
-                        "interval": settings.sync_interval,
-                    },
-                }
-            )
-
+            return await _handle_config_status(db, embedding_model, embedding_dims)
         case "sync":
-            from mnemo_mcp.sync import sync_full
-
-            result = await sync_full(db)
-            return _json(result)
-
+            return await _handle_config_sync(db)
         case "set":
-            if not key or value is None:
-                return _json({"error": "key and value are required for set"})
-
-            valid_keys = {
-                "sync_enabled",
-                "sync_interval",
-                "log_level",
-            }
-            if key not in valid_keys:
-                return _json(
-                    {
-                        "error": f"Invalid key: {key}",
-                        "valid_keys": sorted(valid_keys),
-                    }
-                )
-
-            # Apply setting
-            if key == "sync_enabled":
-                settings.sync_enabled = value.lower() in ("true", "1", "yes")
-            elif key == "sync_interval":
-                settings.sync_interval = int(value)
-            elif key == "log_level":
-                level = value.upper()
-                valid_levels = {
-                    "TRACE",
-                    "DEBUG",
-                    "INFO",
-                    "SUCCESS",
-                    "WARNING",
-                    "ERROR",
-                    "CRITICAL",
-                }
-                if level not in valid_levels:
-                    return _json(
-                        {
-                            "error": f"Invalid log level: {value}",
-                            "valid_levels": sorted(valid_levels),
-                        }
-                    )
-
-                settings.log_level = level
-                logger.remove()
-                logger.add(
-                    sys.stderr,
-                    level=settings.log_level,
-                )
-
-            return _json(
-                {
-                    "status": "updated",
-                    "key": key,
-                    "value": getattr(settings, key),
-                }
-            )
-
+            return await _handle_config_set(key, value)
         case "warmup":
-            from mnemo_mcp.setup_tool import run_warmup
-
-            result = await run_warmup()
-            return _json(result)
-
+            return await _handle_config_warmup()
         case "setup_sync":
-            from mnemo_mcp.setup_tool import run_setup_sync
-
-            result = await run_setup_sync()
-            return _json(result)
-
+            return await _handle_config_setup_sync()
         case "setup_status":
-            from mnemo_mcp.credential_state import get_setup_url, get_state
-
-            state = get_state()
-            return _json(
-                {
-                    "state": state.value,
-                    "setup_url": get_setup_url(),
-                    "cloud_keys_in_env": [
-                        k
-                        for k in (
-                            "JINA_AI_API_KEY",
-                            "GEMINI_API_KEY",
-                            "OPENAI_API_KEY",
-                            "COHERE_API_KEY",
-                        )
-                        if os.environ.get(k)
-                    ],
-                }
-            )
-
+            return await _handle_config_setup_status()
         case "setup_start":
-            from mnemo_mcp.credential_state import (
-                CredentialState,
-                get_state,
-                trigger_relay_setup,
-            )
-
-            if get_state() == CredentialState.CONFIGURED and not (
-                key and key.lower() == "force"
-            ):
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use key='force' to reconfigure.",
-                    }
-                )
-            url = await trigger_relay_setup(force=True)
-            if url:
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {"status": "error", "message": "Failed to start relay session."}
-            )
-
+            return await _handle_config_setup_start(key)
         case "setup_skip":
-            from mcp_core import set_local_mode
-
-            from mnemo_mcp.credential_state import CredentialState, set_state
-
-            set_local_mode("mnemo-mcp")
-            set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
-
+            return await _handle_config_setup_skip()
         case "setup_reset":
-            from mnemo_mcp.credential_state import reset_state
-
-            reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
-
+            return await _handle_config_setup_reset()
         case "setup_complete":
-            from mnemo_mcp.credential_state import (
-                CredentialState,
-                get_state,
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = get_state()
-            settings.setup_providers()
-
-            # Re-init embedding backend when configured (always, in case
-            # credentials changed or backend was cleared by reset)
-            if state == CredentialState.CONFIGURED and ctx is not None:
-                lc = ctx.request_context.lifespan_context
-                mode = settings.setup_providers()
-                await _init_embedding_backend(mode, lc)
-
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
-
+            return await _handle_config_setup_complete(ctx)
         case "setup_relay":
-            # Backward compat alias for setup_start
-            from mnemo_mcp.credential_state import trigger_relay_setup
-
-            url = await trigger_relay_setup(force=True)
-            if url:
-                return _json({"status": "setup_started", "setup_url": url})
-            return _json({"status": "error", "message": "Relay setup failed."})
-
+            return await _handle_config_setup_relay()
         case _:
             import difflib
 
@@ -1145,6 +959,227 @@ async def config(
                     "valid_actions": valid_actions,
                 }
             )
+
+
+async def _handle_config_status(
+    db: MemoryDB, embedding_model: str | None, embedding_dims: int
+) -> str:
+    s = await asyncio.to_thread(db.stats)
+    return _json(
+        {
+            "database": {
+                "path": str(settings.get_db_path()),
+                "total_memories": s["total_memories"],
+                "categories": s["categories"],
+                "vec_enabled": s["vec_enabled"],
+            },
+            "embedding": {
+                "model": embedding_model,
+                "dims": embedding_dims,
+                "available": embedding_model is not None,
+            },
+            "sync": {
+                "enabled": settings.sync_enabled,
+                "provider": "google_drive",
+                "folder": settings.sync_folder,
+                "interval": settings.sync_interval,
+            },
+        }
+    )
+
+
+async def _handle_config_sync(db: MemoryDB) -> str:
+    from mnemo_mcp.sync import sync_full
+
+    result = await sync_full(db)
+    return _json(result)
+
+
+async def _handle_config_set(key: str | None, value: str | None) -> str:
+    if not key or value is None:
+        return _json({"error": "key and value are required for set"})
+
+    valid_keys = {
+        "sync_enabled",
+        "sync_interval",
+        "log_level",
+    }
+    if key not in valid_keys:
+        return _json(
+            {
+                "error": f"Invalid key: {key}",
+                "valid_keys": sorted(valid_keys),
+            }
+        )
+
+    # Apply setting
+    if key == "sync_enabled":
+        settings.sync_enabled = value.lower() in ("true", "1", "yes")
+    elif key == "sync_interval":
+        settings.sync_interval = int(value)
+    elif key == "log_level":
+        level = value.upper()
+        valid_levels = {
+            "TRACE",
+            "DEBUG",
+            "INFO",
+            "SUCCESS",
+            "WARNING",
+            "ERROR",
+            "CRITICAL",
+        }
+        if level not in valid_levels:
+            return _json(
+                {
+                    "error": f"Invalid log level: {value}",
+                    "valid_levels": sorted(valid_levels),
+                }
+            )
+
+        settings.log_level = level
+        logger.remove()
+        logger.add(
+            sys.stderr,
+            level=settings.log_level,
+        )
+
+    return _json(
+        {
+            "status": "updated",
+            "key": key,
+            "value": getattr(settings, key),
+        }
+    )
+
+
+async def _handle_config_warmup() -> str:
+    from mnemo_mcp.setup_tool import run_warmup
+
+    result = await run_warmup()
+    return _json(result)
+
+
+async def _handle_config_setup_sync() -> str:
+    from mnemo_mcp.setup_tool import run_setup_sync
+
+    result = await run_setup_sync()
+    return _json(result)
+
+
+async def _handle_config_setup_status() -> str:
+    from mnemo_mcp.credential_state import get_setup_url, get_state
+
+    state = get_state()
+    return _json(
+        {
+            "state": state.value,
+            "setup_url": get_setup_url(),
+            "cloud_keys_in_env": [
+                k
+                for k in (
+                    "JINA_AI_API_KEY",
+                    "GEMINI_API_KEY",
+                    "OPENAI_API_KEY",
+                    "COHERE_API_KEY",
+                )
+                if os.environ.get(k)
+            ],
+        }
+    )
+
+
+async def _handle_config_setup_start(key: str | None) -> str:
+    from mnemo_mcp.credential_state import (
+        CredentialState,
+        get_state,
+        trigger_relay_setup,
+    )
+
+    if get_state() == CredentialState.CONFIGURED and not (
+        key and key.lower() == "force"
+    ):
+        return _json(
+            {
+                "status": "already_configured",
+                "message": "Already configured. Use key='force' to reconfigure.",
+            }
+        )
+    url = await trigger_relay_setup(force=True)
+    if url:
+        return _json(
+            {
+                "status": "setup_started",
+                "setup_url": url,
+                "message": "Open this URL to configure API keys.",
+            }
+        )
+    return _json({"status": "error", "message": "Failed to start relay session."})
+
+
+async def _handle_config_setup_skip() -> str:
+    from mcp_core import set_local_mode
+
+    from mnemo_mcp.credential_state import CredentialState, set_state
+
+    set_local_mode("mnemo-mcp")
+    set_state(CredentialState.LOCAL)
+    return _json(
+        {
+            "status": "ok",
+            "message": "Local mode set. Relay will not trigger on restart.",
+        }
+    )
+
+
+async def _handle_config_setup_reset() -> str:
+    from mnemo_mcp.credential_state import reset_state
+
+    reset_state()
+    return _json(
+        {
+            "status": "ok",
+            "message": "Credentials cleared. Next tool call will offer setup.",
+        }
+    )
+
+
+async def _handle_config_setup_complete(
+    ctx: Context | None,
+) -> str:
+    from mnemo_mcp.credential_state import (
+        CredentialState,
+        get_state,
+        resolve_credential_state,
+    )
+
+    resolve_credential_state()
+    state = get_state()
+    settings.setup_providers()
+
+    # Re-init embedding backend when configured (always, in case
+    # credentials changed or backend was cleared by reset)
+    if state == CredentialState.CONFIGURED and ctx is not None:
+        lc = ctx.request_context.lifespan_context
+        mode = settings.setup_providers()
+        await _init_embedding_backend(mode, lc)
+
+    return _json(
+        {
+            "status": "ok",
+            "state": state.value,
+            "message": "Credential state refreshed.",
+        }
+    )
+
+
+async def _handle_config_setup_relay() -> str:
+    # Backward compat alias for setup_start
+    from mnemo_mcp.credential_state import trigger_relay_setup
+
+    url = await trigger_relay_setup(force=True)
+    if url:
+        return _json({"status": "setup_started", "setup_url": url})
+    return _json({"status": "error", "message": "Relay setup failed."})
 
 
 @mcp.tool(
