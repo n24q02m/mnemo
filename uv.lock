@@ -829,7 +829,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "1.20.0"
+version = "1.20.2"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -866,7 +866,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"] },
-    { name = "n24q02m-mcp-core", specifier = ">=1.1.1" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.2.0" },
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic" },
     { name = "pydantic-settings" },

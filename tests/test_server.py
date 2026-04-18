@@ -462,7 +462,9 @@ class TestHandleUpdateErrors:
         mid = db.add("original")
         with patch.object(db, "update", side_effect=RuntimeError("unexpected")):
             result = json.loads(
-                await _handle_update(db, mid, "new content", None, None, None, 0)
+                await _handle_update(
+                    db, mid, "new content", None, None, None, None, None, 0
+                )
             )
         assert "error" in result
         assert "Internal error" in result["error"]

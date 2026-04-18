@@ -550,6 +550,8 @@ async def _handle_update(
     content: str | None,
     category: str | None,
     tags: list[str] | None,
+    source: str | None,
+    importance: float | None,
     embedding_model: str | None,
     embedding_dims: int,
 ) -> str:
@@ -572,6 +574,8 @@ async def _handle_update(
             content=content,
             category=category,
             tags=tags,
+            source=source,
+            importance=importance,
             embedding=embedding,
         )
     except ValueError as e:
@@ -781,6 +785,8 @@ async def memory(
     memory_id: str | None = None,
     category: str | None = None,
     tags: list[str] | None = None,
+    source: str | None = None,
+    importance: float | None = None,
     limit: int = 5,
     data: str | list | None = None,
     mode: str = "merge",
@@ -794,7 +800,7 @@ async def memory(
     - search: Find memories by natural language (query required, category/tags/limit optional).
       Always search before adding to avoid duplicates.
     - list: Browse all memories (category/limit optional). No query needed.
-    - update: Modify EXISTING memory (memory_id required, content/category/tags optional).
+    - update: Modify EXISTING memory (memory_id required, content/category/tags/source/importance optional).
       Get memory_id from search or list results first.
     - delete: Remove memory (memory_id required)
     - export: Export all as JSONL
@@ -823,7 +829,15 @@ async def memory(
             return await _handle_list(db, category, limit)
         case "update":
             return await _handle_update(
-                db, memory_id, content, category, tags, embedding_model, embedding_dims
+                db,
+                memory_id,
+                content,
+                category,
+                tags,
+                source,
+                importance,
+                embedding_model,
+                embedding_dims,
             )
         case "delete":
             return await _handle_delete(db, memory_id)

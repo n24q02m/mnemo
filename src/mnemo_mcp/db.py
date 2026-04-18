@@ -673,6 +673,8 @@ class MemoryDB:
         content: str | None = None,
         category: str | None = None,
         tags: list[str] | None = None,
+        source: str | None = None,
+        importance: float | None = None,
         embedding: list[float] | None = None,
     ) -> bool:
         """Update an existing memory. Returns True if found and updated.
@@ -695,6 +697,8 @@ class MemoryDB:
                 content = CASE WHEN :content_provided THEN :content ELSE content END,
                 category = CASE WHEN :category_provided THEN :category ELSE category END,
                 tags = CASE WHEN :tags_provided THEN :tags ELSE tags END,
+                source = CASE WHEN :source_provided THEN :source ELSE source END,
+                importance = CASE WHEN :importance_provided THEN :importance ELSE importance END,
                 updated_at = :now
             WHERE id = :id
             """,
@@ -707,6 +711,12 @@ class MemoryDB:
                 "category_provided": category is not None,
                 "tags": json.dumps(tags) if tags is not None else None,
                 "tags_provided": tags is not None,
+                "source": source,
+                "source_provided": source is not None,
+                "importance": max(0.0, min(1.0, importance))
+                if importance is not None
+                else None,
+                "importance_provided": importance is not None,
             },
         )
 

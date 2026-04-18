@@ -51,3 +51,29 @@ def test_update_security(tmp_db: MemoryDB):
     assert mem is not None
     assert mem["content"] == malicious_content
     assert mem["category"] == "cat"  # Category remains unchanged
+
+
+def test_update_security_extended(tmp_db: MemoryDB):
+    """Verify that only authorized columns can be updated via the CASE WHEN pattern."""
+    mid = tmp_db.add(
+        "original content", category="original cat", source="original source"
+    )
+
+    # Verify we can update new fields
+    tmp_db.update(mid, source="new source", importance=0.8)
+    mem = tmp_db.get(mid)
+    assert mem is not None
+    assert mem["source"] == "new source"
+    assert mem["importance"] == 0.8
+
+    # The vulnerability was about dynamic SQL construction where column names
+    # were interpolated. With the CASE WHEN pattern, the column names are static.
+    # Even if someone tries to pass a malicious string to one of the parameters,
+    # it is treated as a value, not a column name.
+
+    malicious_val = "ignored' --"
+    tmp_db.update(mid, category=malicious_val)
+    mem = tmp_db.get(mid)
+    assert mem is not None
+    assert mem["category"] == malicious_val
+    assert mem["content"] == "original content"

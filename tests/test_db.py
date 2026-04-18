@@ -747,3 +747,22 @@ def test_invalid_embedding_dims_bounds(tmp_path):
         MemoryDB(tmp_path / "fail.db", embedding_dims=20000)
     with pytest.raises(ValueError, match="embedding_dims must be between 0 and 10000"):
         MemoryDB(tmp_path / "fail2.db", embedding_dims=-1)
+
+    def test_update_all_fields(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("content", category="cat", tags=["t1"], source="s1")
+        ok = tmp_db.update(
+            mid,
+            content="new content",
+            category="new cat",
+            tags=["t2"],
+            source="new source",
+            importance=0.1,
+        )
+        assert ok is True
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["content"] == "new content"
+        assert mem["category"] == "new cat"
+        assert json.loads(mem["tags"]) == ["t2"]
+        assert mem["source"] == "new source"
+        assert mem["importance"] == 0.1
