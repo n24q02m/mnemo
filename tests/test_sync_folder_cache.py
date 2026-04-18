@@ -24,43 +24,43 @@ from mnemo_mcp.sync import (
 
 
 class TestLoadFolderId:
-    def test_returns_none_when_file_missing(self, tmp_path):
+    async def test_returns_none_when_file_missing(self, tmp_path):
         """Returns None when sync_folder_ids.json doesn't exist."""
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            result = _load_folder_id("test-folder")
+            result = await _load_folder_id("test-folder")
         assert result is None
 
-    def test_returns_id_when_present(self, tmp_path):
+    async def test_returns_id_when_present(self, tmp_path):
         """Returns folder ID from saved file."""
         path = tmp_path / "sync_folder_ids.json"
         path.write_text(json.dumps({"my-folder": "folder-123"}), encoding="utf-8")
 
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            result = _load_folder_id("my-folder")
+            result = await _load_folder_id("my-folder")
 
         assert result == "folder-123"
 
-    def test_returns_none_for_unknown_folder(self, tmp_path):
+    async def test_returns_none_for_unknown_folder(self, tmp_path):
         """Returns None when folder name not in saved file."""
         path = tmp_path / "sync_folder_ids.json"
         path.write_text(json.dumps({"other-folder": "id-456"}), encoding="utf-8")
 
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            result = _load_folder_id("my-folder")
+            result = await _load_folder_id("my-folder")
 
         assert result is None
 
-    def test_handles_json_decode_error(self, tmp_path):
+    async def test_handles_json_decode_error(self, tmp_path):
         """Returns None when file contains invalid JSON."""
         path = tmp_path / "sync_folder_ids.json"
         path.write_text("not-valid-json", encoding="utf-8")
 
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            result = _load_folder_id("my-folder")
+            result = await _load_folder_id("my-folder")
 
         assert result is None
 
@@ -71,38 +71,38 @@ class TestLoadFolderId:
 
 
 class TestSaveFolderId:
-    def test_creates_new_file(self, tmp_path):
+    async def test_creates_new_file(self, tmp_path):
         """Creates sync_folder_ids.json with folder ID."""
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            _save_folder_id("my-folder", "folder-123")
+            await _save_folder_id("my-folder", "folder-123")
 
         path = tmp_path / "sync_folder_ids.json"
         assert path.exists()
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["my-folder"] == "folder-123"
 
-    def test_appends_to_existing_file(self, tmp_path):
+    async def test_appends_to_existing_file(self, tmp_path):
         """Adds new folder ID to existing file."""
         path = tmp_path / "sync_folder_ids.json"
         path.write_text(json.dumps({"existing": "id-1"}), encoding="utf-8")
 
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            _save_folder_id("new-folder", "id-2")
+            await _save_folder_id("new-folder", "id-2")
 
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["existing"] == "id-1"
         assert data["new-folder"] == "id-2"
 
-    def test_handles_corrupt_existing_file(self, tmp_path):
+    async def test_handles_corrupt_existing_file(self, tmp_path):
         """Overwrites corrupt existing file."""
         path = tmp_path / "sync_folder_ids.json"
         path.write_text("corrupt-json", encoding="utf-8")
 
         with patch("mnemo_mcp.sync.settings") as mock_settings:
             mock_settings.get_data_dir.return_value = tmp_path
-            _save_folder_id("folder", "id-1")
+            await _save_folder_id("folder", "id-1")
 
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["folder"] == "id-1"
@@ -209,8 +209,12 @@ class TestFindOrCreateFolderCache:
                     new_callable=AsyncMock,
                     side_effect=[verify_stale, search_resp],
                 ),
-                patch("mnemo_mcp.sync._load_folder_id", return_value=None),
-                patch("mnemo_mcp.sync._save_folder_id"),
+                patch(
+                    "mnemo_mcp.sync._load_folder_id",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
+                patch("mnemo_mcp.sync._save_folder_id", new_callable=AsyncMock),
             ):
                 result = await _find_or_create_folder(
                     {"access_token": "t"}, "test-folder"
@@ -232,7 +236,11 @@ class TestFindOrCreateFolderCache:
             verify_resp.json.return_value = {"id": "disk-id", "trashed": False}
 
             with (
-                patch("mnemo_mcp.sync._load_folder_id", return_value="disk-id"),
+                patch(
+                    "mnemo_mcp.sync._load_folder_id",
+                    new_callable=AsyncMock,
+                    return_value="disk-id",
+                ),
                 patch(
                     "mnemo_mcp.sync._drive_request",
                     new_callable=AsyncMock,
@@ -261,13 +269,19 @@ class TestFindOrCreateFolderCache:
             search_resp.json.return_value = {"files": [{"id": "search-id"}]}
 
             with (
-                patch("mnemo_mcp.sync._load_folder_id", return_value=None),
+                patch(
+                    "mnemo_mcp.sync._load_folder_id",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
                 patch(
                     "mnemo_mcp.sync._drive_request",
                     new_callable=AsyncMock,
                     return_value=search_resp,
                 ),
-                patch("mnemo_mcp.sync._save_folder_id") as mock_save,
+                patch(
+                    "mnemo_mcp.sync._save_folder_id", new_callable=AsyncMock
+                ) as mock_save,
             ):
                 result = await _find_or_create_folder(
                     {"access_token": "t"}, "test-folder"
@@ -294,13 +308,19 @@ class TestFindOrCreateFolderCache:
             create_resp.json.return_value = {"id": "new-id"}
 
             with (
-                patch("mnemo_mcp.sync._load_folder_id", return_value=None),
+                patch(
+                    "mnemo_mcp.sync._load_folder_id",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
                 patch(
                     "mnemo_mcp.sync._drive_request",
                     new_callable=AsyncMock,
                     side_effect=[search_resp, search_resp, search_resp, create_resp],
                 ),
-                patch("mnemo_mcp.sync._save_folder_id") as mock_save,
+                patch(
+                    "mnemo_mcp.sync._save_folder_id", new_callable=AsyncMock
+                ) as mock_save,
                 patch("asyncio.sleep", return_value=None),
             ):
                 result = await _find_or_create_folder(

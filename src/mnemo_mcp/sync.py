@@ -54,6 +54,9 @@ _TOKEN_PROVIDER = "google_drive"
 # In-memory folder ID cache to avoid duplicate folder creation
 _folder_id_cache: dict[str, str] = {}
 
+# Lock to prevent race conditions during disk cache operations
+_folder_id_disk_lock = asyncio.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Token management
@@ -184,30 +187,34 @@ async def _drive_request(
     return response
 
 
-def _load_folder_id(folder_name: str) -> str | None:
+async def _load_folder_id(folder_name: str) -> str | None:
     """Load cached folder ID from disk."""
     path = settings.get_data_dir() / "sync_folder_ids.json"
-    try:
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data.get(folder_name)
-    except (json.JSONDecodeError, OSError):
-        pass
+    async with _folder_id_disk_lock:
+        try:
+            if await asyncio.to_thread(path.exists):
+                text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                data = json.loads(text)
+                return data.get(folder_name)
+        except (json.JSONDecodeError, OSError):
+            pass
     return None
 
 
-def _save_folder_id(folder_name: str, folder_id: str) -> None:
+async def _save_folder_id(folder_name: str, folder_id: str) -> None:
     """Persist folder ID to disk."""
     path = settings.get_data_dir() / "sync_folder_ids.json"
-    data: dict[str, str] = {}
-    try:
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        pass
-    data[folder_name] = folder_id
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data), encoding="utf-8")
+    async with _folder_id_disk_lock:
+        data: dict[str, str] = {}
+        try:
+            if await asyncio.to_thread(path.exists):
+                text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                data = json.loads(text)
+        except (json.JSONDecodeError, OSError):
+            pass
+        data[folder_name] = folder_id
+        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(path.write_text, json.dumps(data), encoding="utf-8")
 
 
 async def _verify_folder_exists(token: dict, folder_id: str) -> bool:
@@ -237,7 +244,7 @@ async def _find_or_create_folder(token: dict, folder_name: str) -> str | None:
         del _folder_id_cache[folder_name]
 
     # 2. Check disk cache
-    saved_id = _load_folder_id(folder_name)
+    saved_id = await _load_folder_id(folder_name)
     if saved_id:
         if await _verify_folder_exists(token, saved_id):
             _folder_id_cache[folder_name] = saved_id
@@ -263,7 +270,7 @@ async def _find_or_create_folder(token: dict, folder_name: str) -> str | None:
             if files:
                 fid = files[0]["id"]
                 _folder_id_cache[folder_name] = fid
-                _save_folder_id(folder_name, fid)
+                await _save_folder_id(folder_name, fid)
                 return fid
 
         if attempt < 2:
@@ -286,7 +293,7 @@ async def _find_or_create_folder(token: dict, folder_name: str) -> str | None:
         fid = response.json().get("id")
         if fid:
             _folder_id_cache[folder_name] = fid
-            _save_folder_id(folder_name, fid)
+            await _save_folder_id(folder_name, fid)
         return fid
 
     logger.error(f"Failed to create folder '{folder_name}': {response.text}")
