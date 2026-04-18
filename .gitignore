@@ -48,3 +48,7 @@ JULES.md
 # Generated files
 *_e2e_result.json
 docs/superpowers/
+
+# AI traces (public repo hygiene)
+.Jules/
+.superpower/
