@@ -1,7 +1,7 @@
 {
   "name": "mnemo-mcp",
   "description": "Persistent AI memory — store, search, and recall knowledge across sessions",
-  "version": "1.20.2",
+  "version": "1.20.3",
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"

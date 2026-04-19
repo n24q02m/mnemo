@@ -6,12 +6,12 @@
     "url": "https://github.com/n24q02m/mnemo-mcp.git",
     "source": "github"
   },
-  "version": "1.20.2",
+  "version": "1.20.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mnemo-mcp",
-      "version": "1.20.2",
+      "version": "1.20.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
