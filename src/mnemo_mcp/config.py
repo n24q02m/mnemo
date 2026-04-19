@@ -95,11 +95,16 @@ class Settings(BaseSettings):
     rerank_model: str = ""
     rerank_top_n: int = 10
     # Sync (Google Drive API)
+    # GDrive Desktop OAuth client — Google explicitly treats the Desktop/Installed
+    # app client_secret as PUBLIC (per https://developers.google.com/identity/protocols/oauth2#installed).
+    # Hardcoding default keeps parity with wet-mcp so end-users get zero-config sync after relay submit.
     sync_enabled: bool = True
     sync_folder: str = "mnemo-mcp"  # Google Drive folder name
     sync_interval: int = 300  # seconds, 0 = manual only
-    google_drive_client_id: str = ""
-    google_drive_client_secret: str = ""
+    google_drive_client_id: str = (
+        "147668446467-olf2cf6e49rshqv9quvhq639110oc6hc.apps.googleusercontent.com"
+    )
+    google_drive_client_secret: str = "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"
 
     # Archive
     archive_enabled: bool = True

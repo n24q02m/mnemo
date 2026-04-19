@@ -320,10 +320,18 @@ class TestRerankSettings:
 
 
 class TestGoogleDriveCredentials:
-    def test_default_ships_empty_credentials(self):
+    def test_default_ships_desktop_oauth_client(self, monkeypatch):
+        """Default ships Google Desktop OAuth client (PUBLIC per Google docs).
+
+        Parity with wet-mcp: Desktop/Installed OAuth client_secret is
+        explicitly PUBLIC per https://developers.google.com/identity/protocols/oauth2#installed,
+        so hardcoding is safe and gives users zero-config sync after relay submit.
+        """
+        monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_ID", raising=False)
+        monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_SECRET", raising=False)
         s = Settings()
-        assert s.google_drive_client_id == ""
-        assert s.google_drive_client_secret == ""
+        assert s.google_drive_client_id.endswith(".apps.googleusercontent.com")
+        assert s.google_drive_client_secret.startswith("GOCSPX-")
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv(
