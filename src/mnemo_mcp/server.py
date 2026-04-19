@@ -1272,7 +1272,7 @@ async def run_http(port: int = 0) -> None:
 
     from mnemo_mcp.credential_state import (
         save_credentials,
-        set_gdrive_complete_callback,
+        wire_gdrive_callbacks,
     )
     from mnemo_mcp.relay_schema import RELAY_SCHEMA
 
@@ -1282,7 +1282,11 @@ async def run_http(port: int = 0) -> None:
         relay_schema=RELAY_SCHEMA,
         port=port,
         on_credentials_saved=save_credentials,
-        setup_complete_hook=set_gdrive_complete_callback,
+        # Use wire_gdrive_callbacks so terminal OAuth errors (invalid_grant,
+        # expired_token, save_token failures) surface to the browser's
+        # /setup-status poll instead of leaving the form stuck on
+        # "Waiting for authorization..." forever. Accepts legacy 1-arg core.
+        setup_complete_hook=wire_gdrive_callbacks,
     )
 
 

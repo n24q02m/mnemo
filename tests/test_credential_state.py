@@ -611,6 +611,222 @@ class TestShareCloudKeysToPeers:
 # ---------------------------------------------------------------------------
 
 
+class TestGDriveFailedCallback:
+    """Covers set_gdrive_failed_callback + wire_gdrive_callbacks + _notify_failed
+    paths added for Bug #2 fix (ported from wet-mcp)."""
+
+    def test_set_gdrive_failed_callback_registers(self):
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import set_gdrive_failed_callback
+
+        cb = MagicMock()
+        set_gdrive_failed_callback(cb)
+        assert cs._on_gdrive_failed is cb
+        cs._on_gdrive_failed = None
+
+    def test_wire_gdrive_callbacks_legacy_one_arg(self):
+        """Legacy mcp-core (<1.3.0) passes only mark_complete; mark_failed stays None."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import wire_gdrive_callbacks
+
+        complete_cb = MagicMock()
+        wire_gdrive_callbacks(complete_cb)
+
+        assert cs._on_gdrive_complete is complete_cb
+        assert cs._on_gdrive_failed is None
+        cs._on_gdrive_complete = None
+
+    def test_wire_gdrive_callbacks_modern_two_args(self):
+        """Modern mcp-core (>=1.3.0) passes both callbacks; mark_failed wraps into
+        a (key, error) -> mark_failed('gdrive', error) shim."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import wire_gdrive_callbacks
+
+        complete_cb = MagicMock()
+        mark_failed = MagicMock()
+        wire_gdrive_callbacks(complete_cb, mark_failed)
+
+        assert cs._on_gdrive_complete is complete_cb
+        shim = cs._on_gdrive_failed
+        assert shim is not None
+        # Exercise the wrapping shim
+        shim("gdrive", "invalid_grant")
+        mark_failed.assert_called_once_with("gdrive", "invalid_grant")
+        cs._on_gdrive_complete = None
+        cs._on_gdrive_failed = None
+
+    def test_wire_gdrive_callbacks_mark_failed_swallows_exception(self):
+        """If mark_failed raises, shim logs and swallows so callers don't crash."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import wire_gdrive_callbacks
+
+        mark_failed = MagicMock(side_effect=RuntimeError("boom"))
+        wire_gdrive_callbacks(MagicMock(), mark_failed)
+
+        shim = cs._on_gdrive_failed
+        assert shim is not None
+        # Should NOT raise
+        shim("gdrive", "expired")
+        cs._on_gdrive_complete = None
+        cs._on_gdrive_failed = None
+
+
+class TestGDriveTokenPoll:
+    """Covers _gdrive_token_poll error/terminal paths added for Bug #2 fix."""
+
+    async def test_save_token_failure_notifies_and_returns(self):
+        """save_token raising after successful exchange -> WARNING log + notify
+        failed callback + return (no retry; device_code cannot be re-exchanged)."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import (
+            _gdrive_token_poll,
+            set_gdrive_failed_callback,
+        )
+
+        failed_cb = MagicMock()
+        set_gdrive_failed_callback(failed_cb)
+
+        token_response = MagicMock()
+        token_response.json.return_value = {
+            "access_token": "tok",
+            "refresh_token": "refresh",
+        }
+
+        async def fake_post(*args, **kwargs):
+            return token_response
+
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "mnemo_mcp.token_store.async_save_token",
+                new_callable=AsyncMock,
+                side_effect=OSError("disk full"),
+            ),
+        ):
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=fake_post)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            await _gdrive_token_poll("cid", "csec", "devcode", 0, 5)
+
+        failed_cb.assert_called_once()
+        args, _ = failed_cb.call_args
+        assert args[0] == "gdrive"
+        assert "save_token failed" in args[1]
+        cs._on_gdrive_failed = None
+
+    async def test_terminal_google_error_notifies(self):
+        """Terminal Google error (invalid_grant, access_denied) -> notify + return."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import (
+            _gdrive_token_poll,
+            set_gdrive_failed_callback,
+        )
+
+        failed_cb = MagicMock()
+        set_gdrive_failed_callback(failed_cb)
+
+        response = MagicMock()
+        response.json.return_value = {
+            "error": "access_denied",
+            "error_description": "user rejected",
+        }
+
+        async def fake_post(*args, **kwargs):
+            return response
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=fake_post)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            await _gdrive_token_poll("cid", "csec", "devcode", 0, 5)
+
+        failed_cb.assert_called_once_with("gdrive", "user rejected")
+        cs._on_gdrive_failed = None
+
+    async def test_deadline_expired_notifies(self):
+        """Loop exits via deadline without success -> notify with 'expired'."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import (
+            _gdrive_token_poll,
+            set_gdrive_failed_callback,
+        )
+
+        failed_cb = MagicMock()
+        set_gdrive_failed_callback(failed_cb)
+
+        # expires_in = 0 -> loop body is never entered, deadline branch fires.
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            await _gdrive_token_poll("cid", "csec", "devcode", 0, 0)
+
+        failed_cb.assert_called_once_with("gdrive", "expired")
+        cs._on_gdrive_failed = None
+
+    async def test_notify_failed_swallows_callback_exception(self):
+        """If _on_gdrive_failed raises, the helper logs and does not propagate."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import (
+            _gdrive_token_poll,
+            set_gdrive_failed_callback,
+        )
+
+        failed_cb = MagicMock(side_effect=RuntimeError("callback boom"))
+        set_gdrive_failed_callback(failed_cb)
+
+        # Terminal error triggers _notify_failed which catches callback errors.
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            # expires_in=0 -> immediate deadline -> _notify_failed('expired')
+            await _gdrive_token_poll("cid", "csec", "devcode", 0, 0)
+
+        failed_cb.assert_called_once()
+        cs._on_gdrive_failed = None
+
+    async def test_success_fires_complete_callback_no_failed(self):
+        """Happy path: access_token -> save_token OK -> complete_cb fired, failed_cb NOT."""
+        import mnemo_mcp.credential_state as cs
+        from mnemo_mcp.credential_state import (
+            _gdrive_token_poll,
+            set_gdrive_complete_callback,
+            set_gdrive_failed_callback,
+        )
+
+        complete_cb = MagicMock()
+        failed_cb = MagicMock()
+        set_gdrive_complete_callback(complete_cb)
+        set_gdrive_failed_callback(failed_cb)
+
+        response = MagicMock()
+        response.json.return_value = {"access_token": "tok"}
+
+        async def fake_post(*args, **kwargs):
+            return response
+
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "mnemo_mcp.token_store.async_save_token",
+                new_callable=AsyncMock,
+            ),
+        ):
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=fake_post)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            await _gdrive_token_poll("cid", "csec", "devcode", 0, 5)
+
+        complete_cb.assert_called_once()
+        failed_cb.assert_not_called()
+        cs._on_gdrive_complete = None
+        cs._on_gdrive_failed = None
+
+
 class TestResetState:
     def test_resets_state_and_url(self):
         """Resets state to AWAITING_SETUP and clears URL."""
