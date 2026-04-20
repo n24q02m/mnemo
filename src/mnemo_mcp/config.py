@@ -1,5 +1,6 @@
 """Configuration settings for Mnemo MCP Server."""
 
+import functools
 import os
 from pathlib import Path
 
@@ -12,6 +13,7 @@ def _default_data_dir() -> Path:
     return Path.home() / ".mnemo-mcp"
 
 
+@functools.lru_cache(maxsize=1)
 def _detect_gpu() -> bool:
     """Check if GPU is available via onnxruntime providers."""
     try:
@@ -25,6 +27,7 @@ def _detect_gpu() -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=1)
 def _has_gguf_support() -> bool:
     """Check if llama-cpp-python is installed for GGUF models."""
     try:

@@ -380,6 +380,7 @@ class TestResolveProviderMode:
 
 class TestDetectGPU:
     def test_cuda_available(self):
+        _detect_gpu.cache_clear()
         mock_ort = MagicMock()
         mock_ort.get_available_providers.return_value = [
             "CUDAExecutionProvider",
@@ -389,6 +390,7 @@ class TestDetectGPU:
             assert _detect_gpu() is True
 
     def test_dml_available(self):
+        _detect_gpu.cache_clear()
         mock_ort = MagicMock()
         mock_ort.get_available_providers.return_value = [
             "DmlExecutionProvider",
@@ -398,16 +400,19 @@ class TestDetectGPU:
             assert _detect_gpu() is True
 
     def test_no_gpu_provider(self):
+        _detect_gpu.cache_clear()
         mock_ort = MagicMock()
         mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
         with patch.dict(sys.modules, {"onnxruntime": mock_ort}):
             assert _detect_gpu() is False
 
     def test_import_error(self):
+        _detect_gpu.cache_clear()
         with patch.dict(sys.modules, {"onnxruntime": None}):
             assert _detect_gpu() is False
 
     def test_runtime_exception(self):
+        _detect_gpu.cache_clear()
         mock_ort = MagicMock()
         mock_ort.get_available_providers.side_effect = Exception("Runtime error")
         with patch.dict(sys.modules, {"onnxruntime": mock_ort}):
@@ -416,13 +421,21 @@ class TestDetectGPU:
 
 class TestHasGGUFSupport:
     def test_llama_cpp_installed(self):
+        _has_gguf_support.cache_clear()
         mock_llama = MagicMock()
         with patch.dict(sys.modules, {"llama_cpp": mock_llama}):
             assert _has_gguf_support() is True
 
     def test_llama_cpp_missing(self):
+        _has_gguf_support.cache_clear()
         with patch.dict(sys.modules, {"llama_cpp": None}):
             assert _has_gguf_support() is False
+
+
+@pytest.fixture(autouse=True)
+def clear_caches():
+    _detect_gpu.cache_clear()
+    _has_gguf_support.cache_clear()
 
 
 class TestResolveLocalModel:
