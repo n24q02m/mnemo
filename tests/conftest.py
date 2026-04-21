@@ -1,9 +1,14 @@
 """Shared test fixtures for Mnemo MCP Server."""
 
+# Force-import fastmcp BEFORE test_security_log_level.py loads its
+# module-level ``patch("importlib.metadata.version")``. Once fastmcp is
+# cached in sys.modules, later imports skip its ``__init__`` (which would
+# otherwise try to resolve its own version via the leaked mock).
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import fastmcp  # noqa: F401
 import pytest
 
 from mnemo_mcp.db import MemoryDB
