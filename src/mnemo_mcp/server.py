@@ -536,12 +536,13 @@ async def _handle_list(
         category=category,
         limit=limit,
     )
-    return _json(
-        {
-            "count": len(results),
-            "results": [_format_memory(r) for r in results],
-        }
-    )
+    response: dict = {
+        "count": len(results),
+        "results": [_format_memory(r) for r in results],
+    }
+    if len(results) == 0:
+        response["suggestion"] = "No memories found. Use action='add' to create some!"
+    return _json(response)
 
 
 async def _handle_update(
@@ -683,12 +684,13 @@ async def _handle_archived(
         limit = max(1, min(limit, 100))
 
     results = await asyncio.to_thread(db.list_archived, limit)
-    return _json(
-        {
-            "count": len(results),
-            "results": results,
-        }
-    )
+    response: dict = {
+        "count": len(results),
+        "results": results,
+    }
+    if len(results) == 0:
+        response["suggestion"] = "No archived memories found."
+    return _json(response)
 
 
 async def _handle_consolidate(
