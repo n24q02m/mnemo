@@ -15,7 +15,6 @@ from typing import Any
 
 from loguru import logger
 
-DEFAULT_RELAY_URL = "https://mnemo-mcp.n24q02m.com"
 SERVER_NAME = "mnemo-mcp"
 CLOUD_KEYS = [
     "JINA_AI_API_KEY",
@@ -75,10 +74,18 @@ async def ensure_config() -> dict[str, str] | None:
     if isinstance(local_res, dict):
         return local_res
 
-    # 2. No local credentials found -- trigger relay setup
-    logger.info("No cloud credentials found. Starting relay setup...")
+    # 2. No local credentials found -- trigger relay setup.
+    # Per mode-matrix 2.5, mnemo-mcp default is `http local relay`; `remote-relay`
+    # mode requires user-supplied URL (no centralized mnemo-mcp.n24q02m.com).
+    relay_url = os.environ.get("MCP_RELAY_URL")
+    if not relay_url:
+        raise RuntimeError(
+            "MCP_RELAY_URL env var is required for remote-relay mode. "
+            "mnemo-mcp default mode is 'http local relay' (no remote URL needed). "
+            "For self-host remote-relay, set MCP_RELAY_URL=https://<your-instance>."
+        )
 
-    relay_url = DEFAULT_RELAY_URL
+    logger.info("No cloud credentials found. Starting relay setup...")
     try:
         session = await _initiate_relay_session(relay_url)
     except Exception:

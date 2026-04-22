@@ -3,9 +3,10 @@
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from mnemo_mcp.relay_setup import (
     CLOUD_KEYS,
-    DEFAULT_RELAY_URL,
     apply_config,
     ensure_config,
     load_relay_config,
@@ -14,9 +15,6 @@ from mnemo_mcp.relay_setup import (
 
 class TestConstants:
     """Test module constants."""
-
-    def test_default_relay_url(self):
-        assert DEFAULT_RELAY_URL == "https://mnemo-mcp.n24q02m.com"
 
     def test_cloud_keys(self):
         assert "JINA_AI_API_KEY" in CLOUD_KEYS
@@ -138,6 +136,27 @@ class TestLoadRelayConfig:
 class TestEnsureConfig:
     """Test ensure_config async function."""
 
+    @pytest.fixture(autouse=True)
+    def _relay_url(self, monkeypatch):
+        """Set MCP_RELAY_URL for tests exercising the relay path.
+
+        Per mode-matrix 2.5, mnemo-mcp remote-relay mode requires explicit
+        MCP_RELAY_URL (no DEFAULT_RELAY_URL fallback).
+        """
+        monkeypatch.setenv("MCP_RELAY_URL", "https://relay.example.com")
+
+    async def test_missing_relay_url_raises(self, monkeypatch):
+        """Remote-relay without MCP_RELAY_URL must raise per matrix 2.5."""
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("MCP_RELAY_URL", raising=False)
+
+        with (
+            patch("mcp_core.storage.config_file.read_config", return_value=None),
+            pytest.raises(RuntimeError, match="MCP_RELAY_URL"),
+        ):
+            await ensure_config()
+
     @patch("mcp_core.storage.config_file.read_config")
     async def test_returns_config_from_file(self, mock_read, monkeypatch):
         for key in CLOUD_KEYS:
@@ -166,7 +185,7 @@ class TestEnsureConfig:
             monkeypatch.delenv(key, raising=False)
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
-            relay_url="https://mnemo-mcp.n24q02m.com/#k=abc&p=xyz",
+            relay_url="https://relay.example.com/#k=abc&p=xyz",
             session_id="test-session",
         )
         config = {
@@ -275,7 +294,7 @@ class TestEnsureConfig:
             monkeypatch.delenv(key, raising=False)
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
-            relay_url="https://mnemo-mcp.n24q02m.com/#k=abc",
+            relay_url="https://relay.example.com/#k=abc",
             session_id="sess-123",
         )
         config = {"JINA_AI_API_KEY": "jina_test"}
@@ -299,7 +318,7 @@ class TestEnsureConfig:
 
         assert result == config
         mock_gdrive.assert_called_once_with(
-            relay_url="https://mnemo-mcp.n24q02m.com",
+            relay_url="https://relay.example.com",
             session_id="sess-123",
         )
 
@@ -316,7 +335,7 @@ class TestEnsureConfig:
             monkeypatch.delenv(key, raising=False)
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
-            relay_url="https://mnemo-mcp.n24q02m.com/#k=abc",
+            relay_url="https://relay.example.com/#k=abc",
             session_id="sess-456",
         )
         config = {"GEMINI_API_KEY": "AIza_test"}
@@ -367,7 +386,7 @@ class TestEnsureConfig:
             monkeypatch.delenv(key, raising=False)
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
-            relay_url="https://mnemo-mcp.n24q02m.com/#k=abc",
+            relay_url="https://relay.example.com/#k=abc",
             session_id="sess-789",
         )
         config = {"OPENAI_API_KEY": "sk_test"}
