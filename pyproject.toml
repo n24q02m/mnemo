@@ -35,7 +35,7 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.8.0",
+    "qwen3-embed>=1.9.0",
     # Zero-env-config credential relay
     "n24q02m-mcp-core>=1.5.1",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)

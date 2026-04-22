@@ -884,7 +884,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.8.0" },
+    { name = "qwen3-embed", specifier = ">=1.9.0" },
     { name = "sqlite-vec" },
 ]
 
