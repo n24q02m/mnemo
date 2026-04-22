@@ -679,13 +679,17 @@ class TestMain:
     def test_main_invalid_log_level(self):
         """Cover line 1001: invalid log level falls back to WARNING."""
         with (
+            patch("mnemo_mcp.server.logger"),
             patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.mcp") as mock_mcp,
+            patch(
+                "mcp_core.transport.run_smart_stdio_proxy", return_value=0
+            ) as mock_proxy,
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
+            pytest.raises(SystemExit, match="0"),
         ):
             mock_settings.log_level = "BOGUS"
             main()
-            mock_mcp.run.assert_called_once()
+            mock_proxy.assert_called_once()
 
 
 class TestPrompts:

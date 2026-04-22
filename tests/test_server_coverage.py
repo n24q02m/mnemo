@@ -196,18 +196,21 @@ class TestResources:
 
 class TestMainFunction:
     def test_main_calls_mcp_run(self):
-        """main() in stdio mode configures logger and calls mcp.run()."""
+        """main() in stdio mode configures logger and calls run_smart_stdio_proxy()."""
         with (
             patch("mnemo_mcp.server.logger") as mock_logger,
-            patch("mnemo_mcp.server.mcp") as mock_mcp,
+            patch(
+                "mcp_core.transport.run_smart_stdio_proxy", return_value=0
+            ) as mock_proxy,
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
+            pytest.raises(SystemExit, match="0"),
         ):
             mock_settings.log_level = "INFO"
             main()
             mock_logger.remove.assert_called_once()
             mock_logger.add.assert_called_once()
-            mock_mcp.run.assert_called_once()
+            mock_proxy.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
