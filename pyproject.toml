@@ -1,6 +1,6 @@
 [project]
 name = "mnemo-mcp"
-version = "1.21.2"
+version = "1.21.1"
 description = "Open-source MCP Server for persistent AI memory with embedded sync"
 readme = "README.md"
 license = { text = "MIT" }
@@ -37,7 +37,7 @@ dependencies = [
     # Local ONNX embedding (auto-fallback when no cloud API)
     "qwen3-embed>=1.9.0",
     # Zero-env-config credential relay
-    "n24q02m-mcp-core>=1.6.2",
+    "n24q02m-mcp-core>=1.6.3",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
 ]
