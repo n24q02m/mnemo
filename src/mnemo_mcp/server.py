@@ -589,7 +589,12 @@ async def _handle_update(
         if content:
             asyncio.create_task(_enrich_memory(db, memory_id, content))
         return _json({"status": "updated", "id": memory_id})
-    return _json({"error": f"Memory {memory_id} not found"})
+    return _json(
+        {
+            "error": f"Memory {memory_id} not found",
+            "suggestion": "Verify the memory_id using action='search' or action='list'.",
+        }
+    )
 
 
 async def _handle_delete(
@@ -607,7 +612,12 @@ async def _handle_delete(
     ok = await asyncio.to_thread(db.delete, memory_id)
     if ok:
         return _json({"status": "deleted", "id": memory_id})
-    return _json({"error": f"Memory {memory_id} not found"})
+    return _json(
+        {
+            "error": f"Memory {memory_id} not found",
+            "suggestion": "Verify the memory_id using action='search' or action='list'.",
+        }
+    )
 
 
 async def _handle_export(
@@ -673,7 +683,12 @@ async def _handle_restore(
     ok = await asyncio.to_thread(db.restore_memory, memory_id)
     if ok:
         return _json({"status": "restored", "id": memory_id})
-    return _json({"error": f"Archived memory {memory_id} not found"})
+    return _json(
+        {
+            "error": f"Archived memory {memory_id} not found",
+            "suggestion": "Verify the memory_id using action='archived'.",
+        }
+    )
 
 
 async def _handle_archived(
