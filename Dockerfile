@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 # Stage 2: Runtime
 # ========================
-FROM python:3.13-slim-bookworm@sha256:061b6e52a07ab675f0e4a9428c5a8ee6bed996983427f4691f6bebf29c56d9dc
+FROM python:3.13-slim-bookworm@sha256:bb73517d48bd32016e15eade0c009b2724ec3a025a9975b5cd9b251d0dcadb33
 
 LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
