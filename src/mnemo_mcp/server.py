@@ -1303,6 +1303,9 @@ def main() -> None:
     logger.info("Starting Mnemo MCP Server...")
 
     if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
-        mcp.run()
+        from mcp_core.transport import run_smart_stdio_proxy
+
+        daemon_cmd = [sys.executable, "-m", "mnemo_mcp"]
+        sys.exit(run_smart_stdio_proxy("mnemo-mcp", daemon_cmd))
     else:
         asyncio.run(run_http())
