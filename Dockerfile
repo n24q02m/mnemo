@@ -15,19 +15,21 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Install dependencies first (cached when deps don't change).
-# --frozen + --no-sources: use the committed uv.lock exactly as-is and
-# ignore [tool.uv.sources] path overrides from pyproject.toml. Without
-# both flags, the dev convenience mapping `n24q02m-mcp-core = { path =
-# "../mcp-core/..." }` sneaks in and breaks the build inside the Docker
-# context where that sibling directory does not exist.
+# --frozen: install from the committed uv.lock exactly as-is, skipping
+# re-resolution. The lockfile is regenerated with UV_NO_SOURCES=1 on
+# commit so n24q02m-mcp-core already points at the PyPI registry, not
+# the dev-only ../mcp-core path from [tool.uv.sources]. Sources are a
+# resolve-time concept and are not consulted under --frozen, so the
+# Docker build picks the PyPI wheel without seeing the sibling path
+# that does not exist in the build context.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-sources --no-install-project --no-dev
+    uv sync --frozen --no-install-project --no-dev
 
 # Copy application code and install the project
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-sources --no-dev
+    uv sync --frozen --no-dev
 
 # ========================
 # Stage 2: Runtime
