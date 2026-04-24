@@ -14,15 +14,20 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (cached when deps don't change)
+# Install dependencies first (cached when deps don't change).
+# --frozen + --no-sources: use the committed uv.lock exactly as-is and
+# ignore [tool.uv.sources] path overrides from pyproject.toml. Without
+# both flags, the dev convenience mapping `n24q02m-mcp-core = { path =
+# "../mcp-core/..." }` sneaks in and breaks the build inside the Docker
+# context where that sibling directory does not exist.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --no-dev
+    uv sync --frozen --no-sources --no-install-project --no-dev
 
 # Copy application code and install the project
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --frozen --no-sources --no-dev
 
 # ========================
 # Stage 2: Runtime
