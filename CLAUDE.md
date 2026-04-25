@@ -111,4 +111,4 @@ PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry
 - Local embedding: first run download ~570MB model, cached.
 - Dependencies: `qwen3-embed>=1.5.1`, `cohere`, `sqlite-vec`.
 - Pre-commit: ruff lint + format, ty check, pytest.
-- Infisical project: `65a85ae6-61e2-4188-9266-00dca21b9c00`
+- Secrets: skret SSM namespace `/mnemo-mcp/prod` (region `ap-southeast-1`)
