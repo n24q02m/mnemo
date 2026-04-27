@@ -1284,7 +1284,18 @@ def recall_context(topic: str) -> str:
 
 
 async def run_http(port: int = 0) -> None:
-    """Run as HTTP server with local OAuth 2.1 AS."""
+    """Run as HTTP server with local OAuth 2.1 AS.
+
+    Single-user mode (default): bind ``127.0.0.1`` and persist credentials
+    to one shared ``config.enc`` on the host.
+
+    Multi-user remote mode (``PUBLIC_URL`` set): bind ``0.0.0.0:8080`` (or
+    ``MCP_PORT``) and scope credential storage per-JWT-sub via
+    ``save_credentials``. The ``MCP_DCR_SERVER_SECRET`` env var is required
+    as proof of intentional multi-user deployment -- without it, refuse to
+    start so a misconfigured single-user instance never accidentally
+    accepts other users' OAuth flows into the same shared ``config.enc``.
+    """
     from mcp_core.transport.local_server import run_local_server
 
     from mnemo_mcp.credential_state import (
@@ -1293,11 +1304,26 @@ async def run_http(port: int = 0) -> None:
     )
     from mnemo_mcp.relay_schema import RELAY_SCHEMA
 
+    public_url = os.environ.get("PUBLIC_URL")
+    if public_url:
+        if not os.environ.get("MCP_DCR_SERVER_SECRET"):
+            raise SystemExit(
+                "mnemo-mcp refuses to start: PUBLIC_URL set but "
+                "MCP_DCR_SERVER_SECRET missing. Multi-user remote mode "
+                "requires the DCR secret as proof of intentional multi-user "
+                "deployment (prevents accidental single-user credential leak)."
+            )
+        host = "0.0.0.0"
+        port = int(os.environ.get("MCP_PORT", "8080"))
+    else:
+        host = "127.0.0.1"
+
     await run_local_server(
         mcp,  # ty: ignore[invalid-argument-type]
         server_name="mnemo-mcp",
         relay_schema=RELAY_SCHEMA,
         port=port,
+        host=host,
         on_credentials_saved=save_credentials,
         # Use wire_gdrive_callbacks so terminal OAuth errors (invalid_grant,
         # expired_token, save_token failures) surface to the browser's
@@ -1317,10 +1343,18 @@ def main() -> None:
     logger.add(sys.stderr, level=level)
     logger.info("Starting Mnemo MCP Server...")
 
+    mode = (os.environ.get("MCP_MODE") or "").strip().lower()
+
     if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
         from mcp_core.transport import run_smart_stdio_proxy
 
         daemon_cmd = [sys.executable, "-m", "mnemo_mcp"]
         sys.exit(run_smart_stdio_proxy("mnemo-mcp", daemon_cmd))
+    elif mode == "remote-relay":
+        raise SystemExit(
+            "MCP_MODE=remote-relay is deprecated since 2026-04-25 (single-user "
+            "MCP_RELAY_URL pattern). For multi-user remote: set PUBLIC_URL + "
+            "MCP_DCR_SERVER_SECRET and run with default mode."
+        )
     else:
         asyncio.run(run_http())

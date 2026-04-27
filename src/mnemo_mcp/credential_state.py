@@ -20,9 +20,11 @@ that is reserved for explicit ``MCP_MODE`` HTTP deployments. See
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import Callable
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -307,18 +309,55 @@ def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
         logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
 
 
-def save_credentials(config: dict[str, str], _context: dict[str, str]) -> dict | None:
+def _sub_data_dir(sub: str) -> Path:
+    """Return per-subject data dir for multi-user remote mode.
+
+    Layout: ``$MNEMO_DATA_DIR/subs/<sub>/`` (default base
+    ``~/.mnemo-mcp``). Each per-authorize JWT ``sub`` gets its own
+    directory so credentials never bleed across users.
+    """
+    base = Path(os.environ.get("MNEMO_DATA_DIR", str(Path.home() / ".mnemo-mcp")))
+    d = base / "subs" / sub
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def store_for_sub(sub: str, config: dict[str, str]) -> None:
+    """Persist a config dict for a single JWT subject (multi-user remote mode)."""
+    (_sub_data_dir(sub) / "config.json").write_text(json.dumps(config))
+
+
+def read_for_sub(sub: str) -> dict[str, str]:
+    """Load the config dict for a single JWT subject (empty if missing)."""
+    p = _sub_data_dir(sub) / "config.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | None:
     """Save credentials from OAuth form to config.enc and apply to environment.
 
-    ``_context`` carries the per-authorize ``sub`` (for future multi-user
-    extensions). Mnemo-mcp is single-user by design — the SQLite memory DB and
-    optional API keys live in one shared ``config.enc`` on the host, so the
-    subject is intentionally unused here.
+    ``context`` carries the per-authorize ``sub``. In multi-user remote mode
+    (``PUBLIC_URL`` set), credentials are scoped per-subject under
+    ``$MNEMO_DATA_DIR/subs/<sub>/config.json`` and we skip the shared
+    single-user state machine + GDrive device-code flow (each subject runs
+    their own OAuth via the relay form). In single-user local mode, the
+    SQLite memory DB and optional API keys live in one shared ``config.enc``
+    on the host so the subject is intentionally unused.
 
     Called by the local OAuth AS when the user submits API keys via the
     browser form. Returns optional dict with next_step info.
     """
     global _state
+
+    # Multi-user remote mode: per-subject credential storage. Skip the shared
+    # config.enc + module-level state to keep subjects fully isolated.
+    if os.environ.get("PUBLIC_URL"):
+        sub = context.get("sub") if context else None
+        if not sub:
+            raise RuntimeError("multi-user mode: SubjectContext sub required")
+        store_for_sub(sub, config)
+        logger.info("Credentials saved for sub={} (multi-user remote mode)", sub)
+        return None
 
     from mcp_core.storage.config_file import write_config
 
