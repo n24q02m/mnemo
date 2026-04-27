@@ -25,13 +25,33 @@ from mnemo_mcp.config import settings
 
 
 def _get_token_dir() -> Path:
-    """Get directory for token storage (~/.mnemo-mcp/tokens/)."""
+    """Get directory for token storage (~/.mnemo-mcp/tokens/).
+
+    Single-user (default) layout. Multi-user remote mode uses
+    :func:`_get_token_dir_for_sub` so concurrent JWT subjects do not
+    share a GDrive refresh-token.
+    """
     return settings.get_data_dir() / "tokens"
 
 
 def get_token_path(provider: str) -> Path:
     """Get path for a provider's token file."""
     return _get_token_dir() / f"{provider}.json"
+
+
+def _get_token_dir_for_sub(sub: str) -> Path:
+    """Per-sub token directory (``$MNEMO_DATA_DIR/subs/<sub>/tokens``).
+
+    Multi-user remote mode (``PUBLIC_URL`` set) keys every artifact by
+    JWT ``sub`` so user A's GDrive refresh-token is not visible to
+    user B sharing the same mnemo-mcp deployment.
+    """
+    return settings.get_data_dir() / "subs" / sub / "tokens"
+
+
+def get_token_path_for_sub(sub: str, provider: str) -> Path:
+    """Get path for a provider's token file scoped to a specific JWT sub."""
+    return _get_token_dir_for_sub(sub) / f"{provider}.json"
 
 
 def load_token(provider: str) -> dict | None:
@@ -115,6 +135,73 @@ async def async_load_token(provider: str) -> dict | None:
 async def async_save_token(provider: str, token: dict) -> None:
     """Save OAuth token to local storage asynchronously."""
     await asyncio.to_thread(save_token, provider, token)
+
+
+def save_token_for_sub(sub: str, provider: str, token: dict) -> None:
+    """Save OAuth token under the per-sub directory (multi-user remote).
+
+    Same 0600 / 0700 hardening as :func:`save_token`. Token lands at
+    ``$MNEMO_DATA_DIR/subs/<sub>/tokens/<provider>.json``.
+    """
+    token_dir = _get_token_dir_for_sub(sub)
+    token_dir.mkdir(parents=True, exist_ok=True)
+
+    if os.name != "nt":
+        try:
+            token_dir.chmod(stat.S_IRWXU)
+        except OSError:
+            pass
+
+    path = get_token_path_for_sub(sub, provider)
+    token_json = json.dumps(token, indent=2)
+
+    if os.name != "nt":
+        try:
+            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+            mode = stat.S_IRUSR | stat.S_IWUSR
+            fd = os.open(path, flags, mode)
+            try:
+                os.fchmod(fd, mode)
+            except OSError:
+                pass
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(token_json)
+        except OSError:
+            path.write_text(token_json, encoding="utf-8")
+            try:
+                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                pass
+    else:
+        path.write_text(token_json, encoding="utf-8")
+
+    logger.info(f"Token saved (sub={sub}): {path}")
+
+
+def load_token_for_sub(sub: str, provider: str) -> dict | None:
+    """Load a per-sub OAuth token. Returns None when absent or malformed."""
+    path = get_token_path_for_sub(sub, provider)
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "access_token" in data:
+            return data
+        logger.warning(f"Invalid token format in {path}")
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load token from {path}: {e}")
+        return None
+
+
+async def async_save_token_for_sub(sub: str, provider: str, token: dict) -> None:
+    """Save per-sub OAuth token asynchronously."""
+    await asyncio.to_thread(save_token_for_sub, sub, provider, token)
+
+
+async def async_load_token_for_sub(sub: str, provider: str) -> dict | None:
+    """Load per-sub OAuth token asynchronously."""
+    return await asyncio.to_thread(load_token_for_sub, sub, provider)
 
 
 async def async_delete_token(provider: str) -> bool:

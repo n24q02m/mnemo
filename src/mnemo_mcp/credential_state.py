@@ -350,13 +350,63 @@ def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | 
     global _state
 
     # Multi-user remote mode: per-subject credential storage. Skip the shared
-    # config.enc + module-level state to keep subjects fully isolated.
+    # config.enc + module-level state to keep subjects fully isolated. The
+    # GDrive device-code flow is ALSO per-sub: token lands in
+    # ``$MNEMO_DATA_DIR/subs/<sub>/tokens/google_drive.json`` so user A's
+    # refresh-token is invisible to user B sharing the same deployment.
     if os.environ.get("PUBLIC_URL"):
         sub = context.get("sub") if context else None
         if not sub:
             raise RuntimeError("multi-user mode: SubjectContext sub required")
         store_for_sub(sub, config)
         logger.info("Credentials saved for sub={} (multi-user remote mode)", sub)
+
+        try:
+            from mnemo_mcp.config import settings as s
+
+            if s.google_drive_client_id and s.google_drive_client_secret:
+                import httpx
+
+                response = httpx.post(
+                    "https://oauth2.googleapis.com/device/code",
+                    data={
+                        "client_id": s.google_drive_client_id,
+                        "scope": "https://www.googleapis.com/auth/drive.file",
+                    },
+                    timeout=15.0,
+                )
+                if response.status_code == 200:
+                    device_data = response.json()
+                    logger.info(
+                        "GDrive device code (sub={}), user_code={}",
+                        sub,
+                        device_data.get("user_code"),
+                    )
+                    import asyncio
+                    import threading
+
+                    def _poll() -> None:
+                        asyncio.run(
+                            _gdrive_token_poll(
+                                s.google_drive_client_id,
+                                s.google_drive_client_secret,
+                                device_data["device_code"],
+                                device_data.get("interval", 5),
+                                device_data.get("expires_in", 1800),
+                                sub=sub,
+                            )
+                        )
+
+                    threading.Thread(target=_poll, daemon=True).start()
+                    return {
+                        "type": "oauth_device_code",
+                        "verification_url": device_data["verification_url"],
+                        "user_code": device_data["user_code"],
+                    }
+        except Exception:
+            logger.opt(exception=True).debug(
+                "Multi-user GDrive device code request failed (non-fatal)"
+            )
         return None
 
     from mcp_core.storage.config_file import write_config
@@ -446,6 +496,7 @@ async def _gdrive_token_poll(
     device_code: str,
     interval: int,
     expires_in: int,
+    sub: str | None = None,
 ) -> None:
     """Background poll Google OAuth for device code token completion.
 
@@ -494,10 +545,20 @@ async def _gdrive_token_poll(
                 )
                 data = resp.json()
                 if "access_token" in data:
-                    from mnemo_mcp.token_store import async_save_token
+                    # Multi-user remote mode (``sub`` set) routes the token
+                    # into a per-sub bucket so concurrent users do not share
+                    # a single GDrive refresh-token. Single-user keeps the
+                    # legacy shared path.
+                    from mnemo_mcp.token_store import (
+                        async_save_token,
+                        async_save_token_for_sub,
+                    )
 
                     try:
-                        await async_save_token("google_drive", data)
+                        if sub:
+                            await async_save_token_for_sub(sub, "google_drive", data)
+                        else:
+                            await async_save_token("google_drive", data)
                         logger.info("GDrive OAuth token saved successfully")
                     except Exception as exc:
                         logger.opt(exception=True).warning(
