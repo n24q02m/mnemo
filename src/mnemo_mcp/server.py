@@ -541,7 +541,14 @@ async def _handle_list(
         "results": [_format_memory(r) for r in results],
     }
     if len(results) == 0:
-        response["suggestion"] = "No memories found. Use action='add' to create some!"
+        if category:
+            response["suggestion"] = (
+                f"No memories found in category '{category}'. Use action='list' without a category to see all, or action='add' to create some!"
+            )
+        else:
+            response["suggestion"] = (
+                "No memories found. Use action='add' to create some!"
+            )
     return _json(response)
 
 
@@ -704,7 +711,9 @@ async def _handle_archived(
         "results": results,
     }
     if len(results) == 0:
-        response["suggestion"] = "No archived memories found."
+        response["suggestion"] = (
+            "No archived memories found. Use action='list' to view active memories."
+        )
     return _json(response)
 
 
@@ -725,7 +734,10 @@ async def _handle_consolidate(
     memories = await asyncio.to_thread(db.list_memories, category=category, limit=50)
     if len(memories) < 2:
         return _json(
-            {"error": f"Need at least 2 memories in '{category}' to consolidate"}
+            {
+                "error": f"Need at least 2 memories in '{category}' to consolidate",
+                "suggestion": f"Use action='list' with category='{category}' to see existing memories.",
+            }
         )
 
     try:
