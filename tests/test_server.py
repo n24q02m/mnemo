@@ -66,6 +66,7 @@ class TestMemoryAdd:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="add", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_add_exceeds_content_length(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -97,6 +98,7 @@ class TestMemorySearch:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="search", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_search_with_filters(self, ctx_with_db):
         ctx, db = ctx_with_db
@@ -153,6 +155,7 @@ class TestMemoryUpdate:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="update", content="x", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_update_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -197,6 +200,7 @@ class TestMemoryDelete:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="delete", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_delete_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -230,6 +234,7 @@ class TestMemoryExportImport:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="import", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
 
 class TestMemoryStats:
@@ -267,6 +272,7 @@ class TestMemoryRestore:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="restore", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_restore_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -317,6 +323,7 @@ class TestMemoryConsolidate:
         ctx, _ = ctx_with_db
         result = json.loads(await memory(action="consolidate", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
 
 class TestMemoryUnknownAction:
@@ -326,6 +333,7 @@ class TestMemoryUnknownAction:
         assert "error" in result
         assert "valid_actions" in result
         assert "add" in result["valid_actions"]
+        assert "suggestion" not in result
 
 
 class TestConfigTool:
@@ -379,12 +387,14 @@ class TestConfigTool:
         ctx, _ = ctx_with_db
         result = json.loads(await config(action="set", ctx=ctx))
         assert "error" in result
+        assert "suggestion" in result
 
     async def test_unknown_action(self, ctx_with_db):
         ctx, _ = ctx_with_db
         result = json.loads(await config(action="invalid", ctx=ctx))
         assert "error" in result
         assert "valid_actions" in result
+        assert "suggestion" not in result
 
 
 class TestHelpTool:
@@ -597,6 +607,7 @@ class TestConsolidate:
             result = json.loads(await _handle_consolidate(db, None))
         assert "error" in result
         assert "category is required" in result["error"]
+        assert "suggestion" in result
 
     async def test_consolidate_too_few_memories(self, ctx_with_db):
         """Cover lines 640-644: less than 2 memories in category."""

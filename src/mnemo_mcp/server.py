@@ -356,6 +356,7 @@ async def _handle_add(
             {
                 "error": "content is required for add",
                 "example": "action='add', content='User prefers Python for data tasks', category='preference', tags=['python']",
+                "suggestion": "Provide the 'content' parameter to save a new memory.",
             }
         )
 
@@ -451,6 +452,7 @@ async def _handle_search(
             {
                 "error": "query is required for search",
                 "example": "action='search', query='user preferences for UI theme'",
+                "suggestion": "Provide the 'query' parameter to perform a search.",
             }
         )
 
@@ -568,6 +570,7 @@ async def _handle_update(
             {
                 "error": "memory_id is required for update. Use action='search' or action='list' first to find the memory ID.",
                 "example": "action='update', memory_id='abc123', content='updated content'",
+                "suggestion": "Provide the 'memory_id' parameter to update a specific memory.",
             }
         )
 
@@ -613,6 +616,7 @@ async def _handle_delete(
             {
                 "error": "memory_id is required for delete. Use action='search' or action='list' first to find the memory ID.",
                 "example": "action='delete', memory_id='abc123'",
+                "suggestion": "Provide the 'memory_id' parameter to delete a specific memory.",
             }
         )
 
@@ -647,7 +651,10 @@ async def _handle_import(
 ) -> str:
     if not data:
         return _json(
-            {"error": "data (JSONL string or list of objects) is required for import"}
+            {
+                "error": "data (JSONL string or list of objects) is required for import",
+                "suggestion": "Provide the 'data' parameter containing the JSONL data or a list of JSON objects to import.",
+            }
         )
 
     # Bolt Performance Optimization: Pass raw list/dict directly to database layer.
@@ -684,6 +691,7 @@ async def _handle_restore(
             {
                 "error": "memory_id is required for restore. Use action='archived' first to find archived memory IDs.",
                 "example": "action='restore', memory_id='abc123'",
+                "suggestion": "Provide the 'memory_id' parameter to restore a specific memory.",
             }
         )
 
@@ -729,7 +737,12 @@ async def _handle_consolidate(
         return _json({"error": "Consolidation requires LLM (SDK mode with API keys)"})
 
     if not category:
-        return _json({"error": "category is required for consolidate"})
+        return _json(
+            {
+                "error": "category is required for consolidate",
+                "suggestion": "Provide the 'category' parameter to specify which memories to consolidate.",
+            }
+        )
 
     memories = await asyncio.to_thread(db.list_memories, category=category, limit=50)
     if len(memories) < 2:
@@ -1026,7 +1039,12 @@ async def _handle_config_sync(db: MemoryDB) -> str:
 
 async def _handle_config_set(key: str | None, value: str | None) -> str:
     if not key or value is None:
-        return _json({"error": "key and value are required for set"})
+        return _json(
+            {
+                "error": "key and value are required for set",
+                "suggestion": "Provide both 'key' and 'value' parameters to update a configuration setting.",
+            }
+        )
 
     valid_keys = {
         "sync_enabled",
