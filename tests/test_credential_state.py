@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from mnemo_mcp.credential_state import (
     CLOUD_KEYS,
     CredentialState,
-    _share_cloud_keys_to_peers,
     get_setup_url,
     get_state,
     reset_state,
@@ -172,8 +171,13 @@ class TestResolveCredentialState:
 
         assert result == CredentialState.AWAITING_SETUP
 
-    def test_config_shares_keys_to_peers(self, monkeypatch):
-        """When config loaded, shares cloud keys to peers."""
+    def test_config_does_not_write_to_peer_servers(self, monkeypatch):
+        """resolve_credential_state must not push keys to other MCP servers.
+
+        Replaces the prior `_share_cloud_keys_to_peers` behavior. Per-server
+        isolation: mnemo-mcp keeps only its own credentials, never writes
+        to wet-mcp / better-code-review-graph configs.
+        """
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
         set_state(CredentialState.AWAITING_SETUP)
@@ -184,12 +188,11 @@ class TestResolveCredentialState:
                 "mcp_core.storage.config_file.read_config",
                 return_value=mock_config,
             ),
-            patch(
-                "mnemo_mcp.credential_state._share_cloud_keys_to_peers"
-            ) as mock_share,
+            patch("mcp_core.storage.config_file.write_config") as mock_write,
         ):
-            resolve_credential_state()
-            mock_share.assert_called_once_with(mock_config)
+            result = resolve_credential_state()
+            assert result == CredentialState.CONFIGURED
+            assert mock_write.call_count == 0
 
         # Cleanup
         for k in CLOUD_KEYS:
@@ -283,65 +286,19 @@ class TestTriggerRelaySetup:
         assert get_state() == CredentialState.AWAITING_SETUP
 
 
-class TestShareCloudKeysToPeers:
-    def test_shares_keys_to_peers(self):
-        """Shares cloud keys to wet-mcp and better-code-review-graph."""
-        config = {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}
+class TestCredentialIsolation:
+    """Per-server isolation regression guard.
 
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
+    Replaces the prior `_share_cloud_keys_to_peers` helper which propagated
+    cloud keys to wet-mcp + crg. The transparent-bridge architecture
+    mandates that each server owns its own credentials; mnemo-mcp must
+    never write to a peer's `config.enc`.
+    """
 
-        assert mock_write.call_count == 2
-        mock_write.assert_any_call(
-            "wet-mcp", {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}
-        )
-        mock_write.assert_any_call(
-            "better-code-review-graph",
-            {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"},
-        )
+    def test_no_share_helper_exists(self):
+        import mnemo_mcp.credential_state as mod
 
-    def test_no_cloud_keys_returns_early(self):
-        """When no cloud keys in config, returns early."""
-        config = {"GOOGLE_DRIVE_CLIENT_ID": "some-id"}
-
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
-
-        mock_write.assert_not_called()
-
-    def test_write_config_exception_nonfatal(self):
-        """Exception writing to one peer doesn't affect the other."""
-        config = {"JINA_AI_API_KEY": "key1"}
-
-        with patch(
-            "mcp_core.storage.config_file.write_config",
-            side_effect=[Exception("fs error"), None],
-        ):
-            # Should not raise
-            _share_cloud_keys_to_peers(config)
-
-    def test_import_exception_nonfatal(self):
-        """Exception importing write_config is non-fatal."""
-        config = {"JINA_AI_API_KEY": "key1"}
-
-        with patch(
-            "mcp_core.storage.config_file.write_config",
-            side_effect=ImportError("module not found"),
-        ):
-            # Should not raise
-            _share_cloud_keys_to_peers(config)
-
-    def test_empty_values_filtered(self):
-        """Empty string values are not shared."""
-        config = {"JINA_AI_API_KEY": "", "GEMINI_API_KEY": "key2"}
-
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
-
-        # Only GEMINI_API_KEY should be shared
-        for call_args in mock_write.call_args_list:
-            shared = call_args[0][1]
-            assert shared == {"GEMINI_API_KEY": "key2"}
+        assert not hasattr(mod, "_share_cloud_keys_to_peers")
 
 
 # ---------------------------------------------------------------------------

@@ -49,14 +49,12 @@ class TestSaveCredentialsSingleUserNoGDrive:
 
         write_config = MagicMock()
         apply_config = MagicMock()
-        share = MagicMock()
         schedule_cleanup = MagicMock()
 
         with (
             patch("mcp_core.storage.config_file.write_config", write_config),
             patch("mnemo_mcp.relay_setup.apply_config", apply_config),
             patch("mnemo_mcp.config.settings", _settings_no_gdrive()),
-            patch.object(cs, "_share_cloud_keys_to_peers", share),
             patch.object(cs, "_schedule_spawn_cleanup", schedule_cleanup),
         ):
             result = cs.save_credentials(
@@ -64,9 +62,10 @@ class TestSaveCredentialsSingleUserNoGDrive:
             )
 
         assert result is None
-        write_config.assert_called_once()
+        # Per-server isolation: only mnemo-mcp's own config touched, never peers.
+        assert write_config.call_count == 1
+        assert write_config.call_args.args[0] == "mnemo-mcp"
         apply_config.assert_called_once_with({"JINA_AI_API_KEY": "abc"})
-        share.assert_called_once()
         schedule_cleanup.assert_called_once()
         assert cs._state == cs.CredentialState.CONFIGURED
 
@@ -81,7 +80,6 @@ class TestSaveCredentialsSingleUserNoGDrive:
             patch("mcp_core.storage.config_file.write_config", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", bad_settings),
-            patch.object(cs, "_share_cloud_keys_to_peers", MagicMock()),
             patch.object(cs, "_schedule_spawn_cleanup", MagicMock()),
         ):
             # Must not raise -- the helper swallows provider re-init failures.
@@ -120,7 +118,6 @@ class TestSaveCredentialsSingleUserWithGDrive:
             patch("mcp_core.storage.config_file.write_config", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
-            patch.object(cs, "_share_cloud_keys_to_peers", MagicMock()),
             patch("httpx.post", post_mock),
             patch("threading.Thread", thread_cls),
             patch("mcp_core.try_open_browser", try_open_browser),
@@ -154,7 +151,6 @@ class TestSaveCredentialsSingleUserWithGDrive:
             patch("mcp_core.storage.config_file.write_config", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
-            patch.object(cs, "_share_cloud_keys_to_peers", MagicMock()),
             patch("httpx.post", post_mock),
             patch.object(cs, "_schedule_spawn_cleanup", cleanup),
         ):
@@ -176,7 +172,6 @@ class TestSaveCredentialsSingleUserWithGDrive:
             patch("mcp_core.storage.config_file.write_config", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
-            patch.object(cs, "_share_cloud_keys_to_peers", MagicMock()),
             patch("httpx.post", post_mock),
             patch.object(cs, "_schedule_spawn_cleanup", cleanup),
         ):
