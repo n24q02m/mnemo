@@ -1266,6 +1266,19 @@ async def help(topic: str = "memory") -> str:
     return content
 
 
+# --- Re-trigger relay form (D6 / Transparent Bridge Wave 3) ---
+#
+# Registers ``config__open_relay`` so the LLM can re-open the relay form
+# after the daemon is already running (e.g. user closed the browser tab
+# before submitting credentials). The helper auto-respawns the daemon
+# if it died and reuses any active session in another window.
+from mcp_core.relay.tool_helpers import register_open_relay_tool  # noqa: E402
+
+from mnemo_mcp.relay_schema import RELAY_SCHEMA  # noqa: E402
+
+register_open_relay_tool(mcp, "mnemo-mcp", RELAY_SCHEMA)
+
+
 # --- Resources ---
 
 
