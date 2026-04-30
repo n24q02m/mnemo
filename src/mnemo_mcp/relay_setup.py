@@ -39,9 +39,9 @@ def load_relay_config() -> dict[str, str] | None:
         Config dict with cloud API keys, or None if no config file found.
     """
     try:
-        from mcp_core.storage.config_file import read_config
+        from mcp_core.storage.per_plugin_store import PerPluginStore
 
-        saved = read_config(SERVER_NAME)
+        saved = PerPluginStore("mnemo").load()
         if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
             logger.info("Config loaded from file")
             return saved
@@ -149,10 +149,10 @@ async def _handle_post_config_setup(
     relay_url: str, session: Any, config: dict[str, str]
 ) -> bool:
     """Save and apply config, then trigger Google Drive setup if needed."""
-    from mcp_core.storage.config_file import write_config
+    from mcp_core.storage.per_plugin_store import PerPluginStore
 
-    # Save to config file
-    write_config(SERVER_NAME, config)
+    # Save to per-plugin store
+    PerPluginStore("mnemo").save(config)
     logger.info("Cloud config saved successfully")
 
     apply_config(config)

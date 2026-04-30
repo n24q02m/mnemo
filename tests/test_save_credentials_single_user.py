@@ -52,7 +52,9 @@ class TestSaveCredentialsSingleUserNoGDrive:
         schedule_cleanup = MagicMock()
 
         with (
-            patch("mcp_core.storage.config_file.write_config", write_config),
+            patch(
+                "mcp_core.storage.per_plugin_store.PerPluginStore.save", write_config
+            ),
             patch("mnemo_mcp.relay_setup.apply_config", apply_config),
             patch("mnemo_mcp.config.settings", _settings_no_gdrive()),
             patch.object(cs, "_schedule_spawn_cleanup", schedule_cleanup),
@@ -64,7 +66,7 @@ class TestSaveCredentialsSingleUserNoGDrive:
         assert result is None
         # Per-server isolation: only mnemo-mcp's own config touched, never peers.
         assert write_config.call_count == 1
-        assert write_config.call_args.args[0] == "mnemo-mcp"
+        assert write_config.call_args.args[0] == {"JINA_AI_API_KEY": "abc"}
         apply_config.assert_called_once_with({"JINA_AI_API_KEY": "abc"})
         schedule_cleanup.assert_called_once()
         assert cs._state == cs.CredentialState.CONFIGURED
@@ -77,7 +79,7 @@ class TestSaveCredentialsSingleUserNoGDrive:
         bad_settings.setup_providers.side_effect = RuntimeError("boom")
 
         with (
-            patch("mcp_core.storage.config_file.write_config", MagicMock()),
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.save", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", bad_settings),
             patch.object(cs, "_schedule_spawn_cleanup", MagicMock()),
@@ -115,7 +117,7 @@ class TestSaveCredentialsSingleUserWithGDrive:
         try_open_browser = MagicMock()
 
         with (
-            patch("mcp_core.storage.config_file.write_config", MagicMock()),
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.save", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
             patch("httpx.post", post_mock),
@@ -148,7 +150,7 @@ class TestSaveCredentialsSingleUserWithGDrive:
         cleanup = MagicMock()
 
         with (
-            patch("mcp_core.storage.config_file.write_config", MagicMock()),
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.save", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
             patch("httpx.post", post_mock),
@@ -169,7 +171,7 @@ class TestSaveCredentialsSingleUserWithGDrive:
         cleanup = MagicMock()
 
         with (
-            patch("mcp_core.storage.config_file.write_config", MagicMock()),
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.save", MagicMock()),
             patch("mnemo_mcp.relay_setup.apply_config", MagicMock()),
             patch("mnemo_mcp.config.settings", _settings_with_gdrive()),
             patch("httpx.post", post_mock),

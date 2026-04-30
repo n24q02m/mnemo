@@ -17,6 +17,17 @@ pytest_plugins = ["conftest_e2e"]
 
 
 @pytest.fixture(autouse=True)
+def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
+    """Redirect ~/ to a per-test tmp dir so PerPluginStore writes don't
+    pollute real ~/.mnemo-mcp/ between test runs (or worse, between
+    parallel pytest workers in CI). Path.home() reads HOME on POSIX
+    and USERPROFILE on Windows."""
+    fake_home = tmp_path_factory.mktemp("mnemo_test_home")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+
+
+@pytest.fixture(autouse=True)
 def _set_credential_state_configured():
     """Set credential state to CONFIGURED for all tests.
 

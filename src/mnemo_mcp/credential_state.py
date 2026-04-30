@@ -163,9 +163,9 @@ def resolve_credential_state() -> CredentialState:
 
     # 2. Check config file
     try:
-        from mcp_core.storage.config_file import read_config
+        from mcp_core.storage.per_plugin_store import PerPluginStore
 
-        saved = read_config(SERVER_NAME)
+        saved = PerPluginStore("mnemo").load()
         if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
             # Apply to env vars
             for key, value in saved.items():
@@ -389,11 +389,11 @@ def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | 
             )
         return None
 
-    from mcp_core.storage.config_file import write_config
+    from mcp_core.storage.per_plugin_store import PerPluginStore
 
     from mnemo_mcp.relay_setup import apply_config
 
-    write_config(SERVER_NAME, config)
+    PerPluginStore("mnemo").save(config)
     apply_config(config)
     _state = CredentialState.CONFIGURED
     logger.info("Credentials saved via local OAuth form")
@@ -604,9 +604,9 @@ def reset_state() -> None:
 
     try:
         from mcp_core import clear_mode
-        from mcp_core.storage.config_file import delete_config
+        from mcp_core.storage.per_plugin_store import PerPluginStore
 
         clear_mode(SERVER_NAME)
-        delete_config(SERVER_NAME)
+        PerPluginStore("mnemo").clear()
     except Exception:
         pass

@@ -74,7 +74,7 @@ class TestResolveCredentialState:
 
         mock_config = {"JINA_AI_API_KEY": "from_config", "GEMINI_API_KEY": "gem_key"}
         with patch(
-            "mcp_core.storage.config_file.read_config",
+            "mcp_core.storage.per_plugin_store.PerPluginStore.load",
             return_value=mock_config,
         ):
             result = resolve_credential_state()
@@ -94,7 +94,7 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 return_value=None,
             ),
             patch("mcp_core.get_mode", return_value="local"),
@@ -111,7 +111,7 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 return_value=None,
             ),
             patch("mcp_core.get_mode", return_value="local"),
@@ -128,7 +128,7 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 return_value=None,
             ),
             patch("mcp_core.get_mode", return_value=None),
@@ -145,7 +145,7 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 side_effect=Exception("read error"),
             ),
             patch("mcp_core.get_mode", return_value=None),
@@ -162,7 +162,7 @@ class TestResolveCredentialState:
 
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 return_value=None,
             ),
             patch("mcp_core.get_mode", side_effect=Exception("no mode")),
@@ -185,14 +185,14 @@ class TestResolveCredentialState:
         mock_config = {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}
         with (
             patch(
-                "mcp_core.storage.config_file.read_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
                 return_value=mock_config,
             ),
-            patch("mcp_core.storage.config_file.write_config") as mock_write,
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.save") as mock_save,
         ):
             result = resolve_credential_state()
             assert result == CredentialState.CONFIGURED
-            assert mock_write.call_count == 0
+            assert mock_save.call_count == 0
 
         # Cleanup
         for k in CLOUD_KEYS:
@@ -539,7 +539,7 @@ class TestResetState:
 
         with (
             patch("mcp_core.clear_mode"),
-            patch("mcp_core.storage.config_file.delete_config"),
+            patch("mcp_core.storage.per_plugin_store.PerPluginStore.clear"),
         ):
             reset_state()
 
@@ -553,7 +553,7 @@ class TestResetState:
         with (
             patch("mcp_core.clear_mode", side_effect=Exception("err")),
             patch(
-                "mcp_core.storage.config_file.delete_config",
+                "mcp_core.storage.per_plugin_store.PerPluginStore.clear",
                 side_effect=Exception("err"),
             ),
         ):
