@@ -1114,23 +1114,28 @@ async def _handle_config_setup_sync() -> str:
 
 
 async def _handle_config_setup_status() -> str:
-    from mnemo_mcp.credential_state import get_setup_url, get_state
+    from mcp_core.storage.per_plugin_store import PerPluginStore
 
-    state = get_state()
+    from mnemo_mcp.credential_state import CLOUD_KEYS, CredentialState, get_setup_url, get_state
+
+    # Derive providers_configured from live PerPluginStore load + env
+    # so status is accurate even if module-level _state is stale.
+    _saved = PerPluginStore("mnemo").load() or {}
+    _env_keys = [k for k in CLOUD_KEYS if os.environ.get(k)]
+    _store_keys = [k for k in CLOUD_KEYS if _saved.get(k)]
+    _providers = list(dict.fromkeys(_env_keys + _store_keys))
+    if _providers:
+        _derived_state = "configured"
+    elif get_state() == CredentialState.LOCAL:
+        _derived_state = "local"
+    else:
+        _derived_state = "awaiting_setup"
     return _json(
         {
-            "state": state.value,
+            "state": _derived_state,
             "setup_url": get_setup_url(),
-            "cloud_keys_in_env": [
-                k
-                for k in (
-                    "JINA_AI_API_KEY",
-                    "GEMINI_API_KEY",
-                    "OPENAI_API_KEY",
-                    "COHERE_API_KEY",
-                )
-                if os.environ.get(k)
-            ],
+            "cloud_keys_in_env": _env_keys,
+            "providers_configured": _providers,
         }
     )
 
