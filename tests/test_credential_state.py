@@ -66,9 +66,14 @@ class TestResolveCredentialState:
         assert get_state() == CredentialState.CONFIGURED
 
     def test_no_env_vars_config_file_present(self, monkeypatch):
-        """When config file has keys, loads them and returns CONFIGURED."""
+        """In HTTP mode: config file has keys, loads them and returns CONFIGURED.
+
+        Per spec §4.1 PerPluginStore is only read in HTTP mode -- set
+        ``MCP_TRANSPORT=http`` to exercise the legitimate persistence path.
+        """
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         mock_config = {"JINA_AI_API_KEY": "from_config", "GEMINI_API_KEY": "gem_key"}
@@ -86,9 +91,10 @@ class TestResolveCredentialState:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def test_config_file_empty(self, monkeypatch):
-        """When config file has no cloud keys, continues to local mode check."""
+        """In HTTP mode: config file has no cloud keys, continues to local mode check."""
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         with (
@@ -106,6 +112,7 @@ class TestResolveCredentialState:
         """When local mode marker exists, returns LOCAL."""
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         with (
@@ -123,6 +130,7 @@ class TestResolveCredentialState:
         """When nothing found, returns AWAITING_SETUP."""
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         with (
@@ -137,9 +145,10 @@ class TestResolveCredentialState:
         assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_read_exception(self, monkeypatch):
-        """When config file read raises, falls through to local mode check."""
+        """In HTTP mode: config file read raises, falls through to local mode check."""
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         with (
@@ -157,6 +166,7 @@ class TestResolveCredentialState:
         """When get_mode raises, falls through to AWAITING_SETUP."""
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         with (
@@ -179,6 +189,7 @@ class TestResolveCredentialState:
         """
         for k in CLOUD_KEYS:
             monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         set_state(CredentialState.AWAITING_SETUP)
 
         mock_config = {"JINA_AI_API_KEY": "key1", "GEMINI_API_KEY": "key2"}

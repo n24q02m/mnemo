@@ -14,6 +14,9 @@ def _reload_credential_state():
 
 def test_loads_from_new_path(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    # PerPluginStore is only loaded in HTTP mode (spec §4.1: stdio = env vars
+    # only). Set MCP_TRANSPORT=http to exercise the legitimate persistence path.
+    monkeypatch.setenv("MCP_TRANSPORT", "http")
     _reload_credential_state()
 
     from mcp_core.storage.per_plugin_store import PerPluginStore

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
@@ -140,14 +141,41 @@ def get_setup_url() -> str | None:
     return _setup_url
 
 
+def _is_http_mode() -> bool:
+    """Detect HTTP mode from CLI args + env vars.
+
+    Mirrors `init-server.ts` / `__main__.py` HTTP detection. In stdio mode
+    (the default after the 2026-05-01 stdio-pure flip) credentials come from
+    env vars ONLY -- per spec §4.1 + OQ3 ("Cred source: env vars ONLY"). The
+    PerPluginStore (~/.mnemo-mcp/config.json) is reserved for HTTP mode where
+    the browser-form / paste-cred flow legitimately persists user input.
+
+    Returns True if any of these are true:
+    - ``--http`` flag in argv
+    - ``MCP_TRANSPORT=http`` env var
+    - ``TRANSPORT_MODE=http`` env var
+    """
+    return (
+        "--http" in sys.argv
+        or os.environ.get("MCP_TRANSPORT") == "http"
+        or os.environ.get("TRANSPORT_MODE") == "http"
+    )
+
+
 def resolve_credential_state() -> CredentialState:
     """Fast, synchronous credential check. Called during lifespan startup.
 
     Checks (in order):
     1. ENV VARS -- if any CLOUD_KEYS present, state = CONFIGURED
-    2. CONFIG FILE -- if saved config has cloud keys, apply to env, state = CONFIGURED
+    2. CONFIG FILE (HTTP mode only) -- if saved config has cloud keys, apply
+       to env, state = CONFIGURED. Skipped in stdio mode per spec §4.1 + OQ3
+       (stdio = env vars ONLY, no fallback to persisted store).
     3. LOCAL MODE MARKER -- if user explicitly skipped, state = LOCAL
     4. NOTHING -- state = AWAITING_SETUP (server starts fast, relay triggered lazily)
+
+    mnemo-mcp has no required cred (local SQLite + Qwen3 ONNX work zero-config),
+    so AWAITING_SETUP in stdio mode is a benign state -- tools that need cloud
+    keys return per-call errors, the server itself is fully functional.
 
     Returns new state. Takes <10ms.
     """
@@ -159,21 +187,22 @@ def resolve_credential_state() -> CredentialState:
         _state = CredentialState.CONFIGURED
         return _state
 
-    # 2. Check config file
-    try:
-        from mcp_core.storage.per_plugin_store import PerPluginStore
+    # 2. Check config file (HTTP mode only -- stdio = env vars ONLY per spec §4.1)
+    if _is_http_mode():
+        try:
+            from mcp_core.storage.per_plugin_store import PerPluginStore
 
-        saved = PerPluginStore("mnemo").load()
-        if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
-            # Apply to env vars
-            for key, value in saved.items():
-                if value and key not in os.environ:
-                    os.environ[key] = value
-            logger.info("Config loaded from encrypted file")
-            _state = CredentialState.CONFIGURED
-            return _state
-    except Exception:
-        pass
+            saved = PerPluginStore("mnemo").load()
+            if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
+                # Apply to env vars
+                for key, value in saved.items():
+                    if value and key not in os.environ:
+                        os.environ[key] = value
+                logger.info("Config loaded from encrypted file")
+                _state = CredentialState.CONFIGURED
+                return _state
+        except Exception:
+            pass
 
     # 3. Check local mode marker
     try:
