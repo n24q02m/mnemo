@@ -2,7 +2,13 @@
 
 > Give this file to your AI agent to automatically set up mnemo-mcp.
 
+> **2026-05-02 Update (v<auto>+)**: Plugin install (Option 1) now uses pure stdio mode with local SQLite storage. No required env vars -- mnemo works out-of-box.
+> The previous "Zero-Config Relay" auto-spawn pattern has been removed.
+> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Option 1/2) or configure them through the relay form in HTTP mode (see setup-manual.md "Method 5: Self-Hosting HTTP Mode").
+
 ## Option 1: Claude Code Plugin (Recommended)
+
+Plugin marketplace install runs the server in **pure stdio mode**. mnemo works with **zero required env vars** -- it falls back to local SQLite + local Qwen3 ONNX embedding. Cloud providers and GDrive sync are optional.
 
 ```bash
 # Install from marketplace (includes skills: /session-handoff, /knowledge-audit)
@@ -10,9 +16,22 @@
 /plugin install mnemo-mcp@n24q02m-plugins
 ```
 
-No further configuration needed. The server auto-configures via relay on first run.
+Optional: add cloud API keys to plugin config for higher-quality embeddings/reranking:
 
-## Option 2: MCP Direct
+```json
+{
+  "mcpServers": {
+    "mnemo-mcp": {
+      "env": {
+        "JINA_AI_API_KEY": "jina_...",
+        "GEMINI_API_KEY": "AIza..."
+      }
+    }
+  }
+}
+```
+
+## Option 2: MCP Direct (Stdio + uvx)
 
 **Python 3.13 required** -- Python 3.14+ is NOT supported.
 
@@ -56,7 +75,7 @@ Add to `opencode.json` in the project root:
 }
 ```
 
-## Option 3: Docker
+## Option 3: Docker (Stdio)
 
 ```bash
 docker run -i --rm \
@@ -88,6 +107,19 @@ Or as an MCP server config:
   }
 }
 ```
+
+## Why upgrade to HTTP mode?
+
+Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (self-host) when you need any of the following:
+
+- **claude.ai web compatibility** -- claude.ai (the web UI) supports HTTP MCP servers but cannot spawn local stdio processes.
+- **One server shared across N Claude Code sessions** -- a single HTTP instance serves multiple terminals/IDEs without re-spawning per session, sharing the same memory database.
+- **Browser-based GDrive OAuth** -- enable Google Drive sync without manually exchanging an OAuth token in the env (the relay form completes the OAuth flow in your browser).
+- **Multi-device credential sync** -- configure cloud API keys / GDrive once, the server uses them for any device/session that connects.
+- **Multi-user team sharing** -- a self-hosted server can serve multiple memory databases, each isolated per JWT-sub.
+- **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background sync, scheduled archive runs, or background memory consolidation.
+
+For self-hosting HTTP mode (your own multi-user mnemo server with bundled GDrive OAuth), see [setup-manual.md](setup-manual.md) "Method 5: Self-Hosting HTTP Mode".
 
 ## Environment Variables
 
@@ -147,43 +179,34 @@ All environment variables are **optional**. The server works in local mode (ONNX
 | `SYNC_FOLDER` | No | `mnemo-mcp` | Remote folder name |
 | `SYNC_INTERVAL` | No | `300` | Auto-sync interval in seconds (0=manual) |
 
+### HTTP Mode (Self-Hosting Only)
+
+| Variable | Required | Default | Description |
+|:---------|:---------|:--------|:------------|
+| `TRANSPORT_MODE` | No (`stdio`) | `stdio` | Set to `http` to enable HTTP transport (multi-user, bundled GDrive OAuth). |
+| `PUBLIC_URL` | Yes (http) | -- | Server's public URL for OAuth redirects and `/authorize` setup page. |
+| `DCR_SERVER_SECRET` | Yes (http) | -- | HMAC secret for stateless Dynamic Client Registration. Generate via `openssl rand -hex 32`. |
+| `PORT` | No | `8080` | Server port (http mode only). |
+
 ### General
 
 | Variable | Required | Default | Description |
 |:---------|:---------|:--------|:------------|
 | `LOG_LEVEL` | No | `INFO` | Logging level |
-| `MCP_RELAY_URL` | No | _(none — local relay by default)_ | Set this to your self-hosted relay URL (e.g., `https://your-host/...`) to opt into remote-relay mode. When unset, the server boots the relay locally on a random `127.0.0.1:<port>` for the user-pastes-credentials flow. |
 
 ## Authentication
 
-### Zero-Config Relay
+### Stdio Mode (Local SQLite + Optional Env Cloud Keys)
 
-> **Recommended.** The relay is the primary setup method. Credentials are encrypted end-to-end and stored locally. Environment variables are supported for backward compatibility.
+mnemo works without any credentials -- it falls back to local SQLite + local Qwen3 ONNX embedding. Optionally set cloud API keys (Jina/Gemini/OpenAI/Cohere) as env vars for higher-quality results.
 
-On first run without any API keys in environment:
+For Google Drive sync in stdio mode, manually create the OAuth token at `~/.mnemo-mcp/tokens/google_drive.json` (chmod 600). For browser-based OAuth, use HTTP mode.
 
-1. Server starts and creates a relay session
-2. A setup URL is printed to stderr
-3. Open the URL in any browser
-4. Fill in API keys on the guided form (all optional)
-5. Credentials are encrypted and stored locally at `~/.config/mcp/config.enc`
-6. Subsequent runs load saved credentials automatically
+### HTTP Mode (Bundled GDrive OAuth + Per-JWT-Sub Isolation)
 
-The relay form has 4 optional fields:
-- **Jina AI API Key** -- embedding + reranking (highest priority)
-- **Gemini API Key** -- LLM + embedding (free tier available)
-- **OpenAI API Key** -- LLM + embedding
-- **Cohere API Key** -- embedding + reranking
+The server hosts a `/authorize` page that lets each user paste their cloud API keys and complete Google Drive OAuth in the browser. The Google Desktop OAuth public client is bundled (same pattern as `wet-mcp`); no separate Google Cloud Console registration is required.
 
-Leave all empty to use pure local mode (Qwen3 ONNX models).
-
-### Google Drive Sync (Optional)
-
-After relay setup, if `GOOGLE_DRIVE_CLIENT_ID` is configured, OAuth Device Code flow starts automatically. For other providers (Dropbox, S3), set `SYNC_PROVIDER` and `SYNC_REMOTE`.
-
-### Environment Variables (Recommended)
-
-Set API keys directly as environment variables to skip relay entirely.
+Credentials are stored encrypted at `~/.mnemo-mcp/subs/<sub>/`, isolated per JWT-sub.
 
 ## Verification
 

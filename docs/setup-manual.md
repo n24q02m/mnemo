@@ -1,25 +1,28 @@
 # Mnemo MCP -- Manual Setup Guide
 
+> **2026-05-02 Update (v<auto>+)**: Plugin install (Method 1) now uses pure stdio mode with local SQLite storage. No required env vars -- mnemo works out-of-box.
+> The previous "Zero-Config Relay" auto-spawn pattern has been removed.
+> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Method 1) or configure them through the relay form in HTTP mode (Method 5).
+
 ## Prerequisites
 
 - **Python 3.13** (3.14+ is NOT supported)
 - `uv` or `uvx` installed ([docs](https://docs.astral.sh/uv/getting-started/installation/))
 - Docker (optional, for containerized setup)
 
-## Method 1: Plugin Install
+## Method 1: Claude Code Plugin (Recommended)
 
-For Claude Code users, the plugin approach is the simplest.
+Plugin marketplace install runs the server in **pure stdio mode**. mnemo works with **zero required env vars** -- it falls back to local SQLite + local Qwen3 ONNX embedding. Cloud providers and GDrive sync are optional.
 
-1. Open Claude Code
-2. Run the following commands:
+1. Open Claude Code in your terminal
+2. Install the plugin:
    ```bash
    /plugin marketplace add n24q02m/claude-plugins
    /plugin install mnemo-mcp@n24q02m-plugins
    ```
-3. The server starts automatically when Claude Code launches
-4. On first run, a relay setup URL appears -- open it to configure API keys (optional)
+3. (Optional) Add cloud API keys to plugin config for higher-quality embeddings/reranking, or `SYNC_ENABLED=true` + a GDrive token for cross-machine sync. See "Method 2" below for the env var format.
 
-## Method 2: uvx Direct
+## Method 2: uvx Direct (Local Stdio)
 
 1. Add to your MCP client configuration file:
 
@@ -30,6 +33,22 @@ For Claude Code users, the plugin approach is the simplest.
        "mnemo": {
          "command": "uvx",
          "args": ["--python", "3.13", "mnemo-mcp"]
+       }
+     }
+   }
+   ```
+
+   With optional cloud API keys:
+   ```json
+   {
+     "mcpServers": {
+       "mnemo": {
+         "command": "uvx",
+         "args": ["--python", "3.13", "mnemo-mcp"],
+         "env": {
+           "JINA_AI_API_KEY": "jina_...",
+           "GEMINI_API_KEY": "AIza..."
+         }
        }
      }
    }
@@ -54,18 +73,17 @@ For Claude Code users, the plugin approach is the simplest.
    }
    ```
 
-2. Restart your MCP client
-3. On first run, the embedding model is downloaded (~570MB)
-4. A relay setup URL appears in stderr -- open it to configure cloud API keys (optional)
+2. Restart your MCP client.
+3. On first run, the local Qwen3 ONNX embedding model is downloaded (~570MB). Use `config(action="warmup")` to pre-download.
 
-## Method 3: Docker
+## Method 3: Docker (Local Stdio)
 
 1. Pull the image:
    ```bash
    docker pull n24q02m/mnemo-mcp:latest
    ```
 
-2. Run with environment variables:
+2. Run with optional environment variables:
    ```bash
    docker run -i --rm \
      --name mcp-mnemo \
@@ -94,6 +112,17 @@ For Claude Code users, the plugin approach is the simplest.
    }
    ```
 
+## Why upgrade to HTTP mode?
+
+Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (Method 5 self-host) when you need any of the following:
+
+- **claude.ai web compatibility** -- claude.ai (the web UI) supports HTTP MCP servers but cannot spawn local stdio processes.
+- **One server shared across N Claude Code sessions** -- a single HTTP instance serves multiple terminals/IDEs without re-spawning per session, sharing the same memory database.
+- **Browser-based GDrive OAuth** -- enable Google Drive sync without manually exchanging an OAuth token in the env (the relay form completes the OAuth flow in your browser).
+- **Multi-device credential sync** -- configure cloud API keys / GDrive once, the server uses them for any device/session that connects.
+- **Multi-user team sharing** -- a self-hosted server can serve multiple memory databases, each isolated per JWT-sub.
+- **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background sync, scheduled archive runs, or background memory consolidation.
+
 ## Method 4: Build from Source
 
 1. Clone the repository:
@@ -107,14 +136,74 @@ For Claude Code users, the plugin approach is the simplest.
    uv sync
    ```
 
-3. Run the server:
+3. Run the server (stdio):
    ```bash
    uv run mnemo-mcp
    ```
 
+4. Run the server (HTTP mode):
+   ```bash
+   TRANSPORT_MODE=http PUBLIC_URL=http://localhost:8080 \
+   DCR_SERVER_SECRET=$(openssl rand -hex 32) \
+   uv run mnemo-mcp --http
+   ```
+
+## Method 5: Self-Hosting HTTP Mode
+
+Host your own multi-user mnemo server. Always-multi-user (per-JWT-sub credential isolation) -- a single multi-user mode, no `MCP_MODE` selector. Google Drive OAuth uses a **bundled Desktop OAuth public client** (same pattern as `wet-mcp`); no separate Google Cloud Console registration is required.
+
+### Required Env
+
+| Variable | Description |
+|:---------|:------------|
+| `TRANSPORT_MODE=http` | Selects HTTP transport. |
+| `PUBLIC_URL` | Public URL of your server (e.g. `https://your-domain.com`). Used for OAuth redirects and the `/authorize` setup page. |
+| `DCR_SERVER_SECRET` | HMAC secret for stateless Dynamic Client Registration. Generate via `openssl rand -hex 32`. |
+| `PORT` | (optional, default `8080`) Server port. |
+
+### Optional Env (per-deployment defaults)
+
+| Variable | Description |
+|:---------|:------------|
+| `JINA_AI_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `COHERE_API_KEY` | Default cloud API keys for the deployment (per-user values can override via the relay form). |
+| `SYNC_ENABLED=true` | Enable Google Drive sync UI in the relay form. |
+
+### Run the Server
+
+```bash
+docker run -p 8080:8080 \
+  -e TRANSPORT_MODE=http \
+  -e PUBLIC_URL=https://your-domain.com \
+  -e DCR_SERVER_SECRET=$(openssl rand -hex 32) \
+  -v mnemo-data:/data \
+  n24q02m/mnemo-mcp:latest
+```
+
+Point clients to your server:
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "type": "http",
+      "url": "https://your-domain.com/mcp"
+    }
+  }
+}
+```
+
+### Browser Setup Flow
+
+1. On first tool call from a new client, the server returns a setup URL: `https://your-domain.com/authorize?session=<sid>`.
+2. Open the URL in a browser.
+3. Fill the relay form:
+   - Optional cloud API keys (Jina / Gemini / OpenAI / Cohere)
+   - Optional **Google Drive sync** -- click "Connect Google Drive", complete OAuth in browser, the token is stored encrypted per-user.
+4. Submit. Credentials are encrypted and stored per JWT-sub at `~/.mnemo-mcp/subs/<sub>/`.
+5. Retry the tool call -- it now succeeds with your config.
+
 ## Credential Setup
 
-### Option A: Environment Variables (Recommended)
+### Option A: Environment Variables (Stdio Mode)
 
 Set API keys in your shell profile or MCP client settings:
 
@@ -123,45 +212,22 @@ export JINA_AI_API_KEY="jina_..."
 export GEMINI_API_KEY="AIza..."
 ```
 
-When environment variables are set, the relay is skipped entirely.
+### Option B: Relay Form (HTTP Mode)
 
-### Option B: Zero-Config Relay
-
-> **Recommended for new users.** The relay is the primary setup method -- no environment variables needed. Credentials are encrypted end-to-end and stored locally.
-
-No manual configuration needed. On first start:
-
-1. The server prints a setup URL to stderr (e.g., `http://127.0.0.1:<port>/authorize`). The port is allocated dynamically on each start, and `mnemo-mcp` runs the relay locally by default — no public n24q02m.com subdomain is provisioned for wet/mnemo/crg/imagine. To run a self-hosted remote relay, set `MCP_RELAY_URL=https://your-host/...`.
-2. Open the URL in any browser
-3. Fill in your API keys on the guided form:
-   - **Jina AI API Key** -- enables embedding and reranking ([get key](https://jina.ai/api-key))
-   - **Gemini API Key** -- enables LLM and embedding, free tier available ([get key](https://aistudio.google.com/apikey))
-   - **OpenAI API Key** -- enables LLM and embedding ([get key](https://platform.openai.com/api-keys))
-   - **Cohere API Key** -- enables embedding and reranking ([get key](https://dashboard.cohere.com/api-keys))
-4. All fields are optional -- leave empty for pure local mode
-5. Credentials are encrypted and stored at `~/.config/mcp/config.enc`
+Use HTTP mode (Method 5) and complete the form in the browser. No env vars needed beyond the HTTP server's required env (`TRANSPORT_MODE`, `PUBLIC_URL`, `DCR_SERVER_SECRET`).
 
 ### Sync Setup (Optional)
 
 To sync memories across machines:
 
-1. Set environment variables:
-   ```bash
-   export SYNC_ENABLED=true
-   ```
+- **Stdio mode**: Set `SYNC_ENABLED=true` and provide a Google Drive OAuth token at `~/.mnemo-mcp/tokens/google_drive.json` (chmod 600). Manual token creation required.
+- **HTTP mode**: Set `SYNC_ENABLED=true` on the server, use the relay form's "Connect Google Drive" button -- the bundled Desktop OAuth client completes the flow in your browser.
 
-2. On first sync, rclone is auto-downloaded and a browser opens for OAuth
-3. For non-Google Drive providers:
-   ```bash
-   export SYNC_PROVIDER=dropbox
-   export SYNC_REMOTE=dropbox
-   ```
-
-4. Or use the MCP tool: `config(action="setup_sync")`
+For other rclone providers (Dropbox, S3), set `SYNC_PROVIDER=dropbox` etc. in env vars.
 
 ## Environment Variable Reference
 
-All environment variables are **optional**. See [docs/setup-with-agent.md](setup-with-agent.md#environment-variables) for the complete table.
+All environment variables are **optional** -- mnemo works with zero env vars in stdio mode (local SQLite + local Qwen3 ONNX). See [docs/setup-with-agent.md](setup-with-agent.md#environment-variables) for the complete table.
 
 ### Key Variables
 
@@ -190,12 +256,6 @@ On first start, the server downloads the ONNX embedding model (~570MB). Use the 
 ```
 config(action="warmup")
 ```
-
-### Relay setup URL does not appear
-
-The relay URL only appears when no API keys are set in environment. If you have any of `JINA_AI_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY` set, the relay is skipped.
-
-To force relay setup, use the MCP tool: `config(action="setup_relay")`
 
 ### Database locked errors
 
