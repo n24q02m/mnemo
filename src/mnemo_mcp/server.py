@@ -279,19 +279,20 @@ def _json(obj: object) -> str:
 
 
 async def _maybe_include_setup_hint(result: dict) -> dict:
-    """If in awaiting_setup, trigger lazy relay and add hint to response."""
-    from mnemo_mcp.credential_state import (
-        CredentialState,
-        get_state,
-        trigger_relay_setup,
-    )
+    """If in awaiting_setup, surface a hint pointing the user at HTTP setup.
+
+    Stdio mode reads creds from env vars; missing creds is non-fatal because
+    mnemo-mcp falls back to local Qwen3-Embedding ONNX. The hint nudges users
+    toward the optional HTTP setup form for cloud providers / GDrive sync.
+    """
+    from mnemo_mcp.credential_state import CredentialState, get_state
 
     if get_state() == CredentialState.AWAITING_SETUP:
-        url = await trigger_relay_setup()
-        if url:
-            result["_setup_hint"] = (
-                f"Cloud features available. Configure API keys: {url}"
-            )
+        result["_setup_hint"] = (
+            "Cloud features (Jina/Gemini/OpenAI/Cohere) and GDrive sync are "
+            "optional. Set API keys via env vars (stdio mode) or run with "
+            "--http and visit /authorize to configure via browser form."
+        )
     return result
 
 
@@ -1116,7 +1117,12 @@ async def _handle_config_setup_sync() -> str:
 async def _handle_config_setup_status() -> str:
     from mcp_core.storage.per_plugin_store import PerPluginStore
 
-    from mnemo_mcp.credential_state import CLOUD_KEYS, CredentialState, get_setup_url, get_state
+    from mnemo_mcp.credential_state import (
+        CLOUD_KEYS,
+        CredentialState,
+        get_setup_url,
+        get_state,
+    )
 
     # Derive providers_configured from live PerPluginStore load + env
     # so status is accurate even if module-level _state is stale.
@@ -1141,11 +1147,7 @@ async def _handle_config_setup_status() -> str:
 
 
 async def _handle_config_setup_start(key: str | None) -> str:
-    from mnemo_mcp.credential_state import (
-        CredentialState,
-        get_state,
-        trigger_relay_setup,
-    )
+    from mnemo_mcp.credential_state import CredentialState, get_state
 
     if get_state() == CredentialState.CONFIGURED and not (
         key and key.lower() == "force"
@@ -1156,16 +1158,18 @@ async def _handle_config_setup_start(key: str | None) -> str:
                 "message": "Already configured. Use key='force' to reconfigure.",
             }
         )
-    url = await trigger_relay_setup(force=True)
-    if url:
-        return _json(
-            {
-                "status": "setup_started",
-                "setup_url": url,
-                "message": "Open this URL to configure API keys.",
-            }
-        )
-    return _json({"status": "error", "message": "Failed to start relay session."})
+    return _json(
+        {
+            "status": "stdio_unsupported",
+            "message": (
+                "Setup form is only available in HTTP mode. Run mnemo-mcp "
+                "with --http (or MCP_TRANSPORT=http) and visit /authorize to "
+                "configure API keys via browser. In stdio mode, set env vars "
+                "directly (JINA_AI_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, "
+                "COHERE_API_KEY, GOOGLE_DRIVE_CLIENT_ID)."
+            ),
+        }
+    )
 
 
 async def _handle_config_setup_skip() -> str:
@@ -1225,13 +1229,8 @@ async def _handle_config_setup_complete(
 
 
 async def _handle_config_setup_relay() -> str:
-    # Backward compat alias for setup_start
-    from mnemo_mcp.credential_state import trigger_relay_setup
-
-    url = await trigger_relay_setup(force=True)
-    if url:
-        return _json({"status": "setup_started", "setup_url": url})
-    return _json({"status": "error", "message": "Relay setup failed."})
+    # Backward compat alias for setup_start.
+    return await _handle_config_setup_start(key="force")
 
 
 @mcp.tool(
@@ -1271,17 +1270,14 @@ async def help(topic: str = "memory") -> str:
     return content
 
 
-# --- Re-trigger relay form (D6 / Transparent Bridge Wave 3) ---
+# --- Re-trigger relay form ---
 #
-# Registers ``config__open_relay`` so the LLM can re-open the relay form
-# after the daemon is already running (e.g. user closed the browser tab
-# before submitting credentials). The helper auto-respawns the daemon
-# if it died and reuses any active session in another window.
+# Registers ``config__open_relay`` so the LLM can surface the HTTP setup
+# form URL on demand. In stdio mode (no PUBLIC_URL), the tool returns
+# ``stdio_unsupported`` -- users must run with --http to use the form.
 from mcp_core.relay.tool_helpers import register_open_relay_tool  # noqa: E402
 
-from mnemo_mcp.relay_schema import RELAY_SCHEMA  # noqa: E402
-
-register_open_relay_tool(mcp, "mnemo-mcp", RELAY_SCHEMA)
+register_open_relay_tool(mcp, "mnemo-mcp", os.environ.get("PUBLIC_URL"))
 
 
 # --- Resources ---
@@ -1344,7 +1340,7 @@ async def run_http(port: int = 0) -> None:
     start so a misconfigured single-user instance never accidentally
     accepts other users' OAuth flows into the same shared ``config.enc``.
     """
-    from mcp_core.transport.local_server import run_local_server
+    from mcp_core.transport.local_server import run_http_server
 
     from mnemo_mcp.credential_state import (
         save_credentials,
@@ -1366,7 +1362,7 @@ async def run_http(port: int = 0) -> None:
     else:
         host = "127.0.0.1"
 
-    await run_local_server(
+    await run_http_server(
         mcp,  # ty: ignore[invalid-argument-type]
         server_name="mnemo-mcp",
         relay_schema=RELAY_SCHEMA,
@@ -1382,7 +1378,14 @@ async def run_http(port: int = 0) -> None:
 
 
 def main() -> None:
-    """Run the MCP server. Defaults to HTTP, --stdio for backward compat."""
+    """Run the MCP server.
+
+    Transport selection (stdio default, HTTP opt-in):
+      - stdio (default): pure stdio, env var creds only, single-user
+      - http (opt-in via --http or MCP_TRANSPORT=http or TRANSPORT_MODE=http):
+        runHttpServer with delegated OAuth (always multi-user when
+        PUBLIC_URL set + MCP_DCR_SERVER_SECRET).
+    """
     logger.remove()
     valid_levels = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
     level = settings.log_level.upper() if settings.log_level else "WARNING"
@@ -1391,19 +1394,17 @@ def main() -> None:
     logger.add(sys.stderr, level=level)
     logger.info("Starting Mnemo MCP Server...")
 
-    mode = (os.environ.get("MCP_MODE") or "").strip().lower()
+    is_http = (
+        "--http" in sys.argv
+        or os.environ.get("MCP_TRANSPORT") == "http"
+        or os.environ.get("TRANSPORT_MODE") == "http"
+    )
 
-    if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
-        # Stdio mode: run FastMCP stdio server directly. No bridge layer.
-        # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
-        # See: ~/projects/.superpower/mcp-core/specs/2026-04-30-multi-mode-stdio-http-architecture.md
-        mcp.run(transport="stdio")
-        return
-    elif mode == "remote-relay":
-        raise SystemExit(
-            "MCP_MODE=remote-relay is deprecated since 2026-04-25 (single-user "
-            "MCP_RELAY_URL pattern). For multi-user remote: set PUBLIC_URL + "
-            "MCP_DCR_SERVER_SECRET and run with default mode."
-        )
-    else:
+    if is_http:
         asyncio.run(run_http())
+        return
+
+    # Stdio mode (default): run FastMCP stdio server directly. No bridge layer.
+    # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
+    # See: ~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md
+    mcp.run(transport="stdio")

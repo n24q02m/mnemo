@@ -470,7 +470,7 @@ requests = [
 
 [[package]]
 name = "google-genai"
-version = "1.73.1"
+version = "1.74.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -484,9 +484,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/d8/40f5f107e5a2976bbac52d421f04d14fc221b55a8f05e66be44b2f739fe6/google_genai-1.73.1.tar.gz", hash = "sha256:b637e3a3b9e2eccc46f27136d470165803de84eca52abfed2e7352081a4d5a15", size = 530998, upload-time = "2026-04-14T21:06:19.153Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/c8/4a8f1de0a3268d526a345b8c74456b3e1e6ffd200982626326cf7ca83e5b/google_genai-1.74.0.tar.gz", hash = "sha256:c4c473cebdeb6e5adbb0639326de66a3a85a2209e0d32de7d66bf05c698abae8", size = 536772, upload-time = "2026-04-29T22:16:35.881Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/af/508e0528015240d710c6763f7c89ff44fab9a94a80b4377e265d692cbfd6/google_genai-1.73.1-py3-none-any.whl", hash = "sha256:af2d2287d25e42a187de19811ef33beb2e347c7e2bdb4dc8c467d78254e43a2c", size = 783595, upload-time = "2026-04-14T21:06:17.464Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/2b/539c328b66f7bfef2df869371a1789361228e5a7694ba02a642608367b46/google_genai-1.74.0-py3-none-any.whl", hash = "sha256:87d0b311c67d4b2a0ca741e9fc6891330c29defae81d46d8db41079aa1a3d80a", size = 790433, upload-time = "2026-04-29T22:16:33.979Z" },
 ]
 
 [[package]]
@@ -570,7 +570,7 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.11.0"
+version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -583,9 +583,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/89/e7aa12d8a6b9259bed10671abb25ae6fa437c0f88a86ecbf59617bae7759/huggingface_hub-1.11.0.tar.gz", hash = "sha256:15fb3713c7f9cdff7b808a94fd91664f661ab142796bb48c9cd9493e8d166278", size = 761749, upload-time = "2026-04-16T13:07:39.73Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/ff/ec7ed2eb43bd7ce8bb2233d109cc235c3e807ffe5e469dc09db261fac05e/huggingface_hub-1.13.0.tar.gz", hash = "sha256:f6df2dac5abe82ce2fe05873d10d5ff47bc677d616a2f521f4ee26db9415d9d0", size = 781788, upload-time = "2026-04-30T11:57:33.858Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/37/02/4f3f8997d1ea7fe0146b343e5e14bd065fa87af790d07e5576d31b31cc18/huggingface_hub-1.11.0-py3-none-any.whl", hash = "sha256:42a6de0afbfeb5e022222d36398f029679db4eb4778801aafda32257ae9131ab", size = 645499, upload-time = "2026-04-16T13:07:37.716Z" },
+    { url = "https://files.pythonhosted.org/packages/93/db/4b1cdae9460ae1f3ca020cd767f013430ce23eb1d9c890ae3a0609b38d26/huggingface_hub-1.13.0-py3-none-any.whl", hash = "sha256:e942cb50d6a08dd5306688b1ac05bda157fd2fcc88b63dae405f7bd0d3234005", size = 660643, upload-time = "2026-04-30T11:57:31.802Z" },
 ]
 
 [[package]]
@@ -842,7 +842,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "1.25.0b2"
+version = "1.25.0b3"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -875,16 +875,16 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=6.1.0" },
-    { name = "google-genai", specifier = ">=1.73.1" },
+    { name = "google-genai", specifier = ">=1.74.0" },
     { name = "httpx" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"] },
-    { name = "n24q02m-mcp-core", specifier = ">=1.13.0b1" },
-    { name = "openai", specifier = ">=2.32.0" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.13.0b4" },
+    { name = "openai", specifier = ">=2.33.0" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.9.0" },
+    { name = "qwen3-embed", specifier = ">=1.9.1" },
     { name = "sqlite-vec" },
 ]
 
@@ -921,7 +921,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.13.0b1"
+version = "1.13.0b4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -935,9 +935,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/33/4c95c7e2387d3561101e831ef6a631b5a8ac981ab2e26d212b67a46cb2a4/n24q02m_mcp_core-1.13.0b1.tar.gz", hash = "sha256:738d997a7dbf7abd22f6cee307bf9e1d163dd08c29437aabb9a6325d8f30f81c", size = 211627, upload-time = "2026-04-30T13:59:39.848Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/65/916107fa1ff9636fd0b2ef37a7d8e7c6bd94f1f51ed9e616903ffd13771c/n24q02m_mcp_core-1.13.0b4.tar.gz", hash = "sha256:5ccd0a909bb434cd0b5d4bdacb19a962cca986c095b5a47869cf54ab27f81727", size = 185547, upload-time = "2026-05-02T06:02:37.875Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/ae/899110854eacd4b4900ebccc9d6e8e5674389dd2a89e87e45e2626949999/n24q02m_mcp_core-1.13.0b1-py3-none-any.whl", hash = "sha256:ea477a35e0e2dc7861e47617732e91f81ee876dcb5bf22af211b9cdc62f31bf6", size = 132218, upload-time = "2026-04-30T13:59:38.296Z" },
+    { url = "https://files.pythonhosted.org/packages/30/d4/e25b5e3c994b4b8618e57570dfdf3f787be54f38d10c5644ab623f0cfc8c/n24q02m_mcp_core-1.13.0b4-py3-none-any.whl", hash = "sha256:e73be2e0d6649bff1d73dfaea9147501ad821709118c962a35b35aa64a7ce940", size = 118637, upload-time = "2026-05-02T06:02:36.536Z" },
 ]
 
 [[package]]
@@ -1001,7 +1001,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "2.32.0"
+version = "2.33.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1013,9 +1013,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/59/bdcc6b759b8c42dd73afaf5bf8f902c04b37987a5514dbc1c64dba390fef/openai-2.32.0.tar.gz", hash = "sha256:c54b27a9e4cb8d51f0dd94972ffd1a04437efeb259a9e60d8922b8bd26fe55e0", size = 693286, upload-time = "2026-04-15T22:28:19.434Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/ee/d056c82f63c05f06baac0cffb4a90952d8274f90c49dfe244f20497b9bbd/openai-2.33.0.tar.gz", hash = "sha256:f850c435e2a4685bba3295bd54912dd26315d9c1b7733068186134d6e0599f9a", size = 693254, upload-time = "2026-04-28T14:04:42.428Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/c1/d6e64ccd0536bf616556f0cad2b6d94a8125f508d25cfd814b1d2db4e2f1/openai-2.32.0-py3-none-any.whl", hash = "sha256:4dcc9badeb4bf54ad0d187453742f290226d30150890b7890711bda4f32f192f", size = 1162570, upload-time = "2026-04-15T22:28:17.714Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/32/37734d769bc8b42e4938785313cc05aade6cb0fa72479d3220a0d61a4e78/openai-2.33.0-py3-none-any.whl", hash = "sha256:03ac37d70e8c9e3a8124214e3afa785e2cbc12e627fbd98177a086ef2fd87ad5", size = 1162695, upload-time = "2026-04-28T14:04:40.482Z" },
 ]
 
 [[package]]
@@ -1393,7 +1393,7 @@ wheels = [
 
 [[package]]
 name = "qwen3-embed"
-version = "1.9.0"
+version = "1.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1404,9 +1404,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/0a/8aa2479f81b32783420a25cd210480385ccc33fde959be31b7c869384701/qwen3_embed-1.9.0.tar.gz", hash = "sha256:72c8c75ea912c6ccb2dcc51f369fbd16d38d5070824980c21dbdedd78152f470", size = 182123, upload-time = "2026-04-21T09:08:59.12Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cf/27/3ee3a6de6b729622b68822ba58d654cea0be983d98b745e477bfb1969958/qwen3_embed-1.9.1.tar.gz", hash = "sha256:27c6e0d5c1f1a95734347360269030cd2e743a71243eea20dc5b2172e756e8ba", size = 182292, upload-time = "2026-04-27T13:39:53.763Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/04/f65138f8e6224d1803e4643c6eccf2ca5e8e0610b684f865c7ba94cfb4ab/qwen3_embed-1.9.0-py3-none-any.whl", hash = "sha256:be1d2ccbc8596cc4abc6940c5746940c665564a5903e55e8f62466e92502b039", size = 58763, upload-time = "2026-04-21T09:08:58.01Z" },
+    { url = "https://files.pythonhosted.org/packages/81/d8/89fd52dc2af606cb5a0684c77552548d6ae42db3dd68bc547bff5da71ed1/qwen3_embed-1.9.1-py3-none-any.whl", hash = "sha256:309b10e5334ae6ad03f343862d68455e687d93e0596c287f12fde5e5e522badd", size = 58954, upload-time = "2026-04-27T13:39:52.559Z" },
 ]
 
 [[package]]

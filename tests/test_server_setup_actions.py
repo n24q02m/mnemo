@@ -9,7 +9,7 @@ resolution exception.
 import json
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -84,50 +84,28 @@ class TestSetupStart:
 
         assert result["status"] == "already_configured"
 
-    async def test_force_reconfigure(self, ctx_with_db):
-        """setup_start with key='force' triggers relay even when CONFIGURED."""
+    async def test_force_returns_stdio_unsupported(self, ctx_with_db):
+        """setup_start with key='force' surfaces stdio_unsupported pointer.
+
+        Daemon-bridge auto-spawn is removed; the form is HTTP-mode only.
+        """
         ctx, _ = ctx_with_db
         set_state(CredentialState.CONFIGURED)
 
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.url/new",
-        ):
-            result = json.loads(
-                await config(action="setup_start", key="force", ctx=ctx)
-            )
+        result = json.loads(await config(action="setup_start", key="force", ctx=ctx))
 
-        assert result["status"] == "setup_started"
-        assert result["setup_url"] == "https://relay.url/new"
+        assert result["status"] == "stdio_unsupported"
+        assert "--http" in result["message"]
 
-    async def test_awaiting_setup_triggers_relay(self, ctx_with_db):
-        """setup_start in AWAITING_SETUP state triggers relay."""
+    async def test_awaiting_setup_returns_stdio_unsupported(self, ctx_with_db):
+        """setup_start in AWAITING_SETUP returns stdio_unsupported pointer."""
         ctx, _ = ctx_with_db
         set_state(CredentialState.AWAITING_SETUP)
 
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.url",
-        ):
-            result = json.loads(await config(action="setup_start", ctx=ctx))
+        result = json.loads(await config(action="setup_start", ctx=ctx))
 
-        assert result["status"] == "setup_started"
-
-    async def test_relay_fails(self, ctx_with_db):
-        """setup_start returns error when relay setup fails."""
-        ctx, _ = ctx_with_db
-        set_state(CredentialState.AWAITING_SETUP)
-
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            result = json.loads(await config(action="setup_start", ctx=ctx))
-
-        assert result["status"] == "error"
+        assert result["status"] == "stdio_unsupported"
+        assert "JINA_AI_API_KEY" in result["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -242,32 +220,15 @@ class TestSetupComplete:
 
 
 class TestSetupRelay:
-    async def test_relay_success(self, ctx_with_db):
-        """setup_relay triggers relay and returns URL."""
+    async def test_relay_alias_returns_stdio_unsupported(self, ctx_with_db):
+        """setup_relay (backward-compat alias for setup_start force) returns
+        the same stdio_unsupported pointer."""
         ctx, _ = ctx_with_db
 
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.url",
-        ):
-            result = json.loads(await config(action="setup_relay", ctx=ctx))
+        result = json.loads(await config(action="setup_relay", ctx=ctx))
 
-        assert result["status"] == "setup_started"
-        assert result["setup_url"] == "https://relay.url"
-
-    async def test_relay_fails(self, ctx_with_db):
-        """setup_relay returns error when relay fails."""
-        ctx, _ = ctx_with_db
-
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            result = json.loads(await config(action="setup_relay", ctx=ctx))
-
-        assert result["status"] == "error"
+        assert result["status"] == "stdio_unsupported"
+        assert "--http" in result["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -277,37 +238,19 @@ class TestSetupRelay:
 
 class TestMaybeIncludeSetupHint:
     async def test_adds_hint_when_awaiting(self):
-        """Adds setup hint when in AWAITING_SETUP and URL available."""
+        """Adds setup hint when in AWAITING_SETUP."""
         set_state(CredentialState.AWAITING_SETUP)
 
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://setup.url",
-        ):
-            result = await _maybe_include_setup_hint({"data": "test"})
+        result = await _maybe_include_setup_hint({"data": "test"})
 
         assert "_setup_hint" in result
-        assert "https://setup.url" in result["_setup_hint"]
+        assert "--http" in result["_setup_hint"]
 
     async def test_no_hint_when_configured(self):
         """No hint added when already CONFIGURED."""
         set_state(CredentialState.CONFIGURED)
 
         result = await _maybe_include_setup_hint({"data": "test"})
-
-        assert "_setup_hint" not in result
-
-    async def test_no_hint_when_relay_returns_none(self):
-        """No hint added when relay returns None."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        with patch(
-            "mnemo_mcp.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            result = await _maybe_include_setup_hint({"data": "test"})
 
         assert "_setup_hint" not in result
 

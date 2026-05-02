@@ -11,7 +11,6 @@ from mnemo_mcp.credential_state import (
     reset_state,
     resolve_credential_state,
     set_state,
-    trigger_relay_setup,
 )
 
 # ---------------------------------------------------------------------------
@@ -207,83 +206,6 @@ class TestResolveCredentialState:
         result = resolve_credential_state()
         assert result == CredentialState.CONFIGURED
         assert os.environ.get("JINA_AI_API_KEY") == "existing_value"
-
-
-# ---------------------------------------------------------------------------
-# trigger_relay_setup
-# ---------------------------------------------------------------------------
-
-
-class TestTriggerRelaySetup:
-    async def test_not_awaiting_returns_existing_url(self):
-        """When not in AWAITING_SETUP, returns existing setup URL."""
-        import mnemo_mcp.credential_state as cs
-
-        set_state(CredentialState.CONFIGURED)
-        cs._setup_url = "http://127.0.0.1:52100/"
-        result = await trigger_relay_setup()
-        assert result == "http://127.0.0.1:52100/"
-        cs._setup_url = None
-
-    async def test_force_spawns_local_form(self):
-        """Force=True spawns a local credential form even when CONFIGURED."""
-        import mnemo_mcp.credential_state as cs
-
-        set_state(CredentialState.CONFIGURED)
-        cs._active_handle = None
-        cs._setup_url = None
-
-        mock_handle = MagicMock(host="127.0.0.1", port=52101)
-
-        with (
-            patch(
-                "mcp_core.start_local_server_background",
-                new_callable=AsyncMock,
-                return_value=mock_handle,
-                create=True,
-            ) as mock_start,
-            patch("mcp_core.try_open_browser"),
-        ):
-            result = await trigger_relay_setup(force=True)
-
-        assert result == "http://127.0.0.1:52101/"
-        mock_start.assert_awaited_once()
-        cs._active_handle = None
-        cs._setup_url = None
-
-    async def test_reuses_active_handle(self):
-        """When an active handle already exists, reuse its URL."""
-        import mnemo_mcp.credential_state as cs
-
-        set_state(CredentialState.AWAITING_SETUP)
-        cs._active_handle = MagicMock()
-        cs._setup_url = "http://127.0.0.1:52102/"
-
-        with patch(
-            "mcp_core.start_local_server_background",
-            new_callable=AsyncMock,
-            create=True,
-        ) as mock_start:
-            result = await trigger_relay_setup()
-
-        assert result == "http://127.0.0.1:52102/"
-        mock_start.assert_not_awaited()
-        cs._active_handle = None
-
-    async def test_relay_setup_exception_returns_none(self):
-        """When spawn fails, returns None and resets state."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        with patch(
-            "mcp_core.start_local_server_background",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("bind failed"),
-            create=True,
-        ):
-            result = await trigger_relay_setup()
-
-        assert result is None
-        assert get_state() == CredentialState.AWAITING_SETUP
 
 
 class TestCredentialIsolation:
