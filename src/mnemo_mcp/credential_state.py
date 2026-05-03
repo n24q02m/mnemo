@@ -18,6 +18,7 @@ removed).
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import sys
@@ -42,6 +43,44 @@ CLOUD_KEYS = [
 
 # All config keys that indicate a valid saved config (includes GDrive)
 _ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]
+
+
+# Per-request JWT subject (HTTP multi-user remote mode only).
+# Set by ``_per_request_sub_scope`` middleware on every authenticated request.
+# Stays ``None`` in stdio mode + single-user HTTP mode -- callers fall back to
+# ``os.environ`` reads, preserving existing behavior.
+_current_sub: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_sub", default=None
+)
+
+
+def set_current_sub(sub: str | None) -> None:
+    """Set the per-request JWT sub (used by HTTP auth_scope middleware)."""
+    _current_sub.set(sub)
+
+
+def get_current_sub() -> str | None:
+    """Return the per-request JWT sub if any, else ``None``.
+
+    ``None`` indicates stdio mode or single-user HTTP -- callers should read
+    credentials from environment variables.
+    """
+    return _current_sub.get()
+
+
+def credentials_for_current_request() -> dict[str, str]:
+    """Return the credential dict for the current request.
+
+    HTTP multi-user mode (``_current_sub`` set): load from
+    ``$MNEMO_DATA_DIR/subs/<sub>/config.json``.
+    Stdio + single-user HTTP (``_current_sub`` None): fall back to
+    ``os.environ`` filtered to ``CLOUD_KEYS`` so callers never see unrelated
+    process env.
+    """
+    sub = _current_sub.get()
+    if sub is None:
+        return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
+    return read_for_sub(sub)
 
 
 class CredentialState(Enum):
