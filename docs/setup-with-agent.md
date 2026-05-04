@@ -22,26 +22,25 @@ All MCP servers across this stack share this priority hierarchy. Note: 2 plugins
 
 Plugin marketplace install runs the server in **pure stdio mode**. mnemo works with **zero required env vars** -- it falls back to local SQLite + local Qwen3 ONNX embedding. Cloud providers and GDrive sync are optional.
 
+### Step 0: Credential prompt
+
+When the install command runs, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+
+| Field | Required | Sensitive | Source |
+|:------|:---------|:----------|:-------|
+| `JINA_AI_API_KEY` | No | Yes | https://jina.ai/api-dashboard/ |
+
+Press Enter to skip; mnemo falls back to local ONNX. The plugin manifest substitutes the value into `mcpServers.mnemo.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` and keeps the sensitive value in the system keychain (persists across `/plugin update`). You do not edit `env` manually.
+
+### Steps
+
 ```bash
 # Install from marketplace (includes skills: /session-handoff, /knowledge-audit)
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install mnemo-mcp@n24q02m-plugins
 ```
 
-Optional: add cloud API keys to plugin config for higher-quality embeddings/reranking:
-
-```json
-{
-  "mcpServers": {
-    "mnemo-mcp": {
-      "env": {
-        "JINA_AI_API_KEY": "jina_...",
-        "GEMINI_API_KEY": "AIza..."
-      }
-    }
-  }
-}
-```
+> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `SYNC_ENABLED`, `GOOGLE_DRIVE_CLIENT_ID`, etc.) are not part of the `userConfig` prompt; add them manually to `mcpServers.mnemo.env` in your settings if needed.
 
 ## Option 2: Docker stdio (fallback)
 

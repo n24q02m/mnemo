@@ -26,13 +26,29 @@ All MCP servers across this stack share this priority hierarchy. Note: 2 plugins
 
 Plugin marketplace install runs the server in **pure stdio mode**. mnemo works with **zero required env vars** -- it falls back to local SQLite + local Qwen3 ONNX embedding. Cloud providers and GDrive sync are optional.
 
-1. Open Claude Code in your terminal
-2. Install the plugin:
+### Step 0: Credential prompt
+
+When you run `/plugin install mnemo-mcp@n24q02m-plugins`, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+
+| Field | Required | Sensitive | Notes |
+|:------|:---------|:----------|:------|
+| `JINA_AI_API_KEY` | No | Yes | Optional cloud reranker. Without it, the server uses local ONNX. https://jina.ai/api-dashboard/ |
+
+You may leave it empty -- mnemo runs with bundled local ONNX embedding/reranking. The sensitive value is kept in the system keychain (or `~/.claude/.credentials.json` fallback) and persists across `/plugin update`. Claude Code substitutes the value into `mcpServers.mnemo.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` -- you do not edit `env` manually.
+
+> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `SYNC_ENABLED`, `GOOGLE_DRIVE_CLIENT_ID`, etc.) are not part of the install prompt; if you need them, add them manually to `mcpServers.mnemo.env` in your settings.
+
+### Steps
+
+1. Open Claude Code in your terminal.
+2. Install the plugin (Claude Code prompts for `JINA_AI_API_KEY` -- press Enter to skip):
    ```bash
    /plugin marketplace add n24q02m/claude-plugins
    /plugin install mnemo-mcp@n24q02m-plugins
    ```
-3. (Optional) Add cloud API keys to plugin config for higher-quality embeddings/reranking, or `SYNC_ENABLED=true` + a GDrive token for cross-machine sync. See "Method 2" below for the env var format.
+3. Restart Claude Code.
+
+> **HTTP transport (Method 3)** is a separate install path; the `userConfig` prompt only covers stdio Method 1.
 
 ## Method 2: Docker stdio (fallback)
 
