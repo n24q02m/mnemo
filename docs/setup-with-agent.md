@@ -4,7 +4,7 @@
 
 > **2026-05-02 Update (v<auto>+)**: Plugin install (Option 1) now uses pure stdio mode with local SQLite storage. No required env vars -- mnemo works out-of-box.
 > The previous "Zero-Config Relay" auto-spawn pattern has been removed.
-> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Option 1/2) or configure them through the relay form in HTTP mode (see setup-manual.md "Method 5: Self-Hosting HTTP Mode").
+> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Option 1/2) or configure them through the relay form in HTTP mode (see setup-manual.md "Method 3 (Docker HTTP — Self-host)").
 
 ## Method overview
 
@@ -43,51 +43,7 @@ Optional: add cloud API keys to plugin config for higher-quality embeddings/rera
 }
 ```
 
-## Option 2: MCP Direct (Stdio + uvx)
-
-**Python 3.13 required** -- Python 3.14+ is NOT supported.
-
-### Claude Code (settings.json)
-
-Add to `~/.claude/settings.local.json` under `"mcpServers"`:
-
-```json
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "mnemo-mcp"]
-    }
-  }
-}
-```
-
-### Codex CLI (config.toml)
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.mnemo]
-command = "uvx"
-args = ["--python", "3.13", "mnemo-mcp"]
-```
-
-### OpenCode (opencode.json)
-
-Add to `opencode.json` in the project root:
-
-```json
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "mnemo-mcp"]
-    }
-  }
-}
-```
-
-## Option 3: Docker (Stdio)
+## Option 2: Docker stdio (fallback)
 
 ```bash
 docker run -i --rm \
@@ -131,7 +87,7 @@ Stdio is the default and works fine for single-user local setups. You may want t
 - **Multi-user team sharing** -- a self-hosted server can serve multiple memory databases, each isolated per JWT-sub.
 - **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background sync, scheduled archive runs, or background memory consolidation.
 
-For self-hosting HTTP mode (your own multi-user mnemo server with bundled GDrive OAuth), see [setup-manual.md](setup-manual.md) "Method 5: Self-Hosting HTTP Mode".
+For self-hosting HTTP mode (your own multi-user mnemo server with bundled GDrive OAuth), see [setup-manual.md](setup-manual.md) "Method 3 (Docker HTTP — Self-host)".
 
 ### Edge auth: relay password
 
@@ -219,6 +175,36 @@ All environment variables are **optional**. The server works in local mode (ONNX
 | Variable | Required | Default | Description |
 |:---------|:---------|:--------|:------------|
 | `LOG_LEVEL` | No | `INFO` | Logging level |
+
+## Option 3: Docker HTTP (recommended)
+
+### 3.2. Self-host with docker-compose
+
+See [setup-manual.md](setup-manual.md) "Method 3: Docker HTTP (recommended)" for full instructions on self-hosting the multi-user HTTP mode (per-JWT-sub credential isolation, browser GDrive OAuth, relay password edge auth).
+
+Quick start:
+
+```bash
+docker run -p 8080:8080 \
+  -e TRANSPORT_MODE=http \
+  -e PUBLIC_URL=https://your-domain.com \
+  -e DCR_SERVER_SECRET=$(openssl rand -hex 32) \
+  -v mnemo-data:/data \
+  n24q02m/mnemo-mcp:latest
+```
+
+Client config:
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "type": "http",
+      "url": "https://your-domain.com/mcp"
+    }
+  }
+}
+```
 
 ## Authentication
 

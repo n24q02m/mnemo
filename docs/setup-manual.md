@@ -2,7 +2,7 @@
 
 > **2026-05-02 Update (v<auto>+)**: Plugin install (Method 1) now uses pure stdio mode with local SQLite storage. No required env vars -- mnemo works out-of-box.
 > The previous "Zero-Config Relay" auto-spawn pattern has been removed.
-> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Method 1) or configure them through the relay form in HTTP mode (Method 5).
+> Optional cloud providers (Jina/Gemini/OpenAI/Cohere) and Google Drive sync are still supported -- set them via env vars (Method 1) or configure them through the relay form in HTTP mode (Method 3 self-host).
 
 ## Method overview
 
@@ -34,61 +34,7 @@ Plugin marketplace install runs the server in **pure stdio mode**. mnemo works w
    ```
 3. (Optional) Add cloud API keys to plugin config for higher-quality embeddings/reranking, or `SYNC_ENABLED=true` + a GDrive token for cross-machine sync. See "Method 2" below for the env var format.
 
-## Method 2: uvx Direct (Local Stdio)
-
-1. Add to your MCP client configuration file:
-
-   **Claude Code** (`~/.claude/settings.local.json`):
-   ```json
-   {
-     "mcpServers": {
-       "mnemo": {
-         "command": "uvx",
-         "args": ["--python", "3.13", "mnemo-mcp"]
-       }
-     }
-   }
-   ```
-
-   With optional cloud API keys:
-   ```json
-   {
-     "mcpServers": {
-       "mnemo": {
-         "command": "uvx",
-         "args": ["--python", "3.13", "mnemo-mcp"],
-         "env": {
-           "JINA_AI_API_KEY": "jina_...",
-           "GEMINI_API_KEY": "AIza..."
-         }
-       }
-     }
-   }
-   ```
-
-   **Codex CLI** (`~/.codex/config.toml`):
-   ```toml
-   [mcp_servers.mnemo]
-   command = "uvx"
-   args = ["--python", "3.13", "mnemo-mcp"]
-   ```
-
-   **OpenCode** (`opencode.json` in project root):
-   ```json
-   {
-     "mcpServers": {
-       "mnemo": {
-         "command": "uvx",
-         "args": ["--python", "3.13", "mnemo-mcp"]
-       }
-     }
-   }
-   ```
-
-2. Restart your MCP client.
-3. On first run, the local Qwen3 ONNX embedding model is downloaded (~570MB). Use `config(action="warmup")` to pre-download.
-
-## Method 3: Docker (Local Stdio)
+## Method 2: Docker stdio (fallback)
 
 1. Pull the image:
    ```bash
@@ -126,7 +72,7 @@ Plugin marketplace install runs the server in **pure stdio mode**. mnemo works w
 
 ## Why upgrade to HTTP mode?
 
-Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (Method 5 self-host) when you need any of the following:
+Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (Method 3 self-host) when you need any of the following:
 
 - **claude.ai web compatibility** -- claude.ai (the web UI) supports HTTP MCP servers but cannot spawn local stdio processes.
 - **One server shared across N Claude Code sessions** -- a single HTTP instance serves multiple terminals/IDEs without re-spawning per session, sharing the same memory database.
@@ -135,32 +81,9 @@ Stdio is the default and works fine for single-user local setups. You may want t
 - **Multi-user team sharing** -- a self-hosted server can serve multiple memory databases, each isolated per JWT-sub.
 - **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background sync, scheduled archive runs, or background memory consolidation.
 
-## Method 4: Build from Source
+## Method 3: Docker HTTP (recommended)
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/n24q02m/mnemo-mcp.git
-   cd mnemo-mcp
-   ```
-
-2. Install dependencies:
-   ```bash
-   uv sync
-   ```
-
-3. Run the server (stdio):
-   ```bash
-   uv run mnemo-mcp
-   ```
-
-4. Run the server (HTTP mode):
-   ```bash
-   TRANSPORT_MODE=http PUBLIC_URL=http://localhost:8080 \
-   DCR_SERVER_SECRET=$(openssl rand -hex 32) \
-   uv run mnemo-mcp --http
-   ```
-
-## Method 5: Self-Hosting HTTP Mode
+### 3.2. Self-host with docker-compose
 
 Host your own multi-user mnemo server. Always-multi-user (per-JWT-sub credential isolation) -- a single multi-user mode, no `MCP_MODE` selector. Google Drive OAuth uses a **bundled Desktop OAuth public client** (same pattern as `wet-mcp`); no separate Google Cloud Console registration is required.
 
@@ -240,7 +163,7 @@ export GEMINI_API_KEY="AIza..."
 
 ### Option B: Relay Form (HTTP Mode)
 
-Use HTTP mode (Method 5) and complete the form in the browser. No env vars needed beyond the HTTP server's required env (`TRANSPORT_MODE`, `PUBLIC_URL`, `DCR_SERVER_SECRET`).
+Use HTTP mode (Method 3 self-host) and complete the form in the browser. No env vars needed beyond the HTTP server's required env (`TRANSPORT_MODE`, `PUBLIC_URL`, `DCR_SERVER_SECRET`).
 
 ### Sync Setup (Optional)
 
