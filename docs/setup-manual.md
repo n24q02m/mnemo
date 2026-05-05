@@ -26,17 +26,16 @@ All MCP servers across this stack share this priority hierarchy. Note: 2 plugins
 
 Plugin marketplace install runs the server in **pure stdio mode**. mnemo works with **zero required env vars** -- it falls back to local SQLite + local Qwen3 ONNX embedding. Cloud providers and GDrive sync are optional.
 
-### Step 0: Credential prompt
+### Credential prompts at install
 
-When you run `/plugin install mnemo-mcp@n24q02m-plugins`, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+When you run `/plugin install`, Claude Code prompts you for the following credentials (declared in `userConfig` per CC docs). Sensitive values are stored in your system keychain and persist across `/plugin update`:
 
-| Field | Required | Sensitive | Notes |
-|:------|:---------|:----------|:------|
-| `JINA_AI_API_KEY` | No | Yes | Optional cloud reranker. Without it, the server uses local ONNX. https://jina.ai/api-dashboard/ |
-
-You may leave it empty -- mnemo runs with bundled local ONNX embedding/reranking. The sensitive value is kept in the system keychain (or `~/.claude/.credentials.json` fallback) and persists across `/plugin update`. Claude Code substitutes the value into `mcpServers.mnemo.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` -- you do not edit `env` manually.
-
-> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `SYNC_ENABLED`, `GOOGLE_DRIVE_CLIENT_ID`, etc.) are not part of the install prompt; if you need them, add them manually to `mcpServers.mnemo.env` in your settings.
+| Field | Required | Where to obtain |
+|---|---|---|
+| `JINA_AI_API_KEY` | Optional | https://jina.ai/api-key |
+| `GEMINI_API_KEY` | Optional | https://aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | Optional | https://platform.openai.com/api-keys |
+| `COHERE_API_KEY` | Optional | https://dashboard.cohere.com/api-keys |
 
 ### Steps
 
@@ -47,8 +46,6 @@ You may leave it empty -- mnemo runs with bundled local ONNX embedding/reranking
    /plugin install mnemo-mcp@n24q02m-plugins
    ```
 3. Restart Claude Code.
-
-> **HTTP transport (Method 3)** is a separate install path; the `userConfig` prompt only covers stdio Method 1.
 
 ## Method 2: Docker stdio (fallback)
 
@@ -98,6 +95,8 @@ Stdio is the default and works fine for single-user local setups. You may want t
 - **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background sync, scheduled archive runs, or background memory consolidation.
 
 ## Method 3: Docker HTTP (recommended)
+
+> **Switching transport vs. setting credentials**: The `userConfig` prompt only configures credentials for stdio mode (Method 1 / Option 1). To switch transport to HTTP, override `mcpServers` in your client settings per the snippets below -- this is a separate path from `userConfig` and is not driven by the install prompt.
 
 ### 3.2. Self-host with docker-compose
 
