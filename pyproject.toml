@@ -30,8 +30,8 @@ dependencies = [
     # Cloud embedding + reranking (Cohere SDK)
     "cohere>=6.1.0",
     # LLM completion (native SDKs)
-    "google-genai>=1.74.0",
-    "openai>=2.33.0",
+    "google-genai>=1.75.0",
+    "openai>=2.34.0",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
