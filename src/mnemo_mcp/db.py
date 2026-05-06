@@ -491,11 +491,8 @@ class MemoryDB:
         if not fts_queries:
             return results
 
-        subqueries = []
-        fts_params: list = []
-
         # Bolt Performance Optimization:
-        # Deferred join pattern. We only select m.id in the inner CTE instead of
+        # Deferred join pattern. We only select m.id in the inner query instead of
         # m.* to avoid evaluating large columns for rows that will be filtered out by LIMIT.
         filter_sql = ""
         filter_params: list = []
@@ -506,48 +503,41 @@ class MemoryDB:
             filter_sql += " AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
             filter_params.append(json.dumps(tags))
 
-        for idx, fts_query in enumerate(fts_queries):
-            subqueries.append(f"""
-                SELECT m.id,
-                       bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score,
-                       {idx} as tier_idx
-                FROM memories_fts f
-                JOIN memories m ON f.id = m.id
-                WHERE memories_fts MATCH ? {filter_sql}
-            """)
-            fts_params.append(fts_query)
-            fts_params.extend(filter_params)
+        # Bolt Performance Optimization:
+        # Evaluate tiers sequentially in Python rather than combining them into a single
+        # UNION ALL query. In SQLite, UNION ALL forces evaluation of all branches before
+        # applying limits. Breaking early prevents expensive broad query execution (like OR).
+        for fts_query in fts_queries:
+            query_params = [fts_query] + filter_params + [limit * 3]
+            fts_sql = f"""
+                WITH best_tier AS (
+                    SELECT m.id,
+                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
+                    FROM memories_fts f
+                    JOIN memories m ON f.id = m.id
+                    WHERE memories_fts MATCH ? {filter_sql}
+                    ORDER BY bm25_score
+                    LIMIT ?
+                )
+                SELECT m.*, b.bm25_score
+                FROM best_tier b
+                JOIN memories m ON b.id = m.id
+                ORDER BY b.bm25_score
+            """
 
-        union_sql = " UNION ALL ".join(subqueries)
-        fts_sql = f"""
-            WITH all_matches AS (
-                {union_sql}
-            ),
-            best_tier AS (
-                SELECT id, bm25_score
-                FROM all_matches
-                WHERE tier_idx = (SELECT MIN(tier_idx) FROM all_matches)
-                ORDER BY bm25_score
-                LIMIT ?
-            )
-            SELECT m.*, b.bm25_score
-            FROM best_tier b
-            JOIN memories m ON b.id = m.id
-            ORDER BY b.bm25_score
-        """
-        fts_params.append(limit * 3)
-
-        try:
-            rows = self._conn.execute(fts_sql, fts_params).fetchall()
-            for row in rows:
-                mid = row["id"]
-                results[mid] = {
-                    **dict(row),
-                    "fts_score": -row["bm25_score"],
-                    "vec_score": 0.0,
-                }
-        except Exception as e:
-            logger.error(f"FTS search failed: {e}")
+            try:
+                rows = self._conn.execute(fts_sql, query_params).fetchall()
+                if rows:
+                    for row in rows:
+                        mid = row["id"]
+                        results[mid] = {
+                            **dict(row),
+                            "fts_score": -row["bm25_score"],
+                            "vec_score": 0.0,
+                        }
+                    break  # Found results in this tier, skip broader fallbacks
+            except Exception as e:
+                logger.error(f"FTS search failed for tier '{fts_query}': {e}")
 
         fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
         if fts_vals:
