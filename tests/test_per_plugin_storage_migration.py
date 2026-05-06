@@ -1,15 +1,24 @@
-"""Verify migration to PerPluginStore + cred persistence works."""
+"""Verify migration to PerPluginStore + cred persistence works.
+
+The conftest ``_isolate_per_plugin_home`` autouse fixture already redirects
+``HOME`` / ``USERPROFILE`` per test so ``Path.home()`` resolves to an isolated
+tmp dir. ``PerPluginStore`` and ``credential_state`` both call ``Path.home()``
+inside functions (not at module-load time) so no module reload is needed --
+the redirect alone suffices.
+
+Earlier revisions of this file deleted ``mnemo_mcp.credential_state`` from
+``sys.modules`` to "pick up monkeypatched home". That was both unnecessary
+(no module-level caching) and harmful: a subsequent ``import`` rebuilt the
+module and its ``CredentialState`` enum / ``set_state`` / ``get_state``
+function objects, leaving prior callers (other test files imported during
+collection, autouse fixtures with cached references) bound to the old
+module instance. Cross-instance enum equality (``OLD.CONFIGURED ==
+NEW.CONFIGURED``) is ``False``, so any state mutation in one instance was
+invisible to the other -- silently breaking 6 unrelated tests in
+``test_server_setup_actions.py`` whenever this file ran first.
+"""
 
 from __future__ import annotations
-
-import sys
-
-
-def _reload_credential_state():
-    """Reload credential_state module to pick up monkeypatched home."""
-    for mod_name in list(sys.modules.keys()):
-        if "mnemo_mcp.credential_state" in mod_name or "per_plugin_store" in mod_name:
-            del sys.modules[mod_name]
 
 
 def test_loads_from_new_path(tmp_path, monkeypatch):
@@ -17,7 +26,6 @@ def test_loads_from_new_path(tmp_path, monkeypatch):
     # PerPluginStore is only loaded in HTTP mode (spec §4.1: stdio = env vars
     # only). Set MCP_TRANSPORT=http to exercise the legitimate persistence path.
     monkeypatch.setenv("MCP_TRANSPORT", "http")
-    _reload_credential_state()
 
     from mcp_core.storage.per_plugin_store import PerPluginStore
 
@@ -38,7 +46,6 @@ def test_loads_from_new_path(tmp_path, monkeypatch):
 
 def test_save_writes_to_new_path(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    _reload_credential_state()
 
     # Simulate calling save_credentials from the local OAuth form
     import mnemo_mcp.credential_state as cs
@@ -54,7 +61,6 @@ def test_save_writes_to_new_path(tmp_path, monkeypatch):
 
 def test_clear_removes_new_path(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    _reload_credential_state()
 
     from mcp_core.storage.per_plugin_store import PerPluginStore
 
