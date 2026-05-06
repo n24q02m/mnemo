@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import hashlib
 import json
 import os
 import sys
@@ -301,12 +302,14 @@ def _schedule_spawn_cleanup(grace_s: float = _SPAWN_CLEANUP_S) -> None:
 def _sub_data_dir(sub: str) -> Path:
     """Return per-subject data dir for multi-user remote mode.
 
-    Layout: ``$MNEMO_DATA_DIR/subs/<sub>/`` (default base
+    Layout: ``$MNEMO_DATA_DIR/subs/<hashed_sub>/`` (default base
     ``~/.mnemo-mcp``). Each per-authorize JWT ``sub`` gets its own
-    directory so credentials never bleed across users.
+    directory so credentials never bleed across users. The sub is hashed to
+    prevent path traversal vulnerabilities.
     """
     base = Path(os.environ.get("MNEMO_DATA_DIR", str(Path.home() / ".mnemo-mcp")))
-    d = base / "subs" / sub
+    safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+    d = base / "subs" / safe_sub
     d.mkdir(parents=True, exist_ok=True)
     return d
 

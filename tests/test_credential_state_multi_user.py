@@ -7,6 +7,8 @@ counts toward the default coverage gate.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 
@@ -15,7 +17,8 @@ def test_sub_data_dir_creates_path(tmp_path, monkeypatch):
     from mnemo_mcp.credential_state import _sub_data_dir
 
     d = _sub_data_dir("sub_xyz")
-    assert d == tmp_path / "subs" / "sub_xyz"
+    expected_hash = hashlib.sha256(b"sub_xyz").hexdigest()
+    assert d == tmp_path / "subs" / expected_hash
     assert d.exists() and d.is_dir()
 
 

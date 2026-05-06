@@ -8,6 +8,7 @@ path layout.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -30,13 +31,17 @@ class TestPerSubPaths:
         from mnemo_mcp.token_store import _get_token_dir_for_sub
 
         path = _get_token_dir_for_sub("sub-abc")
-        assert path == data_dir / "subs" / "sub-abc" / "tokens"
+        expected_hash = hashlib.sha256(b"sub-abc").hexdigest()
+        assert path == data_dir / "subs" / expected_hash / "tokens"
 
     def test_token_path_for_sub_includes_provider(self, data_dir):
         from mnemo_mcp.token_store import get_token_path_for_sub
 
         path = get_token_path_for_sub("sub-abc", "google_drive")
-        assert path == data_dir / "subs" / "sub-abc" / "tokens" / "google_drive.json"
+        expected_hash = hashlib.sha256(b"sub-abc").hexdigest()
+        assert (
+            path == data_dir / "subs" / expected_hash / "tokens" / "google_drive.json"
+        )
 
 
 class TestSaveTokenForSub:

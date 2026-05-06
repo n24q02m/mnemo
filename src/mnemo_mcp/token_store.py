@@ -14,6 +14,7 @@ Token lifecycle:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import stat
@@ -40,13 +41,15 @@ def get_token_path(provider: str) -> Path:
 
 
 def _get_token_dir_for_sub(sub: str) -> Path:
-    """Per-sub token directory (``$MNEMO_DATA_DIR/subs/<sub>/tokens``).
+    """Per-sub token directory (``$MNEMO_DATA_DIR/subs/<hashed_sub>/tokens``).
 
     Multi-user remote mode (``PUBLIC_URL`` set) keys every artifact by
     JWT ``sub`` so user A's GDrive refresh-token is not visible to
-    user B sharing the same mnemo-mcp deployment.
+    user B sharing the same mnemo-mcp deployment. The sub is hashed to
+    prevent path traversal vulnerabilities.
     """
-    return settings.get_data_dir() / "subs" / sub / "tokens"
+    safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+    return settings.get_data_dir() / "subs" / safe_sub / "tokens"
 
 
 def get_token_path_for_sub(sub: str, provider: str) -> Path:
