@@ -925,10 +925,16 @@ async def memory(
 
 @mcp.tool(
     description=(
-        "Server config, sync, and setup. Actions: status|sync|set|warmup|setup_sync. "
-        "status: show config. sync: manual sync. set: change setting. "
-        "warmup: pre-download embedding model (~570 MB). "
-        "setup_sync: authenticate Google Drive via Device Code OAuth."
+        "Server config, sync, and setup. Actions: status|sync|set|warmup|setup_sync.\n"
+        "\n"
+        "ACTION GUIDE — when to use each:\n"
+        "- status: Show current configuration, setup status, and database stats.\n"
+        "- sync: Trigger manual sync (requires sync_enabled=true + google_drive_client_id).\n"
+        "- set: Update a setting. Requires 'key' and 'value'.\n"
+        "  Valid keys: 'sync_enabled' (true/false), 'sync_interval' (int), 'log_level' (str).\n"
+        "  Example: action='set', key='sync_enabled', value='true'\n"
+        "- warmup: Pre-download embedding model (~570 MB) to avoid delays later.\n"
+        "- setup_sync: Authenticate Google Drive via Device Code OAuth flow."
     ),
     annotations=ToolAnnotations(
         title="Config",
