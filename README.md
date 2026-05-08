@@ -54,17 +54,18 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 >
 > All plugins share the same architecture -- install once, learn pattern transfers.
 
-## Setup
+## Documentation
 
-- **Stdio mode** (default) -- local SQLite, no creds required. See [setup-manual.md](docs/setup-manual.md).
-- **HTTP mode** (optional) -- multi-user, browser-based GDrive OAuth for sync. See [setup-manual.md](docs/setup-manual.md).
+Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/](https://mcp.n24q02m.com/servers/mnemo-mcp/)**:
 
-**With AI Agent** -- copy and send this to your AI agent:
+- [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
+- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
-> Please set up mnemo-mcp for me. Follow this guide:
-> https://raw.githubusercontent.com/n24q02m/mnemo-mcp/main/docs/setup-with-agent.md
+**Install with AI agent** -- paste this to your AI coding agent:
 
-**Manual Setup** -- follow [docs/setup-manual.md](docs/setup-manual.md)
+> Install MCP server `mnemo-mcp` following the steps at
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/mnemo-mcp/setup-with-agent.md
 
 ## Tools
 
