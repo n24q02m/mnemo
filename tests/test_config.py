@@ -422,13 +422,13 @@ class TestDetectGPU:
 class TestHasGGUFSupport:
     def test_llama_cpp_installed(self):
         _has_gguf_support.cache_clear()
-        mock_llama = MagicMock()
-        with patch.dict(sys.modules, {"llama_cpp": mock_llama}):
+        with patch("importlib.util.find_spec", return_value=MagicMock()):
             assert _has_gguf_support() is True
 
     def test_llama_cpp_missing(self):
         _has_gguf_support.cache_clear()
-        with patch.dict(sys.modules, {"llama_cpp": None}):
+        with patch("importlib.util.find_spec", return_value=None):
+            assert _has_gguf_support() is False
             assert _has_gguf_support() is False
 
 
