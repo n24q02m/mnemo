@@ -1330,7 +1330,12 @@ async def recent_resource(ctx: Context | None = None) -> str:
 
 @mcp.prompt()
 def save_summary(summary: str) -> str:
-    """Generate a prompt to save a conversation summary as memory."""
+    """Generate a prompt to save a conversation summary as memory.
+
+    ACTION GUIDE — when to use:
+    - Use when a conversation is concluding or shifting topics to persist key takeaways.
+    - Parameters: 'summary' (the consolidated text to save).
+    """
     return (
         f"Save this conversation summary as a memory:\n\n{summary}\n\n"
         "Use the memory tool with action='add', category='context', "
@@ -1340,7 +1345,12 @@ def save_summary(summary: str) -> str:
 
 @mcp.prompt()
 def recall_context(topic: str) -> str:
-    """Generate a prompt to recall relevant memories about a topic."""
+    """Generate a prompt to recall relevant memories about a topic.
+
+    ACTION GUIDE — when to use:
+    - Use when starting a new task or answering a question to retrieve prior context.
+    - Parameters: 'topic' (the specific subject or keywords to search for).
+    """
     return (
         f"Search your memories for relevant context about: {topic}\n\n"
         "Use the memory tool with action='search' and this query. "
