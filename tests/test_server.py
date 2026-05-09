@@ -321,7 +321,9 @@ class TestMemoryConsolidate:
 
     async def test_consolidate_no_category(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="consolidate", ctx=ctx))
+        with patch("mnemo_mcp.server.settings") as mock_settings:
+            mock_settings.resolve_provider_mode.return_value = "sdk"
+            result = json.loads(await memory(action="consolidate", ctx=ctx))
         assert "error" in result
         assert "suggestion" in result
 

@@ -816,6 +816,11 @@ async def _handle_consolidate(
         "- list: Browse all memories, optionally filtered by category. No query needed.\n"
         "- delete: Remove a memory by ID. Requires 'memory_id'.\n"
         "- stats: Show database statistics (total memories, categories, embedding status).\n"
+        "- export: Export all memories to JSONL format.\n"
+        "- import: Import memories from JSONL data. Requires 'data'.\n"
+        "- archived: List archived memories. Optionally filter by limit.\n"
+        "- restore: Restore an archived memory by ID. Requires 'memory_id'.\n"
+        "- consolidate: Summarize and consolidate similar memories in a category using LLM. Requires 'category'.\n"
         "\n"
         "WORKFLOW: search -> not found? -> add. Found outdated? -> update (with memory_id from results).\n"
         "PROACTIVE: save user preferences, decisions, corrections, project conventions."
@@ -1013,6 +1018,7 @@ async def config(
                 {
                     "error": f"Unknown action '{action}'.{suggestion}",
                     "valid_actions": valid_actions,
+                    "hint": "Common actions: 'status' to view config, 'set' to update settings, 'sync' to manual sync.",
                 }
             )
 
