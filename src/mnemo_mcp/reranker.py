@@ -288,3 +288,78 @@ def init_reranker(
         raise ValueError(f"Unknown reranker backend: {backend_type}")
 
     return _backend
+
+
+class FallbackChainReranker:
+    """Reranker that tries an ordered list of backends until one returns scores.
+
+    Phase 1 retrieval polish (spec section 4.2) requires a cross-encoder
+    rerank with the chain: ``qwen3-reranker local`` -> Jina -> Cohere. When
+    every backend in the chain fails, ``rerank`` returns an empty list so the
+    caller keeps the original ordering.
+    """
+
+    def __init__(self, backends: list[RerankerBackend]):
+        if not backends:
+            raise ValueError("FallbackChainReranker requires at least one backend")
+        self._backends = backends
+
+    def rerank(
+        self, query: str, documents: list[str], top_n: int = 10
+    ) -> list[tuple[int, float]]:
+        if not documents:
+            return []
+        for backend in self._backends:
+            try:
+                ranked = backend.rerank(query, documents, top_n=top_n)
+            except Exception as e:
+                logger.warning(
+                    f"FallbackChainReranker: backend {type(backend).__name__} "
+                    f"raised {type(e).__name__}: {e}"
+                )
+                continue
+            if ranked:
+                return ranked
+        return []
+
+    def check_available(self) -> bool:
+        """Available if any backend in the chain reports availability."""
+        for backend in self._backends:
+            try:
+                if backend.check_available():
+                    return True
+            except Exception:
+                continue
+        return False
+
+
+def build_default_rerank_chain(
+    *,
+    prefer_local: bool = True,
+) -> FallbackChainReranker:
+    """Build the canonical Phase 1 rerank chain.
+
+    Order: qwen3 local cross-encoder -> Jina (``JINA_AI_API_KEY``) ->
+    Cohere (``COHERE_API_KEY`` / ``CO_API_KEY``). Models keep the env-detected
+    default so :memory:`feedback_dont_change_model_names` stays satisfied.
+
+    Args:
+        prefer_local: When ``False``, cloud backends come first.
+    """
+    chain: list[RerankerBackend] = []
+    local = Qwen3Reranker()
+
+    cloud: list[RerankerBackend] = []
+    if os.getenv("JINA_AI_API_KEY"):
+        cloud.append(CloudReranker(model="jina_ai/jina-reranker-v3"))
+    if os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY"):
+        cloud.append(CloudReranker(model="rerank-v4.0-pro"))
+
+    if prefer_local:
+        chain.append(local)
+        chain.extend(cloud)
+    else:
+        chain.extend(cloud)
+        chain.append(local)
+
+    return FallbackChainReranker(chain)

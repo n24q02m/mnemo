@@ -486,6 +486,13 @@ class MemoryDB:
         category: str | None = None,
         tags: list[str] | None = None,
         limit: int = 5,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
+        candidate_pool: int | None = None,
     ) -> list[dict]:
         """Search memories with hybrid scoring.
 
@@ -493,8 +500,29 @@ class MemoryDB:
         min-max normalization, RRF fusion (when embedding available),
         plus recency and frequency boosts.
 
-        Category filtering is applied in SQL for efficiency.
-        Tag filtering is post-search (JSON array matching).
+        Phase 1 retrieval polish (spec section 4.2):
+        - Reciprocal Rank Fusion (RRF, k=60) over FTS + vec rankings.
+        - Cross-encoder rerank applied at the server layer on top of the
+          fused candidate set (this method returns the fused list).
+        - Temporal decay via :meth:`_calc_recency`.
+        - Importance boost: ``score *= (1 + importance)``.
+        - Filters: ``context_type``, ``since``/``until`` ISO timestamps,
+          ``min_importance``, ``include_archived`` (default ``False``).
+
+        Args:
+            query: Free-text query.
+            embedding: Optional dense vector for semantic recall.
+            category: Restrict to a single category bucket.
+            tags: Restrict to memories whose JSON tags array intersects this list.
+            limit: Maximum results returned.
+            context_type: Filter by context_type column (mem_001 schema).
+            since: ISO 8601 timestamp; only memories with
+                ``updated_at >= since`` are returned.
+            until: ISO 8601 timestamp; only memories with
+                ``updated_at <= until`` are returned.
+            min_importance: Drop rows whose ``importance < min_importance``.
+            include_archived: When False (default), exclude soft-archived
+                rows (``archived_at IS NOT NULL``).
 
         Returns:
             List of memory dicts sorted by relevance.
@@ -507,8 +535,19 @@ class MemoryDB:
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
 
-        # 1. FTS5 search
-        results = self._search_fts(query, category, tags, limit)
+        filter_kwargs = {
+            "context_type": context_type,
+            "since": since,
+            "until": until,
+            "min_importance": min_importance,
+            "include_archived": include_archived,
+        }
+
+        # 1. FTS5 search (over a wider candidate pool for downstream rerank).
+        # Spec section 4.2: rerank tops at ~50 candidates -> top-N. Caller can
+        # override via ``candidate_pool`` when it knows the rerank budget.
+        pool = candidate_pool if candidate_pool is not None else max(limit * 10, 50)
+        results = self._search_fts(query, category, tags, pool, **filter_kwargs)
 
         # 2. Semantic search (if embedding provided)
         if embedding and self._vec_enabled:
@@ -529,8 +568,13 @@ class MemoryDB:
                     vec_sql += " AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
                     vec_params.append(json.dumps(tags))
 
+                extra_sql, extra_params = self._build_filter_sql(**filter_kwargs)
+                if extra_sql:
+                    vec_sql += extra_sql
+                    vec_params.extend(extra_params)
+
                 vec_sql += " AND k = ? ORDER BY distance"
-                vec_params.append(limit * 3)
+                vec_params.append(pool)
 
                 vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
 
@@ -566,8 +610,12 @@ class MemoryDB:
         # 3. Compute hybrid score
         scored = self._compute_hybrid_scores(results)
 
-        # 4. Update access counts for returned results
-        top = scored[:limit]
+        # 4. Slice to either ``limit`` (default) or up to ``candidate_pool``
+        # when caller wants a wider rerank window. Access stats only update
+        # for the rows we actually return, so a candidate_pool=50 request
+        # does not silently inflate access counts on borderline matches.
+        effective_top = limit if candidate_pool is None else min(pool, len(scored))
+        top = scored[:effective_top]
         self._update_access_stats(top)
 
         # Clean up internal scores from output
@@ -578,12 +626,52 @@ class MemoryDB:
 
         return top
 
+    def _build_filter_sql(
+        self,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
+    ) -> tuple[str, list]:
+        """Build the shared WHERE-tail used by FTS + vec search paths.
+
+        Phase 1 retrieval polish filters live on the ``memories`` table only
+        (mem_001 schema additions). Returns SQL fragment to append to a
+        ``WHERE m.... = ...`` clause and the matching positional params so
+        FTS and vec can compose the same filter set without duplication.
+        """
+        sql = ""
+        params: list = []
+        if context_type is not None:
+            sql += " AND m.context_type = ?"
+            params.append(context_type)
+        if since is not None:
+            sql += " AND m.updated_at >= ?"
+            params.append(since)
+        if until is not None:
+            sql += " AND m.updated_at <= ?"
+            params.append(until)
+        if min_importance > 0.0:
+            sql += " AND COALESCE(m.importance, 0.0) >= ?"
+            params.append(float(min_importance))
+        if not include_archived:
+            sql += " AND m.archived_at IS NULL"
+        return sql, params
+
     def _search_fts(
         self,
         query: str,
         category: str | None = None,
         tags: list[str] | None = None,
         limit: int = 5,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
     ) -> dict[str, dict]:
         """Execute FTS5 search with tiered queries and BM25 column weights.
 
@@ -607,6 +695,17 @@ class MemoryDB:
         if tags:
             filter_sql += " AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
             filter_params.append(json.dumps(tags))
+
+        extra_sql, extra_params = self._build_filter_sql(
+            context_type=context_type,
+            since=since,
+            until=until,
+            min_importance=min_importance,
+            include_archived=include_archived,
+        )
+        if extra_sql:
+            filter_sql += extra_sql
+            filter_params.extend(extra_params)
 
         # Bolt Performance Optimization:
         # Evaluate tiers sequentially in Python rather than combining them into a single
@@ -658,7 +757,14 @@ class MemoryDB:
         return results
 
     def _calc_recency(self, updated_at: str, now: datetime) -> float:
-        """Calculate recency boost using configurable half-life."""
+        """Calculate recency boost using configurable half-life.
+
+        Phase 1 retrieval polish: spec section 4.2 calls for an exponential
+        temporal decay using ``RECENCY_HALF_LIFE_DAYS``. We honour the
+        per-instance ``self._recency_half_life`` (constructor argument) and
+        compute ``2 ** (-days_old / half_life)`` so older memories smoothly
+        decay toward 0 without hitting the boundary.
+        """
         try:
             updated = datetime.fromisoformat(updated_at)
             days_old = (now - updated).total_seconds() / 86400
@@ -670,6 +776,34 @@ class MemoryDB:
         """Calculate logarithmic frequency boost."""
         freq = math.log1p(access_count) / 10.0
         return min(freq, 1.0)
+
+    @staticmethod
+    def rrf_fuse(
+        fts_results: list[str],
+        vec_results: list[str],
+        k: int = 60,
+    ) -> list[tuple[str, float]]:
+        """Reciprocal Rank Fusion over two ranked id lists.
+
+        Standard RRF: ``score = sum(1 / (k + rank_in_list))`` where ``rank``
+        is 1-based. ``k=60`` is the canonical default from
+        Cormack et al. 2009; spec section 4.2 keeps that value so behaviour
+        matches well-known information-retrieval baselines.
+
+        Args:
+            fts_results: Memory ids sorted by FTS rank (best first).
+            vec_results: Memory ids sorted by vector similarity (best first).
+            k: Smoothing constant (default 60).
+
+        Returns:
+            List of ``(id, fused_score)`` sorted by score descending.
+        """
+        scores: dict[str, float] = {}
+        for rank, mid in enumerate(fts_results, start=1):
+            scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+        for rank, mid in enumerate(vec_results, start=1):
+            scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+        return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
 
     def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
         """Compute final scores combining FTS, vector, recency, and frequency."""
@@ -698,7 +832,12 @@ class MemoryDB:
                 freq = self._calc_frequency(mem.get("access_count", 0))
 
                 rrf_norm = rrf * (k + 1) / 2.0
-                mem["score"] = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
+                # Phase 1 retrieval polish: temporal decay multiplied into the
+                # base, then importance boost ``score *= (1 + importance)``
+                # so highly-rated memories outrank equal-relevance peers.
+                base = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
+                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
         else:
             for mem in results.values():
@@ -706,7 +845,9 @@ class MemoryDB:
                 recency = self._calc_recency(mem.get("updated_at", ""), now)
                 freq = self._calc_frequency(mem.get("access_count", 0))
 
-                mem["score"] = fts * 0.6 + recency * 0.3 + freq * 0.1
+                base = fts * 0.6 + recency * 0.3 + freq * 0.1
+                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
 
         scored.sort(key=lambda m: m["score"], reverse=True)

@@ -452,6 +452,12 @@ async def _handle_search(
     category: str | None = None,
     tags: list[str] | None = None,
     limit: int = 5,
+    *,
+    context_type: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    min_importance: float = 0.0,
+    include_archived: bool = False,
 ) -> str:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
@@ -470,6 +476,15 @@ async def _handle_search(
         limit = max(1, min(limit, 100))
 
     embedding = await _embed(query, embedding_model, embedding_dims, is_query=True)
+
+    # Spec section 4.2: rerank operates on a wider candidate pool
+    # (top-50 -> top-N) so we ask db.search for ``max(50, limit*5)`` rows
+    # when a reranker is active and otherwise stay at the LLM-requested limit.
+    from mnemo_mcp.reranker import get_reranker
+
+    reranker = get_reranker()
+    rerank_pool = max(50, limit * 5) if reranker else None
+
     results = await asyncio.to_thread(
         db.search,
         query=query,
@@ -477,12 +492,14 @@ async def _handle_search(
         category=category,
         tags=tags,
         limit=limit,
+        context_type=context_type,
+        since=since,
+        until=until,
+        min_importance=min_importance,
+        include_archived=include_archived,
+        candidate_pool=rerank_pool,
     )
 
-    # Rerank results for better precision (best-effort)
-    from mnemo_mcp.reranker import get_reranker
-
-    reranker = get_reranker()
     reranked = False
     if reranker and len(results) > 1:
         documents = [r["content"] for r in results]
@@ -498,8 +515,15 @@ async def _handle_search(
                     reranked_results.append(r)
                 results = reranked_results
                 reranked = True
+            else:
+                # No reranker output -> fall back to top-``limit`` of the
+                # hybrid-scored pool so the response still respects ``limit``.
+                results = results[:limit]
         except Exception as e:
             logger.debug(f"Reranking failed, using original order: {e}")
+            results = results[:limit]
+    else:
+        results = results[:limit]
 
     # Graph boost: find related memories via entity graph
     if results:
@@ -1108,6 +1132,10 @@ async def memory(
     text: str | None = None,
     context_type: str = "conversation",
     auto: bool = False,
+    since: str | None = None,
+    until: str | None = None,
+    min_importance: float = 0.0,
+    include_archived: bool = False,
     ctx: Context | None = None,
 ) -> str:
     """Execute a memory action.
@@ -1148,7 +1176,22 @@ async def memory(
                 auto=auto,
             )
         case "search":
-            return await _handle_search(ctx, query, category, tags, limit)
+            # Phase 1 filter passthrough — context_type is also accepted by
+            # the capture branch above; here we treat it as a search filter
+            # only when caller did not leave it at the conversation default.
+            ctype_filter = context_type if context_type != "conversation" else None
+            return await _handle_search(
+                ctx,
+                query,
+                category,
+                tags,
+                limit,
+                context_type=ctype_filter,
+                since=since,
+                until=until,
+                min_importance=min_importance,
+                include_archived=include_archived,
+            )
         case "list":
             return await _handle_list(ctx, category, limit)
         case "update":
