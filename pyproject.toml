@@ -30,14 +30,14 @@ dependencies = [
     # Cloud embedding + reranking (Cohere SDK)
     "cohere>=6.1.0",
     # LLM completion (native SDKs)
-    "google-genai>=1.75.0",
+    "google-genai>=2.0.1",
     "openai>=2.36.0",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
     "qwen3-embed>=1.9.2",
     # Zero-env-config credential relay
-    "n24q02m-mcp-core>=1.13.0",
+    "n24q02m-mcp-core>=1.14.0",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
 ]
