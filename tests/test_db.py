@@ -389,6 +389,15 @@ class TestExportImport:
         assert result["imported"] == 3
         assert tmp_db.stats()["total_memories"] == 3
 
+    def test_import_invalid_json_string(self, tmp_db: MemoryDB):
+        """Invalid JSON lines are counted as rejected."""
+        data = '{"id":"ok1","content":"valid"}\nnot-json\n{"id":"ok2","content":"also valid"}'
+        result = tmp_db.import_jsonl(data, mode="merge")
+        assert result["imported"] == 2
+        assert result["rejected"] == 1
+        assert tmp_db.get("ok1") is not None
+        assert tmp_db.get("ok2") is not None
+
     def test_import_preserves_metadata(self, tmp_db: MemoryDB):
         data = json.dumps(
             {
