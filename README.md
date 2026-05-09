@@ -2,7 +2,7 @@
 
 mcp-name: io.github.n24q02m/mnemo-mcp
 
-**Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
+**Persistent memory MCP server with hybrid retrieval (FTS5 + sqlite-vec + RRF fusion + cross-encoder rerank + temporal decay) and embedded sync. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
@@ -60,17 +60,41 @@ mcp-name: io.github.n24q02m/mnemo-mcp
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/mnemo-mcp/badge" alt="Mnemo MCP server" />
 </a>
 
+## Roadmap (current = Phase 1 / v1.x)
+
+| Phase | Version | Status | Highlights |
+|---|---|---|---|
+| **Phase 1** | **v1.x** | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
+| **Phase 2** | v1.x+1 | Planned | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) |
+| **Phase 3** | v2.0 | Planned (BREAKING) | Temporal knowledge graph -- bitemporal `as_of` queries, entity timelines, time-travel retrieval |
+
 ## Features
 
-- **Hybrid search** -- FTS5 full-text + sqlite-vec semantic + reranking for precision
-- **Knowledge graph** -- Automatic entity extraction and relation tracking across memories
-- **Importance scoring** -- LLM-scored 0.0-1.0 per memory for smarter retrieval
-- **Auto-archive** -- Configurable age + importance threshold to keep memory clean
+- **Hybrid retrieval** -- FTS5 + sqlite-vec, fused via Reciprocal Rank Fusion (k=60), then re-ranked by a cross-encoder chain (qwen3-reranker local -> Jina -> Cohere) with temporal decay and importance boost
+- **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a multi-provider LLM dispatcher (Gemini > OpenAI > Anthropic > xAI)
+- **Knowledge graph** -- Automatic entity extraction and relation tracking; top results boosted by graph proximity
+- **Importance scoring + archive policy** -- LLM-scored 0.0-1.0 importance; soft-archive when `recency_factor * (1 - importance) > 1.0`; restore action available
+- **Auto-archive trigger** -- Background sweep every Nth capture (default 100) -- no cron required
 - **STM-to-LTM consolidation** -- LLM summarization of related memories in a category
 - **Duplicate detection** -- Warns before adding semantically similar memories
-- **Zero config** -- Built-in local Qwen3 embedding + reranking, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere)
-- **Multi-machine sync** -- JSONL-based merge sync via embedded rclone (Google Drive, S3, Dropbox)
-- **Proactive memory** -- Tool descriptions guide AI to save preferences, decisions, facts
+- **Zero config** -- Built-in local Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere)
+- **Multi-machine sync** -- JSONL-based merge sync via Google Drive (bundled Desktop OAuth public client)
+- **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
+- **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
+
+## Comparison vs. peers
+
+| Feature | mnemo-mcp | Mem0 | Letta | OpenMemory |
+|---|---|---|---|---|
+| Hybrid retrieval (FTS + vec) | yes (FTS5 + sqlite-vec + RRF) | yes | partial | yes |
+| Cross-encoder rerank chain | yes (qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
+| Temporal decay scoring | yes (exp half-life) | no | no | no |
+| Importance boost in rank | yes (LLM 0.0-1.0) | no | no | no |
+| Soft-archive + restore policy | yes (importance x recency) | no | no | no |
+| Self-hostable (single SQLite file) | yes (zero ext deps) | partial (cloud-first) | yes (Postgres) | yes (Postgres + Qdrant) |
+| Multi-provider LLM dispatch | yes (Gemini/OpenAI/Anthropic/xAI auto-detect) | partial | yes | partial |
+| Plugin trinity (skills + hooks) | yes (recall-context + memory-commit) | n/a | n/a | n/a |
+| Multi-machine sync | yes (GDrive bundled OAuth) | yes (cloud) | n/a | n/a |
 
 ## Status
 
@@ -106,11 +130,24 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/](https://mcp.n24q02m.com/serv
 
 ## Tools
 
+3 MCP tools, 13 memory actions:
+
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
-| `memory` | `add`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate` | Core memory CRUD, hybrid search, import/export, archival, and LLM consolidation |
-| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider |
-| `help` | -- | Full documentation for any tool |
+| `memory` | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation |
+| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync`, `setup_status`, `setup_start`, `setup_skip`, `setup_reset`, `setup_complete`, `setup_relay` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider, manage HTTP setup form lifecycle |
+| `help` | `topic="memory"` or `topic="config"` | Full documentation for any tool |
+
+Plugin trinity (Claude Code marketplace install):
+
+| Component | Trigger | Purpose |
+|---|---|---|
+| `mnemo:recall-context` skill | session start, before significant decisions, "what do I know about X?" | Pulls cwd / topic-relevant memories with `context_type` filtering |
+| `mnemo:memory-commit` skill | "remember this" / "save this" / "ghi nho" / "luu lai" | Typed manual capture with `context_type` decision tree |
+| `mnemo:knowledge-audit` skill | periodic / "audit memory" | Find duplicates, contradictions, stale entries; consolidate |
+| `mnemo:session-handoff` skill | end of session | Capture decisions / preferences / corrections / conventions / open questions |
+| SessionStart hook | every session init | Non-blocking nudge to invoke `recall-context` |
+| PostToolUse hook (opt-in) | `CAPTURE_AUTO_ENABLED=true` | Hint `memory-commit` after Write/Edit of CLAUDE.md / AGENTS.md / ARCHITECTURE.md / docs/*.md |
 
 ### MCP Resources
 
