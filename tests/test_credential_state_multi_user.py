@@ -12,6 +12,16 @@ import hashlib
 import pytest
 
 
+def _read_for_sub(sub: str) -> dict[str, str]:
+    from mnemo_mcp.credential_state import _current_sub, credentials_for_current_request
+
+    token = _current_sub.set(sub)
+    try:
+        return credentials_for_current_request()
+    finally:
+        _current_sub.reset(token)
+
+
 def test_sub_data_dir_creates_path(tmp_path, monkeypatch):
     monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
     from mnemo_mcp.credential_state import _sub_data_dir
@@ -24,20 +34,21 @@ def test_sub_data_dir_creates_path(tmp_path, monkeypatch):
 
 def test_store_and_read_for_sub_round_trip(tmp_path, monkeypatch):
     monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    from mnemo_mcp.credential_state import read_for_sub, store_for_sub
+    from mnemo_mcp.credential_state import (
+        store_for_sub,
+    )
 
     store_for_sub("alice", {"JINA_AI_API_KEY": "key_a"})
     store_for_sub("bob", {"JINA_AI_API_KEY": "key_b"})
 
-    assert read_for_sub("alice") == {"JINA_AI_API_KEY": "key_a"}
-    assert read_for_sub("bob") == {"JINA_AI_API_KEY": "key_b"}
+    assert _read_for_sub("alice") == {"JINA_AI_API_KEY": "key_a"}
+    assert _read_for_sub("bob") == {"JINA_AI_API_KEY": "key_b"}
 
 
 def test_read_for_sub_missing_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    from mnemo_mcp.credential_state import read_for_sub
 
-    assert read_for_sub("never_seen") == {}
+    assert _read_for_sub("never_seen") == {}
 
 
 def test_save_credentials_multi_user_branch(tmp_path, monkeypatch):
@@ -50,12 +61,14 @@ def test_save_credentials_multi_user_branch(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "google_drive_client_id", "", raising=False)
     monkeypatch.setattr(s, "google_drive_client_secret", "", raising=False)
 
-    from mnemo_mcp.credential_state import read_for_sub, save_credentials
+    from mnemo_mcp.credential_state import (
+        save_credentials,
+    )
 
     result = save_credentials({"JINA_AI_API_KEY": "k1"}, {"sub": "alice"})
 
     assert result is None
-    assert read_for_sub("alice")["JINA_AI_API_KEY"] == "k1"
+    assert _read_for_sub("alice")["JINA_AI_API_KEY"] == "k1"
 
 
 def test_save_credentials_multi_user_requires_sub(tmp_path, monkeypatch):

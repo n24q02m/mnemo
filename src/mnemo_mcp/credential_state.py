@@ -81,7 +81,8 @@ def credentials_for_current_request() -> dict[str, str]:
     sub = _current_sub.get()
     if sub is None:
         return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
-    return read_for_sub(sub)
+    p = _sub_data_dir(sub) / "config.json"
+    return json.loads(p.read_text()) if p.exists() else {}
 
 
 class CredentialState(Enum):
@@ -295,12 +296,6 @@ def _sub_data_dir(sub: str) -> Path:
 def store_for_sub(sub: str, config: dict[str, str]) -> None:
     """Persist a config dict for a single JWT subject (multi-user remote mode)."""
     (_sub_data_dir(sub) / "config.json").write_text(json.dumps(config))
-
-
-def read_for_sub(sub: str) -> dict[str, str]:
-    """Load the config dict for a single JWT subject (empty if missing)."""
-    p = _sub_data_dir(sub) / "config.json"
-    return json.loads(p.read_text()) if p.exists() else {}
 
 
 def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | None:
