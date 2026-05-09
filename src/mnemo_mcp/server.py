@@ -302,11 +302,18 @@ def _format_memory(mem: dict) -> dict:
     - Parse ``tags`` from JSON string to list
     - Round ``score`` to 3 decimal places
     """
-    if isinstance(mem.get("tags"), str):
-        try:
-            mem["tags"] = json.loads(mem["tags"])
-        except (json.JSONDecodeError, TypeError):
-            pass
+    tags_val = mem.get("tags")
+    if isinstance(tags_val, str):
+        # Bolt Performance Optimization:
+        # Prevent expensive json.loads calls for the default empty list.
+        # This occurs frequently when returning search and list results.
+        if tags_val == "[]":
+            mem["tags"] = []
+        else:
+            try:
+                mem["tags"] = json.loads(tags_val)
+            except (json.JSONDecodeError, TypeError):
+                pass
     if "score" in mem:
         mem["score"] = round(mem["score"], 3)
     return mem

@@ -986,12 +986,15 @@ class MemoryDB:
             "FROM archived_memories ORDER BY archived_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+        # Bolt Performance Optimization:
+        # Avoid expensive json.loads calls for the common default '[]' tag string
         return [
             {
                 "id": r[0],
                 "content": r[1][:200],
                 "category": r[2],
-                "tags": json.loads(r[3]),
+                "tags": [] if r[3] == "[]" else json.loads(r[3]),
                 "importance": r[4],
                 "archived_at": r[5],
             }
