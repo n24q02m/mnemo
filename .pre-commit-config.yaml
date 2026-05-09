@@ -108,3 +108,18 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+
+  # ============================================================================
+  # CLAUDE.md ≡ AGENTS.md sync guard
+  # CLAUDE.md is canonical. AGENTS.md mirrors it (only first heading differs).
+  # See .pre-commit-hooks/sync-claude-agents.sh.
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: sync-claude-agents
+        name: Sync CLAUDE.md and AGENTS.md (diff guard)
+        entry: bash .pre-commit-hooks/sync-claude-agents.sh
+        language: system
+        pass_filenames: false
+        files: ^(CLAUDE|AGENTS)\.md$
+        stages: [pre-commit]

@@ -1,142 +1,136 @@
 # AGENTS.md - mnemo-mcp
 
-Persistent AI memory MCP Server. Python 3.13, uv, src layout.
+MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
+Hybrid search: FTS5 + sqlite-vec semantic. 3 tools: memory, config, help.
+2-mode embedding: Cloud (Jina > Gemini > OpenAI > Cohere) > Local (Qwen3 ONNX). LLM: google-genai + openai.
 
-## Build / Lint / Test Commands
+## Commands
 
 ```bash
-uv sync --group dev                # Install dependencies
-uv build                           # Build package (hatchling)
-uv run ruff check .                # Lint
-uv run ruff format --check .       # Format check
-uv run ruff format .               # Format fix
-uv run ruff check --fix .          # Lint fix (with --unsafe-fixes for aggressive)
-uv run ty check                    # Type check (Astral ty)
-uv run pytest                      # Run all tests (integration excluded by default)
-uv run pytest -v                   # Verbose
-uv run pytest -m integration       # Run integration tests only
+# Setup
+uv sync --group dev
 
-# Run a single test file
-uv run pytest tests/test_db.py
+# Lint & Type check
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check
 
-# Run a single test class
-uv run pytest tests/test_db.py::TestSearch
+# Fix
+uv run ruff check --fix .
+uv run ruff format .
 
-# Run a single test function
-uv run pytest tests/test_db.py::TestSearch::test_basic_match -v
+# Test (integration excluded by default)
+uv run pytest
+uv run pytest tests/test_db.py -v                          # single file
+uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
+
+# Build & Run
+uv build
+uv run mnemo-mcp                    # run server (warmup/setup_sync via config tool)
 
 # Mise shortcuts
-mise run setup     # Full dev environment setup
-mise run lint      # ruff check + ruff format --check + ty check
+mise run setup     # full dev setup
+mise run lint      # ruff check + format check + ty check
 mise run test      # pytest
-mise run fix       # ruff check --fix + ruff format
-mise run dev       # uv run mnemo-mcp
+mise run fix       # ruff fix + format
 ```
 
-### Pytest Configuration
+## Pytest
 
-- `asyncio_mode = "auto"` -- no `@pytest.mark.asyncio` needed
-- Default timeout: 30 seconds per test
-- Integration tests excluded by default (`-m 'not integration'`)
-- Test files: `test_*.py` in `tests/` directory
+- `asyncio_mode = "auto"` -- khong can `@pytest.mark.asyncio`
+- Timeout: 30s/test
+- Integration marker: `@pytest.mark.integration` (can network/services)
+- Default: `-m 'not integration and not live and not full'`
+- Snapshot testing: syrupy
 
-## Code Style
-
-### Formatting (Ruff)
-
-- **Line length**: 88
-- **Quotes**: Double quotes
-- **Indent**: 4 spaces (Python), 2 spaces (JSON/YAML/TOML)
-- **Line endings**: LF
-- **Target**: Python 3.13
-
-### Ruff Rules
-
-`select = ["E", "F", "W", "I", "UP", "B", "C4"]`, `ignore = ["E501"]`
-
-- `I` = isort import ordering, `UP` = pyupgrade (modern syntax), `B` = bugbear, `C4` = comprehensions
-
-### Type Checker (ty)
-
-Lenient config: `unresolved-import`, `unresolved-attribute`, `possibly-missing-attribute` all `"ignore"`.
-
-### Import Ordering (isort via Ruff)
-
-1. `__future__` imports
-2. Standard library (`import asyncio`, `import json`)
-3. Third-party (`from loguru import logger`, `from pydantic_settings import BaseSettings`)
-4. Local (`from mnemo_mcp.config import settings`, `from mnemo_mcp.db import MemoryDB`)
-
-Blank line between groups. Lazy imports for heavy deps inside functions.
-
-```python
-import asyncio
-import json
-import sys
-from collections.abc import AsyncIterator
-
-from loguru import logger
-from mcp.server.fastmcp import Context, FastMCP
-
-from mnemo_mcp.config import settings
-from mnemo_mcp.db import MemoryDB
-```
-
-### Type Hints
-
-- Full type hints on all signatures: parameters, return types
-- Modern syntax: `str | None` (not `Optional`), `list[str]` (not `List`)
-- `from __future__ import annotations` in some files
-- `TYPE_CHECKING` guard for circular imports
-- `Protocol` classes for backend abstraction
-- `py.typed` marker file present
-
-### Naming Conventions
-
-| Element            | Convention       | Example                          |
-|--------------------|------------------|----------------------------------|
-| Functions/methods  | snake_case       | `setup_api_keys()`, `_build_fts_queries()` |
-| Classes            | PascalCase       | `Settings`, `MemoryDB`, `CloudEmbeddingBackend` |
-| Constants          | UPPER_SNAKE_CASE | `MAX_RETRIES`, `_DEFAULT_EMBEDDING_DIMS` |
-| Private            | Leading `_`      | `_backend`, `_sync_task`, `_embed()` |
-| Test classes       | `Test` + feature | `TestAdd`, `TestSearch`          |
-| Fixtures           | snake_case       | `tmp_db`, `mock_ctx`             |
-
-### Error Handling
-
-- MCP tools return `_json({"error": "..."})` instead of raising exceptions
-- `match action:` (structural pattern matching) for routing tool actions
-- try/except with `logger.warning()` or `logger.error()` for non-fatal failures
-- Boolean returns for mutations (`db.update()`, `db.delete()`)
-- `asyncio.to_thread()` for blocking I/O (SQLite, embedding)
-
-### File Organization
+## Cau truc thu muc
 
 ```
 src/mnemo_mcp/
-  __init__.py, __main__.py    # Package + CLI entry
-  config.py                   # Pydantic Settings (singleton)
-  server.py                   # FastMCP server, tools, resources, prompts
-  db.py                       # SQLite: CRUD, FTS5, vector search
-  embedder.py                 # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
-  sync.py                     # Google Drive sync (OAuth Device Code, httpx)
-  docs/                       # Tool documentation markdown
-tests/                        # One test file per source module (1:1 mapping)
-  conftest.py                 # Shared fixtures
+  __main__.py      # python -m mnemo_mcp entrypoint
+  config.py        # Pydantic Settings (singleton), env vars khong co prefix
+  server.py        # FastMCP server, tools, resources, prompts
+  setup_tool.py    # Warmup + setup-sync logic (config tool actions)
+  db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
+  embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
+  reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (qwen3-embed cross-encoder)
+  graph.py         # Knowledge graph: entity/relation extraction via LLM
+  relay_setup.py   # Zero-config relay: create session, poll for config
+  relay_schema.py  # Relay form schema (local + cloud modes)
+  sync.py          # Google Drive sync (OAuth Device Code, httpx)
+  token_store.py   # OAuth token storage (secure file-based, chmod 600)
+  docs/            # Tool documentation markdown
+tests/             # 1:1 mapping voi source modules
 ```
 
-### Documentation
+## Env vars
 
-- Module-level docstrings on every `.py` file
-- Google-style docstrings: `Args:`, `Returns:` sections
-- Section comments: `# --- Lifespan ---`, `# --- Tools ---`
+Khong co prefix (khac voi cac project khac):
+- `DB_PATH` -- default `~/.mnemo-mcp/memories.db`
+- `JINA_AI_API_KEY` -- Jina AI API key (embedding + reranking, highest priority)
+- `GEMINI_API_KEY` -- Google Gemini API key (embedding + LLM)
+- `OPENAI_API_KEY` -- OpenAI API key (embedding)
+- `COHERE_API_KEY` -- Cohere API key (embedding + reranking)
+- `XAI_API_KEY` -- xAI/Grok API key (LLM)
+- `EMBEDDING_BACKEND` -- `cloud` hoac `local` (auto-detect)
+- `EMBEDDING_MODEL` -- Cloud embedding model name
+- `EMBEDDING_DIMS` -- default 768 (0 = auto)
+- `SYNC_ENABLED` -- `true`/`false`, default false
+- `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID (required for sync)
+- `SYNC_FOLDER` -- Google Drive folder name (default: `mnemo-mcp`)
+- `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
+- `RERANK_ENABLED` -- `true`/`false`, default true
+- `RERANK_BACKEND` -- `cloud`, `local`, hoac auto-detect
+- `RERANK_MODEL` -- Cloud rerank model name (auto-detected: Jina > Cohere)
+- `RERANK_TOP_N` -- so ket qua rerank giu lai (default: 10)
+- `ARCHIVE_ENABLED` -- `true`/`false`, default true
+- `ARCHIVE_AFTER_DAYS` -- so ngay truoc khi archive (default: 90)
+- `ARCHIVE_IMPORTANCE_THRESHOLD` -- nguong importance de giu lai (default: 0.3)
+- `DEDUP_THRESHOLD` -- nguong similarity de coi la duplicate (default: 0.9)
+- `DEDUP_WARN_THRESHOLD` -- nguong similarity de canh bao (default: 0.7)
+- `RECENCY_HALF_LIFE_DAYS` -- half-life cho temporal decay scoring (default: 7)
+- `LLM_MODELS` -- danh sach LLM models, format `provider/model,...` (default: gemini + openai)
+- `LOG_LEVEL` -- log level (default: INFO)
 
-### Commits
+## Embedding architecture
 
-Conventional Commits: `type(scope): message`. Automated semantic release.
+1. **Cloud** (API_KEYS) -- Jina > Gemini > OpenAI > Cohere
+2. **Local** -- Qwen3-Embedding-0.6B ONNX, zero config, luon available
+- Tat ca embeddings luu tai 768 dims. Doi provider khong break vector table.
 
-### Pre-commit Hooks
+## CD Pipeline
 
-1. Ruff lint (`--fix --target-version=py313`) + format
-2. ty type check
-3. pytest (`--timeout=30 --tb=short -q`)
+PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry.
+
+## Luu y
+
+- Tools tra ve `_json({"error": "..."})`, khong raise exception.
+- `match action:` pattern cho routing.
+- `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
+- Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
+- Local embedding: first run download ~570MB model, cached.
+- Dependencies: `qwen3-embed>=1.5.1`, `cohere`, `sqlite-vec`.
+- Pre-commit: ruff lint + format, ty check, pytest.
+- Secrets: skret SSM namespace `/mnemo-mcp/prod` (region `ap-southeast-1`)
+
+## E2E
+
+Driven by `mcp-core/scripts/e2e/` (matrix-locked, 15 configs). Run a single config from this repo via `make e2e` (proxy) or directly:
+
+```
+cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
+```
+
+Configs for this repo: `mnemo-full`.
+
+t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.mnemo-mcp/subs/<sub>/tokens/google_drive.json``.
+
+Tier policy:
+
+- **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
+- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/mnemo-mcp/prod` (`ap-southeast-1`). No user gate.
+- **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
+
+Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.
+
+References: `mcp-core/scripts/e2e/matrix.yaml`, `~/.claude/skills/mcp-dev/references/e2e-full-matrix.md` (harness-readiness gate), `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-JWT-sub isolation).

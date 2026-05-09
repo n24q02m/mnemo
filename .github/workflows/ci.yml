@@ -87,6 +87,23 @@ jobs:
         with:
           files: coverage.xml
 
+  docs-sync-check:
+    name: CLAUDE.md ≡ AGENTS.md sync
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176 # v2
+        with:
+          egress-policy: audit
+          disable-telemetry: true
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Verify CLAUDE.md and AGENTS.md mirror
+        run: bash .pre-commit-hooks/sync-claude-agents.sh
+
   dependency-review:
     name: Dependency Review
     if: github.event_name == 'pull_request'
