@@ -387,6 +387,98 @@ class MemoryDB:
         logger.info(f"[AUDIT] add id={memory_id} cat={category} len={len(content)}")
         return memory_id
 
+    def add_with_context_type(
+        self,
+        content: str,
+        context_type: str = "conversation",
+        category: str = "general",
+        tags: list[str] | None = None,
+        source: str | None = None,
+        embedding: list[float] | None = None,
+        importance: float | None = None,
+    ) -> str:
+        """Add a new memory with an explicit ``context_type``.
+
+        This mirrors :meth:`add` but writes the ``context_type`` column
+        introduced by the ``mem_001_context_types`` Alembic migration. Used by
+        the ``memory(action="capture")`` Phase 1 action.
+
+        Args:
+            content: Memory text content.
+            context_type: One of conversation/fact/preference/skill/task/decision.
+            category: Free-form category bucket. Defaults to "general".
+            tags: Optional list of tag strings.
+            source: Optional provenance marker.
+            embedding: Optional dense vector for semantic search.
+            importance: Optional importance score in [0.0, 1.0].
+
+        Returns:
+            Memory ID (32-char hex).
+
+        Raises:
+            ValueError: If content exceeds :data:`MAX_CONTENT_LENGTH`.
+        """
+        if len(content) > MAX_CONTENT_LENGTH:
+            raise ValueError(
+                f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
+            )
+
+        memory_id = uuid.uuid4().hex
+        now = _now_iso()
+        tags_json = json.dumps(tags or [])
+
+        if importance is not None:
+            importance = max(0.0, min(1.0, importance))
+            self._conn.execute(
+                """INSERT INTO memories (id, content, category, tags, source,
+                   created_at, updated_at, access_count, last_accessed,
+                   context_type, importance)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                (
+                    memory_id,
+                    content,
+                    category,
+                    tags_json,
+                    source,
+                    now,
+                    now,
+                    now,
+                    context_type,
+                    importance,
+                ),
+            )
+        else:
+            self._conn.execute(
+                """INSERT INTO memories (id, content, category, tags, source,
+                   created_at, updated_at, access_count, last_accessed,
+                   context_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                (
+                    memory_id,
+                    content,
+                    category,
+                    tags_json,
+                    source,
+                    now,
+                    now,
+                    now,
+                    context_type,
+                ),
+            )
+
+        if embedding and self._vec_enabled:
+            self._conn.execute(
+                "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
+            )
+
+        self._conn.commit()
+        logger.info(
+            f"[AUDIT] capture id={memory_id} cat={category} "
+            f"ctx_type={context_type} len={len(content)}"
+        )
+        return memory_id
+
     def search(
         self,
         query: str,

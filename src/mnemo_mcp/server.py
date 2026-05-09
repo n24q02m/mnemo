@@ -745,6 +745,96 @@ async def _handle_archived(
     return _json(response)
 
 
+async def _handle_capture(
+    ctx: Context | None,
+    text: str | None,
+    context_type: str = "conversation",
+    category: str | None = None,
+    tags: list[str] | None = None,
+    source: str | None = None,
+    importance: float | None = None,
+    auto: bool = False,
+) -> str:
+    """Handle ``memory(action="capture")`` -- typed capture with dedup.
+
+    Wraps :func:`mnemo_mcp.capture.capture` with the shared lifespan ctx so
+    the capture pipeline can reuse the configured embedding backend without
+    reaching into module-level globals.
+    """
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
+
+    if not text:
+        return _json(
+            {
+                "error": "text is required for capture",
+                "example": (
+                    "action='capture', text='User prefers dark mode', "
+                    "context_type='preference'"
+                ),
+                "suggestion": (
+                    "Provide the 'text' parameter to capture a typed memory."
+                ),
+            }
+        )
+
+    embedding = await _embed(text, embedding_model, embedding_dims)
+
+    from mnemo_mcp.capture import CONTEXT_TYPES
+    from mnemo_mcp.capture import capture as _capture
+
+    try:
+        result = await _capture(
+            db,
+            text=text,
+            context_type=context_type,
+            category=category or "general",
+            tags=tags,
+            source=source,
+            embedding=embedding,
+            importance=importance,
+            auto=auto,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "context_type" in msg:
+            return _json(
+                {
+                    "error": msg,
+                    "valid_context_types": sorted(CONTEXT_TYPES),
+                    "suggestion": (
+                        f"Pick a context_type from {sorted(CONTEXT_TYPES)}."
+                    ),
+                }
+            )
+        return _json({"error": msg})
+    except Exception:
+        logger.exception("Unexpected error in _handle_capture")
+        return _json({"error": "Internal error while capturing memory"})
+
+    # Background enrichment only when we actually inserted a new row.
+    if not result.get("deduplicated"):
+        asyncio.create_task(_enrich_memory(db, result["memory_id"], text))
+
+    return _json(
+        {
+            "status": "deduplicated" if result.get("deduplicated") else "captured",
+            "id": result["memory_id"],
+            "context_type": result.get("context_type", context_type),
+            "deduplicated": bool(result.get("deduplicated")),
+            "auto": bool(result.get("auto")),
+            "semantic": embedding is not None,
+            **(
+                {
+                    "similarity": result["similarity"],
+                    "existing_content": result.get("existing_content"),
+                }
+                if result.get("deduplicated")
+                else {}
+            ),
+        }
+    )
+
+
 async def _handle_consolidate(
     ctx: Context | None,
     category: str | None = None,
@@ -1015,6 +1105,9 @@ async def memory(
     limit: int = 5,
     data: str | list | None = None,
     mode: str = "merge",
+    text: str | None = None,
+    context_type: str = "conversation",
+    auto: bool = False,
     ctx: Context | None = None,
 ) -> str:
     """Execute a memory action.
@@ -1043,6 +1136,17 @@ async def memory(
     match action:
         case "add":
             return await _handle_add(ctx, content, category, tags)
+        case "capture":
+            return await _handle_capture(
+                ctx,
+                text or content,
+                context_type=context_type,
+                category=category,
+                tags=tags,
+                source=source,
+                importance=importance,
+                auto=auto,
+            )
         case "search":
             return await _handle_search(ctx, query, category, tags, limit)
         case "list":
@@ -1071,6 +1175,7 @@ async def memory(
             valid_actions = [
                 "add",
                 "archived",
+                "capture",
                 "consolidate",
                 "delete",
                 "export",
