@@ -84,10 +84,11 @@ class TestQwen3EmbedTextsInner:
     @patch("qwen3_embed.TextEmbedding")
     async def test_embed_texts_with_dimensions(self, mock_te):
         """embed_texts passes dim parameter to model.embed()."""
-        import numpy as np
+        mock_emb = MagicMock()
+        mock_emb.tolist.return_value = [0.1, 0.2]
 
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter([np.array([0.1, 0.2])])
+        mock_model.embed.return_value = iter([mock_emb])
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
@@ -102,10 +103,11 @@ class TestQwen3EmbedTextsInner:
     @patch("qwen3_embed.TextEmbedding")
     async def test_embed_texts_without_dimensions(self, mock_te):
         """embed_texts works without dimensions parameter."""
-        import numpy as np
+        mock_emb = MagicMock()
+        mock_emb.tolist.return_value = [0.1, 0.2, 0.3]
 
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
+        mock_model.embed.return_value = iter([mock_emb])
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
@@ -123,10 +125,11 @@ class TestQwen3EmbedSingleQuery:
     @patch("qwen3_embed.TextEmbedding")
     async def test_embed_single_query(self, mock_te):
         """embed_single_query uses query_embed for asymmetric retrieval."""
-        import numpy as np
+        mock_emb = MagicMock()
+        mock_emb.tolist.return_value = [0.5, 0.6, 0.7]
 
         mock_model = MagicMock()
-        mock_model.query_embed.return_value = iter([np.array([0.5, 0.6, 0.7])])
+        mock_model.query_embed.return_value = iter([mock_emb])
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
@@ -138,10 +141,11 @@ class TestQwen3EmbedSingleQuery:
     @patch("qwen3_embed.TextEmbedding")
     async def test_embed_single_query_with_dimensions(self, mock_te):
         """embed_single_query passes dim parameter."""
-        import numpy as np
+        mock_emb = MagicMock()
+        mock_emb.tolist.return_value = [0.5, 0.6]
 
         mock_model = MagicMock()
-        mock_model.query_embed.return_value = iter([np.array([0.5, 0.6])])
+        mock_model.query_embed.return_value = iter([mock_emb])
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
@@ -153,7 +157,7 @@ class TestQwen3EmbedSingleQuery:
 
 
 # ---------------------------------------------------------------------------
-# Qwen3EmbedBackend.check_available (empty result)
+# Qwen3EmbedBackend.check_available (edge cases)
 # ---------------------------------------------------------------------------
 
 
@@ -166,6 +170,15 @@ class TestQwen3CheckAvailableEdge:
         mock_get_model.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
+        assert backend.check_available() == 0
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    def test_check_available_exception(self, mock_get_model):
+        """check_available catches exception and returns 0."""
+        mock_get_model.side_effect = Exception("Model load failure")
+
+        backend = Qwen3EmbedBackend()
+        # Should catch exception, log warning and return 0
         assert backend.check_available() == 0
 
 
