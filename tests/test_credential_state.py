@@ -243,15 +243,6 @@ class TestGDriveFailedCallback:
     """Covers set_gdrive_failed_callback + wire_gdrive_callbacks + _notify_failed
     paths added for Bug #2 fix (ported from wet-mcp)."""
 
-    def test_set_gdrive_failed_callback_registers(self):
-        import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import set_gdrive_failed_callback
-
-        cb = MagicMock()
-        set_gdrive_failed_callback(cb)
-        assert cs._on_gdrive_failed is cb
-        cs._on_gdrive_failed = None
-
     def test_wire_gdrive_callbacks_legacy_one_arg(self):
         """Legacy mcp-core (<1.3.0) passes only mark_complete; mark_failed stays None."""
         import mnemo_mcp.credential_state as cs
@@ -313,13 +304,10 @@ class TestGDriveTokenPoll:
         """save_token raising after successful exchange -> WARNING log + notify
         failed callback + return (no retry; device_code cannot be re-exchanged)."""
         import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import (
-            _gdrive_token_poll,
-            set_gdrive_failed_callback,
-        )
+        from mnemo_mcp.credential_state import _gdrive_token_poll
 
         failed_cb = MagicMock()
-        set_gdrive_failed_callback(failed_cb)
+        cs._on_gdrive_failed = failed_cb
 
         token_response = MagicMock()
         token_response.json.return_value = {
@@ -353,13 +341,10 @@ class TestGDriveTokenPoll:
     async def test_terminal_google_error_notifies(self):
         """Terminal Google error (invalid_grant, access_denied) -> notify + return."""
         import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import (
-            _gdrive_token_poll,
-            set_gdrive_failed_callback,
-        )
+        from mnemo_mcp.credential_state import _gdrive_token_poll
 
         failed_cb = MagicMock()
-        set_gdrive_failed_callback(failed_cb)
+        cs._on_gdrive_failed = failed_cb
 
         response = MagicMock()
         response.json.return_value = {
@@ -383,13 +368,10 @@ class TestGDriveTokenPoll:
     async def test_deadline_expired_notifies(self):
         """Loop exits via deadline without success -> notify with 'expired'."""
         import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import (
-            _gdrive_token_poll,
-            set_gdrive_failed_callback,
-        )
+        from mnemo_mcp.credential_state import _gdrive_token_poll
 
         failed_cb = MagicMock()
-        set_gdrive_failed_callback(failed_cb)
+        cs._on_gdrive_failed = failed_cb
 
         # expires_in = 0 -> loop body is never entered, deadline branch fires.
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -404,13 +386,10 @@ class TestGDriveTokenPoll:
     async def test_notify_failed_swallows_callback_exception(self):
         """If _on_gdrive_failed raises, the helper logs and does not propagate."""
         import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import (
-            _gdrive_token_poll,
-            set_gdrive_failed_callback,
-        )
+        from mnemo_mcp.credential_state import _gdrive_token_poll
 
         failed_cb = MagicMock(side_effect=RuntimeError("callback boom"))
-        set_gdrive_failed_callback(failed_cb)
+        cs._on_gdrive_failed = failed_cb
 
         # Terminal error triggers _notify_failed which catches callback errors.
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -426,16 +405,12 @@ class TestGDriveTokenPoll:
     async def test_success_fires_complete_callback_no_failed(self):
         """Happy path: access_token -> save_token OK -> complete_cb fired, failed_cb NOT."""
         import mnemo_mcp.credential_state as cs
-        from mnemo_mcp.credential_state import (
-            _gdrive_token_poll,
-            set_gdrive_complete_callback,
-            set_gdrive_failed_callback,
-        )
+        from mnemo_mcp.credential_state import _gdrive_token_poll
 
         complete_cb = MagicMock()
         failed_cb = MagicMock()
-        set_gdrive_complete_callback(complete_cb)
-        set_gdrive_failed_callback(failed_cb)
+        cs._on_gdrive_complete = complete_cb
+        cs._on_gdrive_failed = failed_cb
 
         response = MagicMock()
         response.json.return_value = {"access_token": "tok"}

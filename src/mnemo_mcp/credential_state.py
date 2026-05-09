@@ -104,27 +104,6 @@ _on_gdrive_complete: Callable[[], None] | None = None
 _on_gdrive_failed: Callable[[str, str], None] | None = None
 
 
-def set_gdrive_complete_callback(cb: Callable[[], None]) -> None:
-    """Set callback for when GDrive OAuth completes (used by HTTP server)."""
-    global _on_gdrive_complete
-    _on_gdrive_complete = cb
-
-
-def set_gdrive_failed_callback(cb: Callable[[str, str], None]) -> None:
-    """Set callback for when GDrive OAuth fails upstream (used by HTTP server).
-
-    The callback receives ``(key, error_message)`` matching the
-    ``mark_setup_failed(key, error)`` signature exposed by mcp-core's local
-    OAuth app. It is invoked by ``_gdrive_token_poll`` whenever Google
-    returns a terminal error (``invalid_grant``, ``expired_token``,
-    ``access_denied``, etc.) or when the local ``save_token`` call raises
-    after a successful exchange -- so the browser's ``/setup-status`` poll
-    surfaces the error and stops waiting.
-    """
-    global _on_gdrive_failed
-    _on_gdrive_failed = cb
-
-
 def wire_gdrive_callbacks(
     mark_complete: Callable[[], None],
     mark_failed: Callable[..., None] | None = None,
@@ -152,9 +131,8 @@ def wire_gdrive_callbacks(
         finally:
             _schedule_spawn_cleanup()
 
-    set_gdrive_complete_callback(_complete_then_cleanup)
-
-    global _on_gdrive_failed
+    global _on_gdrive_complete, _on_gdrive_failed
+    _on_gdrive_complete = _complete_then_cleanup
 
     if mark_failed is None:
         _on_gdrive_failed = None
