@@ -175,3 +175,85 @@ async def test_handle_capture_dedup_returns_status_deduplicated(mock_ctx):
     assert second["id"] == first["id"]
     assert second["deduplicated"] is True
     assert "similarity" in second
+
+
+# ---------------------------------------------------------------------------
+# Coverage edge cases
+# ---------------------------------------------------------------------------
+
+
+async def test_capture_invalid_dedup_threshold_env_falls_back(
+    tmp_db: MemoryDB, monkeypatch
+):
+    """Non-numeric DEDUP_THRESHOLD logs warning + falls back to default 0.92."""
+    monkeypatch.setenv("DEDUP_THRESHOLD", "not-a-float")
+
+    result = await capture(tmp_db, "fallback path test", context_type="fact")
+
+    assert result["deduplicated"] is False
+
+
+async def test_capture_dedup_probe_exception_is_swallowed(
+    tmp_db: MemoryDB, monkeypatch
+):
+    """check_duplicate raising should not block the insert."""
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("dedup index corrupt")
+
+    monkeypatch.setattr(tmp_db, "check_duplicate", boom)
+
+    result = await capture(tmp_db, "should still insert", context_type="task")
+
+    assert result["deduplicated"] is False
+    assert result["memory_id"]
+
+
+async def test_handle_capture_oversized_text_returns_error(mock_ctx):
+    """ValueError that is NOT about context_type falls into the generic
+    branch and surfaces ``error`` without ``valid_context_types``.
+    """
+    from mnemo_mcp.db import MAX_CONTENT_LENGTH
+
+    ctx, _db = mock_ctx
+    huge = "x" * (MAX_CONTENT_LENGTH + 10)
+
+    raw = await _handle_capture(ctx, text=huge, context_type="fact")
+    payload = json.loads(raw)
+
+    assert "error" in payload
+    assert "valid_context_types" not in payload
+
+
+async def test_handle_capture_unexpected_exception_returns_internal_error(
+    mock_ctx, monkeypatch
+):
+    """Unhandled exception in capture is caught and surfaced cleanly."""
+    import mnemo_mcp.capture as capture_mod
+
+    async def explode(*_args, **_kwargs):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(capture_mod, "capture", explode)
+
+    ctx, _db = mock_ctx
+    raw = await _handle_capture(ctx, text="anything", context_type="fact")
+    payload = json.loads(raw)
+
+    assert "error" in payload
+    assert "Internal error" in payload["error"]
+
+
+def test_archive_trigger_interval_invalid_env_falls_back(monkeypatch):
+    """Non-integer ARCHIVE_TRIGGER_EVERY env -> default 100."""
+    from mnemo_mcp.server import _archive_trigger_interval
+
+    monkeypatch.setenv("ARCHIVE_TRIGGER_EVERY", "not-int")
+    assert _archive_trigger_interval() == 100
+
+    monkeypatch.setenv("ARCHIVE_TRIGGER_EVERY", "0")
+    # Clamped to >=1
+    assert _archive_trigger_interval() == 1
+
+    monkeypatch.setenv("ARCHIVE_TRIGGER_EVERY", "5")
+    assert _archive_trigger_interval() == 5

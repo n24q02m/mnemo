@@ -618,13 +618,19 @@ class TestArchive:
 
         count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
         assert count == 1
-        assert tmp_db.get(mid) is None  # Removed from active
+        # Phase 1 soft-archive: row stays in memories with archived_at set;
+        # search/list exclude by default but get() returns the raw row.
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["archived_at"] is not None
 
     def test_archive_keeps_recent(self, tmp_db: MemoryDB):
         mid = tmp_db.add("recent memory")
         count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
         assert count == 0
-        assert tmp_db.get(mid) is not None
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["archived_at"] is None
 
     def test_archive_keeps_important(self, tmp_db: MemoryDB):
         mid = tmp_db.add("important memory")
@@ -637,7 +643,9 @@ class TestArchive:
 
         count = tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
         assert count == 0
-        assert tmp_db.get(mid) is not None
+        mem = tmp_db.get(mid)
+        assert mem is not None
+        assert mem["archived_at"] is None
 
     def test_restore_memory(self, tmp_db: MemoryDB):
         mid = tmp_db.add("to archive")
@@ -648,13 +656,16 @@ class TestArchive:
         tmp_db._conn.commit()
 
         tmp_db.archive_old_memories(days=90, importance_threshold=0.3)
-        assert tmp_db.get(mid) is None
+        mem_after_archive = tmp_db.get(mid)
+        assert mem_after_archive is not None
+        assert mem_after_archive["archived_at"] is not None
 
         ok = tmp_db.restore_memory(mid)
         assert ok is True
         mem = tmp_db.get(mid)
         assert mem is not None
         assert mem["content"] == "to archive"
+        assert mem["archived_at"] is None
 
     def test_restore_nonexistent(self, tmp_db: MemoryDB):
         ok = tmp_db.restore_memory("nonexistent")

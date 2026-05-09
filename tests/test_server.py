@@ -262,11 +262,16 @@ class TestMemoryRestore:
         )
         db._conn.commit()
         db.archive_old_memories(days=90, importance_threshold=0.3)
-        assert db.get(mid) is None
+        # Phase 1 soft-archive: row stays in memories with archived_at set.
+        archived = db.get(mid)
+        assert archived is not None
+        assert archived["archived_at"] is not None
 
         result = json.loads(await memory(action="restore", memory_id=mid, ctx=ctx))
         assert result["status"] == "restored"
-        assert db.get(mid) is not None
+        restored = db.get(mid)
+        assert restored is not None
+        assert restored["archived_at"] is None
 
     async def test_restore_no_id(self, ctx_with_db):
         ctx, _ = ctx_with_db

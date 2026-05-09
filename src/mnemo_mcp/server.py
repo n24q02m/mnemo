@@ -769,6 +769,21 @@ async def _handle_archived(
     return _json(response)
 
 
+_CAPTURE_COUNTER: dict[str, int] = {"calls": 0}
+
+
+def _archive_trigger_interval() -> int:
+    """Read ``ARCHIVE_TRIGGER_EVERY`` env var (default 100) for capture-driven
+    background archive runs.
+    """
+    raw = os.environ.get("ARCHIVE_TRIGGER_EVERY", "100")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 100
+    return max(1, value)
+
+
 async def _handle_capture(
     ctx: Context | None,
     text: str | None,
@@ -839,6 +854,20 @@ async def _handle_capture(
     if not result.get("deduplicated"):
         asyncio.create_task(_enrich_memory(db, result["memory_id"], text))
 
+    # Archive policy auto-trigger: every Nth capture (default 100), run a
+    # background archive_by_score sweep so old low-importance rows soft-archive
+    # without requiring a manual ``archive_now`` call.
+    if settings.archive_enabled:
+        _CAPTURE_COUNTER["calls"] += 1
+        interval = _archive_trigger_interval()
+        if _CAPTURE_COUNTER["calls"] % interval == 0:
+            asyncio.create_task(
+                asyncio.to_thread(
+                    db.archive_by_score,
+                    archive_after_days=int(settings.archive_after_days),
+                )
+            )
+
     return _json(
         {
             "status": "deduplicated" if result.get("deduplicated") else "captured",
@@ -855,6 +884,25 @@ async def _handle_capture(
                 if result.get("deduplicated")
                 else {}
             ),
+        }
+    )
+
+
+async def _handle_archive_now(
+    ctx: Context | None,
+) -> str:
+    """Trigger ``archive_by_score`` on demand using current settings."""
+    db, _, _ = _get_ctx(ctx)
+    archive_after_days = int(settings.archive_after_days)
+    count = await asyncio.to_thread(
+        db.archive_by_score, archive_after_days=archive_after_days
+    )
+    return _json(
+        {
+            "status": "archived",
+            "count": count,
+            "archive_after_days": archive_after_days,
+            "scoring": "recency_factor * (1 - importance) > 1.0",
         }
     )
 
@@ -1210,6 +1258,8 @@ async def memory(
             return await _handle_restore(ctx, memory_id)
         case "archived":
             return await _handle_archived(ctx, limit)
+        case "archive_now":
+            return await _handle_archive_now(ctx)
         case "consolidate":
             return await _handle_consolidate(ctx, category)
         case _:
@@ -1217,6 +1267,7 @@ async def memory(
 
             valid_actions = [
                 "add",
+                "archive_now",
                 "archived",
                 "capture",
                 "consolidate",

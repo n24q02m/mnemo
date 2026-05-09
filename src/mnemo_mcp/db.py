@@ -873,22 +873,34 @@ class MemoryDB:
         category: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        *,
+        include_archived: bool = False,
     ) -> list[dict]:
-        """List memories with optional category filter."""
+        """List memories with optional category filter.
+
+        Phase 1 archive policy: by default exclude soft-archived rows
+        (``archived_at IS NOT NULL``). Pass ``include_archived=True`` to see
+        them — symmetric with :meth:`search` semantics.
+        """
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
 
+        archive_clause = "" if include_archived else " AND archived_at IS NULL"
+
         if category:
             rows = self._conn.execute(
-                """SELECT * FROM memories
-                   WHERE category = ?
+                f"""SELECT * FROM memories
+                   WHERE category = ?{archive_clause}
                    ORDER BY updated_at DESC
                    LIMIT ? OFFSET ?""",
                 (category, limit, offset),
             ).fetchall()
         else:
+            # No leading WHERE -> drop the leading ' AND '.
+            where_sql = "" if include_archived else " WHERE archived_at IS NULL"
             rows = self._conn.execute(
-                """SELECT * FROM memories
+                f"""SELECT * FROM memories
+                   {where_sql}
                    ORDER BY updated_at DESC
                    LIMIT ? OFFSET ?""",
                 (limit, offset),
@@ -1154,20 +1166,32 @@ class MemoryDB:
     def archive_old_memories(
         self, days: int = 90, importance_threshold: float = 0.3
     ) -> int:
-        """Move old, low-importance memories to archive. Returns count archived."""
+        """Soft-archive old, low-importance memories using ``archived_at``.
+
+        Phase 1 archive policy (spec section 4.2): rather than moving rows
+        to a separate ``archived_memories`` table (legacy pre-T3 behaviour),
+        flip the ``archived_at`` column added by ``mem_001_context_types``.
+        Search/list default to ``include_archived=False`` so archived rows
+        disappear from normal recall while staying restorable.
+
+        Args:
+            days: Archive when ``last_accessed < now - days``.
+            importance_threshold: Archive only when ``importance < threshold``.
+
+        Returns:
+            Count of newly archived rows (already-archived rows are skipped).
+        """
         cursor = self._conn.cursor()
 
-        # Precompute the cutoff timestamp once so SQLite does not re-evaluate
-        # datetime('now', ...) for every row in the WHERE clause.
         cutoff_date = cursor.execute(
             "SELECT datetime('now', ?)", (f"-{days} days",)
         ).fetchone()[0]
 
         rows = cursor.execute(
-            """SELECT id, content, category, tags, source, importance,
-                      created_at, updated_at, access_count, last_accessed
-               FROM memories
-               WHERE last_accessed < ? AND importance < ?""",
+            """SELECT id FROM memories
+               WHERE last_accessed < ?
+                 AND importance < ?
+                 AND archived_at IS NULL""",
             (cutoff_date, importance_threshold),
         ).fetchall()
 
@@ -1175,72 +1199,190 @@ class MemoryDB:
             return 0
 
         now = _now_iso()
-
-        insert_data = [(*row, now) for row in rows]
-        delete_data = [(row[0],) for row in rows]
-
         cursor.executemany(
-            """INSERT OR REPLACE INTO archived_memories
-               (id, content, category, tags, source, importance,
-                created_at, updated_at, access_count, last_accessed, archived_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            insert_data,
+            "UPDATE memories SET archived_at = ? WHERE id = ?",
+            [(now, row[0]) for row in rows],
         )
-        cursor.executemany(
-            "DELETE FROM memories WHERE id = ?",
-            delete_data,
-        )
-
         count = len(rows)
         self._conn.commit()
-        logger.info(f"[AUDIT] archived count={count}")
+        logger.info(f"[AUDIT] archived count={count} mode=soft")
+        return count
+
+    def archive_by_score(
+        self,
+        archive_after_days: int | None = None,
+        score_threshold: float = 1.0,
+    ) -> int:
+        """Archive memories whose ``archive_score > score_threshold``.
+
+        Implements the Phase 1 spec scoring formula::
+
+            recency_factor = days_since_updated / archive_after_days
+            archive_score = recency_factor * (1 - importance)
+
+        A row is archived (``archived_at`` set) when ``archive_score`` strictly
+        exceeds ``score_threshold`` (default 1.0). With the default threshold:
+
+        - Recently-updated rows (``recency_factor < 1``) never archive.
+        - High-importance rows (``importance ~ 1``) need a much higher
+          recency_factor to flip — they survive longer than low-importance
+          neighbours of the same age.
+
+        Args:
+            archive_after_days: Denominator for ``recency_factor``. Defaults
+                to ``settings.archive_after_days`` (90 days) when ``None``.
+            score_threshold: Boundary above which a row is archived (>1.0).
+
+        Returns:
+            Count of newly archived rows.
+        """
+        if archive_after_days is None:
+            try:
+                from mnemo_mcp.config import settings as _settings
+
+                archive_after_days = int(_settings.archive_after_days)
+            except Exception:
+                archive_after_days = 90
+        archive_after_days = max(1, int(archive_after_days))
+
+        cursor = self._conn.cursor()
+        rows = cursor.execute(
+            """SELECT id, updated_at, importance FROM memories
+               WHERE archived_at IS NULL""",
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        now = datetime.now(UTC)
+        to_archive: list[tuple[str, str]] = []
+        archive_ts = _now_iso()
+        for row in rows:
+            try:
+                updated = datetime.fromisoformat(row["updated_at"])
+            except (ValueError, TypeError):
+                continue
+            days_since = max(0.0, (now - updated).total_seconds() / 86400.0)
+            recency_factor = days_since / archive_after_days
+            importance = float(row["importance"] or 0.0)
+            score = recency_factor * (1.0 - max(0.0, min(1.0, importance)))
+            if score > score_threshold:
+                to_archive.append((archive_ts, row["id"]))
+
+        if not to_archive:
+            return 0
+
+        cursor.executemany(
+            "UPDATE memories SET archived_at = ? WHERE id = ?",
+            to_archive,
+        )
+        count = len(to_archive)
+        self._conn.commit()
+        logger.info(
+            f"[AUDIT] archived_by_score count={count} "
+            f"after_days={archive_after_days} threshold={score_threshold}"
+        )
         return count
 
     def restore_memory(self, memory_id: str) -> bool:
-        """Restore archived memory back to active."""
+        """Restore an archived memory back to active.
+
+        Phase 1: prefer the new soft-archive path (clear ``archived_at`` on
+        the row in ``memories``). Fall back to the legacy ``archived_memories``
+        copy-back behaviour for backward compatibility with pre-mem_001 DBs
+        that still hold rows in the side table.
+        """
         cursor = self._conn.cursor()
+        now = _now_iso()
+
+        # New path: row exists in memories and is soft-archived.
         row = cursor.execute(
+            "SELECT id FROM memories WHERE id = ? AND archived_at IS NOT NULL",
+            (memory_id,),
+        ).fetchone()
+        if row is not None:
+            cursor.execute(
+                "UPDATE memories SET archived_at = NULL, last_accessed = ? "
+                "WHERE id = ?",
+                (now, memory_id),
+            )
+            self._conn.commit()
+            logger.info(f"[AUDIT] restore id={memory_id} mode=soft")
+            return True
+
+        # Legacy path: row was hard-moved to archived_memories.
+        legacy = cursor.execute(
             "SELECT * FROM archived_memories WHERE id = ?", (memory_id,)
         ).fetchone()
-        if not row:
+        if not legacy:
             return False
-        now = _now_iso()
         cursor.execute(
             """INSERT OR REPLACE INTO memories
                (id, content, category, tags, source, importance,
                 created_at, updated_at, access_count, last_accessed)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (row[0], row[1], row[2], row[3], row[4], row[5], row[6], now, row[8], now),
+            (
+                legacy[0],
+                legacy[1],
+                legacy[2],
+                legacy[3],
+                legacy[4],
+                legacy[5],
+                legacy[6],
+                now,
+                legacy[8],
+                now,
+            ),
         )
         cursor.execute("DELETE FROM archived_memories WHERE id = ?", (memory_id,))
         self._conn.commit()
-        logger.info(f"[AUDIT] restore id={memory_id}")
+        logger.info(f"[AUDIT] restore id={memory_id} mode=legacy")
         return True
 
     def list_archived(self, limit: int = 20) -> list[dict]:
-        """List archived memories."""
+        """List archived memories from BOTH the soft-archive column and the
+        legacy ``archived_memories`` side table.
+
+        Soft-archived rows live in ``memories WHERE archived_at IS NOT NULL``;
+        legacy rows live in the standalone ``archived_memories`` table from
+        the pre-mem_001 hard-archive code path. Returning both keeps existing
+        behaviour intact while exposing the new soft-archive lifecycle.
+        """
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
         cursor = self._conn.cursor()
-        rows = cursor.execute(
+
+        soft_rows = cursor.execute(
+            """SELECT id, content, category, tags, importance, archived_at
+               FROM memories
+               WHERE archived_at IS NOT NULL
+               ORDER BY archived_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+        legacy_rows = cursor.execute(
             "SELECT id, content, category, tags, importance, archived_at "
             "FROM archived_memories ORDER BY archived_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
 
-        # Bolt Performance Optimization:
-        # Avoid expensive json.loads calls for the common default '[]' tag string
-        return [
-            {
-                "id": r[0],
-                "content": r[1][:200],
-                "category": r[2],
-                "tags": [] if r[3] == "[]" else json.loads(r[3]),
-                "importance": r[4],
-                "archived_at": r[5],
-            }
-            for r in rows
-        ]
+        merged = []
+        for r in list(soft_rows) + list(legacy_rows):
+            tags_val = r[3]
+            merged.append(
+                {
+                    "id": r[0],
+                    "content": r[1][:200],
+                    "category": r[2],
+                    "tags": [] if tags_val == "[]" else json.loads(tags_val),
+                    "importance": r[4],
+                    "archived_at": r[5],
+                }
+            )
+
+        merged.sort(key=lambda m: m["archived_at"] or "", reverse=True)
+        return merged[:limit]
 
     def check_duplicate(self, content: str, threshold: float = 0.9) -> dict | None:
         """Check if similar memory exists. Returns match info or None."""
