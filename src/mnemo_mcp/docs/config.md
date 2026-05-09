@@ -2,10 +2,16 @@
 
 ## Overview
 
-The `config` tool shows server status, manages runtime configuration, and handles server setup tasks
-(model warmup, sync authentication).
+The `config` tool shows server status, manages runtime configuration, and
+handles server setup tasks (model warmup, credential setup, Google Drive
+sync). The previously separate `setup` help topic is now redirected to this
+document - all setup actions live on the `config` tool.
 
 ## Actions
+
+Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
+`setup_status`, `setup_start`, `setup_skip`, `setup_reset`,
+`setup_complete`, `setup_relay`.
 
 ### `status` - Show current configuration
 
@@ -102,6 +108,65 @@ locally so no extra env vars are needed for sync.
 ```json
 {"action": "setup_sync"}
 ```
+
+### `setup_status` - Inspect credential / setup state
+
+Returns the current credential state machine snapshot (one of
+`awaiting_setup`, `setup_in_progress`, `configured`, `skipped`) plus a
+human-readable message. Used by clients to decide whether to surface the
+relay setup form or proceed directly to memory operations.
+
+**Parameters:** None
+
+**Example:**
+```json
+{"action": "setup_status"}
+```
+
+### `setup_start` - Begin or restart the relay setup flow
+
+Transitions the server into `setup_in_progress` state and (when running in
+HTTP mode) emits the relay form URL the user should open. Pass
+`key="force"` to forcibly re-issue a relay session even if credentials are
+already configured.
+
+**Parameters:**
+- `key` (optional): `"force"` to bypass the configured-state guard.
+
+**Example:**
+```json
+{"action": "setup_start"}
+```
+
+### `setup_skip` - Defer setup until later
+
+Marks the credential state as `skipped` so subsequent tool calls do not
+re-prompt for setup in the current session. Memory operations remain
+available in FTS5-only mode (no embedding/rerank/LLM features).
+
+**Parameters:** None
+
+### `setup_reset` - Clear stored credentials
+
+Wipes the relay-issued credentials from local secure storage and resets
+the credential state to `awaiting_setup`. The next tool call will offer
+setup again.
+
+**Parameters:** None
+
+### `setup_complete` - Refresh credential state after relay submission
+
+Called by the relay flow (or invoked manually) to re-resolve the
+credential state, set up provider clients, and re-initialize the embedding
+backend if needed. Returns the updated `state` value.
+
+**Parameters:** None (uses request `ctx`)
+
+### `setup_relay` - Backward-compatible alias for `setup_start`
+
+Equivalent to `setup_start(key="force")`. Kept for older clients.
+
+**Parameters:** None
 
 ## CLI Equivalents
 

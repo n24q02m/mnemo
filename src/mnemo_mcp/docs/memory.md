@@ -5,7 +5,16 @@
 The `memory` tool manages persistent AI memories with hybrid search (text + semantic).
 Memories survive across sessions, projects, and machines (with sync enabled).
 
-## Actions
+## Actions (current)
+
+The active action surface is: `add`, `search`, `list`, `update`, `delete`,
+`export`, `import`, `stats`, `restore`, `archived`, `consolidate`.
+
+A `capture` action with explicit `context_type` (conversation / fact /
+preference / skill / task / decision) is planned for Phase 1 Task 4 of the
+mnemo v2 roadmap and is **not yet available** in this build.
+
+## Action reference
 
 ### `add` - Save a new memory
 
