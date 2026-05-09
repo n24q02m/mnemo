@@ -1471,7 +1471,7 @@ register_open_relay_tool(mcp, "mnemo-mcp", os.environ.get("PUBLIC_URL"))
 @mcp.resource("mnemo://stats")
 async def stats_resource(ctx: Context | None = None) -> str:
     """Database statistics and server status."""
-    return await _handle_stats(*_get_ctx(ctx))
+    return await _handle_stats(ctx)
 
 
 # --- Prompts ---
