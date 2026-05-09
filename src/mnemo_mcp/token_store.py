@@ -205,8 +205,3 @@ async def async_save_token_for_sub(sub: str, provider: str, token: dict) -> None
 async def async_load_token_for_sub(sub: str, provider: str) -> dict | None:
     """Load per-sub OAuth token asynchronously."""
     return await asyncio.to_thread(load_token_for_sub, sub, provider)
-
-
-async def async_delete_token(provider: str) -> bool:
-    """Delete a stored token asynchronously."""
-    return await asyncio.to_thread(delete_token, provider)
