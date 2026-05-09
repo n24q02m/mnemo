@@ -2,7 +2,7 @@
 
 Targets: sync_push, sync_pull, sync_full (pull+merge+push flow),
 _auto_sync_loop, stop_auto_sync, setup_sync, setup_google_auth,
-check_health, _find_or_create_folder (error paths), _upload_file (multipart).
+_find_or_create_folder (error paths), _upload_file (multipart).
 """
 
 import asyncio
@@ -13,7 +13,6 @@ import mnemo_mcp.sync
 from mnemo_mcp.sync import (
     _auto_sync_loop,
     _find_or_create_folder,
-    check_health,
     stop_auto_sync,
     sync_full,
     sync_pull,
@@ -354,30 +353,6 @@ class TestFindOrCreateFolderCoverage:
         ):
             result = await _find_or_create_folder(token, "folder")
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# check_health
-# ---------------------------------------------------------------------------
-
-
-class TestCheckHealthCoverage:
-    async def test_health_exception(self):
-        """Returns False when request raises exception."""
-        with (
-            patch(
-                "mnemo_mcp.sync._get_valid_token",
-                new_callable=AsyncMock,
-                return_value={"access_token": "valid"},
-            ),
-            patch(
-                "mnemo_mcp.sync._drive_request",
-                new_callable=AsyncMock,
-                side_effect=Exception("connection error"),
-            ),
-        ):
-            result = await check_health()
-        assert result is False
 
 
 # ---------------------------------------------------------------------------

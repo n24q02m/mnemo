@@ -11,7 +11,6 @@ from mnemo_mcp.sync import (
     _find_or_create_folder,
     _has_token_available,
     _upload_file,
-    check_health,
     setup_sync,
     start_auto_sync,
     sync_full,
@@ -445,54 +444,6 @@ class TestSyncFull:
             result = await sync_full(tmp_db)
             assert result["status"] == "error"
             assert "expired" in result["message"].lower()
-
-
-class TestCheckHealth:
-    async def test_no_token(self):
-        with patch(
-            "mnemo_mcp.sync._get_valid_token",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            assert await check_health() is False
-
-    async def test_success(self):
-        token = {"access_token": "valid"}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-
-        with (
-            patch(
-                "mnemo_mcp.sync._get_valid_token",
-                new_callable=AsyncMock,
-                return_value=token,
-            ),
-            patch(
-                "mnemo_mcp.sync._drive_request",
-                new_callable=AsyncMock,
-                return_value=mock_response,
-            ),
-        ):
-            assert await check_health() is True
-
-    async def test_failure(self):
-        token = {"access_token": "valid"}
-        mock_response = MagicMock()
-        mock_response.status_code = 403
-
-        with (
-            patch(
-                "mnemo_mcp.sync._get_valid_token",
-                new_callable=AsyncMock,
-                return_value=token,
-            ),
-            patch(
-                "mnemo_mcp.sync._drive_request",
-                new_callable=AsyncMock,
-                return_value=mock_response,
-            ),
-        ):
-            assert await check_health() is False
 
 
 class TestSetupSync:

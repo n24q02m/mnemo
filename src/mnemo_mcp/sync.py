@@ -561,24 +561,6 @@ async def sync_full(db: MemoryDB) -> dict:
     return result
 
 
-async def check_health() -> bool:
-    """Verify Google Drive access by listing files."""
-    token = await _get_valid_token()
-    if not token:
-        return False
-
-    try:
-        response = await _drive_request(
-            "GET",
-            f"{_DRIVE_API_BASE}/files",
-            token,
-            params={"pageSize": 1, "fields": "files(id)"},
-        )
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
 # ---------------------------------------------------------------------------
 # Device Code OAuth flow
 # ---------------------------------------------------------------------------
