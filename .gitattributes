@@ -29,3 +29,6 @@
 
 # Docker
 Dockerfile text
+
+# Shell scripts MUST use LF (CRLF breaks bash on Linux/macOS)
+*.sh text eol=lf
