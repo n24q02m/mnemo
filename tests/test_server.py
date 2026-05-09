@@ -315,7 +315,7 @@ class TestMemoryConsolidate:
             patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
         ):
             mock_settings.resolve_provider_mode.return_value = "local"
-            result = json.loads(await _handle_consolidate(db, "tech"))
+            result = json.loads(await _handle_consolidate(ctx, "tech"))
         assert "error" in result
         assert "LLM" in result["error"]
 
@@ -428,7 +428,7 @@ class TestDedupWarning:
             return_value={"similar": True, "match_id": "abc", "score": 0.85},
         ):
             result = json.loads(
-                await _handle_add(db, "Python is excellent for ML", None, None, None, 0)
+                await _handle_add(ctx, "Python is excellent for ML", None, None)
             )
         assert result["status"] == "saved"
         assert "dedup_warning" in result
@@ -441,9 +441,7 @@ class TestDedupWarning:
             "check_duplicate",
             return_value={"duplicate": True, "match_id": "abc", "score": 0.99},
         ):
-            result = json.loads(
-                await _handle_add(db, "exact duplicate", None, None, None, 0)
-            )
+            result = json.loads(await _handle_add(ctx, "exact duplicate", None, None))
         assert result["status"] == "saved"
         assert "dedup_warning" in result
 
@@ -451,9 +449,7 @@ class TestDedupWarning:
         """Cover lines 338-339: dedup exception is non-blocking."""
         ctx, db = ctx_with_db
         with patch.object(db, "check_duplicate", side_effect=RuntimeError("boom")):
-            result = json.loads(
-                await _handle_add(db, "test content", None, None, None, 0)
-            )
+            result = json.loads(await _handle_add(ctx, "test content", None, None))
         assert result["status"] == "saved"
 
 
@@ -462,7 +458,7 @@ class TestHandleAddErrors:
         """Cover lines 352-354: unexpected exception in db.add."""
         ctx, db = ctx_with_db
         with patch.object(db, "add", side_effect=RuntimeError("unexpected")):
-            result = json.loads(await _handle_add(db, "test", None, None, None, 0))
+            result = json.loads(await _handle_add(ctx, "test", None, None))
         assert "error" in result
         assert "Internal error" in result["error"]
 
@@ -474,9 +470,7 @@ class TestHandleUpdateErrors:
         mid = db.add("original")
         with patch.object(db, "update", side_effect=RuntimeError("unexpected")):
             result = json.loads(
-                await _handle_update(
-                    db, mid, "new content", None, None, None, None, None, 0
-                )
+                await _handle_update(ctx, mid, "new content", None, None, None, None)
             )
         assert "error" in result
         assert "Internal error" in result["error"]
@@ -554,9 +548,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(1, 0.95), (0, 0.85), (2, 0.70)]
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
-            result = json.loads(
-                await _handle_search(db, "Python", None, None, 5, None, 0)
-            )
+            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
         assert result["reranked"] is True
         assert result["results"][0]["rerank_score"] == 0.95
 
@@ -568,9 +560,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker = MagicMock()
         mock_reranker.rerank.side_effect = RuntimeError("rerank failed")
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
-            result = json.loads(
-                await _handle_search(db, "Python", None, None, 5, None, 0)
-            )
+            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
         assert result["reranked"] is False
 
     async def test_search_with_graph_boost(self, ctx_with_db):
@@ -579,9 +569,7 @@ class TestSearchRerankerAndGraph:
         db.add("Python for AI")
         mid2 = db.add("Python for web development")
         with patch("mnemo_mcp.graph.find_related_memory_ids", return_value=[mid2]):
-            result = json.loads(
-                await _handle_search(db, "Python", None, None, 5, None, 0)
-            )
+            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
         # At least one result should have graph_related
         related = [r for r in result["results"] if r.get("graph_related")]
         assert len(related) >= 1
@@ -594,9 +582,7 @@ class TestSearchRerankerAndGraph:
             "mnemo_mcp.graph.find_related_memory_ids",
             side_effect=RuntimeError("graph error"),
         ):
-            result = json.loads(
-                await _handle_search(db, "Python", None, None, 5, None, 0)
-            )
+            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
         assert result["count"] > 0
 
 
@@ -606,7 +592,7 @@ class TestConsolidate:
         ctx, db = ctx_with_db
         with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            result = json.loads(await _handle_consolidate(db, None))
+            result = json.loads(await _handle_consolidate(ctx, None))
         assert "error" in result
         assert "category is required" in result["error"]
         assert "suggestion" in result
@@ -617,7 +603,7 @@ class TestConsolidate:
         db.add("only one", category="tech")
         with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            result = json.loads(await _handle_consolidate(db, "tech"))
+            result = json.loads(await _handle_consolidate(ctx, "tech"))
         assert "error" in result
         assert "at least 2" in result["error"]
 
@@ -637,7 +623,7 @@ class TestConsolidate:
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o,gemini-flash"
-            result = json.loads(await _handle_consolidate(db, "tech"))
+            result = json.loads(await _handle_consolidate(ctx, "tech"))
 
         assert result["status"] == "consolidated"
         assert result["category"] == "tech"
@@ -659,7 +645,7 @@ class TestConsolidate:
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o"
-            result = json.loads(await _handle_consolidate(db, "tech"))
+            result = json.loads(await _handle_consolidate(ctx, "tech"))
         assert "error" in result
         assert "Consolidation failed" in result["error"]
 

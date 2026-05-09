@@ -352,13 +352,13 @@ async def _embed(
 
 
 async def _handle_add(
-    db: MemoryDB,
+    ctx: Context | None,
     content: str | None,
-    category: str | None,
-    tags: list[str] | None,
-    embedding_model: str | None,
-    embedding_dims: int,
+    category: str | None = None,
+    tags: list[str] | None = None,
 ) -> str:
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
+
     if not content:
         return _json(
             {
@@ -447,14 +447,14 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
 
 
 async def _handle_search(
-    db: MemoryDB,
+    ctx: Context | None,
     query: str | None,
-    category: str | None,
-    tags: list[str] | None,
-    limit: int,
-    embedding_model: str | None,
-    embedding_dims: int,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    limit: int = 5,
 ) -> str:
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
+
     if not query:
         return _json(
             {
@@ -463,6 +463,8 @@ async def _handle_search(
                 "suggestion": "Provide the 'query' parameter to perform a search.",
             }
         )
+
+    db, _, _ = _get_ctx(ctx)
 
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
@@ -534,10 +536,12 @@ async def _handle_search(
 
 
 async def _handle_list(
-    db: MemoryDB,
-    category: str | None,
-    limit: int,
+    ctx: Context | None,
+    category: str | None = None,
+    limit: int = 5,
 ) -> str:
+    db, _, _ = _get_ctx(ctx)
+
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
@@ -563,16 +567,18 @@ async def _handle_list(
 
 
 async def _handle_update(
-    db: MemoryDB,
+    ctx: Context | None,
     memory_id: str | None,
-    content: str | None,
-    category: str | None,
-    tags: list[str] | None,
-    source: str | None,
-    importance: float | None,
-    embedding_model: str | None,
-    embedding_dims: int,
+    content: str | None = None,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    source: str | None = None,
+    importance: float | None = None,
 ) -> str:
+
+    db, _, _ = _get_ctx(ctx)
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
+
     if not memory_id:
         return _json(
             {
@@ -616,9 +622,12 @@ async def _handle_update(
 
 
 async def _handle_delete(
-    db: MemoryDB,
+    ctx: Context | None,
     memory_id: str | None,
 ) -> str:
+
+    db, _, _ = _get_ctx(ctx)
+
     if not memory_id:
         return _json(
             {
@@ -639,9 +648,8 @@ async def _handle_delete(
     )
 
 
-async def _handle_export(
-    db: MemoryDB,
-) -> str:
+async def _handle_export(ctx: Context | None) -> str:
+    db, _, _ = _get_ctx(ctx)
     jsonl, count = await asyncio.to_thread(db.export_jsonl)
     return _json(
         {
@@ -653,10 +661,12 @@ async def _handle_export(
 
 
 async def _handle_import(
-    db: MemoryDB,
+    ctx: Context | None,
     data: str | list | None,
-    mode: str,
+    mode: str = "merge",
 ) -> str:
+    db, _, _ = _get_ctx(ctx)
+
     if not data:
         return _json(
             {
@@ -677,11 +687,8 @@ async def _handle_import(
     )
 
 
-async def _handle_stats(
-    db: MemoryDB,
-    embedding_model: str | None,
-    embedding_dims: int,
-) -> str:
+async def _handle_stats(ctx: Context | None) -> str:
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
@@ -691,9 +698,12 @@ async def _handle_stats(
 
 
 async def _handle_restore(
-    db: MemoryDB,
+    ctx: Context | None,
     memory_id: str | None,
 ) -> str:
+
+    db, _, _ = _get_ctx(ctx)
+
     if not memory_id:
         return _json(
             {
@@ -715,9 +725,11 @@ async def _handle_restore(
 
 
 async def _handle_archived(
-    db: MemoryDB,
-    limit: int,
+    ctx: Context | None,
+    limit: int = 5,
 ) -> str:
+    db, _, _ = _get_ctx(ctx)
+
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
@@ -734,10 +746,11 @@ async def _handle_archived(
 
 
 async def _handle_consolidate(
-    db: MemoryDB,
-    category: str | None,
+    ctx: Context | None,
+    category: str | None = None,
 ) -> str:
     """Consolidate similar memories in a category using LLM summarization."""
+    db, _, _ = _get_ctx(ctx)
     from mnemo_mcp.graph import _has_llm_provider
 
     mode = settings.resolve_provider_mode()
@@ -803,8 +816,165 @@ async def _handle_consolidate(
 
 
 @mcp.tool(
+    description="Store NEW information. Use for preferences, decisions, facts.",
+    annotations=ToolAnnotations(
+        title="Add Memory",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def add_memory(
+    content: str,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    ctx: Context | None = None,
+) -> str:
+    return await _handle_add(ctx, content, category, tags)
+
+
+@mcp.tool(
+    description="Find existing memories by natural language query. Always search before adding.",
+    annotations=ToolAnnotations(
+        title="Search Memory",
+        readOnlyHint=True,
+        destructiveHint=False,
+    ),
+)
+async def search_memory(
+    query: str,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    limit: int = 5,
+    ctx: Context | None = None,
+) -> str:
+    return await _handle_search(ctx, query, category, tags, limit)
+
+
+@mcp.tool(
+    description="Browse all memories, optionally filtered by category.",
+    annotations=ToolAnnotations(
+        title="List Memories",
+        readOnlyHint=True,
+        destructiveHint=False,
+    ),
+)
+async def list_memories(
+    category: str | None = None, limit: int = 5, ctx: Context | None = None
+) -> str:
+    return await _handle_list(ctx, category, limit)
+
+
+@mcp.tool(
+    description="Modify an EXISTING memory by ID. Get memory_id from search results.",
+    annotations=ToolAnnotations(
+        title="Update Memory",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def update_memory(
+    memory_id: str,
+    content: str | None = None,
+    category: str | None = None,
+    tags: list[str] | None = None,
+    source: str | None = None,
+    importance: float | None = None,
+    ctx: Context | None = None,
+) -> str:
+    return await _handle_update(
+        ctx, memory_id, content, category, tags, source, importance
+    )
+
+
+@mcp.tool(
+    description="Remove a memory by ID.",
+    annotations=ToolAnnotations(
+        title="Delete Memory",
+        readOnlyHint=False,
+        destructiveHint=True,
+    ),
+)
+async def delete_memory(memory_id: str, ctx: Context | None = None) -> str:
+    return await _handle_delete(ctx, memory_id)
+
+
+@mcp.tool(
+    description="Export all memories as JSONL.",
+    annotations=ToolAnnotations(
+        title="Export Memories",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def export_memories(ctx: Context | None = None) -> str:
+    return await _handle_export(ctx)
+
+
+@mcp.tool(
+    description="Import memories from JSONL data or a list of objects.",
+    annotations=ToolAnnotations(
+        title="Import Memories",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def import_memories(
+    data: str | list, mode: str = "merge", ctx: Context | None = None
+) -> str:
+    return await _handle_import(ctx, data, mode)
+
+
+@mcp.tool(
+    description="Show database statistics (total memories, categories, embedding status).",
+    annotations=ToolAnnotations(
+        title="Memory Stats",
+        readOnlyHint=True,
+        destructiveHint=False,
+    ),
+)
+async def memory_stats(ctx: Context | None = None) -> str:
+    return await _handle_stats(ctx)
+
+
+@mcp.tool(
+    description="Restore an archived memory by ID.",
+    annotations=ToolAnnotations(
+        title="Restore Memory",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def restore_memory(memory_id: str, ctx: Context | None = None) -> str:
+    return await _handle_restore(ctx, memory_id)
+
+
+@mcp.tool(
+    description="List archived memories.",
+    annotations=ToolAnnotations(
+        title="Archived Memories",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def archived_memories(limit: int = 5, ctx: Context | None = None) -> str:
+    return await _handle_archived(ctx, limit)
+
+
+@mcp.tool(
+    description="Summarize similar memories in a category (requires LLM API keys).",
+    annotations=ToolAnnotations(
+        title="Consolidate Memories",
+        readOnlyHint=False,
+        destructiveHint=False,
+    ),
+)
+async def consolidate_memories(category: str, ctx: Context | None = None) -> str:
+    return await _handle_consolidate(ctx, category)
+
+
+@mcp.tool(
     description=(
-        "Persistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate.\n"
+        "Legacy dispatcher for backward compatibility. Use specialized tools (add_memory, search_memory, etc.) instead.\n\nPersistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate.\n"
         "\n"
         "ACTION GUIDE — when to use each:\n"
         "- add: Store NEW information. Requires 'content'. Use when saving preferences, decisions, facts for the first time.\n"
@@ -865,49 +1035,36 @@ async def memory(
     - archived: List archived memories (limit optional)
     - consolidate: LLM summarize similar memories (category required)
     """
-    db, embedding_model, embedding_dims = _get_ctx(ctx)
-
     # Clamp limit to reasonable bounds to prevent DoS
+
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
     match action:
         case "add":
-            return await _handle_add(
-                db, content, category, tags, embedding_model, embedding_dims
-            )
+            return await _handle_add(ctx, content, category, tags)
         case "search":
-            return await _handle_search(
-                db, query, category, tags, limit, embedding_model, embedding_dims
-            )
+            return await _handle_search(ctx, query, category, tags, limit)
         case "list":
-            return await _handle_list(db, category, limit)
+            return await _handle_list(ctx, category, limit)
         case "update":
             return await _handle_update(
-                db,
-                memory_id,
-                content,
-                category,
-                tags,
-                source,
-                importance,
-                embedding_model,
-                embedding_dims,
+                ctx, memory_id, content, category, tags, source, importance
             )
         case "delete":
-            return await _handle_delete(db, memory_id)
+            return await _handle_delete(ctx, memory_id)
         case "export":
-            return await _handle_export(db)
+            return await _handle_export(ctx)
         case "import":
-            return await _handle_import(db, data, mode)
+            return await _handle_import(ctx, data, mode)
         case "stats":
-            return await _handle_stats(db, embedding_model, embedding_dims)
+            return await _handle_stats(ctx)
         case "restore":
-            return await _handle_restore(db, memory_id)
+            return await _handle_restore(ctx, memory_id)
         case "archived":
-            return await _handle_archived(db, limit)
+            return await _handle_archived(ctx, limit)
         case "consolidate":
-            return await _handle_consolidate(db, category)
+            return await _handle_consolidate(ctx, category)
         case _:
             import difflib
 
@@ -971,13 +1128,11 @@ async def config(
     - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
     - setup_sync: Authenticate Google Drive via Device Code OAuth flow
     """
-    db, embedding_model, embedding_dims = _get_ctx(ctx)
-
     match action:
         case "status":
-            return await _handle_config_status(db, embedding_model, embedding_dims)
+            return await _handle_config_status(ctx)
         case "sync":
-            return await _handle_config_sync(db)
+            return await _handle_config_sync(ctx)
         case "set":
             return await _handle_config_set(key, value)
         case "warmup":
@@ -1023,9 +1178,8 @@ async def config(
             )
 
 
-async def _handle_config_status(
-    db: MemoryDB, embedding_model: str | None, embedding_dims: int
-) -> str:
+async def _handle_config_status(ctx: Context | None) -> str:
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
     s = await asyncio.to_thread(db.stats)
     return _json(
         {
@@ -1050,7 +1204,8 @@ async def _handle_config_status(
     )
 
 
-async def _handle_config_sync(db: MemoryDB) -> str:
+async def _handle_config_sync(ctx: Context | None) -> str:
+    db, _, _ = _get_ctx(ctx)
     from mnemo_mcp.sync import sync_full
 
     result = await sync_full(db)
