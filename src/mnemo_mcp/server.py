@@ -1471,11 +1471,7 @@ register_open_relay_tool(mcp, "mnemo-mcp", os.environ.get("PUBLIC_URL"))
 @mcp.resource("mnemo://stats")
 async def stats_resource(ctx: Context | None = None) -> str:
     """Database statistics and server status."""
-    db, embedding_model, embedding_dims = _get_ctx(ctx)
-    s = await asyncio.to_thread(db.stats)
-    s["embedding_model"] = embedding_model
-    s["sync_enabled"] = settings.sync_enabled
-    return _json(s)
+    return await _handle_stats(*_get_ctx(ctx))
 
 
 # --- Prompts ---
