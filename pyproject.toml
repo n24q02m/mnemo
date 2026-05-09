@@ -40,6 +40,7 @@ dependencies = [
     "n24q02m-mcp-core>=1.14.0",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
+    "alembic>=1.18.4",
 ]
 
 [dependency-groups]

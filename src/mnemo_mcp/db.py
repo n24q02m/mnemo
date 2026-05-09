@@ -5,20 +5,27 @@ Provides:
 - sqlite-vec vector search (when embeddings are configured)
 - CRUD operations with category/tag filtering
 - Hybrid search scoring (text + semantic + recency + frequency)
+- Alembic schema migrations with backup-before-migrate
 """
 
 import io
 import json
 import math
 import re
+import shutil
 import sqlite3
 import struct
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlite_vec
 from loguru import logger
+
+# Alembic migration constants
+_ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
+_ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parents[2] / "alembic"
 
 _STRUCT_CACHE: dict[int, struct.Struct] = {}
 
@@ -136,6 +143,12 @@ class MemoryDB:
                 logger.warning(f"sqlite-vec load failed: {e}")
 
         self._init_schema()
+
+        # Run Alembic migrations after the baseline schema is materialised so
+        # that fresh databases are stamped at ``baseline_001`` and then walked
+        # forward. ``_run_migrations`` is best-effort: failures are logged but
+        # never block server startup.
+        self._run_migrations()
 
     def _init_schema(self) -> None:
         """Initialize database schema.
@@ -1046,3 +1059,108 @@ class MemoryDB:
     def close(self) -> None:
         """Close database connection."""
         self._conn.close()
+
+    def _run_migrations(self) -> None:
+        """Run Alembic migrations to head, with backup-before-migrate.
+
+        Workflow:
+        1. Inspect ``alembic_version`` via raw SQL on the existing connection.
+           Absent table => either a fresh DB (just initialised by
+           ``_init_schema``, will be stamped) or a pre-Alembic DB.
+        2. If a target migration would actually run (current revision != head),
+           copy ``memories.db`` to ``memories.db.bak.<unix-ts>`` first.
+        3. Stamp ``baseline_001`` for unstamped DBs, then call
+           ``alembic.command.upgrade(config, "head")``.
+
+        Any failure is logged via loguru and swallowed so server startup is
+        not blocked by migration issues.
+        """
+        if not _ALEMBIC_INI_PATH.exists():
+            logger.debug(
+                f"Alembic config not found at {_ALEMBIC_INI_PATH}, "
+                "skipping migrations (likely a wheel install without alembic dir)"
+            )
+            return
+
+        try:
+            from alembic.config import Config
+            from alembic.script import ScriptDirectory
+
+            from alembic import command
+        except ImportError as e:  # pragma: no cover - dep is required at runtime
+            logger.warning(f"Alembic import failed, skipping migrations: {e}")
+            return
+
+        try:
+            self._conn.commit()  # Flush any pending baseline writes
+
+            cfg = Config(str(_ALEMBIC_INI_PATH))
+            cfg.set_main_option("script_location", str(_ALEMBIC_SCRIPT_LOCATION))
+            cfg.set_main_option(
+                "sqlalchemy.url", f"sqlite:///{self._db_path.resolve().as_posix()}"
+            )
+
+            script = ScriptDirectory.from_config(cfg)
+            head_rev = script.get_current_head()
+
+            current_rev = self._read_alembic_version()
+
+            if current_rev == head_rev:
+                logger.debug(f"DB already at head revision {head_rev}")
+                return
+
+            if current_rev is None:
+                # Pre-Alembic / freshly initialised database: stamp baseline_001
+                # so subsequent upgrades only apply migrations after baseline.
+                logger.info("Stamping database at baseline_001")
+                command.stamp(cfg, "baseline_001")
+                current_rev = "baseline_001"
+                if current_rev == head_rev:
+                    return
+
+            # Backup before applying any forward migration
+            self._backup_db_file()
+
+            logger.info(f"Running Alembic upgrade: {current_rev} -> {head_rev}")
+            command.upgrade(cfg, "head")
+            logger.info(f"Alembic upgrade complete (head={head_rev})")
+        except Exception as e:  # pragma: no cover - runtime guard
+            logger.warning(f"Alembic migration failed: {e}")
+
+    def _read_alembic_version(self) -> str | None:
+        """Return the current ``alembic_version`` revision, or ``None`` if unstamped."""
+        try:
+            row = self._conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if not row:
+            return None
+        return row[0] if not isinstance(row, sqlite3.Row) else row["version_num"]
+
+    def _backup_db_file(self) -> Path | None:
+        """Copy the SQLite DB file to ``<path>.bak.<unix-ts>`` and return the path.
+
+        Returns ``None`` if the source file does not exist (fresh in-memory DB
+        in tests). WAL/SHM sidecars are also copied when present so the backup
+        is internally consistent.
+        """
+        if not self._db_path.exists():
+            return None
+
+        ts = int(time.time())
+        backup_path = self._db_path.with_suffix(self._db_path.suffix + f".bak.{ts}")
+        try:
+            shutil.copy2(self._db_path, backup_path)
+            for sidecar in ("-wal", "-shm"):
+                src = self._db_path.with_suffix(self._db_path.suffix + sidecar)
+                if src.exists():
+                    shutil.copy2(
+                        src, backup_path.with_suffix(backup_path.suffix + sidecar)
+                    )
+            logger.info(f"DB backup created at {backup_path}")
+            return backup_path
+        except Exception as e:  # pragma: no cover - runtime guard
+            logger.warning(f"DB backup failed: {e}")
+            return None

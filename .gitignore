@@ -52,3 +52,12 @@ docs/superpowers/
 # AI traces (public repo hygiene)
 .Jules/
 .superpower/
+
+# Alembic / SQLite migration artifacts
+*.db
+*.db-wal
+*.db-shm
+*.db.bak.*
+*.db.bak.*-wal
+*.db.bak.*-shm
+.mnemo-mcp-alembic-placeholder.db
