@@ -242,7 +242,7 @@ def resolve_credential_state() -> CredentialState:
                 _state = CredentialState.CONFIGURED
                 return _state
         except Exception:
-            pass
+            logger.debug("Config loading from PerPluginStore failed")
 
     # 3. Check local mode marker
     try:
@@ -254,7 +254,7 @@ def resolve_credential_state() -> CredentialState:
             _state = CredentialState.LOCAL
             return _state
     except Exception:
-        pass
+        logger.debug("Local mode marker check failed")
 
     # 4. Nothing found
     logger.info("No credentials found -- server starting in awaiting_setup mode")
@@ -296,7 +296,7 @@ def _schedule_spawn_cleanup(grace_s: float = _SPAWN_CLEANUP_S) -> None:
         task = asyncio.create_task(_delayed_close())
         task.add_done_callback(lambda _t: None)
     except RuntimeError:
-        pass
+        logger.debug("Failed to schedule cleanup task (no event loop?)")
 
 
 def _sub_data_dir(sub: str) -> Path:
@@ -512,6 +512,9 @@ async def _gdrive_token_poll(
 
     def _notify_failed(error: str) -> None:
         if _on_gdrive_failed is None:
+            logger.debug(
+                "No GDrive failure callback registered; terminal error: {}", error
+            )
             return
         try:
             _on_gdrive_failed("gdrive", error)
@@ -612,7 +615,7 @@ def reset_state() -> None:
             task = asyncio.create_task(_close_active_handle())
             task.add_done_callback(lambda _t: None)
         except RuntimeError:
-            pass
+            logger.debug("Failed to schedule close handle task (no event loop?)")
 
     try:
         from mcp_core import clear_mode
@@ -621,4 +624,4 @@ def reset_state() -> None:
         clear_mode(SERVER_NAME)
         PerPluginStore("mnemo").clear()
     except Exception:
-        pass
+        logger.opt(exception=True).debug("Failed to clear local mode/config")
