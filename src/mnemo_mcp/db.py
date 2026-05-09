@@ -558,7 +558,7 @@ class MemoryDB:
             updated = datetime.fromisoformat(updated_at)
             days_old = (now - updated).total_seconds() / 86400
             return 2.0 ** (-days_old / self._recency_half_life)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, TypeError):
             return 0.0
 
     def _calc_frequency(self, access_count: int) -> float:

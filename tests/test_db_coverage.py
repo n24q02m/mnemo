@@ -520,3 +520,15 @@ class TestScoringEdgeCases:
         results = tmp_db.search("frequent memory")
         assert len(results) > 0
         assert results[0]["score"] > 0
+
+    def test_recency_type_error_handling(self, tmp_db: MemoryDB):
+        """TypeError in _calc_recency is handled (returns 0.0)."""
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+
+        # Test with None
+        assert tmp_db._calc_recency(None, now) == 0.0  # ty: ignore[invalid-argument-type]
+
+        # Test with naive datetime string
+        assert tmp_db._calc_recency("2023-01-01T00:00:00", now) == 0.0
