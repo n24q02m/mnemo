@@ -766,3 +766,52 @@ def test_invalid_embedding_dims_bounds(tmp_path):
         assert json.loads(mem["tags"]) == ["t2"]
         assert mem["source"] == "new source"
         assert mem["importance"] == 0.1
+
+
+class TestDBMigration:
+    def test_migration_importance_column_already_exists(self, tmp_path):
+        """
+        Test that MemoryDB handles the case where the 'importance' column already exists.
+        This exercises the try-except block in _init_memory_schema.
+        """
+        import sqlite3
+
+        db_path = tmp_path / "test_migration.db"
+
+        # Manually create the table with the 'importance' column already present
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE memories (
+                id TEXT PRIMARY KEY NOT NULL,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                last_accessed TEXT NOT NULL,
+                importance REAL NOT NULL DEFAULT 0.5
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        # Initializing MemoryDB should not raise an exception even if the column exists
+        db = MemoryDB(db_path)
+        # Verify it works by adding a memory
+        mid = db.add("test content")
+        mem = db.get(mid)
+        assert mem is not None
+        assert mem["importance"] == 0.5
+        db.close()
+
+    def test_migration_idempotent(self, tmp_db):
+        """
+        Verify that _init_memory_schema can be called multiple times without error.
+        """
+        # Already initialized by fixture
+        try:
+            tmp_db._init_memory_schema()
+        except Exception as e:
+            pytest.fail(f"_init_memory_schema failed on redundant call: {e}")
