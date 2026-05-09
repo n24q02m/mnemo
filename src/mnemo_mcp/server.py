@@ -4,7 +4,7 @@ MCP Interface:
 - memory tool: add/search/list/update/delete/export/import/stats
 - config tool: status/sync/set/warmup/setup_sync
 - help tool: full documentation on demand
-- Resources: mnemo://stats, mnemo://recent
+- Resources: mnemo://stats
 - Prompts: save_summary, recall_context
 """
 
@@ -1315,14 +1315,6 @@ async def stats_resource(ctx: Context | None = None) -> str:
     s["embedding_model"] = embedding_model
     s["sync_enabled"] = settings.sync_enabled
     return _json(s)
-
-
-@mcp.resource("mnemo://recent")
-async def recent_resource(ctx: Context | None = None) -> str:
-    """10 most recently updated memories."""
-    db, _, _ = _get_ctx(ctx)
-    results = await asyncio.to_thread(db.list_memories, limit=10)
-    return _json(results)
 
 
 # --- Prompts ---

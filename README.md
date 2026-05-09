@@ -117,7 +117,6 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/](https://mcp.n24q02m.com/serv
 | URI | Description |
 |:----|:------------|
 | `mnemo://stats` | Database statistics and server status |
-| `mnemo://recent` | 10 most recently updated memories |
 
 ### MCP Prompts
 

@@ -2,7 +2,7 @@
 
 Targets: _embed backend is None, _format_memory tags parse error,
 config sync action, config set sync_interval, config set generic,
-stats_resource, recent_resource, main function, _init_embedding_backend
+stats_resource, main function, _init_embedding_backend
 candidate exception.
 """
 
@@ -21,7 +21,6 @@ from mnemo_mcp.server import (
     config,
     main,
     memory,
-    recent_resource,
     stats_resource,
 )
 
@@ -179,14 +178,6 @@ class TestResources:
         assert result["total_memories"] == 1
         assert "embedding_model" in result
         assert "sync_enabled" in result
-
-    async def test_recent_resource(self, ctx_with_db):
-        """recent_resource returns recent memories."""
-        ctx, db = ctx_with_db
-        db.add("memory 1")
-        db.add("memory 2")
-        result = json.loads(await recent_resource(ctx=ctx))
-        assert len(result) == 2
 
 
 # ---------------------------------------------------------------------------
