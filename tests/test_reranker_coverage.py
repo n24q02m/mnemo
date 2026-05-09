@@ -126,7 +126,10 @@ class TestCheckAvailableReranker:
             model="jina_ai/jina-reranker-v3",
             api_key="bad_key",
         )
-        assert reranker.check_available() is False
+        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+            assert reranker.check_available() is False
+            mock_logger.warning.assert_called()
+            assert "API key invalid" in mock_logger.warning.call_args[0][0]
 
     @patch("cohere.ClientV2")
     def test_check_cohere_available(self, mock_client_cls):
@@ -149,6 +152,22 @@ class TestCheckAvailableReranker:
         assert reranker.check_available() is True
 
     @patch("cohere.ClientV2")
+    def test_check_cohere_api_key_invalid_logging(self, mock_client_cls):
+        """Cohere check_available logs warning for auth errors."""
+        mock_client = MagicMock()
+        mock_client.rerank.side_effect = Exception("invalid api key")
+        mock_client_cls.return_value = mock_client
+
+        reranker = CloudReranker(
+            model="rerank-v4.0-pro",
+            api_key="bad_key",
+        )
+        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+            assert reranker.check_available() is False
+            mock_logger.warning.assert_called()
+            assert "API key invalid" in mock_logger.warning.call_args[0][0]
+
+    @patch("cohere.ClientV2")
     def test_check_cohere_non_auth_error(self, mock_client_cls):
         """Cohere check_available returns False on non-auth error."""
         mock_client = MagicMock()
@@ -159,7 +178,10 @@ class TestCheckAvailableReranker:
             model="rerank-v4.0-pro",
             api_key="co_test",
         )
-        assert reranker.check_available() is False
+        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+            assert reranker.check_available() is False
+            mock_logger.debug.assert_called()
+            assert "not available" in mock_logger.debug.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
