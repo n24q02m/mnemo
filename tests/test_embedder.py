@@ -8,7 +8,6 @@ from mnemo_mcp.embedder import (
     CloudEmbeddingBackend,
     LiteLLMBackend,
     Qwen3EmbedBackend,
-    check_embedding_available,
     embed_single,
     get_backend,
     init_backend,
@@ -425,13 +424,3 @@ class TestLegacyCompat:
 
         result = await embed_single("test", "embed-multilingual-v3.0", api_key="key")
         assert result == [0.1, 0.2]
-
-    @patch("cohere.ClientV2")
-    def test_check_available_legacy(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        assert check_embedding_available("embed-multilingual-v3.0", api_key="key") == 1

@@ -565,11 +565,3 @@ async def embed_single(
     """Embed a single text (legacy interface)."""
     backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
     return await backend.embed_single(text, dimensions)
-
-
-def check_embedding_available(
-    model: str, api_base: str | None = None, api_key: str | None = None
-) -> int:
-    """Check if an embedding model is available (legacy interface)."""
-    backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
-    return backend.check_available()
