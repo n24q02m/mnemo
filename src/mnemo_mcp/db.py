@@ -794,80 +794,53 @@ class MemoryDB:
 
         return output.getvalue(), count
 
-    def import_jsonl(self, data: str | list | dict, mode: str = "merge") -> dict:
-        """Import memories from JSONL string.
-
-        Args:
-            data: JSONL string (one JSON object per line).
-            mode: "merge" (skip existing) or "replace" (clear + import).
-
-        Returns:
-            Dict with import stats (imported, skipped, rejected).
-        """
+    def _clear_for_import(self, mode: str) -> None:
+        """Clear memories if mode is 'replace'."""
         if mode == "replace":
             self._conn.execute("DELETE FROM memories")
             if self._vec_enabled:
                 self._conn.execute("DELETE FROM memories_vec")
 
-        imported = 0
-        skipped = 0
+    def _parse_import_data(self, data: str | list | dict) -> tuple[list[dict], int]:
+        """Parse input data into a list of dictionaries."""
         rejected = 0
-
         if isinstance(data, list):
-            iterator = data
-        elif isinstance(data, dict):
-            iterator = [data]
-        elif isinstance(data, str):
-            iterator = []
+            return data, 0
+        if isinstance(data, dict):
+            return [data], 0
+        if isinstance(data, str):
+            items = []
             for line in data.strip().split("\n"):
                 line = line.strip()
-                if line:
-                    try:
-                        iterator.append(json.loads(line))
-                    except Exception:
-                        rejected += 1
-        else:
-            iterator = []
-
-        lines = iterator
-        BATCH_SIZE = 900
-
-        for i in range(0, len(lines), BATCH_SIZE):
-            batch_items = lines[i : i + BATCH_SIZE]
-            parsed_batch = []
-
-            # Validate batch
-            for mem in batch_items:
+                if not line:
+                    continue
                 try:
-                    memory_id = mem.get("id", uuid.uuid4().hex)
-                    content = mem.get("content", "")
-
-                    if len(content) > MAX_CONTENT_LENGTH:
-                        logger.warning(
-                            f"[AUDIT] import rejected id={memory_id} "
-                            f"len={len(content)} exceeds {MAX_CONTENT_LENGTH}"
-                        )
-                        rejected += 1
-                        continue
-
-                    parsed_batch.append((memory_id, mem, content))
+                    items.append(json.loads(line))
                 except Exception:
                     rejected += 1
+            return items, rejected
+        return [], 0
+
+    def _process_import_batch(
+        self, batch_items: list[dict], now: str
+    ) -> tuple[list[tuple], int]:
+        """Validate and format a batch of memories for database insertion."""
+        to_insert = []
+        rejected = 0
+        for mem in batch_items:
+            try:
+                memory_id = mem.get("id", uuid.uuid4().hex)
+                content = mem.get("content", "")
+                if not content or len(content) > MAX_CONTENT_LENGTH:
+                    logger.warning(
+                        f"[AUDIT] import rejected id={memory_id} "
+                        f"len={len(content)} exceeds {MAX_CONTENT_LENGTH}"
+                    )
+                    rejected += 1
                     continue
-
-            if not parsed_batch:
-                continue
-
-            to_insert = []
-            now = _now_iso()
-
-            for memory_id, mem, content in parsed_batch:
                 tags = mem.get("tags", [])
-                if isinstance(tags, list):
-                    tags_json = json.dumps(tags)
-                else:
-                    tags_json = tags
-
+                tags_json = json.dumps(tags) if isinstance(tags, list) else tags
+                importance = mem.get("importance", 0.5)
                 to_insert.append(
                     (
                         memory_id,
@@ -879,32 +852,54 @@ class MemoryDB:
                         mem.get("updated_at", now),
                         mem.get("access_count", 0),
                         mem.get("last_accessed", now),
+                        importance,
                     )
                 )
+            except Exception:
+                rejected += 1
+                continue
+        return to_insert, rejected
 
-            if to_insert:
-                cursor = self._conn.cursor()
-                if mode == "replace":
-                    cursor.executemany(
-                        """INSERT OR REPLACE INTO memories
-                           (id, content, category, tags, source,
-                            created_at, updated_at, access_count, last_accessed)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        to_insert,
-                    )
-                    imported += len(to_insert)
-                else:
-                    cursor.executemany(
-                        """INSERT OR IGNORE INTO memories
-                           (id, content, category, tags, source,
-                            created_at, updated_at, access_count, last_accessed)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        to_insert,
-                    )
-                    inserted_batch = cursor.rowcount
-                    imported += inserted_batch
-                    skipped += len(to_insert) - inserted_batch
+    def _execute_import_batch(
+        self, to_insert: list[tuple], mode: str
+    ) -> tuple[int, int]:
+        """Execute the batch insertion and return (imported, skipped) counts."""
+        if not to_insert:
+            return 0, 0
+        cursor = self._conn.cursor()
+        sql = """INSERT OR {} INTO memories
+                 (id, content, category, tags, source,
+                  created_at, updated_at, access_count, last_accessed, importance)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        op = "REPLACE" if mode == "replace" else "IGNORE"
+        cursor.executemany(sql.format(op), to_insert)
+        imported = cursor.rowcount
+        skipped = len(to_insert) - imported if mode != "replace" else 0
+        return imported, skipped
 
+    def import_jsonl(self, data: str | list | dict, mode: str = "merge") -> dict:
+        """Import memories from JSONL string.
+
+        Args:
+            data: JSONL string (one JSON object per line).
+            mode: "merge" (skip existing) or "replace" (clear + import).
+
+        Returns:
+            Dict with import stats (imported, skipped, rejected).
+        """
+        self._clear_for_import(mode)
+        items, rejected = self._parse_import_data(data)
+        imported = 0
+        skipped = 0
+        BATCH_SIZE = 900
+        now = _now_iso()
+        for i in range(0, len(items), BATCH_SIZE):
+            batch_items = items[i : i + BATCH_SIZE]
+            to_insert, batch_rejected = self._process_import_batch(batch_items, now)
+            rejected += batch_rejected
+            batch_imported, batch_skipped = self._execute_import_batch(to_insert, mode)
+            imported += batch_imported
+            skipped += batch_skipped
         self._conn.commit()
         if imported > 0:
             logger.info(f"[AUDIT] import count={imported} mode={mode}")
