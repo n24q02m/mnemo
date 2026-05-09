@@ -317,3 +317,56 @@ class TestSearchVecBranch:
         finally:
             db._conn = real_conn
             db.close()
+
+    def test_search_vec_missing_mems_query_raises_exception(self, tmp_path: Path):
+        """Vector search missing mems fetch block swallows exceptions."""
+        db = MemoryDB(tmp_path / "vec_mems_err.db", embedding_dims=3)
+        db._vec_enabled = True
+        real_conn = db._conn
+        # mid1 will be found by FTS
+        mid1 = db.add("alpha beta")
+        # mid2 will be found by VEC but its fetch from 'memories' will fail
+        mid2 = db.add("gamma delta")
+
+        class _ConnProxy:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args, **kwargs):
+                # First vector query: return mid2 as a hit
+                if "FROM memories_vec v" in sql and "MATCH" in sql:
+
+                    class _Cursor:
+                        def fetchall(self_):
+                            return [{"id": mid2, "distance": 0.1}]
+
+                        def fetchone(self_):
+                            return {"id": mid2, "distance": 0.1}
+
+                    return _Cursor()
+
+                # Second query (fetching missing mems): throw exception
+                if "FROM memories WHERE id IN" in sql:
+                    raise RuntimeError("missing mems fetch failed")
+
+                return self._inner.execute(sql, *args, **kwargs)
+
+            def executescript(self, sql):
+                return self._inner.executescript(sql)
+
+            def commit(self):
+                return self._inner.commit()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        db._conn = _ConnProxy(real_conn)  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+        try:
+            # Should still return mid1 from FTS despite mid2's fetch failure
+            results = db.search(query="alpha", embedding=[0.1, 0.2, 0.3], limit=5)
+            assert isinstance(results, list)
+            assert any(r["id"] == mid1 for r in results)
+            assert not any(r["id"] == mid2 for r in results)
+        finally:
+            db._conn = real_conn
+            db.close()
