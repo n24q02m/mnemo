@@ -1,9 +1,17 @@
-"""Google Drive sync for memory database.
+"""Google Drive sync backend for memory database (Phase 2 refactor).
 
-Syncs the memory database across machines using Google Drive API.
-Only memory data is synced via JSONL export/import merge.
+Provides both the legacy function-style API (``sync_full``, ``sync_push``,
+``sync_pull``, ``setup_google_auth``, ``start_auto_sync``,
+``stop_auto_sync``) AND a new class-based :class:`GDriveBackend` that
+implements :class:`mnemo_mcp.sync.base.SyncBackend` for the Phase 2
+passport delta-sync orchestrator.
 
-Sync flow:
+The function-style API is preserved unchanged so existing call sites
+(``server.py``, ``setup_tool.py``, ``relay_setup.py``, the legacy test
+suite) keep working. The class-based path lets the new orchestrator
+treat GDrive uniformly with the S3 backend.
+
+Sync flow (legacy):
 1. Authenticate via OAuth Device Code flow
 2. Push: upload local DB to Google Drive folder
 3. Pull: download remote DB, merge via JSONL export/import
@@ -29,6 +37,7 @@ import httpx
 from loguru import logger
 
 from mnemo_mcp.config import settings
+from mnemo_mcp.sync.base import SyncBackend
 
 if TYPE_CHECKING:
     from mnemo_mcp.db import MemoryDB
@@ -823,3 +832,191 @@ def setup_sync() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 SyncBackend implementation - bundle-based passport sync
+# ---------------------------------------------------------------------------
+
+
+_BUNDLE_FOLDER = "passport"
+
+
+def _bundle_filename(sequence: int) -> str:
+    """Return the GDrive filename for a passport bundle at ``sequence``.
+
+    Mirrors the S3 backend layout (``passport/seq-NNNNNN.bin``) so an
+    operator inspecting either backend sees the same naming scheme.
+    """
+    return f"seq-{sequence:06d}.bin"
+
+
+async def _ensure_bundle_folder(token: dict, base_folder: str) -> str | None:
+    """Create / locate the ``passport/`` subfolder inside the sync folder."""
+    base_id = await _find_or_create_folder(token, base_folder)
+    if not base_id:
+        return None
+    # GDrive does not support nested folder names in queries directly; we
+    # find-or-create a folder named "passport" whose parent is base_id.
+    query = (
+        f"name='{_BUNDLE_FOLDER}' and '{base_id}' in parents "
+        f"and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    )
+    response = await _drive_request(
+        "GET",
+        f"{_DRIVE_API_BASE}/files",
+        token,
+        params={"q": query, "fields": "files(id,name)", "spaces": "drive"},
+    )
+    if response.status_code == 200:
+        files = response.json().get("files", [])
+        if files:
+            return files[0]["id"]
+
+    create = await _drive_request(
+        "POST",
+        f"{_DRIVE_API_BASE}/files",
+        token,
+        json_data={
+            "name": _BUNDLE_FOLDER,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [base_id],
+        },
+        params={"fields": "id"},
+    )
+    if create.status_code == 200:
+        return create.json().get("id")
+    return None
+
+
+class GDriveBackend(SyncBackend):
+    """:class:`SyncBackend` adapter over the legacy GDrive helpers.
+
+    Stores opaque bundle bytes at ``<sync_folder>/passport/seq-NNNNNN.bin``.
+    Authentication piggybacks on the existing token store + Device Code
+    flow so users who already configured GDrive sync in Phase 1 do not
+    need to reauthenticate for Phase 2 passport sync.
+    """
+
+    name = "gdrive"
+
+    def __init__(self, folder_name: str | None = None) -> None:
+        self._folder_name = folder_name or settings.sync_folder
+
+    async def push(self, bundle: bytes, sequence: int) -> None:
+        token = await _get_valid_token()
+        if not token:
+            raise RuntimeError("GDriveBackend.push: no valid token available")
+        bundle_folder_id = await _ensure_bundle_folder(token, self._folder_name)
+        if not bundle_folder_id:
+            raise RuntimeError("GDriveBackend.push: failed to ensure bundle folder")
+
+        filename = _bundle_filename(sequence)
+        existing = await _find_file_in_folder(token, bundle_folder_id, filename)
+        existing_id = existing["id"] if existing else None
+
+        boundary = "mnemo_mcp_bundle_boundary"
+        if existing_id:
+            response = await _drive_request(
+                "PATCH",
+                f"{_DRIVE_UPLOAD_BASE}/files/{existing_id}",
+                token,
+                content=bundle,
+                params={"uploadType": "media"},
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        else:
+            metadata = json.dumps({"name": filename, "parents": [bundle_folder_id]})
+            body = (
+                (
+                    f"--{boundary}\r\n"
+                    f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                    f"{metadata}\r\n"
+                    f"--{boundary}\r\n"
+                    f"Content-Type: application/octet-stream\r\n\r\n"
+                ).encode()
+                + bundle
+                + f"\r\n--{boundary}--".encode()
+            )
+            response = await _drive_request(
+                "POST",
+                f"{_DRIVE_UPLOAD_BASE}/files",
+                token,
+                content=body,
+                params={"uploadType": "multipart", "fields": "id"},
+                headers={"Content-Type": f"multipart/related; boundary={boundary}"},
+            )
+        if response.status_code not in (200, 201):
+            raise RuntimeError(
+                f"GDriveBackend.push: upload failed ({response.status_code}): "
+                f"{response.text[:200]}"
+            )
+
+    async def pull(self, sequence: int | None = None) -> bytes | None:
+        token = await _get_valid_token()
+        if not token:
+            return None
+        bundle_folder_id = await _ensure_bundle_folder(token, self._folder_name)
+        if not bundle_folder_id:
+            return None
+        if sequence is None:
+            sequence = await self._max_sequence(token, bundle_folder_id)
+            if sequence == 0:
+                return None
+        filename = _bundle_filename(sequence)
+        existing = await _find_file_in_folder(token, bundle_folder_id, filename)
+        if not existing:
+            return None
+        response = await _drive_request(
+            "GET",
+            f"{_DRIVE_API_BASE}/files/{existing['id']}",
+            token,
+            params={"alt": "media"},
+            timeout=300.0,
+        )
+        if response.status_code == 200:
+            return response.content
+        return None
+
+    async def last_remote_sequence(self) -> int:
+        token = await _get_valid_token()
+        if not token:
+            return 0
+        bundle_folder_id = await _ensure_bundle_folder(token, self._folder_name)
+        if not bundle_folder_id:
+            return 0
+        return await self._max_sequence(token, bundle_folder_id)
+
+    async def health_check(self) -> bool:
+        token = await _get_valid_token()
+        if not token:
+            return False
+        try:
+            base_id = await _find_or_create_folder(token, self._folder_name)
+            return base_id is not None
+        except Exception:
+            return False
+
+    @staticmethod
+    async def _max_sequence(token: dict, folder_id: str) -> int:
+        query = f"'{folder_id}' in parents and trashed=false"
+        response = await _drive_request(
+            "GET",
+            f"{_DRIVE_API_BASE}/files",
+            token,
+            params={"q": query, "fields": "files(name)", "spaces": "drive"},
+        )
+        if response.status_code != 200:
+            return 0
+        files = response.json().get("files", [])
+        max_seq = 0
+        for f in files:
+            n = f.get("name", "")
+            if n.startswith("seq-") and n.endswith(".bin"):
+                try:
+                    seq = int(n[len("seq-") : -len(".bin")])
+                except ValueError:
+                    continue
+                if seq > max_seq:
+                    max_seq = seq
+        return max_seq
