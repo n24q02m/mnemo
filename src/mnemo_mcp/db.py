@@ -396,6 +396,10 @@ class MemoryDB:
         source: str | None = None,
         embedding: list[float] | None = None,
         importance: float | None = None,
+        *,
+        text_raw: str | None = None,
+        compressed: bool = False,
+        compression_provider: str | None = None,
     ) -> str:
         """Add a new memory with an explicit ``context_type``.
 
@@ -403,14 +407,27 @@ class MemoryDB:
         introduced by the ``mem_001_context_types`` Alembic migration. Used by
         the ``memory(action="capture")`` Phase 1 action.
 
+        Phase 2 extension (``mem_002_compression`` Alembic migration): callers
+        running text through the LLM compression pipeline can pass the
+        original uncompressed text via ``text_raw`` and flag the row with
+        ``compressed=True`` plus ``compression_provider`` (gemini/openai/...).
+        Default behaviour preserves Phase 1 (no compression bookkeeping).
+
         Args:
-            content: Memory text content.
+            content: Memory text content (post-compression when applicable).
             context_type: One of conversation/fact/preference/skill/task/decision.
             category: Free-form category bucket. Defaults to "general".
             tags: Optional list of tag strings.
             source: Optional provenance marker.
             embedding: Optional dense vector for semantic search.
             importance: Optional importance score in [0.0, 1.0].
+            text_raw: Original uncompressed text retained for audit / recovery.
+                Only set when ``compressed=True``.
+            compressed: Flag indicating the LLM compression pipeline rewrote
+                ``content``. Defaults to False so unchanged callers keep the
+                Phase 1 behaviour.
+            compression_provider: LLM provider that performed the compression
+                (gemini/openai/anthropic/xai). NULL when ``compressed=False``.
 
         Returns:
             Memory ID (32-char hex).
@@ -426,14 +443,16 @@ class MemoryDB:
         memory_id = uuid.uuid4().hex
         now = _now_iso()
         tags_json = json.dumps(tags or [])
+        compressed_int = 1 if compressed else 0
 
         if importance is not None:
             importance = max(0.0, min(1.0, importance))
             self._conn.execute(
                 """INSERT INTO memories (id, content, category, tags, source,
                    created_at, updated_at, access_count, last_accessed,
-                   context_type, importance)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                   context_type, importance,
+                   text_raw, compressed, compression_provider)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
@@ -445,14 +464,18 @@ class MemoryDB:
                     now,
                     context_type,
                     importance,
+                    text_raw,
+                    compressed_int,
+                    compression_provider,
                 ),
             )
         else:
             self._conn.execute(
                 """INSERT INTO memories (id, content, category, tags, source,
                    created_at, updated_at, access_count, last_accessed,
-                   context_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                   context_type,
+                   text_raw, compressed, compression_provider)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
@@ -463,6 +486,9 @@ class MemoryDB:
                     now,
                     now,
                     context_type,
+                    text_raw,
+                    compressed_int,
+                    compression_provider,
                 ),
             )
 
@@ -475,9 +501,83 @@ class MemoryDB:
         self._conn.commit()
         logger.info(
             f"[AUDIT] capture id={memory_id} cat={category} "
-            f"ctx_type={context_type} len={len(content)}"
+            f"ctx_type={context_type} len={len(content)} "
+            f"compressed={compressed} provider={compression_provider}"
         )
         return memory_id
+
+    # ------------------------------------------------------------------
+    # Phase 2: sync_state helpers (mem_002_compression)
+    # ------------------------------------------------------------------
+
+    def get_sync_state(self, backend: str) -> dict | None:
+        """Return the sync_state row for ``backend`` or ``None`` if unset.
+
+        Backend names follow the registry naming (``s3`` / ``gdrive``).
+        Returns a dict with keys ``backend``, ``last_sync_at``,
+        ``last_commit_sha``, ``upload_cursor``.
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT backend, last_sync_at, last_commit_sha, upload_cursor "
+                "FROM sync_state WHERE backend = ?",
+                (backend,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # mem_002 migration has not run yet (test harness or stale DB).
+            return None
+        if row is None:
+            return None
+        return (
+            dict(row)
+            if isinstance(row, sqlite3.Row)
+            else {
+                "backend": row[0],
+                "last_sync_at": row[1],
+                "last_commit_sha": row[2],
+                "upload_cursor": row[3],
+            }
+        )
+
+    def upsert_sync_state(
+        self,
+        backend: str,
+        last_sync_at: float | None = None,
+        last_commit_sha: str | None = None,
+        upload_cursor: int | None = None,
+    ) -> None:
+        """Insert-or-replace the sync_state row for ``backend``.
+
+        Any field left as ``None`` is preserved from the existing row when one
+        exists (so a partial update of just the upload cursor does not wipe
+        the timestamp). When no row exists the unspecified fields are stored
+        as NULL.
+        """
+        existing = self.get_sync_state(backend) or {}
+        merged = {
+            "backend": backend,
+            "last_sync_at": last_sync_at
+            if last_sync_at is not None
+            else existing.get("last_sync_at"),
+            "last_commit_sha": last_commit_sha
+            if last_commit_sha is not None
+            else existing.get("last_commit_sha"),
+            "upload_cursor": upload_cursor
+            if upload_cursor is not None
+            else existing.get("upload_cursor"),
+        }
+        self._conn.execute(
+            "INSERT OR REPLACE INTO sync_state "
+            "(backend, last_sync_at, last_commit_sha, upload_cursor) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                merged["backend"],
+                merged["last_sync_at"],
+                merged["last_commit_sha"],
+                merged["upload_cursor"],
+            ),
+        )
+        self._conn.commit()
 
     def search(
         self,
