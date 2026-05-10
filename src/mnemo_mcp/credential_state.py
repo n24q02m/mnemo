@@ -330,8 +330,42 @@ def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | 
     return next_step
 
 
+def _harden_passphrase(config: dict[str, str]) -> dict[str, str]:
+    """Argon2id-hash ``SYNC_PASSPHRASE`` so the raw value never lands on disk.
+
+    Phase 2 Task 7: the relay form collects ``SYNC_PASSPHRASE`` as a
+    cleartext field for UX (single password input). Before persistence we
+    swap it for ``SYNC_PASSPHRASE_SALT`` + ``SYNC_PASSPHRASE_HASH`` (both
+    hex-encoded). Subsequent unlock attempts call
+    :func:`mnemo_mcp.sync.bundle.verify_passphrase` against the stored
+    pair so a leaked ``config.enc`` never exposes the raw passphrase.
+
+    The raw passphrase is deliberately NOT kept in-memory beyond this
+    function: the orchestrator passes the user-provided passphrase
+    through directly when encrypting / decrypting bundles, so the only
+    persistent artefact is the Argon2id digest.
+    """
+    raw = config.get("SYNC_PASSPHRASE", "").strip()
+    if not raw:
+        # Drop empty values so PerPluginStore does not pin an empty key
+        # that would later be mistaken for "passphrase configured".
+        config.pop("SYNC_PASSPHRASE", None)
+        return config
+
+    from mnemo_mcp.sync.bundle import hash_passphrase
+
+    salt_hex, digest_hex = hash_passphrase(raw)
+    config = dict(config)  # do not mutate caller's dict in place
+    config.pop("SYNC_PASSPHRASE", None)
+    config["SYNC_PASSPHRASE_SALT"] = salt_hex
+    config["SYNC_PASSPHRASE_HASH"] = digest_hex
+    logger.info("Sync passphrase hashed via Argon2id and stored")
+    return config
+
+
 def _save_remote_credentials(config: dict[str, str], sub: str) -> None:
     """Handle per-subject credential storage for multi-user remote mode."""
+    config = _harden_passphrase(config)
     store_for_sub(sub, config)
     logger.info("Credentials saved for sub={} (multi-user remote mode)", sub)
 
@@ -343,6 +377,7 @@ def _save_local_credentials(config: dict[str, str]) -> None:
 
     from mnemo_mcp.relay_setup import apply_config
 
+    config = _harden_passphrase(config)
     PerPluginStore("mnemo").save(config)
     apply_config(config)
     _state = CredentialState.CONFIGURED
