@@ -41,6 +41,8 @@ dependencies = [
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
     "alembic>=1.18.4",
+    # Phase 2: token counting for LLM compression pipeline
+    "tiktoken>=0.7",
 ]
 
 [dependency-groups]

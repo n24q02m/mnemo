@@ -148,15 +148,31 @@ async def capture(
             "auto": auto,
         }
 
+    # Phase 2: optional LLM compression (graceful skip when no provider).
+    # The pipeline reads its own env vars (COMPRESSION_ENABLED / PROVIDER /
+    # MODEL) so capture() does not need to thread them through. When the
+    # pipeline declines to rewrite (skip / failure / disabled), the original
+    # text is stored with compressed=False and no audit row.
+    from mnemo_mcp.compression import compress
+
+    compression_result = await compress(text)
+    stored_text = compression_result["text"]
+    stored_text_raw = compression_result["text_raw"]
+    stored_compressed = compression_result["compressed"]
+    stored_provider = compression_result["compression_provider"]
+
     memory_id = await asyncio.to_thread(
         db.add_with_context_type,
-        content=text,
+        content=stored_text,
         context_type=context_type,
         category=category,
         tags=tags,
         source=source,
         embedding=embedding,
         importance=importance,
+        text_raw=stored_text_raw,
+        compressed=stored_compressed,
+        compression_provider=stored_provider,
     )
 
     return {
@@ -164,4 +180,8 @@ async def capture(
         "deduplicated": False,
         "context_type": context_type,
         "auto": auto,
+        "compressed": stored_compressed,
+        "compression_provider": stored_provider,
+        "tokens_in": compression_result["tokens_in"],
+        "tokens_out": compression_result["tokens_out"],
     }
