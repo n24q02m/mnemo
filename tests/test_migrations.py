@@ -55,7 +55,7 @@ def test_migration_baseline_to_mem_001_adds_columns(isolated_db_path: Path) -> N
     # Importance was added pre-Alembic but should still be present.
     assert "importance" in cols
 
-    assert _alembic_version(isolated_db_path) == "mem_002_compression"
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
 
 
 def test_existing_data_preserved_with_default_context_type(
@@ -107,7 +107,7 @@ def test_existing_data_preserved_with_default_context_type(
     assert row[1] == "legacy content"
     assert row[2] == "conversation", "expected default context_type"
     assert row[3] is None, "archived_at should be NULL by default"
-    assert _alembic_version(isolated_db_path) == "mem_002_compression"
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
 
 
 def test_idempotent_rerun_does_not_error(isolated_db_path: Path) -> None:
@@ -123,7 +123,7 @@ def test_idempotent_rerun_does_not_error(isolated_db_path: Path) -> None:
     # Columns appear exactly once each
     assert sum(1 for c in cols if c == "context_type") == 1
     assert sum(1 for c in cols if c == "archived_at") == 1
-    assert _alembic_version(isolated_db_path) == "mem_002_compression"
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
 
 
 def _table_exists(db_path: Path, table: str) -> bool:
@@ -194,7 +194,7 @@ def test_mem_002_adds_compression_columns(isolated_db_path: Path) -> None:
             f"expected NULL compression_provider on legacy row, got {row[3]}"
         )
 
-    assert _alembic_version(isolated_db_path) == "mem_002_compression"
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
 
 
 def test_mem_002_creates_sync_state_table(isolated_db_path: Path) -> None:
@@ -225,7 +225,7 @@ def test_mem_002_idempotent(isolated_db_path: Path) -> None:
             f"{col} appeared more than once in {cols}"
         )
 
-    assert _alembic_version(isolated_db_path) == "mem_002_compression"
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
 
 
 def test_mem_002_sync_state_helpers_round_trip(isolated_db_path: Path) -> None:
@@ -293,6 +293,206 @@ def test_mem_002_add_with_context_type_compression_columns(
     assert row[1] == "original much longer raw text"
     assert row[2] == 1
     assert row[3] == "gemini"
+
+
+def _table_columns_seq(db_path: Path, table: str) -> set[str]:
+    return _table_columns(db_path, table)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: mem_003_temporal -- bitemporal columns + entity rename + audit + vec
+# ---------------------------------------------------------------------------
+
+
+def test_mem_003_adds_bitemporal_columns_to_memories(isolated_db_path: Path) -> None:
+    """``commit_sha`` / ``valid_from`` / ``valid_to`` / ``superseded_by`` exist."""
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    db.close()
+
+    cols = _table_columns(isolated_db_path, "memories")
+    for required in ("commit_sha", "valid_from", "valid_to", "superseded_by"):
+        assert required in cols, f"missing {required} in {cols}"
+
+
+def test_mem_003_backfills_commit_sha_and_valid_from(isolated_db_path: Path) -> None:
+    """Pre-Phase-3 rows backfilled: commit_sha=sha256(content), valid_from=created_at."""
+    import hashlib
+
+    # Seed pre-Phase-3 schema (Phase 2 head equivalents) with a row.
+    conn = sqlite3.connect(str(isolated_db_path))
+    conn.executescript(
+        """
+        CREATE TABLE memories (
+            id TEXT PRIMARY KEY NOT NULL,
+            content TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'general',
+            tags TEXT NOT NULL DEFAULT '[]',
+            source TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            access_count INTEGER NOT NULL DEFAULT 0,
+            last_accessed TEXT NOT NULL,
+            importance REAL NOT NULL DEFAULT 0.5
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO memories (id, content, created_at, updated_at, last_accessed) "
+        "VALUES ('legacy-3', 'phase3 content', '2026-02-01', '2026-02-01', '2026-02-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    db.close()
+
+    conn = sqlite3.connect(str(isolated_db_path))
+    try:
+        row = conn.execute(
+            "SELECT commit_sha, valid_from, valid_to FROM memories WHERE id='legacy-3'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None
+    expected_sha = hashlib.sha256(b"phase3 content").hexdigest()
+    assert row[0] == expected_sha
+    assert row[1] == "2026-02-01"
+    assert row[2] is None  # valid_to NULL = currently valid
+
+
+def test_mem_003_renames_entities_to_memory_entities(isolated_db_path: Path) -> None:
+    """Pre-Phase-3 ``entities`` table renamed to ``memory_entities`` with data."""
+    # Seed pre-Phase-3 graph schema (Phase 2 names).
+    conn = sqlite3.connect(str(isolated_db_path))
+    conn.executescript(
+        """
+        CREATE TABLE memories (
+            id TEXT PRIMARY KEY NOT NULL,
+            content TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'general',
+            tags TEXT NOT NULL DEFAULT '[]',
+            source TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            access_count INTEGER NOT NULL DEFAULT 0,
+            last_accessed TEXT NOT NULL,
+            importance REAL NOT NULL DEFAULT 0.5
+        );
+        CREATE TABLE entities (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE relations (
+            id TEXT PRIMARY KEY NOT NULL,
+            source_id TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE memory_entities (
+            memory_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            PRIMARY KEY (memory_id, entity_id)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
+        "VALUES ('e1', 'Python', 'tool', '2026-02-01', '2026-02-01')"
+    )
+    conn.execute(
+        "INSERT INTO relations (id, source_id, target_id, relation_type, created_at) "
+        "VALUES ('r1', 'e1', 'e1', 'related_to', '2026-02-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    db.close()
+
+    # Post-migration: spec-canonical names exist, legacy names are gone.
+    assert _table_exists(isolated_db_path, "memory_entities")
+    assert _table_exists(isolated_db_path, "memory_edges")
+    assert _table_exists(isolated_db_path, "memory_entity_links")
+    assert not _table_exists(isolated_db_path, "entities")
+    assert not _table_exists(isolated_db_path, "relations")
+
+    # Data preserved in renamed tables.
+    conn = sqlite3.connect(str(isolated_db_path))
+    try:
+        ent_row = conn.execute(
+            "SELECT name, entity_type FROM memory_entities WHERE id='e1'"
+        ).fetchone()
+        edge_row = conn.execute(
+            "SELECT relation_type FROM memory_edges WHERE id='r1'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert ent_row == ("Python", "tool")
+    assert edge_row == ("related_to",)
+
+
+def test_mem_003_creates_memory_audit_table(isolated_db_path: Path) -> None:
+    """``memory_audit`` table exists with documented columns + index."""
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    db.close()
+
+    assert _table_exists(isolated_db_path, "memory_audit")
+    cols = _table_columns(isolated_db_path, "memory_audit")
+    for required in (
+        "id",
+        "memory_id",
+        "prev_state_hash",
+        "new_state_hash",
+        "operation",
+        "commit_sha",
+        "occurred_at",
+    ):
+        assert required in cols, f"missing {required} in {cols}"
+
+    # Index on (memory_id, occurred_at) exists.
+    conn = sqlite3.connect(str(isolated_db_path))
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            ("idx_memory_audit_memory_time",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+
+
+def test_mem_003_idempotent(isolated_db_path: Path) -> None:
+    """Re-running mem_003 is a no-op (idempotent rename + add)."""
+    db1 = MemoryDB(isolated_db_path, embedding_dims=0)
+    db1.close()
+    db2 = MemoryDB(isolated_db_path, embedding_dims=0)
+    db2.close()
+
+    # All columns / tables present exactly once.
+    cols = _table_columns(isolated_db_path, "memories")
+    for col in ("commit_sha", "valid_from", "valid_to", "superseded_by"):
+        assert sum(1 for c in cols if c == col) == 1
+
+    edge_cols = _table_columns(isolated_db_path, "memory_edges")
+    for col in ("memory_id", "valid_from", "valid_to"):
+        assert sum(1 for c in edge_cols if c == col) == 1
+
+    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+
+
+def test_mem_003_memory_edges_has_bitemporal(isolated_db_path: Path) -> None:
+    """``memory_edges`` (renamed from relations) has ``valid_from`` / ``valid_to``."""
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    db.close()
+
+    cols = _table_columns(isolated_db_path, "memory_edges")
+    for required in ("memory_id", "valid_from", "valid_to"):
+        assert required in cols, f"missing {required} in {cols}"
 
 
 def test_backup_file_created_for_pre_alembic_db(isolated_db_path: Path) -> None:

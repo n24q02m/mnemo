@@ -235,7 +235,7 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
     # This eliminates N+1 SELECTs and conditional INSERT/UPDATE overhead.
     upsert_data = [(str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys]
     conn.executemany(
-        "INSERT INTO entities (id, name, entity_type, created_at, updated_at) "
+        "INSERT INTO memory_entities (id, name, entity_type, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
         upsert_data,
@@ -248,7 +248,7 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
         placeholders = ", ".join(["(?, ?)"] * len(batch))
         params = [val for key in batch for val in key]
         rows = conn.execute(
-            "SELECT name, entity_type, id FROM entities "
+            "SELECT name, entity_type, id FROM memory_entities "
             f"WHERE (name, entity_type) IN (VALUES {placeholders})",
             params,
         ).fetchall()
@@ -292,11 +292,12 @@ def create_relations(
     if to_insert:
         # Bolt Performance Optimization:
         # Replaced N+1 `WHERE NOT EXISTS` index subqueries with a single bulk `INSERT OR IGNORE`
-        # backed by the `idx_relations_unique` database index.
+        # backed by the `idx_memory_edges_unique` database index.
         # This reduces SQLite virtual machine overhead, providing up to ~4x speedup
         # for bulk graph relationship generation.
         conn.executemany(
-            "INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, created_at) "
+            "INSERT OR IGNORE INTO memory_edges "
+            "(id, source_id, target_id, relation_type, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             to_insert,
         )
@@ -314,7 +315,8 @@ def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
         # for batches of 100+ entities compared to individual execute calls.
         params = [(memory_id, eid) for eid in entity_ids]
         conn.executemany(
-            "INSERT OR IGNORE INTO memory_entities (memory_id, entity_id) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO memory_entity_links (memory_id, entity_id) "
+            "VALUES (?, ?)",
             params,
         )
     except Exception as e:
@@ -330,17 +332,17 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
     query = """
         WITH RECURSIVE traverse(entity_id, depth) AS (
             -- Seed with initial entities linked to the memory
-            SELECT entity_id, 1 FROM memory_entities WHERE memory_id = ?
+            SELECT entity_id, 1 FROM memory_entity_links WHERE memory_id = ?
             UNION
-            -- Follow relations forward
+            -- Follow edges forward
             SELECT r.target_id, t.depth + 1
-            FROM relations r
+            FROM memory_edges r
             JOIN traverse t ON r.source_id = t.entity_id
             WHERE t.depth < ?
             UNION
-            -- Follow relations backward (undirected graph)
+            -- Follow edges backward (undirected graph)
             SELECT r.source_id, t.depth + 1
-            FROM relations r
+            FROM memory_edges r
             JOIN traverse t ON r.target_id = t.entity_id
             WHERE t.depth < ?
         )
@@ -350,7 +352,7 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
         -- allowing the SQLite engine to short-circuit evaluation early for significant speedups
         -- on highly-connected graphs.
         SELECT DISTINCT memory_id
-        FROM memory_entities
+        FROM memory_entity_links
         WHERE memory_id != ? AND entity_id IN (SELECT entity_id FROM traverse)
     """
     rows = conn.execute(query, (memory_id, max_depth, max_depth, memory_id)).fetchall()

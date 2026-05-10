@@ -275,7 +275,7 @@ class TestUpsertEntities:
         assert len(ids) == 2
         # Verify in DB
         row = conn.execute(
-            "SELECT * FROM entities WHERE name = ?", ("Python",)
+            "SELECT * FROM memory_entities WHERE name = ?", ("Python",)
         ).fetchone()
         assert row is not None
         assert row["entity_type"] == "tool"
@@ -309,7 +309,7 @@ class TestUpsertEntities:
         ids = upsert_entities(conn, entities)
         assert len(ids) == 1
         row = conn.execute(
-            "SELECT entity_type FROM entities WHERE id = ?", (ids[0],)
+            "SELECT entity_type FROM memory_entities WHERE id = ?", (ids[0],)
         ).fetchone()
         assert row["entity_type"] == "concept"
 
@@ -331,7 +331,7 @@ class TestCreateRelations:
         relations = [{"source": "Alice", "target": "Project X", "type": "works_on"}]
         create_relations(conn, relations, name_to_id)
 
-        row = conn.execute("SELECT * FROM relations").fetchone()
+        row = conn.execute("SELECT * FROM memory_edges").fetchone()
         assert row is not None
         assert row["relation_type"] == "works_on"
 
@@ -344,7 +344,7 @@ class TestCreateRelations:
         relations = [{"source": "Alice", "target": "Alice", "type": "related_to"}]
         create_relations(conn, relations, name_to_id)
 
-        count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
         assert count == 0
 
     def test_skips_missing_entities(self, tmp_db: MemoryDB):
@@ -353,7 +353,7 @@ class TestCreateRelations:
         relations = [{"source": "Alice", "target": "Bob", "type": "related_to"}]
         create_relations(conn, relations, name_to_id)
 
-        count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
         assert count == 0
 
     def test_no_duplicate_relations(self, tmp_db: MemoryDB):
@@ -369,7 +369,7 @@ class TestCreateRelations:
         create_relations(conn, relations, name_to_id)
         create_relations(conn, relations, name_to_id)  # Duplicate
 
-        count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
         assert count == 1
 
     def test_duplicate_relations_in_same_batch(self, tmp_db: MemoryDB):
@@ -382,7 +382,7 @@ class TestCreateRelations:
             {"source": "A", "target": "B", "type": "related_to"},
         ]
         create_relations(conn, relations, name_to_id)
-        count = conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
         assert count == 1
 
 
@@ -395,7 +395,7 @@ class TestLinkMemoryEntities:
         link_memory_entities(conn, mid, eids)
 
         row = conn.execute(
-            "SELECT * FROM memory_entities WHERE memory_id = ?", (mid,)
+            "SELECT * FROM memory_entity_links WHERE memory_id = ?", (mid,)
         ).fetchone()
         assert row is not None
         assert row["entity_id"] == eids[0]
@@ -409,7 +409,7 @@ class TestLinkMemoryEntities:
         link_memory_entities(conn, mid, eids)  # Duplicate
 
         count = conn.execute(
-            "SELECT COUNT(*) FROM memory_entities WHERE memory_id = ?", (mid,)
+            "SELECT COUNT(*) FROM memory_entity_links WHERE memory_id = ?", (mid,)
         ).fetchone()[0]
         assert count == 1
 
@@ -419,7 +419,7 @@ class TestLinkMemoryEntities:
         mid = tmp_db.add("test")
         link_memory_entities(conn, mid, [])
         count = conn.execute(
-            "SELECT COUNT(*) FROM memory_entities WHERE memory_id = ?", (mid,)
+            "SELECT COUNT(*) FROM memory_entity_links WHERE memory_id = ?", (mid,)
         ).fetchone()[0]
         assert count == 0
 

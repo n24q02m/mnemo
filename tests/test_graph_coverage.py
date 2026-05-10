@@ -365,7 +365,7 @@ class TestLinkMemoryEntitiesCoverage:
         mid = tmp_db.add("test")
         link_memory_entities(conn, mid, [])
         count = conn.execute(
-            "SELECT COUNT(*) FROM memory_entities WHERE memory_id = ?", (mid,)
+            "SELECT COUNT(*) FROM memory_entity_links WHERE memory_id = ?", (mid,)
         ).fetchone()[0]
         assert count == 0
 

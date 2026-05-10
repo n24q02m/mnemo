@@ -235,41 +235,65 @@ class MemoryDB:
             pass  # Column already exists
 
     def _init_graph_schema(self) -> None:
-        """Initialize knowledge graph tables (entities, relations, memory_entities)."""
+        """Initialize knowledge graph tables.
+
+        Phase 3 spec §5.2 canonical names:
+        - ``memory_entities`` -- entity table (was ``entities`` in Phase 1/2).
+        - ``memory_edges`` -- relation table (was ``relations``).
+        - ``memory_entity_links`` -- memory<->entity join (was ``memory_entities``).
+
+        Pre-Phase-3 databases continue to live under the old names until the
+        ``mem_003_temporal`` Alembic migration renames them in-place. The
+        migration runs AFTER ``_init_schema``. Detect legacy DB by presence
+        of the old ``entities`` table — when found, skip creating canonical
+        tables (the migration will rename in-place) to avoid name collision
+        between the legacy ``memory_entities`` join table and the new
+        ``memory_entities`` entity table.
+        """
+        legacy_entities = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
+        ).fetchone()
+        if legacy_entities is not None:
+            # Pre-Phase-3 DB: leave legacy graph tables untouched. The
+            # mem_003_temporal migration will RENAME them to canonical names.
+            return
+
         self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS entities (
+            CREATE TABLE IF NOT EXISTS memory_entities (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_name_type
-                ON entities(name, entity_type);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_entities_name_type
+                ON memory_entities(name, entity_type);
 
-            CREATE TABLE IF NOT EXISTS relations (
+            CREATE TABLE IF NOT EXISTS memory_edges (
                 id TEXT PRIMARY KEY NOT NULL,
-                source_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-                target_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                source_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+                target_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
                 relation_type TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                memory_id TEXT,
+                valid_from DATETIME,
+                valid_to DATETIME
             );
-            CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
-            CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique ON relations(source_id, target_id, relation_type);
+            CREATE INDEX IF NOT EXISTS idx_memory_edges_source ON memory_edges(source_id);
+            CREATE INDEX IF NOT EXISTS idx_memory_edges_target ON memory_edges(target_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_edges_unique
+                ON memory_edges(source_id, target_id, relation_type);
 
-            CREATE TABLE IF NOT EXISTS memory_entities (
+            CREATE TABLE IF NOT EXISTS memory_entity_links (
                 memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-                entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                entity_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
                 PRIMARY KEY (memory_id, entity_id)
             );
 
-            -- Bolt Performance Optimization:
             -- Index on entity_id to eliminate full table scans during knowledge graph
-            -- traversal in find_related_memory_ids. Improves search performance significantly
-            -- as the database grows.
-            CREATE INDEX IF NOT EXISTS idx_memory_entities_entity_id
-                ON memory_entities(entity_id);
+            -- traversal in find_related_memory_ids.
+            CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity_id
+                ON memory_entity_links(entity_id);
         """)
 
     def _init_archive_schema(self) -> None:
@@ -1599,8 +1623,85 @@ class MemoryDB:
             logger.info(f"Running Alembic upgrade: {current_rev} -> {head_rev}")
             command.upgrade(cfg, "head")
             logger.info(f"Alembic upgrade complete (head={head_rev})")
+
+            # Phase 3 post-migration backfill: commit_sha + valid_from for
+            # legacy memory rows. Run on the DB's own connection to avoid
+            # the WAL conflict that occurs when Alembic's separate
+            # connection updates rows while FTS5 triggers are active.
+            self._backfill_phase3_temporal()
         except Exception as e:  # pragma: no cover - runtime guard
             logger.warning(f"Alembic migration failed: {e}")
+
+    def _backfill_phase3_temporal(self) -> None:
+        """Backfill ``commit_sha`` and ``valid_from`` for pre-Phase-3 rows.
+
+        ``commit_sha`` <- ``sha256(content)`` so the audit trail (Phase 3
+        Task 5) can verify lineage of legacy rows from the moment of
+        migration.
+
+        ``valid_from`` <- ``created_at`` so bitemporal queries against
+        legacy data return the row from its original creation timestamp
+        (otherwise the column default ``CURRENT_TIMESTAMP`` would set
+        valid_from = migration time, breaking ``as_of`` queries against
+        historical data).
+        """
+        import hashlib
+
+        try:
+            cursor = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
+            ).fetchone()
+            if cursor is None:
+                return
+            cols = {
+                row[1]
+                for row in self._conn.execute("PRAGMA table_info(memories)").fetchall()
+            }
+            if "commit_sha" not in cols or "valid_from" not in cols:
+                # Phase 3 columns missing -- migration did not run.
+                return
+
+            rows = self._conn.execute(
+                "SELECT id, content, created_at FROM memories "
+                "WHERE commit_sha IS NULL OR valid_from IS NULL"
+            ).fetchall()
+            if not rows:
+                return
+
+            # Legacy rows may not be indexed in memories_fts (the FTS5
+            # trigger only fires from this connection's INSERT). Force
+            # an FTS rebuild before running UPDATEs so the AFTER UPDATE
+            # trigger does not corrupt the contentless FTS index with a
+            # DELETE on an unindexed rowid ("database disk image is
+            # malformed" on Windows SQLite).
+            try:
+                self._conn.execute(
+                    "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
+                )
+                self._conn.commit()
+            except Exception:
+                pass
+
+            for row in rows:
+                row_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+                content = row["content"] if isinstance(row, sqlite3.Row) else row[1]
+                created_at = (
+                    row["created_at"] if isinstance(row, sqlite3.Row) else row[2]
+                )
+                digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+                self._conn.execute(
+                    "UPDATE memories SET "
+                    "  commit_sha = COALESCE(commit_sha, ?), "
+                    "  valid_from = COALESCE(valid_from, ?) "
+                    "WHERE id = ?",
+                    (digest, created_at, row_id),
+                )
+            self._conn.commit()
+            logger.info(
+                f"Phase 3 backfill: commit_sha + valid_from for {len(rows)} legacy rows"
+            )
+        except Exception as e:  # pragma: no cover - runtime guard
+            logger.warning(f"Phase 3 temporal backfill failed: {e}")
 
     def _read_alembic_version(self) -> str | None:
         """Return the current ``alembic_version`` revision, or ``None`` if unstamped."""
