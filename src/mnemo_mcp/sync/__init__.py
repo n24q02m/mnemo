@@ -150,3 +150,91 @@ def list_backends() -> list[str]:
 def reset_registry() -> None:
     """Clear the registry (test helper - do not call in production)."""
     _REGISTRY.clear()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 passport-sync scheduler (lock-protected, runs sync_now per backend)
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+_PASSPORT_SYNC_LOCK = asyncio.Lock()
+_PASSPORT_SYNC_TASK: asyncio.Task | None = None
+
+
+async def _passport_sync_loop(db, interval: int) -> None:
+    """Background loop calling sync_now for every backend in SYNC_BACKEND.
+
+    Runs every ``interval`` seconds. Exits cleanly on cancellation.
+    Errors per backend are logged and swallowed so a transient backend
+    failure does not kill the loop.
+    """
+    from loguru import logger
+
+    from mnemo_mcp.config import settings as _settings
+    from mnemo_mcp.sync.delta import sync_now
+
+    logger.info(f"Passport sync scheduler started (interval={interval}s)")
+    while True:
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            logger.info("Passport sync scheduler stopped")
+            return
+
+        passphrase = (_settings.sync_passphrase or "").strip()
+        import os as _os
+
+        env_pass = _os.environ.get("SYNC_PASSPHRASE", "").strip()
+        if env_pass:
+            passphrase = env_pass
+        if not passphrase:
+            logger.debug("scheduler tick skipped: SYNC_PASSPHRASE not set")
+            continue
+
+        backends = [
+            b.strip() for b in (_settings.sync_backend or "").split(",") if b.strip()
+        ]
+        if not backends:
+            continue
+
+        async with _PASSPORT_SYNC_LOCK:
+            for backend_name in backends:
+                try:
+                    await sync_now(db, backend_name, passphrase)
+                    logger.debug(f"scheduler tick ok backend={backend_name}")
+                except Exception as e:
+                    logger.warning(
+                        f"scheduler tick failed backend={backend_name} err={e}"
+                    )
+
+
+def start_passport_scheduler(db, interval: int | None = None) -> bool:
+    """Start the background passport sync loop.
+
+    Returns True if a task was spawned, False when the loop is disabled
+    (interval <= 0) or already running.
+    """
+    global _PASSPORT_SYNC_TASK
+    from mnemo_mcp.config import settings as _settings
+
+    if interval is None:
+        interval = int(_settings.sync_interval or 0)
+    if interval <= 0:
+        return False
+    if _PASSPORT_SYNC_TASK is not None and not _PASSPORT_SYNC_TASK.done():
+        return False
+
+    try:
+        _PASSPORT_SYNC_TASK = asyncio.create_task(_passport_sync_loop(db, interval))
+        return True
+    except RuntimeError:
+        return False
+
+
+def stop_passport_scheduler() -> None:
+    """Cancel the background passport sync loop if running."""
+    global _PASSPORT_SYNC_TASK
+    if _PASSPORT_SYNC_TASK is not None and not _PASSPORT_SYNC_TASK.done():
+        _PASSPORT_SYNC_TASK.cancel()
+    _PASSPORT_SYNC_TASK = None
