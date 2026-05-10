@@ -232,3 +232,199 @@ for the full classification.
 In multi-user remote mode, `MCP_DCR_SERVER_SECRET` is required as proof
 of intentional multi-user deployment -- mnemo refuses to start with
 `PUBLIC_URL` set but `MCP_DCR_SERVER_SECRET` missing.
+
+---
+
+## Phase 2 (v1.x+1.y) -- LLM compression + passport sync
+
+> Phase 2 layers compression + cross-machine sync on top of the Phase 1
+> capture / retrieval foundation without rewriting any existing path.
+> Existing tests pass unchanged; Phase 1 callers see zero breaking
+> changes.
+
+### Compression pipeline
+
+```
+memory(action="capture", text=..., context_type="fact")
+        |
+        v
++-------------------+      dedup hit?      +------------------+
+| capture()         | -------------------> | reuse existing   |
+| (capture.py)      |                      | memory_id        |
++---------+---------+                      +------------------+
+          | dedup miss
+          v
++--------------------+
+| compression.compress(text)
+|   - reads COMPRESSION_ENABLED / PROVIDER / MODEL env
+|   - resolves provider via llm.detect_provider() priority
+|   - calls llm.call_llm with COMPRESSION_PROMPT (temp=0)
+|   - tiktoken cl100k_base for tokens_in/out metrics
+|   - graceful skip on no-provider / disabled / empty / error
++---------+----------+
+          |
+          v
+db.add_with_context_type(
+    content=<compressed>, text_raw=<original>,
+    compressed=True, compression_provider="gemini", ...
+)
+```
+
+Schema (mem_002_compression migration):
+
+- `memories.text_raw TEXT` -- original text retained for audit / recovery
+- `memories.compressed BOOLEAN NOT NULL DEFAULT 0`
+- `memories.compression_provider TEXT`
+- `sync_state` table -- per-backend sync cursor (see below)
+
+Manual re-compression is exposed via
+`memory(action="compress", memory_id=...)` for back-filling rows captured
+before `COMPRESSION_ENABLED` was true.
+
+### Sync architecture (backend-pluggable)
+
+```
+                   +-------------------------+
+                   | sync_now orchestrator   |
+                   | (sync.delta.sync_now)   |
+                   +-----------+-------------+
+                               |
+              +----------------+----------------+
+              v                                 v
+   +---------------------+           +---------------------+
+   | GDriveBackend       |           | S3Backend           |
+   | (sync.gdrive)       |           | (sync.s3)           |
+   |  uses Phase 1       |           |  boto3 + custom     |
+   |  OAuth Device Code  |           |  endpoint for R2 / |
+   |  token              |           |  B2 / MinIO         |
+   +----------+----------+           +----------+----------+
+              |                                 |
+              v                                 v
+       <gdrive>/<sync_folder>/passport/   <bucket>/<prefix>/
+       seq-NNNNNN.bin                     seq-NNNNNN.bin
+                  (opaque AES-256-GCM bundles)
+```
+
+Both backends implement the same `SyncBackend` ABC (push / pull /
+last_remote_sequence / health_check). The package registry
+(`sync.register / get / list_backends`) lazily wires backends from
+`settings.sync_backend` (comma-separated, leftmost is primary). New
+backends drop in by subclassing `SyncBackend` and calling
+`sync.register("name", instance)`.
+
+### Bundle format (E2E encryption)
+
+```
++------------------------+ <- offset 0
+| 4 bytes header_len     |
++------------------------+
+| N bytes plaintext JSON | -- {"version":2,"kdf":"argon2id",
+| header                 |     "salt":"<hex>","aead":"aes-256-gcm",
++------------------------+     "nonce":"<hex>"}
+| M bytes AES-256-GCM    | -- associated_data = header bytes
+| ciphertext             |
++------------------------+
+
+Inside ciphertext (length-prefixed sections):
++--------+---------------+--------+--------------------+
+| u32 BE | name (UTF-8)  | u64 BE | section data bytes |
++--------+---------------+--------+--------------------+
+
+Sections (Phase 2):
+- manifest.json
+- memories.jsonl
+- memories_entities.jsonl  (Phase 3 will populate)
+- memories_edges.jsonl     (Phase 3 will populate)
+```
+
+Argon2id parameters (OWASP 2024 baseline): 32-byte salt per bundle,
+3 iterations, 4 lanes, 64 MiB memory cost. Header is plaintext so an
+operator can audit version + KDF without the passphrase. Wrong
+passphrase OR ciphertext tampering both raise
+`cryptography.exceptions.InvalidTag` (no oracle).
+
+### Delta-sync protocol with LWW
+
+```
+            +--------------------+
+            | sync_now()         |
+            +-----+--------------+
+                  | read sync_state.upload_cursor + last_sync_at
+                  | query backend.last_remote_sequence
+                  v
+       remote_seq > local_cursor + 1 ?
+       (other machine pushed in between)
+                  |
+        no        |        yes
+        v         v
++----------+   +-------------------------------------+
+| delta    |   | full pull -> apply_bundle (LWW per |
+| push at  |   | row -> insert/update/skip+audit)    |
+| cursor+1 |   | -> build_full_bundle -> push at     |
++----------+   | remote_seq+1                        |
+               +-------------------------------------+
+
+LWW per row inside apply_bundle:
+  local missing                        -> INSERT
+  local.updated_at < remote.updated_at -> REPLACE
+  local.updated_at >= remote.updated_at -> SKIP + write
+                                          sync_overrides audit row
+```
+
+`sync_overrides` is a side table created idempotently on first audit
+hit. It carries (memory_id, local_updated_at, remote_updated_at,
+local_content, remote_content, recorded_at) so the user can later
+inspect divergence without losing the local change.
+
+### Passphrase storage gate
+
+The relay form collects `SYNC_PASSPHRASE` as a single password input.
+Before persistence, `credential_state._harden_passphrase` swaps it for
+`SYNC_PASSPHRASE_SALT` + `SYNC_PASSPHRASE_HASH` (Argon2id-derived hex).
+The raw passphrase NEVER lands in `config.enc`; the user must supply it
+again per session (env var in stdio mode, relay form in HTTP mode).
+
+Verification uses `bundle.verify_passphrase` which is constant-time
+(`hmac.compare_digest`) so timing attacks cannot leak digest contents.
+A leaked `config.enc` exposes only the Argon2id digest (which still
+needs to be brute-forced against the 64 MiB / 3-iter Argon2id cost).
+
+### Background sync scheduler
+
+`sync.start_passport_scheduler(db, interval)` spawns a background task
+that wakes every `SYNC_INTERVAL` seconds and calls `sync_now` for each
+backend in `SYNC_BACKEND`. An `asyncio.Lock` prevents concurrent ticks
+overlapping with manual `config(action="sync_now")` calls. Per-backend
+exceptions are logged + swallowed so one backend offline does not stall
+the loop.
+
+### MCP action surface (Phase 2 additions)
+
+| Action | Purpose |
+|---|---|
+| `memory(action="compress", memory_id=...)` | Manual re-compression of an existing row. |
+| `config(action="sync_now", key="<backend>")` | Push delta (or full-pull-push on sequence gap). |
+| `config(action="export_passport")` | Write encrypted bundle to `<data_dir>/passport-<ts>.mnemo`. |
+| `config(action="import_passport", key="<backend>")` | Pull latest bundle, LWW merge. |
+
+Plugin trinity Phase 2 addition: `passport-bootstrap` skill guides
+fresh-machine restore (detect backend -> prompt passphrase ->
+import_passport -> verify status).
+
+### Phase 2 env vars
+
+```
+COMPRESSION_ENABLED       (bool, default true)
+COMPRESSION_PROVIDER      (gemini | openai | anthropic | xai; default auto)
+COMPRESSION_MODEL         (provider model name; default per-provider)
+
+SYNC_BACKEND              (comma-separated, default "gdrive")
+SYNC_S3_BUCKET            (required for s3 backend)
+SYNC_S3_REGION            (default "us-east-1"; "auto" for R2)
+SYNC_S3_ENDPOINT          (custom endpoint for R2 / B2 / MinIO)
+SYNC_S3_ACCESS_KEY_ID
+SYNC_S3_SECRET_ACCESS_KEY
+SYNC_S3_PREFIX            (default "passport/")
+
+SYNC_PASSPHRASE           (raw passphrase, in-process only; never persisted)
+```

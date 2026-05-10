@@ -11,7 +11,14 @@ document - all setup actions live on the `config` tool.
 
 Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
 `setup_status`, `setup_start`, `setup_skip`, `setup_reset`,
-`setup_complete`, `setup_relay`.
+`setup_complete`, `setup_relay`, `sync_now`, `export_passport`,
+`import_passport`.
+
+> Phase 2 actions (`sync_now`, `export_passport`, `import_passport`)
+> require `SYNC_PASSPHRASE` to be set in the process environment (stdio
+> mode) or supplied via the relay form passphrase field (HTTP mode). The
+> raw passphrase is held in process memory only; only the
+> Argon2id-derived hash lands in `config.enc`.
 
 ### `status` - Show current configuration
 
@@ -168,6 +175,67 @@ Equivalent to `setup_start(key="force")`. Kept for older clients.
 
 **Parameters:** None
 
+### `sync_now` - Push delta passport to a backend (Phase 2)
+
+Triggers an explicit sync cycle against one configured backend. Picks
+delta-push (common case) or full-pull-push (sequence gap) automatically.
+
+**Parameters:**
+- `key` (optional): backend name (`"s3"` or `"gdrive"`). Defaults to the
+  first entry of `SYNC_BACKEND` env (default `"gdrive"`).
+
+**Returns:**
+- `backend`: backend name used.
+- `mode`: `"delta"` or `"full-pull-push"`.
+- `cursor`: new monotonic upload cursor.
+- `rows` or `merge`: row count for delta, or merge counts
+  (`{inserted, updated, skipped, row_count}`) for full-pull-push.
+
+**Example:**
+```json
+{"action": "sync_now", "key": "s3"}
+```
+
+### `export_passport` - Write encrypted passport to disk (Phase 2)
+
+Builds a full passport bundle and writes it to
+`<data_dir>/passport-<unix-ts>.mnemo`. Useful for offline backup or
+manual transfer to another machine.
+
+**Parameters:** None (uses `SYNC_PASSPHRASE`)
+
+**Returns:**
+- `status`: `"exported"`.
+- `path`: absolute path to the `.mnemo` file.
+- `size`: bundle size in bytes.
+
+**Example:**
+```json
+{"action": "export_passport"}
+```
+
+### `import_passport` - Pull + apply remote passport (Phase 2)
+
+Pulls the latest passport bundle from the named backend, decrypts with
+`SYNC_PASSPHRASE`, and applies each row via last-write-wins per row.
+Local rows newer than the bundle row are preserved + an audit row is
+written to `sync_overrides`.
+
+**Parameters:**
+- `key` (optional): backend name (`"s3"` or `"gdrive"`). Defaults to the
+  first entry of `SYNC_BACKEND` env.
+
+**Returns:**
+- `status`: `"imported"` or `"no_passport"`.
+- `backend`: backend name used.
+- `inserted` / `updated` / `skipped` / `row_count`: per-row LWW counts.
+- `manifest`: decoded bundle manifest.
+
+**Example:**
+```json
+{"action": "import_passport", "key": "s3"}
+```
+
 ## CLI Equivalents
 
 These MCP tool actions replace the former CLI subcommands:
@@ -193,6 +261,17 @@ Configure via environment variables before starting the server:
 | `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
 | `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
+| `COMPRESSION_ENABLED` | `true` | Phase 2: enable LLM compression on capture |
+| `COMPRESSION_PROVIDER` | (auto) | Phase 2: explicit provider override (gemini/openai/anthropic/xai) |
+| `COMPRESSION_MODEL` | (auto) | Phase 2: explicit model override |
+| `SYNC_BACKEND` | `gdrive` | Phase 2: comma-separated backends (e.g. `s3,gdrive`) |
+| `SYNC_S3_BUCKET` | (none) | Phase 2: S3 bucket name (required for s3 backend) |
+| `SYNC_S3_REGION` | `us-east-1` | Phase 2: S3 region (use `auto` for R2) |
+| `SYNC_S3_ENDPOINT` | (none) | Phase 2: custom endpoint URL for R2 / B2 / MinIO |
+| `SYNC_S3_ACCESS_KEY_ID` | (none) | Phase 2: S3 access key |
+| `SYNC_S3_SECRET_ACCESS_KEY` | (none) | Phase 2: S3 secret key |
+| `SYNC_S3_PREFIX` | `passport/` | Phase 2: object key prefix |
+| `SYNC_PASSPHRASE` | (none) | Phase 2: raw passphrase for AES-256-GCM (in-process only) |
 
 ### API_KEYS Format
 

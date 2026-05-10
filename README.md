@@ -81,6 +81,8 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - **Multi-machine sync** -- JSONL-based merge sync via Google Drive (bundled Desktop OAuth public client)
 - **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
+- **Phase 2: LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.9 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
+- **Phase 2: Encrypted passport sync** -- AES-256-GCM bundles + Argon2id KDF, S3 (R2 / B2 / MinIO) and Google Drive backends, delta-sync with last-write-wins per row (see [docs/passport.md](docs/passport.md)). Bootstrap via the new `passport-bootstrap` skill.
 
 ## Comparison vs. peers
 
@@ -95,6 +97,9 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | Multi-provider LLM dispatch | yes (Gemini/OpenAI/Anthropic/xAI auto-detect) | partial | yes | partial |
 | Plugin trinity (skills + hooks) | yes (recall-context + memory-commit) | n/a | n/a | n/a |
 | Multi-machine sync | yes (GDrive bundled OAuth) | yes (cloud) | n/a | n/a |
+| E2E-encrypted passport sync (Phase 2) | yes (AES-256-GCM + Argon2id, S3 + GDrive) | no | no | no |
+| LLM compression on capture (Phase 2) | yes (multi-provider, ~3x at >=0.90 retention) | no | no | no |
+| Backend-pluggable sync architecture | yes (S3 / R2 / B2 / MinIO + GDrive) | no | no | no |
 
 ## Status
 
