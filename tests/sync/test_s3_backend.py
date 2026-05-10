@@ -170,3 +170,116 @@ def test_s3_custom_endpoint_passed_to_boto3() -> None:
         assert backend._client.meta.endpoint_url == (
             "https://accountid.r2.cloudflarestorage.com"
         )
+
+
+# ---------------------------------------------------------------------------
+# Error paths (boto3 ClientError handling)
+# ---------------------------------------------------------------------------
+
+
+async def test_s3_push_propagates_unknown_client_error() -> None:
+    """Non-NoSuchKey ClientError on put_object propagates."""
+    from unittest.mock import MagicMock
+
+    from botocore.exceptions import ClientError
+
+    with mock_aws():
+        backend = S3Backend(
+            bucket=_BUCKET,
+            region="us-east-1",
+            access_key_id="t",
+            secret_access_key="t",
+        )
+        backend._client = MagicMock()
+        backend._client.put_object.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "no perm"}},
+            "PutObject",
+        )
+
+        with pytest.raises(ClientError):
+            await backend.push(b"x", sequence=1)
+
+
+async def test_s3_pull_propagates_unknown_client_error() -> None:
+    """Non-NoSuchKey ClientError on get_object propagates."""
+    from unittest.mock import MagicMock
+
+    from botocore.exceptions import ClientError
+
+    with mock_aws():
+        backend = S3Backend(
+            bucket=_BUCKET,
+            region="us-east-1",
+            access_key_id="t",
+            secret_access_key="t",
+        )
+        backend._client = MagicMock()
+        backend._client.get_object.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied"}}, "GetObject"
+        )
+
+        with pytest.raises(ClientError):
+            await backend.pull(sequence=99)
+
+
+async def test_s3_last_remote_sequence_propagates_client_error() -> None:
+    from unittest.mock import MagicMock
+
+    from botocore.exceptions import ClientError
+
+    with mock_aws():
+        backend = S3Backend(
+            bucket=_BUCKET,
+            region="us-east-1",
+            access_key_id="t",
+            secret_access_key="t",
+        )
+        backend._client = MagicMock()
+        backend._client.list_objects_v2.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied"}}, "ListObjectsV2"
+        )
+
+        with pytest.raises(ClientError):
+            await backend.last_remote_sequence()
+
+
+async def test_s3_last_remote_sequence_pagination(s3_client) -> None:
+    """ContinuationToken loop covers >1 page of objects."""
+    from unittest.mock import MagicMock
+
+    backend = S3Backend(
+        bucket=_BUCKET,
+        region="us-east-1",
+        access_key_id="t",
+        secret_access_key="t",
+    )
+    backend._client = MagicMock()
+    backend._client.list_objects_v2.side_effect = [
+        {
+            "Contents": [{"Key": "passport/seq-000001.bin"}],
+            "IsTruncated": True,
+            "NextContinuationToken": "tok-2",
+        },
+        {
+            "Contents": [{"Key": "passport/seq-000005.bin"}],
+            "IsTruncated": False,
+        },
+    ]
+
+    assert await backend.last_remote_sequence() == 5
+
+
+async def test_s3_health_check_returns_false_on_generic_exception() -> None:
+    """Non-ClientError (e.g. timeout) -> False, not exception."""
+    from unittest.mock import MagicMock
+
+    with mock_aws():
+        backend = S3Backend(
+            bucket=_BUCKET,
+            region="us-east-1",
+            access_key_id="t",
+            secret_access_key="t",
+        )
+        backend._client = MagicMock()
+        backend._client.head_bucket.side_effect = TimeoutError("network down")
+        assert await backend.health_check() is False

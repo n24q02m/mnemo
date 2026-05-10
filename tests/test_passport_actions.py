@@ -344,3 +344,94 @@ async def test_memory_compress_unknown_id_errors(isolated_db: MemoryDB) -> None:
     payload = json.loads(raw)
     assert "error" in payload
     assert "not found" in payload["error"]
+
+
+# ---------------------------------------------------------------------------
+# Error path coverage: sync_now / import_passport unexpected exceptions
+# ---------------------------------------------------------------------------
+
+
+async def test_sync_now_propagates_unexpected_error(
+    isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SYNC_PASSPHRASE", "test-pass")
+
+    fake = MagicMock(side_effect=RuntimeError("backend offline"))
+    with patch("mnemo_mcp.sync.delta.sync_now", side_effect=fake):
+        ctx = _make_ctx(isolated_db)
+        raw = await _handle_config_sync_now(ctx, backend="gdrive")
+
+    payload = json.loads(raw)
+    assert "error" in payload
+    assert "sync_now failed" in payload["error"]
+
+
+async def test_import_passport_decryption_failure(
+    isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wrong passphrase -> generic 'Passphrase mismatch' message."""
+    monkeypatch.setenv("SYNC_PASSPHRASE", "wrong-pass")
+
+    # Build a bundle with a different passphrase.
+    from mnemo_mcp.sync.delta import build_full_bundle
+
+    other = MemoryDB(isolated_db._db_path.parent / "other.db", embedding_dims=0)
+    other._conn.execute(
+        "INSERT INTO memories (id, content, created_at, updated_at, last_accessed) "
+        "VALUES ('a', 'x', '2026-05-01', '2026-05-01', '2026-05-01')"
+    )
+    other._conn.commit()
+    bundle = await build_full_bundle(other, passphrase="real-pass")
+    other.close()
+
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=_BUCKET)
+        backend = S3Backend(
+            bucket=_BUCKET,
+            region="us-east-1",
+            access_key_id="t",
+            secret_access_key="t",
+        )
+        await backend.push(bundle, sequence=1)
+        sync_pkg.register("s3", backend)
+
+        ctx = _make_ctx(isolated_db)
+        raw = await _handle_config_import_passport(ctx, source="s3")
+        payload = json.loads(raw)
+
+    assert "error" in payload
+    assert "Passphrase mismatch" in payload["error"]
+
+
+async def test_import_passport_pull_exception(
+    isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Backend pull raising -> caller sees clear error message."""
+    monkeypatch.setenv("SYNC_PASSPHRASE", "x")
+
+    from mnemo_mcp.sync.base import SyncBackend
+
+    class _BadBackend(SyncBackend):
+        name = "bad"
+
+        async def push(self, bundle: bytes, sequence: int) -> None:
+            return None
+
+        async def pull(self, sequence=None):
+            raise RuntimeError("pull boom")
+
+        async def last_remote_sequence(self) -> int:
+            return 0
+
+        async def health_check(self) -> bool:
+            return True
+
+    sync_pkg.register("s3", _BadBackend())
+
+    ctx = _make_ctx(isolated_db)
+    raw = await _handle_config_import_passport(ctx, source="s3")
+    payload = json.loads(raw)
+
+    assert "error" in payload
+    assert "backend pull failed" in payload["error"]
