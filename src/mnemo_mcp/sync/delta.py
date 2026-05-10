@@ -67,22 +67,85 @@ def _query_rows_since(db: MemoryDB, since: float | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _build_payload(rows: list[dict], since: float | None) -> dict[str, bytes]:
-    """Assemble the bundle payload sections from ``rows``."""
+def _build_payload(
+    rows: list[dict],
+    since: float | None,
+    *,
+    entities: list[dict] | None = None,
+    edges: list[dict] | None = None,
+    links: list[dict] | None = None,
+) -> dict[str, bytes]:
+    """Assemble the bundle payload sections from ``rows``.
+
+    Phase 3 populates the previously-empty ``memories_entities.jsonl`` /
+    ``memories_edges.jsonl`` reservations with the temporal KG fragment
+    captured since the last sync. ``schema_version`` bumps to
+    ``mem_003_temporal`` so older receivers know to refuse the bundle
+    (see ``apply_bundle`` schema-version check).
+    """
     manifest = {
         "row_count": len(rows),
         "since": since,
         "created_at": time.time(),
-        "schema_version": "mem_002_compression",
+        "schema_version": "mem_003_temporal",
+        "entity_count": len(entities) if entities is not None else 0,
+        "edge_count": len(edges) if edges is not None else 0,
+        "link_count": len(links) if links is not None else 0,
     }
     memories_jsonl = "\n".join(json.dumps(r, default=str) for r in rows).encode("utf-8")
+    entities_jsonl = (
+        "\n".join(json.dumps(e, default=str) for e in (entities or [])).encode("utf-8")
+        if entities
+        else b""
+    )
+    edges_jsonl = (
+        "\n".join(json.dumps(e, default=str) for e in (edges or [])).encode("utf-8")
+        if edges
+        else b""
+    )
+    links_jsonl = (
+        "\n".join(json.dumps(le, default=str) for le in (links or [])).encode("utf-8")
+        if links
+        else b""
+    )
     return {
         "manifest.json": json.dumps(manifest).encode("utf-8"),
         "memories.jsonl": memories_jsonl,
-        # Phase 2 reserves these section names; Phase 3 will populate them
-        # when the entity / edge schema lands.
-        "memories_entities.jsonl": b"",
-        "memories_edges.jsonl": b"",
+        # Phase 3: now populated with the renamed graph tables.
+        "memories_entities.jsonl": entities_jsonl,
+        "memories_edges.jsonl": edges_jsonl,
+        "memories_entity_links.jsonl": links_jsonl,
+    }
+
+
+def _query_kg_since(db: MemoryDB, since: float | None) -> dict:
+    """Snapshot ``memory_entities`` / ``memory_edges`` / ``memory_entity_links``.
+
+    Phase 3 always sends the FULL KG snapshot (not delta) since the KG
+    tables are small relative to memories.jsonl and per-row updated_at
+    tracking on entities is not yet implemented. Receivers re-apply via
+    INSERT OR IGNORE so duplicates are harmless.
+    """
+    cursor = db._conn.cursor()
+    try:
+        ents = cursor.execute(
+            "SELECT id, name, entity_type, created_at, updated_at "
+            "FROM memory_entities ORDER BY created_at"
+        ).fetchall()
+        edges = cursor.execute(
+            "SELECT id, source_id, target_id, relation_type, created_at, "
+            "  memory_id, valid_from, valid_to FROM memory_edges ORDER BY created_at"
+        ).fetchall()
+        links = cursor.execute(
+            "SELECT memory_id, entity_id FROM memory_entity_links"
+        ).fetchall()
+    except Exception:
+        # Fallback for legacy schemas or transient errors.
+        return {"entities": [], "edges": [], "links": []}
+    return {
+        "entities": [dict(r) for r in ents],
+        "edges": [dict(r) for r in edges],
+        "links": [dict(r) for r in links],
     }
 
 
@@ -91,7 +154,14 @@ async def build_delta_bundle(
 ) -> bytes:
     """Encrypt all memories newer than ``since`` into a passport bundle."""
     rows = await asyncio.to_thread(_query_rows_since, db, since)
-    payload = _build_payload(rows, since)
+    kg = await asyncio.to_thread(_query_kg_since, db, since)
+    payload = _build_payload(
+        rows,
+        since,
+        entities=kg["entities"],
+        edges=kg["edges"],
+        links=kg["links"],
+    )
     return encode_bundle(payload, passphrase)
 
 
@@ -187,17 +257,110 @@ def _upsert_row_lww(db: MemoryDB, remote: dict) -> str:
     return outcome
 
 
+def _apply_kg_sections(db: MemoryDB, payload: dict[str, bytes]) -> dict:
+    """Apply Phase 3 KG sections (entities + edges + links) via INSERT OR IGNORE.
+
+    Idempotent: replaying the same bundle is safe because the unique
+    indexes on ``memory_entities(name, entity_type)`` and
+    ``memory_edges(source_id, target_id, relation_type)`` collapse
+    duplicates. Returns counts dict.
+    """
+    counts = {"entities_applied": 0, "edges_applied": 0, "links_applied": 0}
+    cursor = db._conn.cursor()
+
+    ents_raw = payload.get("memories_entities.jsonl", b"").decode("utf-8")
+    for line in ents_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ent = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO memory_entities "
+                "(id, name, entity_type, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    ent.get("id"),
+                    ent.get("name"),
+                    ent.get("entity_type"),
+                    ent.get("created_at"),
+                    ent.get("updated_at"),
+                ),
+            )
+            counts["entities_applied"] += cursor.rowcount or 0
+        except Exception as e:
+            logger.debug(f"apply_bundle: entity skipped ({e})")
+
+    edges_raw = payload.get("memories_edges.jsonl", b"").decode("utf-8")
+    for line in edges_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            edge = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO memory_edges "
+                "(id, source_id, target_id, relation_type, created_at, "
+                " memory_id, valid_from, valid_to) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    edge.get("id"),
+                    edge.get("source_id"),
+                    edge.get("target_id"),
+                    edge.get("relation_type"),
+                    edge.get("created_at"),
+                    edge.get("memory_id"),
+                    edge.get("valid_from"),
+                    edge.get("valid_to"),
+                ),
+            )
+            counts["edges_applied"] += cursor.rowcount or 0
+        except Exception as e:
+            logger.debug(f"apply_bundle: edge skipped ({e})")
+
+    links_raw = payload.get("memories_entity_links.jsonl", b"").decode("utf-8")
+    for line in links_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            link = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO memory_entity_links "
+                "(memory_id, entity_id) VALUES (?, ?)",
+                (link.get("memory_id"), link.get("entity_id")),
+            )
+            counts["links_applied"] += cursor.rowcount or 0
+        except Exception as e:
+            logger.debug(f"apply_bundle: link skipped ({e})")
+
+    db._conn.commit()
+    return counts
+
+
 async def apply_bundle(db: MemoryDB, bundle: bytes, passphrase: str) -> dict:
     """Decrypt ``bundle`` and apply each memory row via LWW per row.
+
+    Phase 3 also applies the ``memories_entities.jsonl`` /
+    ``memories_edges.jsonl`` / ``memories_entity_links.jsonl`` sections
+    via INSERT OR IGNORE so the receiver KG converges with the sender.
 
     Returns counts dict::
 
         {
-            "inserted": <int>,
-            "updated":  <int>,
-            "skipped":  <int>,    # local row had >= updated_at; audit logged
-            "row_count": <int>,
-            "manifest": <decoded manifest dict>,
+            "inserted": <int>, "updated": <int>, "skipped": <int>,
+            "row_count": <int>, "manifest": <decoded manifest dict>,
+            "entities_applied": <int>, "edges_applied": <int>,
+            "links_applied": <int>,
         }
     """
     payload = decode_bundle(bundle, passphrase)
@@ -220,7 +383,10 @@ async def apply_bundle(db: MemoryDB, bundle: bytes, passphrase: str) -> dict:
         outcome = await asyncio.to_thread(_upsert_row_lww, db, row)
         counts[outcome] += 1
 
-    return {**counts, "row_count": len(rows), "manifest": manifest}
+    # Phase 3 KG sections.
+    kg_counts = await asyncio.to_thread(_apply_kg_sections, db, payload)
+
+    return {**counts, **kg_counts, "row_count": len(rows), "manifest": manifest}
 
 
 # ---------------------------------------------------------------------------
