@@ -45,6 +45,9 @@ def clean_env(monkeypatch):
         "LOG_LEVEL",
         "MCP_RELAY_URL",
         "QWEN3_EMBED_CACHE_PATH",
+        "COMPRESSION_ENABLED",
+        "COMPRESSION_PROVIDER",
+        "COMPRESSION_MODEL",
     }
     # Thoroughly clear any variant of these keys in os.environ
     for k in list(os.environ.keys()):
@@ -494,3 +497,28 @@ class TestResolveEmbeddingBackendAuto:
         """Auto-detect returns 'local' when nothing is configured."""
         s = Settings(embedding_backend="")
         assert s.resolve_embedding_backend() == "local"
+
+
+class TestCompressionSettings:
+    """Phase 2: COMPRESSION_ENABLED / PROVIDER / MODEL settings surface."""
+
+    def test_compression_defaults(self):
+        s = Settings()
+        assert s.compression_enabled is True
+        assert s.compression_provider == ""
+        assert s.compression_model == ""
+
+    def test_compression_enabled_false_via_env(self, monkeypatch):
+        monkeypatch.setenv("COMPRESSION_ENABLED", "false")
+        s = Settings()
+        assert s.compression_enabled is False
+
+    def test_compression_provider_override_via_env(self, monkeypatch):
+        monkeypatch.setenv("COMPRESSION_PROVIDER", "anthropic")
+        s = Settings()
+        assert s.compression_provider == "anthropic"
+
+    def test_compression_model_override_via_env(self, monkeypatch):
+        monkeypatch.setenv("COMPRESSION_MODEL", "gemini-2.5-flash")
+        s = Settings()
+        assert s.compression_model == "gemini-2.5-flash"

@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     # LLM for graph/importance (reuse existing SDK config)
     llm_models: str = "gemini/gemini-3-flash-preview,openai/gpt-5.4-mini-2026-03-17"
 
+    # Phase 2: LLM compression
+    compression_enabled: bool = True
+    compression_provider: str = ""  # "" = auto-detect via llm.detect_provider
+    compression_model: str = ""  # "" = use llm.get_default_model(provider)
+
     # Logging
     log_level: str = "INFO"
 
