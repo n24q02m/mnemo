@@ -907,6 +907,97 @@ async def _handle_archive_now(
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 KG actions: entity_search / entity_graph / history / as_of.
+# ---------------------------------------------------------------------------
+
+
+async def _handle_entity_search(
+    ctx: Context | None,
+    name: str | None,
+    entity_type: str | None,
+    limit: int = 20,
+) -> str:
+    """``memory(action="entity_search")`` -- find memories by entity name."""
+    db, _, _ = _get_ctx(ctx)
+    if not name:
+        return _json(
+            {
+                "error": "name is required for entity_search",
+                "example": "action='entity_search', name='FastAPI'",
+                "suggestion": (
+                    "Pass 'name' (entity name, case-insensitive) and "
+                    "optionally 'entity_type' (person/project/tool/concept/"
+                    "org/location/event)."
+                ),
+            }
+        )
+    from mnemo_mcp.temporal.queries import entity_search
+
+    rows = await asyncio.to_thread(
+        entity_search, db, name=name, entity_type=entity_type, limit=limit
+    )
+    return _json(
+        {
+            "count": len(rows),
+            "results": [_format_memory(r) for r in rows],
+            "matched_name": name,
+        }
+    )
+
+
+async def _handle_entity_graph(
+    ctx: Context | None,
+    entity_id: str | None,
+    name: str | None,
+    depth: int = 2,
+    limit: int = 50,
+) -> str:
+    """``memory(action="entity_graph")`` -- KG neighbourhood subgraph."""
+    db, _, _ = _get_ctx(ctx)
+    if not entity_id and not name:
+        return _json(
+            {
+                "error": "entity_id or name required for entity_graph",
+                "example": "action='entity_graph', name='Python', depth=2",
+            }
+        )
+    from mnemo_mcp.temporal.queries import entity_graph
+
+    result = await asyncio.to_thread(
+        entity_graph, db, entity_id=entity_id, name=name, depth=depth, limit=limit
+    )
+    return _json(result)
+
+
+async def _handle_history(
+    ctx: Context | None,
+    entity_id: str | None,
+) -> str:
+    """``memory(action="history")`` -- timeline of memories linked to an entity."""
+    db, _, _ = _get_ctx(ctx)
+    if not entity_id:
+        return _json(
+            {
+                "error": "entity_id required for history",
+                "example": "action='history', entity_id='<uuid>'",
+                "suggestion": (
+                    "Get an entity_id from entity_graph or entity_search results."
+                ),
+            }
+        )
+    from mnemo_mcp.temporal.queries import history_for_entity
+
+    timeline = await asyncio.to_thread(history_for_entity, db, entity_id)
+    return _json(
+        {
+            "entity_id": entity_id,
+            "count": len(timeline),
+            "timeline": [_format_memory(m) for m in timeline],
+        }
+    )
+
+
 async def _handle_consolidate(
     ctx: Context | None,
     category: str | None = None,
@@ -1184,6 +1275,10 @@ async def memory(
     until: str | None = None,
     min_importance: float = 0.0,
     include_archived: bool = False,
+    name: str | None = None,
+    entity_id: str | None = None,
+    depth: int = 2,
+    as_of: str | None = None,
     ctx: Context | None = None,
 ) -> str:
     """Execute a memory action.
@@ -1264,6 +1359,21 @@ async def memory(
             return await _handle_consolidate(ctx, category)
         case "compress":
             return await _handle_memory_compress(ctx, memory_id)
+        case "entity_search":
+            ent_type = context_type if context_type != "conversation" else None
+            return await _handle_entity_search(
+                ctx, name=name or query, entity_type=ent_type, limit=limit
+            )
+        case "entity_graph":
+            return await _handle_entity_graph(
+                ctx,
+                entity_id=entity_id,
+                name=name or query,
+                depth=depth,
+                limit=limit,
+            )
+        case "history":
+            return await _handle_history(ctx, entity_id=entity_id or memory_id)
         case _:
             import difflib
 
@@ -1275,7 +1385,10 @@ async def memory(
                 "compress",
                 "consolidate",
                 "delete",
+                "entity_graph",
+                "entity_search",
                 "export",
+                "history",
                 "import",
                 "list",
                 "restore",
