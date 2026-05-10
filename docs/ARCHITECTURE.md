@@ -428,3 +428,134 @@ SYNC_S3_PREFIX            (default "passport/")
 
 SYNC_PASSPHRASE           (raw passphrase, in-process only; never persisted)
 ```
+
+---
+
+## Phase 3 (v2.0.0) -- Temporal knowledge graph + entity resolution
+
+> Phase 3 adds bitemporal columns (commit_sha / valid_from / valid_to /
+> superseded_by), renames the Phase 1/2 graph tables to spec-canonical
+> names (entities → memory_entities, relations → memory_edges,
+> memory_entities join → memory_entity_links), introduces
+> `memory_audit` mutation log, and ships the `memory_entities_vec`
+> sqlite-vec table for embedding-based entity dedup. The bundle codec
+> now actually populates the graph sections that Phase 2 reserved as
+> empty placeholders.
+
+### Schema (mem_003_temporal migration)
+
+Additive on `memories`:
+
+- `commit_sha TEXT` -- per-row sha256(content) for provenance + audit chain
+  (backfilled for legacy rows during migration).
+- `valid_from DATETIME` -- bitemporal lower bound (backfilled to
+  `created_at` for legacy rows).
+- `valid_to DATETIME` -- bitemporal upper bound (NULL = currently valid).
+  Phase 3 default `memory.get` filters `valid_to IS NULL` (BREAKING).
+- `superseded_by TEXT` -- forward pointer to the new memory id that
+  replaced this one.
+
+Renamed (idempotent — migration RENAMEs in-place; data preserved):
+
+- `entities` → `memory_entities` (spec §5.2 canonical)
+- `relations` → `memory_edges` (+ memory_id, valid_from, valid_to columns)
+- `memory_entities` (join) → `memory_entity_links`
+
+New tables:
+
+- `memory_audit (id, memory_id, prev_state_hash, new_state_hash,
+  operation, commit_sha, occurred_at)` + index on
+  `(memory_id, occurred_at DESC)`.
+- `memory_entities_vec` -- vec0 virtual table, `embedding float[768]`,
+  rowid aligned with `memory_entities.rowid`.
+
+### Capture pipeline (Phase 3 KG_AUTO_ENABLED path)
+
+```
+memory(action="capture", text=..., context_type="fact")
+        |
+        v
++------------------------+
+| capture() -- Phase 1   |
+| dedup + compress + add |
++-----------+------------+
+            | memory_id (new row, valid_to=NULL)
+            v
+[background _enrich_memory]
+   if settings.kg_auto_enabled:
+     temporal.extract.extract_entities(text)
+       (LLM via llm.call_llm dispatch)
+            |
+            v
+     temporal.store.store_kg_with_memory_id(conn, mid, extracted)
+       - upsert_entities (memory_entities)
+       - create_relations (memory_edges)
+       - link_memory_entities (memory_entity_links)
+       - backfill memory_edges.memory_id = mid + valid_from = now
+   else: legacy graph helpers (Phase 1 path; no KG bookkeeping)
+```
+
+`KG_AUTO_ENABLED` defaults to **False** so Phase 1/2 callers see no
+behavioural change. Explicit opt-in via env var or
+`config(action="set", key="kg_auto_enabled", value="true")`.
+
+### Entity resolution
+
+`temporal.resolve.resolve_entity(conn, name, type, embedding)`:
+
+1. Stage 1 — exact name + type lookup in `memory_entities` (Phase 1
+   semantics; deterministic).
+2. Stage 2 — embedding KNN against `memory_entities_vec` when an
+   embedding is supplied AND the vec table exists. Accepts the top-1
+   neighbour when cosine similarity ≥ `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD`
+   (default 0.85). Cosine = `1 - L2_squared / 2` (assumes
+   L2-normalised embeddings; matches Qwen3 / Jina default).
+3. Miss → INSERT new entity AND parallel `memory_entities_vec` row at
+   the entity's rowid for round-trip back-mapping.
+
+### KG-aware queries
+
+| Action | Purpose |
+|---|---|
+| `memory(action="entity_search", name=..., entity_type=..., limit=...)` | Find memories mentioning an entity (case-insensitive name + optional type filter, fuzzy LIKE fallback). |
+| `memory(action="entity_graph", entity_id=..., name=..., depth=1\|2, limit=...)` | BFS neighbourhood subgraph anchored at one entity, depth-bounded. |
+| `memory(action="history", entity_id=...)` | Timeline of all memories ever linked to an entity (includes superseded rows). |
+
+Bitemporal filter (`memories_as_of`): when `as_of=None`, returns rows
+with `valid_to IS NULL` (current state). Otherwise filters
+`valid_from <= as_of < valid_to`.
+
+### Bundle codec — KG sections populated
+
+Phase 2 reserved `memories_entities.jsonl` + `memories_edges.jsonl` as
+empty placeholders. Phase 3 populates them plus a new
+`memories_entity_links.jsonl` section. Manifest schema_version bumps to
+`mem_003_temporal` with `entity_count` / `edge_count` / `link_count`
+fields. Receivers replay via INSERT OR IGNORE so duplicates collapse on
+the unique indexes.
+
+### Phase 3 env vars
+
+```
+KG_AUTO_ENABLED                        (bool, default false; opt-in)
+TEMPORAL_ENTITY_RESOLUTION_THRESHOLD   (float, default 0.85)
+TEMPORAL_SUPERSESSION_THRESHOLD        (float, default 0.85)
+TEMPORAL_SUPERSESSION_ENABLED          (bool, default true)
+```
+
+### BREAKING: memory.get default filter
+
+In v2.0.0+, `memory(action="get")` and the underlying
+`db.memories_as_of(as_of=None)` filter `valid_to IS NULL` (current
+state). Old clients that expect historical-inclusive results must now
+pass an explicit `as_of` timestamp. Phase 1/2 `db.search` is unchanged
+for backward compatibility — the BREAKING surface is limited to the
+new `as_of`-aware action.
+
+### Plugin trinity Phase 3 addition
+
+The `knowledge-audit` skill grows 5 KG-specific dimensions: stale
+entities, orphan edges, contradicting / superseded chains, bitemporal
+drift detection, audit-trail integrity check. Triggers expand to: post
+legacy-passport import, post `KG_AUTO_ENABLED=true` batch capture, pre
+Phase 3 passport export.

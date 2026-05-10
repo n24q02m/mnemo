@@ -65,8 +65,8 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | Phase | Version | Status | Highlights |
 |---|---|---|---|
 | **Phase 1** | **v1.x** | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
-| **Phase 2** | v1.x+1 | Planned | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) |
-| **Phase 3** | v2.0 | Planned (BREAKING) | Temporal knowledge graph -- bitemporal `as_of` queries, entity timelines, time-travel retrieval |
+| **Phase 2** | v1.x+1 | **Shipped** | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) -- AES-256-GCM + Argon2id, S3 / R2 / B2 / MinIO + GDrive backends, delta-sync with LWW per row |
+| **Phase 3** | **v2.0.0** | **Shipped (BREAKING)** | Temporal knowledge graph -- bitemporal `valid_from` / `valid_to` columns -- entity resolution via embedding KNN -- `entity_search` / `entity_graph` / `history` actions -- KG-aware passport bundle sections -- `KG_AUTO_ENABLED` opt-in auto-extract on capture |
 
 ## Features
 
@@ -83,6 +83,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
 - **Phase 2: LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.9 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
 - **Phase 2: Encrypted passport sync** -- AES-256-GCM bundles + Argon2id KDF, S3 (R2 / B2 / MinIO) and Google Drive backends, delta-sync with last-write-wins per row (see [docs/passport.md](docs/passport.md)). Bootstrap via the new `passport-bootstrap` skill.
+- **Phase 3: Temporal knowledge graph (v2.0)** -- Bitemporal columns (`valid_from` / `valid_to` / `superseded_by`) on every memory + entity-resolution dedup (embedding KNN at default 0.85 cosine threshold) + audit trail (`memory_audit` table with prev/new state hashes) + new actions (`entity_search` / `entity_graph` / `history`) + opt-in `KG_AUTO_ENABLED` auto-extract on capture. **BREAKING** for clients that called `memory.get` expecting historical-inclusive results: pass `as_of` for time-travel; default now filters to current-state (`valid_to IS NULL`).
 
 ## Comparison vs. peers
 
@@ -100,6 +101,9 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | E2E-encrypted passport sync (Phase 2) | yes (AES-256-GCM + Argon2id, S3 + GDrive) | no | no | no |
 | LLM compression on capture (Phase 2) | yes (multi-provider, ~3x at >=0.90 retention) | no | no | no |
 | Backend-pluggable sync architecture | yes (S3 / R2 / B2 / MinIO + GDrive) | no | no | no |
+| Bitemporal `valid_from` / `valid_to` queries (Phase 3) | yes (`as_of` time-travel) | no | partial (events only) | no |
+| Entity resolution via embedding KNN (Phase 3) | yes (cosine threshold tunable) | no | no | no |
+| Audit trail with state hashes (Phase 3) | yes (`memory_audit` table) | no | no | no |
 
 ## Status
 
