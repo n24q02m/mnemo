@@ -139,6 +139,20 @@ class Settings(BaseSettings):
     # in encrypted config.enc; raw passphrase NEVER written to disk).
     sync_passphrase: str = ""  # set ONLY for in-process derivation
 
+    # Phase 3: temporal KG.
+    # KG_AUTO_ENABLED: when True, capture pipeline auto-extracts entities +
+    #   relations via the LLM and persists them via temporal.store.
+    #   Default False so Phase 1/2 callers don't pay the LLM round-trip
+    #   without opt-in. The legacy add()/_enrich_memory background path
+    #   still runs unchanged for backward compat.
+    kg_auto_enabled: bool = False
+    # Entity-resolution cosine threshold (0.85 default per spec §3).
+    temporal_entity_resolution_threshold: float = 0.85
+    # Supersession min confidence -- LLM emits {old_fact_id, confidence};
+    # only apply when confidence >= this gate (0.85 default).
+    temporal_supersession_threshold: float = 0.85
+    temporal_supersession_enabled: bool = True
+
     # Logging
     log_level: str = "INFO"
 

@@ -412,7 +412,16 @@ async def _handle_add(
 
 
 async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
-    """Background task: score importance and extract entities."""
+    """Background task: score importance and extract entities.
+
+    Phase 3 KG_AUTO_ENABLED path: when ``settings.kg_auto_enabled`` is
+    True, route extraction through the new
+    :mod:`mnemo_mcp.temporal.extract` + :mod:`mnemo_mcp.temporal.store`
+    pipeline (records ``memory_edges.memory_id`` + ``valid_from`` for
+    bitemporal traceability). Otherwise keeps the Phase 1 legacy path
+    (calls graph.extract_entities + graph.upsert/link helpers directly)
+    so callers pre-Phase-3 see no behavioural change.
+    """
     from mnemo_mcp.graph import (
         create_relations,
         extract_entities,
@@ -428,6 +437,24 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
     except Exception as e:
         logger.debug(f"Importance scoring background error: {e}")
 
+    # Phase 3 KG_AUTO_ENABLED path: temporal.extract + temporal.store with
+    # bitemporal bookkeeping. Falls back to legacy on import failure so a
+    # broken Phase 3 install never blocks captures.
+    if settings.kg_auto_enabled:
+        try:
+            from mnemo_mcp.temporal.extract import extract_entities as t_extract
+            from mnemo_mcp.temporal.store import store_kg_with_memory_id
+
+            graph_data = await t_extract(content)
+            if graph_data and graph_data.get("entities"):
+                await asyncio.to_thread(
+                    store_kg_with_memory_id, db._conn, memory_id, graph_data
+                )
+            return
+        except Exception as e:
+            logger.debug(f"Phase 3 KG extraction failed, falling back to legacy: {e}")
+
+    # Legacy Phase 1 path (default).
     try:
         graph_data = await extract_entities(content)
         if graph_data and graph_data.get("entities"):
@@ -435,9 +462,9 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
             entity_ids = upsert_entities(conn, graph_data["entities"])
             name_to_id = {}
             for ent, eid in zip(graph_data["entities"], entity_ids, strict=False):
-                name = ent.get("name", "").strip()
-                if name:
-                    name_to_id[name] = eid
+                ent_name = ent.get("name", "").strip()
+                if ent_name:
+                    name_to_id[ent_name] = eid
             if graph_data.get("relations"):
                 create_relations(conn, graph_data["relations"], name_to_id)
             link_memory_entities(conn, memory_id, entity_ids)
