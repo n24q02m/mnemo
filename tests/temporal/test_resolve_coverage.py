@@ -1,7 +1,16 @@
-"""Coverage tests for ``mnemo_mcp.temporal.resolve`` -- vec KNN code paths."""
+"""Coverage tests for ``mnemo_mcp.temporal.resolve`` -- vec KNN code paths.
+
+These tests require ``sqlite3.Connection.enable_load_extension`` which is
+disabled on macOS (`Python.org` builds and Homebrew default omit the
+``--enable-loadable-sqlite-extensions`` configure flag). We skip the
+whole module when the extension API is missing instead of failing CI.
+"""
 
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
 import sqlite_vec
 
 from mnemo_mcp.db import MemoryDB
@@ -9,6 +18,24 @@ from mnemo_mcp.temporal.resolve import (
     find_similar_entity,
     insert_entity_with_embedding,
     resolve_entity,
+)
+
+# Skip all tests in this module when SQLite was compiled without
+# loadable-extensions support (macOS default).
+_test_conn = sqlite3.connect(":memory:")
+_HAS_LOAD_EXT = hasattr(_test_conn, "enable_load_extension")
+_test_conn.close()
+if _HAS_LOAD_EXT:
+    try:
+        _test_conn = sqlite3.connect(":memory:")
+        _test_conn.enable_load_extension(True)
+        _test_conn.close()
+    except (AttributeError, sqlite3.NotSupportedError):
+        _HAS_LOAD_EXT = False
+
+pytestmark = pytest.mark.skipif(
+    not _HAS_LOAD_EXT,
+    reason="SQLite loadable extensions not enabled (macOS default).",
 )
 
 

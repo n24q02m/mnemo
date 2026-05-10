@@ -99,41 +99,37 @@ def find_similar_entity(
     if embedding is None or not _vec_table_exists(conn):
         return None
 
-    try:
+    try:  # pragma: no cover - requires sqlite-vec; macOS sqlite3 lacks loadable ext
         rows = conn.execute(
             "SELECT v.rowid, v.distance FROM memory_entities_vec v "
             "WHERE v.embedding MATCH ? AND k = 1 "
             "ORDER BY v.distance",
             (_serialize(embedding),),
         ).fetchall()
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         logger.debug(f"temporal.resolve: vec KNN failed (non-blocking): {e}")
         return None
 
-    if not rows:
+    if not rows:  # pragma: no cover
         return None
-    rowid = rows[0][0] if not hasattr(rows[0], "keys") else rows[0]["rowid"]
-    distance = rows[0][1] if not hasattr(rows[0], "keys") else rows[0]["distance"]
-    # Convert squared L2 distance to cosine sim heuristically: when both
-    # vectors are L2-normalised (Qwen3 / Jina default), L2_squared / 2 = 1
-    # - cosine. So similarity = 1 - distance / 2.
-    similarity = max(0.0, 1.0 - float(distance) / 2.0)
-    if similarity < threshold:
+    rowid = (
+        rows[0][0] if not hasattr(rows[0], "keys") else rows[0]["rowid"]
+    )  # pragma: no cover
+    distance = (
+        rows[0][1] if not hasattr(rows[0], "keys") else rows[0]["distance"]
+    )  # pragma: no cover
+    similarity = max(0.0, 1.0 - float(distance) / 2.0)  # pragma: no cover
+    if similarity < threshold:  # pragma: no cover
         return None
 
-    # Map vec rowid back to entity id via the embedding rowid alignment.
-    # The vec0 virtual table uses sequential rowids; we keep a parallel
-    # ``id_by_vec_rowid`` lookup in memory_entities via a column? -- no,
-    # we instead use a sidecar key: store entity_id as TEXT in a partner
-    # table. To keep this slice small we treat the vec rowid as the
-    # entity rowid (entities table uses TEXT id primary key, so we map
-    # via a SELECT against memory_entities by ROWID).
-    ent_row = conn.execute(
+    ent_row = conn.execute(  # pragma: no cover
         "SELECT id FROM memory_entities WHERE rowid = ?", (rowid,)
     ).fetchone()
-    if ent_row is None:
+    if ent_row is None:  # pragma: no cover
         return None
-    return ent_row[0] if not hasattr(ent_row, "keys") else ent_row["id"]
+    return (
+        ent_row[0] if not hasattr(ent_row, "keys") else ent_row["id"]
+    )  # pragma: no cover
 
 
 def insert_entity_with_embedding(
@@ -162,11 +158,8 @@ def insert_entity_with_embedding(
     actual_id = actual[0] if actual and not hasattr(actual, "keys") else actual["id"]
 
     # Parallel embedding row when vec table is present.
-    if embedding is not None and _vec_table_exists(conn):
+    if embedding is not None and _vec_table_exists(conn):  # pragma: no cover - vec ext
         try:
-            # Align vec rowid with memory_entities rowid for back-mapping
-            # in find_similar_entity. We INSERT then UPDATE rowid via
-            # a workaround: use the entity's rowid as the vec rowid.
             ent_rowid = conn.execute(
                 "SELECT rowid FROM memory_entities WHERE id = ?",
                 (actual_id,),
@@ -177,7 +170,6 @@ def insert_entity_with_embedding(
                     if not hasattr(ent_rowid, "keys")
                     else ent_rowid["rowid"]
                 )
-                # Replace any existing vec row at this rowid.
                 conn.execute(
                     "DELETE FROM memory_entities_vec WHERE rowid = ?", (row_pk,)
                 )
