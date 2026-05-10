@@ -125,6 +125,20 @@ class Settings(BaseSettings):
     compression_provider: str = ""  # "" = auto-detect via llm.detect_provider
     compression_model: str = ""  # "" = use llm.get_default_model(provider)
 
+    # Phase 2: passport-sync backends. SYNC_BACKEND is comma-separated
+    # for multi-backend mirror (gdrive,s3); leftmost is primary.
+    sync_backend: str = "gdrive"
+    sync_s3_bucket: str = ""
+    sync_s3_region: str = "us-east-1"
+    sync_s3_endpoint: str = ""  # custom endpoint for R2 / B2 / MinIO
+    sync_s3_access_key_id: str = ""
+    sync_s3_secret_access_key: str = ""
+    sync_s3_prefix: str = "passport/"
+
+    # Phase 2: passport bundle passphrase (Argon2id-derived hash stored
+    # in encrypted config.enc; raw passphrase NEVER written to disk).
+    sync_passphrase: str = ""  # set ONLY for in-process derivation
+
     # Logging
     log_level: str = "INFO"
 

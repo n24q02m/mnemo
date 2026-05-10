@@ -43,6 +43,8 @@ dependencies = [
     "alembic>=1.18.4",
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.7",
+    # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
+    "boto3>=1.35",
 ]
 
 [dependency-groups]
@@ -56,6 +58,8 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "syrupy>=5.1.0",
+    # Phase 2: in-memory S3 fixture for sync backend tests
+    "moto[s3]>=5.0",
 ]
 
 [project.scripts]

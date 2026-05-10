@@ -105,11 +105,35 @@ def register(name: str, backend: SyncBackend) -> None:
 def get(name: str) -> SyncBackend:
     """Return the registered backend for ``name`` or raise ``KeyError``.
 
-    Lazily registers the default ``GDriveBackend`` on first ``get("gdrive")``
-    so importing the package does not immediately touch httpx / OAuth state.
+    Lazily registers default backends on first lookup so importing the
+    package does not immediately touch httpx / boto3 / OAuth state:
+
+    * ``"gdrive"`` -> :class:`GDriveBackend` (uses Phase 1 OAuth token).
+    * ``"s3"`` -> :class:`S3Backend` configured from ``settings.sync_s3_*``.
+      Raises ``KeyError`` if ``SYNC_S3_BUCKET`` is unset (so the caller
+      sees a helpful "configure SYNC_S3_BUCKET" message instead of a
+      cryptic boto3 NoCredentialsError later).
     """
     if name == "gdrive" and "gdrive" not in _REGISTRY:
         _REGISTRY["gdrive"] = GDriveBackend()
+    if name == "s3" and "s3" not in _REGISTRY:
+        from mnemo_mcp.config import settings
+        from mnemo_mcp.sync.s3 import S3Backend
+
+        if not settings.sync_s3_bucket:
+            raise KeyError(
+                "Cannot get('s3'): SYNC_S3_BUCKET is empty. Set the bucket "
+                "name (and SYNC_S3_REGION / SYNC_S3_ENDPOINT for R2 / B2 / "
+                "MinIO) before requesting the S3 backend."
+            )
+        _REGISTRY["s3"] = S3Backend(
+            bucket=settings.sync_s3_bucket,
+            region=settings.sync_s3_region or "us-east-1",
+            access_key_id=settings.sync_s3_access_key_id or None,
+            secret_access_key=settings.sync_s3_secret_access_key or None,
+            endpoint_url=settings.sync_s3_endpoint or None,
+            prefix=settings.sync_s3_prefix or "passport/",
+        )
     if name not in _REGISTRY:
         raise KeyError(
             f"Unknown sync backend {name!r}; "
