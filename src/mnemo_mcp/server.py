@@ -1262,6 +1262,8 @@ async def memory(
             return await _handle_archive_now(ctx)
         case "consolidate":
             return await _handle_consolidate(ctx, category)
+        case "compress":
+            return await _handle_memory_compress(ctx, memory_id)
         case _:
             import difflib
 
@@ -1270,6 +1272,7 @@ async def memory(
                 "archive_now",
                 "archived",
                 "capture",
+                "compress",
                 "consolidate",
                 "delete",
                 "export",
@@ -1350,10 +1353,18 @@ async def config(
             return await _handle_config_setup_complete(ctx)
         case "setup_relay":
             return await _handle_config_setup_relay()
+        case "sync_now":
+            return await _handle_config_sync_now(ctx, key)
+        case "export_passport":
+            return await _handle_config_export_passport(ctx)
+        case "import_passport":
+            return await _handle_config_import_passport(ctx, key)
         case _:
             import difflib
 
             valid_actions = [
+                "export_passport",
+                "import_passport",
                 "set",
                 "setup_complete",
                 "setup_relay",
@@ -1364,6 +1375,7 @@ async def config(
                 "setup_sync",
                 "status",
                 "sync",
+                "sync_now",
                 "warmup",
             ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
@@ -1615,6 +1627,212 @@ async def _handle_config_setup_complete(
 async def _handle_config_setup_relay() -> str:
     # Backward compat alias for setup_start.
     return await _handle_config_setup_start(key="force")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: passport sync MCP actions
+# ---------------------------------------------------------------------------
+
+
+def _resolve_sync_passphrase() -> str | None:
+    """Resolve the passport bundle passphrase from env or persisted store.
+
+    Order:
+    1. ``SYNC_PASSPHRASE`` env var (in-process override, never persisted).
+    2. ``settings.sync_passphrase`` Pydantic value (env-driven).
+
+    Note: we deliberately do NOT load the Argon2id-derived hash from
+    ``config.enc`` here - that hash is for verification only, never
+    decryption. The user must supply the raw passphrase per session
+    (HTTP relay form keeps the raw value in process memory only) so a
+    leaked ``config.enc`` cannot decrypt past bundles.
+    """
+    raw = os.environ.get("SYNC_PASSPHRASE", "").strip()
+    if raw:
+        return raw
+    if settings.sync_passphrase:
+        return settings.sync_passphrase.strip() or None
+    return None
+
+
+def _resolve_default_backend() -> str:
+    """First entry of ``SYNC_BACKEND`` (comma-separated, primary first)."""
+    raw = (settings.sync_backend or "gdrive").strip()
+    return (raw.split(",")[0] or "gdrive").strip()
+
+
+async def _handle_config_sync_now(ctx: Context | None, backend: str | None) -> str:
+    """``config(action="sync_now")`` - delta push (or full-pull-push on gap)."""
+    db, _, _ = _get_ctx(ctx)
+    passphrase = _resolve_sync_passphrase()
+    if not passphrase:
+        return _json(
+            {
+                "error": "SYNC_PASSPHRASE not set",
+                "hint": (
+                    "Set SYNC_PASSPHRASE env var (stdio mode) or submit "
+                    "the relay form passphrase field (HTTP mode) before "
+                    "triggering passport sync."
+                ),
+            }
+        )
+
+    target = (backend or _resolve_default_backend()).strip()
+    try:
+        from mnemo_mcp.sync.delta import sync_now
+
+        result = await sync_now(db, target, passphrase)
+        return _json({"backend": target, **result})
+    except KeyError as e:
+        return _json({"error": str(e)})
+    except Exception as e:
+        logger.exception("sync_now failed")
+        return _json({"error": f"sync_now failed: {e}"})
+
+
+async def _handle_config_export_passport(ctx: Context | None) -> str:
+    """``config(action="export_passport")`` - write encrypted passport file."""
+    db, _, _ = _get_ctx(ctx)
+    passphrase = _resolve_sync_passphrase()
+    if not passphrase:
+        return _json(
+            {
+                "error": "SYNC_PASSPHRASE not set",
+                "hint": (
+                    "Set SYNC_PASSPHRASE env var or submit the relay form "
+                    "passphrase before exporting a passport."
+                ),
+            }
+        )
+
+    from mnemo_mcp.sync.delta import build_full_bundle
+
+    bundle = await build_full_bundle(db, passphrase)
+    out_dir = settings.get_data_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"passport-{int(__import__('time').time())}.mnemo"
+    await asyncio.to_thread(path.write_bytes, bundle)
+    return _json({"status": "exported", "path": str(path), "size": len(bundle)})
+
+
+async def _handle_config_import_passport(
+    ctx: Context | None, source: str | None
+) -> str:
+    """``config(action="import_passport", from="s3"|"gdrive")``."""
+    db, _, _ = _get_ctx(ctx)
+    passphrase = _resolve_sync_passphrase()
+    if not passphrase:
+        return _json(
+            {
+                "error": "SYNC_PASSPHRASE not set",
+                "hint": (
+                    "Set SYNC_PASSPHRASE env var or submit the relay form "
+                    "passphrase before importing a passport."
+                ),
+            }
+        )
+
+    target = (source or _resolve_default_backend()).strip()
+    try:
+        from mnemo_mcp.sync import get as get_backend
+        from mnemo_mcp.sync.delta import apply_bundle
+
+        backend = get_backend(target)
+        bundle = await backend.pull(sequence=None)
+    except KeyError as e:
+        return _json({"error": str(e)})
+    except Exception as e:
+        logger.exception("import_passport: backend pull failed")
+        return _json({"error": f"backend pull failed: {e}"})
+
+    if not bundle:
+        return _json(
+            {
+                "status": "no_passport",
+                "backend": target,
+                "message": "No passport bundle found on backend.",
+            }
+        )
+
+    try:
+        result = await apply_bundle(db, bundle, passphrase)
+    except Exception as e:
+        logger.exception("import_passport: apply_bundle failed")
+        return _json(
+            {
+                "error": "Passphrase mismatch or tampered bundle",
+                "detail": f"{type(e).__name__}: {e}",
+                "backend": target,
+            }
+        )
+
+    return _json({"status": "imported", "backend": target, **result})
+
+
+async def _handle_memory_compress(ctx: Context | None, memory_id: str | None) -> str:
+    """``memory(action="compress", memory_id=...)`` - manual compression.
+
+    Reruns the LLM compression pipeline against an existing row whose
+    ``content`` is currently uncompressed. Updates ``content`` +
+    ``text_raw`` + ``compressed`` + ``compression_provider`` in place.
+    Useful for back-filling rows captured before COMPRESSION_ENABLED
+    was true.
+    """
+    db, _, _ = _get_ctx(ctx)
+    if not memory_id:
+        return _json(
+            {
+                "error": "memory_id required for compress",
+                "suggestion": "Pass memory_id from search/list results.",
+            }
+        )
+
+    row = await asyncio.to_thread(db.get, memory_id)
+    if not row:
+        return _json({"error": f"Memory {memory_id} not found"})
+    if row.get("compressed"):
+        return _json(
+            {
+                "status": "already_compressed",
+                "id": memory_id,
+                "compression_provider": row.get("compression_provider"),
+            }
+        )
+
+    from mnemo_mcp.compression import compress
+
+    result = await compress(row["content"])
+    if not result["compressed"]:
+        return _json(
+            {
+                "status": "skipped",
+                "id": memory_id,
+                "reason": "no LLM provider available or compression disabled",
+            }
+        )
+
+    cursor = db._conn.cursor()
+    cursor.execute(
+        "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
+        "compression_provider = ?, updated_at = ? WHERE id = ?",
+        (
+            result["text"],
+            result["text_raw"],
+            result["compression_provider"],
+            __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
+            memory_id,
+        ),
+    )
+    db._conn.commit()
+    return _json(
+        {
+            "status": "compressed",
+            "id": memory_id,
+            "compression_provider": result["compression_provider"],
+            "tokens_in": result["tokens_in"],
+            "tokens_out": result["tokens_out"],
+        }
+    )
 
 
 @mcp.tool(
