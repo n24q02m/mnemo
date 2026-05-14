@@ -24,8 +24,8 @@ import sqlite_vec
 from loguru import logger
 
 # Alembic migration constants
-_ALEMBIC_INI_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
-_ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parents[2] / "alembic"
+_ALEMBIC_INI_PATH = Path(__file__).resolve().parent / "alembic.ini"
+_ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
 _STRUCT_CACHE: dict[int, struct.Struct] = {}
 
@@ -1582,10 +1582,9 @@ class MemoryDB:
             return
 
         try:
+            from alembic import command
             from alembic.config import Config
             from alembic.script import ScriptDirectory
-
-            from alembic import command
         except ImportError as e:  # pragma: no cover - dep is required at runtime
             logger.warning(f"Alembic import failed, skipping migrations: {e}")
             return

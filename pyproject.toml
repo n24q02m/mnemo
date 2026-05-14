@@ -86,6 +86,9 @@ packages = ["src/mnemo_mcp"]
 include = [
     "src/mnemo_mcp/**/*.py",
     "src/mnemo_mcp/**/*.md",
+    "src/mnemo_mcp/**/*.ini",
+    "src/mnemo_mcp/**/*.mako",
+    "src/mnemo_mcp/alembic/README",
     "src/mnemo_mcp/py.typed",
 ]
 
