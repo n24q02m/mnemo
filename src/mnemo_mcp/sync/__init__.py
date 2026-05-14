@@ -102,18 +102,55 @@ def register(name: str, backend: SyncBackend) -> None:
     _REGISTRY[name] = backend
 
 
+def resolve_active_backend() -> str:
+    """Return the active sync backend (``"s3"`` or ``"gdrive"``) per deployment.
+
+    XOR selection per the 2026-05-14 Test B clarification:
+
+    * **S3** when ``SYNC_S3_BUCKET`` is set via env var OR via the pydantic
+      ``settings.sync_s3_bucket`` field. Indicates Method 2/3 (HTTP / Docker
+      deploy) where the operator wires S3 credentials at container spawn.
+    * **GDrive** otherwise. Indicates Method 1 (local-relay / uvx) where
+      end-users authorise their Google account via the relay form.
+
+    Pure function — no side effects, safe to call from lifespan startup,
+    scheduler loop, MCP tool handlers, anywhere. The env var takes
+    precedence over the pydantic field so an operator can override a
+    persisted setting without rewriting ``config.enc``.
+    """
+    import os as _os
+
+    if _os.environ.get("SYNC_S3_BUCKET", "").strip():
+        return "s3"
+    try:
+        from mnemo_mcp.config import settings as _settings
+
+        if (_settings.sync_s3_bucket or "").strip():
+            return "s3"
+    except Exception:
+        # Settings import / instantiation failure is non-fatal — fall
+        # through to the gdrive default so the server still starts.
+        pass
+    return "gdrive"
+
+
 def get(name: str) -> SyncBackend:
     """Return the registered backend for ``name`` or raise ``KeyError``.
 
     Lazily registers default backends on first lookup so importing the
     package does not immediately touch httpx / boto3 / OAuth state:
 
+    * ``"auto"`` -> dispatches via :func:`resolve_active_backend` (XOR
+      between S3 and GDrive per deployment env). Use this from generic
+      callers that should respect the deployment mode without hardcoding.
     * ``"gdrive"`` -> :class:`GDriveBackend` (uses Phase 1 OAuth token).
     * ``"s3"`` -> :class:`S3Backend` configured from ``settings.sync_s3_*``.
       Raises ``KeyError`` if ``SYNC_S3_BUCKET`` is unset (so the caller
       sees a helpful "configure SYNC_S3_BUCKET" message instead of a
       cryptic boto3 NoCredentialsError later).
     """
+    if name == "auto":
+        name = resolve_active_backend()
     if name == "gdrive" and "gdrive" not in _REGISTRY:
         _REGISTRY["gdrive"] = GDriveBackend()
     if name == "s3" and "s3" not in _REGISTRY:
@@ -163,11 +200,17 @@ _PASSPORT_SYNC_TASK: asyncio.Task | None = None
 
 
 async def _passport_sync_loop(db, interval: int) -> None:
-    """Background loop calling sync_now for every backend in SYNC_BACKEND.
+    """Background loop calling sync_now for the SINGLE active backend.
 
     Runs every ``interval`` seconds. Exits cleanly on cancellation.
-    Errors per backend are logged and swallowed so a transient backend
-    failure does not kill the loop.
+    Errors are logged and swallowed so a transient backend failure does
+    not kill the loop.
+
+    Backend selection per :func:`resolve_active_backend` — XOR between
+    S3 (when ``SYNC_S3_BUCKET`` is set, Method 2/3 docker deploy) and
+    GDrive (otherwise, Method 1 local-relay). The legacy comma-separated
+    multi-backend mirror semantics were dropped per the 2026-05-14 Test B
+    design clarification: operator picks ONE deployment mode.
     """
     from loguru import logger
 
@@ -192,21 +235,14 @@ async def _passport_sync_loop(db, interval: int) -> None:
             logger.debug("scheduler tick skipped: SYNC_PASSPHRASE not set")
             continue
 
-        backends = [
-            b.strip() for b in (_settings.sync_backend or "").split(",") if b.strip()
-        ]
-        if not backends:
-            continue
+        backend_name = resolve_active_backend()
 
         async with _PASSPORT_SYNC_LOCK:
-            for backend_name in backends:
-                try:
-                    await sync_now(db, backend_name, passphrase)
-                    logger.debug(f"scheduler tick ok backend={backend_name}")
-                except Exception as e:
-                    logger.warning(
-                        f"scheduler tick failed backend={backend_name} err={e}"
-                    )
+            try:
+                await sync_now(db, backend_name, passphrase)
+                logger.debug(f"scheduler tick ok backend={backend_name}")
+            except Exception as e:
+                logger.warning(f"scheduler tick failed backend={backend_name} err={e}")
 
 
 def start_passport_scheduler(db, interval: int | None = None) -> bool:

@@ -1,12 +1,16 @@
-"""Tests for the Phase 2 passport sync scheduler.
+"""Tests for the Phase 2 passport sync scheduler (XOR backend selection).
 
 Covers:
 - ``start_passport_scheduler`` returns False when interval <= 0.
 - Returns False when already running (no double-spawn).
 - Returns True when spawning + ``stop_passport_scheduler`` cancels cleanly.
-- Loop calls sync_now per backend in SYNC_BACKEND.
+- Loop calls sync_now with the SINGLE active backend resolved via
+  :func:`resolve_active_backend` (S3 when SYNC_S3_BUCKET set, else GDrive).
 - Loop swallows per-backend exceptions and continues.
 - Loop exits cleanly on cancellation via stop helper.
+
+XOR semantics (2026-05-14 Test B design): the legacy comma-separated
+multi-backend mirror was dropped — operator picks ONE deployment mode.
 """
 
 from __future__ import annotations
@@ -73,17 +77,20 @@ async def test_start_returns_true_then_stop(isolated_db: MemoryDB) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_loop_calls_sync_now_per_backend(
+async def test_loop_calls_sync_now_with_s3_when_bucket_set(
     isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SYNC_BACKEND="s3,gdrive" -> sync_now called for each."""
+    """SYNC_S3_BUCKET set -> resolve_active_backend() == 's3' -> sync_now('s3')."""
     monkeypatch.setenv("SYNC_PASSPHRASE", "test-pass")
+    monkeypatch.setenv("SYNC_S3_BUCKET", "test-bucket")
 
     import mnemo_mcp.config as config_mod
     from mnemo_mcp.config import Settings
 
     monkeypatch.setattr(
-        config_mod, "settings", Settings(sync_backend="s3,gdrive", sync_interval=1)
+        config_mod,
+        "settings",
+        Settings(sync_s3_bucket="test-bucket", sync_interval=1),
     )
 
     fake_sync = AsyncMock(return_value={"mode": "delta", "cursor": 1})
@@ -104,21 +111,55 @@ async def test_loop_calls_sync_now_per_backend(
             await original_sleep(0)
 
     backends_called = {call.args[1] for call in fake_sync.call_args_list}
-    # We expect at least one tick to have hit both backends.
-    assert "s3" in backends_called
-    assert "gdrive" in backends_called
+    # XOR: only s3 is exercised; gdrive is NOT called when SYNC_S3_BUCKET is set.
+    assert backends_called == {"s3"}
+
+
+async def test_loop_calls_sync_now_with_gdrive_by_default(
+    isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No SYNC_S3_BUCKET -> resolve_active_backend() == 'gdrive' -> sync_now('gdrive')."""
+    monkeypatch.setenv("SYNC_PASSPHRASE", "test-pass")
+    monkeypatch.delenv("SYNC_S3_BUCKET", raising=False)
+
+    import mnemo_mcp.config as config_mod
+    from mnemo_mcp.config import Settings
+
+    monkeypatch.setattr(
+        config_mod, "settings", Settings(sync_s3_bucket="", sync_interval=1)
+    )
+
+    fake_sync = AsyncMock(return_value={"mode": "delta", "cursor": 1})
+    with patch("mnemo_mcp.sync.delta.sync_now", side_effect=fake_sync):
+        original_sleep = asyncio.sleep
+
+        async def _fast_sleep(_t: float) -> None:
+            await original_sleep(0)
+
+        with patch("mnemo_mcp.sync.asyncio.sleep", side_effect=_fast_sleep):
+            spawned = sync_pkg.start_passport_scheduler(isolated_db, interval=1)
+            assert spawned is True
+            await original_sleep(0.05)
+            sync_pkg.stop_passport_scheduler()
+            await original_sleep(0)
+
+    backends_called = {call.args[1] for call in fake_sync.call_args_list}
+    assert backends_called == {"gdrive"}
 
 
 async def test_loop_swallows_per_backend_errors(
     isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SYNC_PASSPHRASE", "test-pass")
+    monkeypatch.setenv("SYNC_S3_BUCKET", "test-bucket")
 
     import mnemo_mcp.config as config_mod
     from mnemo_mcp.config import Settings
 
     monkeypatch.setattr(
-        config_mod, "settings", Settings(sync_backend="s3", sync_interval=1)
+        config_mod,
+        "settings",
+        Settings(sync_s3_bucket="test-bucket", sync_interval=1),
     )
 
     fake_sync = AsyncMock(side_effect=RuntimeError("backend offline"))
@@ -144,12 +185,15 @@ async def test_loop_skips_when_no_passphrase(
 ) -> None:
     """No SYNC_PASSPHRASE -> tick logs + skips, sync_now never invoked."""
     monkeypatch.delenv("SYNC_PASSPHRASE", raising=False)
+    monkeypatch.setenv("SYNC_S3_BUCKET", "test-bucket")
 
     import mnemo_mcp.config as config_mod
     from mnemo_mcp.config import Settings
 
     monkeypatch.setattr(
-        config_mod, "settings", Settings(sync_backend="s3", sync_interval=1)
+        config_mod,
+        "settings",
+        Settings(sync_s3_bucket="test-bucket", sync_interval=1),
     )
 
     fake_sync = AsyncMock()
