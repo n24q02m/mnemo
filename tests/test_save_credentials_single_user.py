@@ -27,6 +27,9 @@ def _settings_no_gdrive():
     s = MagicMock()
     s.google_drive_client_id = ""
     s.google_drive_client_secret = ""
+    # XOR backend resolver reads sync_s3_bucket; empty string -> gdrive mode
+    # so the legacy "no gdrive client id" branch is exercised cleanly.
+    s.sync_s3_bucket = ""
     s.setup_providers = MagicMock()
     return s
 
@@ -36,6 +39,9 @@ def _settings_with_gdrive():
     s = MagicMock()
     s.google_drive_client_id = "test-client-id.apps.googleusercontent.com"
     s.google_drive_client_secret = "test-client-secret"
+    # Empty sync_s3_bucket -> resolve_active_backend() returns "gdrive" so the
+    # Device Code flow fires as the legacy test expects (pre-XOR semantics).
+    s.sync_s3_bucket = ""
     s.setup_providers = MagicMock()
     return s
 

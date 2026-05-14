@@ -209,15 +209,29 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
 
-    # 4. Start auto-sync if configured (requires Google Drive client ID)
-    if settings.google_drive_client_id:
-        from mnemo_mcp.sync import start_auto_sync
+    # 4. Resolve sync mode (XOR per deployment) + start backend-specific init.
+    #
+    # Per the 2026-05-14 Test B design: operator picks ONE backend at deploy
+    # time. SYNC_S3_BUCKET set -> S3 (Method 2/3 docker); otherwise -> GDrive
+    # (Method 1 local-relay). See ``docs/passport.md``.
+    from mnemo_mcp.sync import resolve_active_backend
 
-        start_auto_sync(db)
-        logger.info(
-            f"Sync: Google Drive/{settings.sync_folder} "
-            f"(interval={settings.sync_interval}s)"
-        )
+    sync_mode = resolve_active_backend()
+    if sync_mode == "s3":
+        logger.info("Sync mode: s3 (S3 operator-config) — GDrive auto-init skipped")
+    else:
+        logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
+        # Legacy GDrive DB-file copy path (Phase 1) — kept for backward compat
+        # with existing GDrive users. Phase 2 passport bundles still flow
+        # through the scheduler regardless of this background task.
+        if settings.google_drive_client_id:
+            from mnemo_mcp.sync import start_auto_sync
+
+            start_auto_sync(db)
+            logger.info(
+                f"Sync: Google Drive/{settings.sync_folder} "
+                f"(interval={settings.sync_interval}s)"
+            )
 
     # Shared context -- embedding_model starts as None (not ready yet).
     # Background task updates it in-place once the backend is validated.
@@ -1796,9 +1810,17 @@ def _resolve_sync_passphrase() -> str | None:
 
 
 def _resolve_default_backend() -> str:
-    """First entry of ``SYNC_BACKEND`` (comma-separated, primary first)."""
-    raw = (settings.sync_backend or "gdrive").strip()
-    return (raw.split(",")[0] or "gdrive").strip()
+    """Return the active sync backend per the deployment-mode XOR.
+
+    Delegates to :func:`mnemo_mcp.sync.resolve_active_backend` which checks
+    ``SYNC_S3_BUCKET`` (env > pydantic field). The legacy
+    ``settings.sync_backend`` comma-separated multi-backend value is
+    ignored — operator picks ONE backend at deploy time (Method 1 GDrive
+    via relay vs Method 2/3 S3 via docker env). See ``docs/passport.md``.
+    """
+    from mnemo_mcp.sync import resolve_active_backend
+
+    return resolve_active_backend()
 
 
 async def _handle_config_sync_now(ctx: Context | None, backend: str | None) -> str:

@@ -330,6 +330,24 @@ def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | 
     return next_step
 
 
+def passphrase_from_env() -> str | None:
+    """Return ``SYNC_PASSPHRASE`` from the environment, or ``None`` if unset.
+
+    Method 2/3 (HTTP / Docker deploy with ``SYNC_S3_BUCKET`` set) wires the
+    passphrase via docker-env at container spawn — there is no relay form
+    field for it in S3 mode. This helper centralises the read so callers
+    do not need to import ``os`` inline at every site.
+
+    The pydantic ``settings.sync_passphrase`` field is intentionally not
+    consulted here: that field exists for the legacy ``_resolve_sync_passphrase``
+    chain which is also driven by env, just one indirection further. Use
+    this helper when you specifically want "passphrase from env at this
+    instant" (e.g. during S3 mode startup validation).
+    """
+    raw = os.environ.get("SYNC_PASSPHRASE", "").strip()
+    return raw or None
+
+
 def _harden_passphrase(config: dict[str, str]) -> dict[str, str]:
     """Argon2id-hash ``SYNC_PASSPHRASE`` so the raw value never lands on disk.
 
@@ -396,7 +414,25 @@ def _save_local_credentials(config: dict[str, str]) -> None:
 def _trigger_gdrive_flow(
     sub: str | None = None, auto_open: bool = False
 ) -> dict | None:
-    """Trigger GDrive OAuth Device Code flow if configured."""
+    """Trigger GDrive OAuth Device Code flow if configured.
+
+    Gated by :func:`mnemo_mcp.sync.resolve_active_backend` (XOR design):
+    in S3 mode (``SYNC_S3_BUCKET`` set, Method 2/3 docker deploy) we
+    SKIP the GDrive flow entirely — the operator wired S3 credentials at
+    container spawn and end-users authenticating with cloud API keys via
+    the relay form should NOT be prompted for a Google Drive account on
+    top of that.
+    """
+    try:
+        from mnemo_mcp.sync import resolve_active_backend
+
+        if resolve_active_backend() == "s3":
+            logger.info("GDrive flow skipped: SYNC_S3_BUCKET set (S3 mode active)")
+            return None
+    except Exception:
+        # Resolver failure is non-fatal — fall through to legacy GDrive path.
+        logger.opt(exception=True).debug("resolve_active_backend failed")
+
     try:
         from mnemo_mcp.config import settings as s
 

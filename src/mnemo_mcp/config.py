@@ -125,8 +125,12 @@ class Settings(BaseSettings):
     compression_provider: str = ""  # "" = auto-detect via llm.detect_provider
     compression_model: str = ""  # "" = use llm.get_default_model(provider)
 
-    # Phase 2: passport-sync backends. SYNC_BACKEND is comma-separated
-    # for multi-backend mirror (gdrive,s3); leftmost is primary.
+    # DEPRECATED (2026-05-14): backend is auto-resolved from SYNC_S3_BUCKET
+    # presence via :func:`mnemo_mcp.sync.resolve_active_backend` (XOR
+    # between S3 and GDrive per deployment mode). Field kept for backward
+    # compatibility with older ``config.enc`` files / external scripts that
+    # may still set the env var; the value is no longer consulted by the
+    # scheduler / sync_now handlers. Slated for removal post-v2.x.
     sync_backend: str = "gdrive"
     sync_s3_bucket: str = ""
     sync_s3_region: str = "us-east-1"
