@@ -16,15 +16,76 @@ When you bootstrap a fresh machine you supply your passphrase, point at
 your backend, and `config(action="import_passport")` rehydrates the local
 SQLite store with the full passport content.
 
-## Backend choice
+## Backend choice (XOR per deployment mode)
 
 | Backend | Pros | Cons |
 |---|---|---|
 | **S3** (R2 / B2 / MinIO / AWS) | Cheap (CF R2 free tier covers most users), portable, no API rate limits, easy multi-region | Requires you to register a bucket + IAM key |
 | **Google Drive** | Zero infra setup if you already have a Google account, OAuth Device Code flow | API quotas, slower for large bundles, ties you to Google |
 
-You can configure both: `SYNC_BACKEND="s3,gdrive"` will mirror passport
-pushes across both backends per scheduler tick.
+**The two backends are mutually exclusive at deployment level (XOR).** The
+2026-05-14 Test B design drops the legacy `SYNC_BACKEND="s3,gdrive"`
+multi-mirror semantics: operator picks ONE backend per deployment.
+
+Resolution rule (`sync.resolve_active_backend`):
+
+- `SYNC_S3_BUCKET` is set (env var OR pydantic `settings.sync_s3_bucket`) →
+  active backend = **S3**. GDrive Device Code OAuth is **disabled** at
+  startup; the relay form does NOT prompt for a Google account.
+- Otherwise → active backend = **GDrive**. The relay form drives the
+  Device Code flow for the end-user's Google account.
+
+Env var takes precedence over the pydantic field so an operator can
+override a persisted bucket from `config.enc` without rewriting it.
+
+### Per-mode runbook
+
+#### Method 1 (local-relay / uvx) → GDrive
+
+End-user runs `uvx mnemo-mcp --http`, opens the relay URL, pastes API
+keys, then authorises Google Drive via Device Code. No S3 env vars set.
+
+```bash
+# uvx (no S3 env vars; GDrive flow auto-fires after relay form submit)
+uvx mnemo-mcp --http
+```
+
+#### Method 2/3 (HTTP deploy / docker) → S3
+
+Operator sets S3 + passphrase env at container spawn. End-users only
+paste API keys via the relay form — the passport sync is invisible to
+them and S3-backed under the hood.
+
+```bash
+docker run \
+  -e SYNC_S3_BUCKET=mnemo-prod-passport \
+  -e SYNC_S3_ACCESS_KEY_ID=AKIA... \
+  -e SYNC_S3_SECRET_ACCESS_KEY=... \
+  -e SYNC_S3_REGION=auto \
+  -e SYNC_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com \
+  -e SYNC_PASSPHRASE='<strong-shared-passphrase>' \
+  -e PUBLIC_URL=https://mnemo.example.com \
+  -e MCP_DCR_SERVER_SECRET=<dcr-secret> \
+  ghcr.io/n24q02m/mnemo-mcp:latest --http
+```
+
+The `SYNC_PASSPHRASE` env var lives ONLY in the container process — it
+is hashed via Argon2id for any persisted `config.enc` record. No
+end-user input is needed for passport sync in S3 mode.
+
+### Switching modes (local → prod migration)
+
+1. Export current GDrive bundles:
+   `config(action="export_passport")` → save `.mnemo` files.
+2. Provision the S3 bucket + credentials and restart the container
+   with the new env vars (above).
+3. Import the bundle on the new container:
+   `config(action="import_passport", from="s3")` after pushing the
+   exported bundle to the bucket under `<prefix>/seq-NNNNNN.bin`.
+
+The legacy `SYNC_BACKEND` env var is **deprecated** (2026-05-14) — the
+field is kept for backward compat with persisted configs but is no
+longer consulted by the scheduler or `sync_now` handlers.
 
 ## Bundle format
 
@@ -118,8 +179,10 @@ Old bundles need the old passphrase; new bundles need the new one. There
 is no rotation tool yet (Phase 3 may add one).
 
 **Q: Can I have different passphrases for S3 vs GDrive?**
-Not currently. Both backends share `SYNC_PASSPHRASE` at the orchestrator
-level. If you need separate keys, use only one backend at a time.
+Moot under XOR semantics (2026-05-14): a single deployment runs ONE
+backend, so the passphrase belongs to that backend's bundles. If you
+need bundles encrypted under separate keys, run two separate deployments
+(one S3, one GDrive) each with its own `SYNC_PASSPHRASE`.
 
 **Q: How do I migrate from Phase 1 GDrive sync (DB-file copy) to Phase 2
 passport sync?**

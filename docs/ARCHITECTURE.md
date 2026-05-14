@@ -307,10 +307,11 @@ before `COMPRESSION_ENABLED` was true.
 
 Both backends implement the same `SyncBackend` ABC (push / pull /
 last_remote_sequence / health_check). The package registry
-(`sync.register / get / list_backends`) lazily wires backends from
-`settings.sync_backend` (comma-separated, leftmost is primary). New
-backends drop in by subclassing `SyncBackend` and calling
-`sync.register("name", instance)`.
+(`sync.register / get / list_backends`) lazily wires backends; the
+active one per deployment is selected XOR-style by
+`sync.resolve_active_backend()` (S3 when `SYNC_S3_BUCKET` is set,
+else GDrive — see `docs/passport.md`). New backends drop in by
+subclassing `SyncBackend` and calling `sync.register("name", instance)`.
 
 ### Bundle format (E2E encryption)
 

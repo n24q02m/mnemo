@@ -264,8 +264,8 @@ Configure via environment variables before starting the server:
 | `COMPRESSION_ENABLED` | `true` | Phase 2: enable LLM compression on capture |
 | `COMPRESSION_PROVIDER` | (auto) | Phase 2: explicit provider override (gemini/openai/anthropic/xai) |
 | `COMPRESSION_MODEL` | (auto) | Phase 2: explicit model override |
-| `SYNC_BACKEND` | `gdrive` | Phase 2: comma-separated backends (e.g. `s3,gdrive`) |
-| `SYNC_S3_BUCKET` | (none) | Phase 2: S3 bucket name (required for s3 backend) |
+| `SYNC_BACKEND` | `gdrive` | **DEPRECATED (2026-05-14)**: backend now auto-resolved from `SYNC_S3_BUCKET` presence (XOR). Kept for backward compat with persisted `config.enc`. |
+| `SYNC_S3_BUCKET` | (none) | Phase 2: S3 bucket name. **Setting this activates S3 mode (XOR with GDrive).** Required for Method 2/3 docker deploy. |
 | `SYNC_S3_REGION` | `us-east-1` | Phase 2: S3 region (use `auto` for R2) |
 | `SYNC_S3_ENDPOINT` | (none) | Phase 2: custom endpoint URL for R2 / B2 / MinIO |
 | `SYNC_S3_ACCESS_KEY_ID` | (none) | Phase 2: S3 access key |
