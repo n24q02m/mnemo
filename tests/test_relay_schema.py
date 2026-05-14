@@ -21,10 +21,20 @@ class TestRelaySchema:
         assert "fields" in RELAY_SCHEMA
         assert "modes" not in RELAY_SCHEMA
 
-    def test_schema_has_provider_and_phase2_fields(self):
-        """Phase 2: 4 provider fields + 5 S3 fields + 1 passphrase = 10."""
+    def test_schema_has_provider_fields_only(self):
+        """Relay form scope: 4 API key provider fields ONLY.
+
+        S3 + passphrase are operator env config (docker spawn), NOT
+        per-user relay fields. See docs/passport.md for the runbook
+        and relay_schema.py module docstring for the deployment-mode
+        XOR semantics.
+        """
         fields = RELAY_SCHEMA["fields"]
-        assert len(fields) == 10
+        assert len(fields) == 4
+        keys = [f["key"] for f in fields]
+        assert all(k.endswith("_API_KEY") for k in keys), (
+            f"non-API-key fields in relay form: {keys}"
+        )
 
     def test_schema_provider_keys(self):
         keys = [f["key"] for f in RELAY_SCHEMA["fields"]]

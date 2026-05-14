@@ -1,14 +1,18 @@
-"""Tests for the Phase 2 relay schema + passphrase storage hardening.
+"""Tests for the Phase 2 passphrase storage hardening + relay schema scope.
+
+After the 2026-05-14 Test B scope-correction, the relay form is API
+keys only. S3 + passphrase are deployment-mode (operator env config),
+so the schema MUST NOT expose them as per-user fields.
 
 Covers:
-- ``RELAY_SCHEMA`` exposes the 5 S3 fields + the ``SYNC_PASSPHRASE`` field.
-- ``_harden_passphrase`` converts raw ``SYNC_PASSPHRASE`` to
-  ``SYNC_PASSPHRASE_SALT`` + ``SYNC_PASSPHRASE_HASH`` (Argon2id) and DROPS
-  the raw value from the persisted config.
-- Empty / missing passphrase is silently dropped (not stored as empty).
-- Round-trip: hash stored by harden ``verify_passphrase`` returns True for
-  the original passphrase, False for a wrong one.
-- ``RELAY_SCHEMA`` capabilityInfo mentions Phase 2 passport sync.
+- ``RELAY_SCHEMA`` MUST NOT include S3 fields or ``SYNC_PASSPHRASE``.
+- ``_harden_passphrase`` still converts a raw ``SYNC_PASSPHRASE``
+  (read from env, not from the form) to Argon2id hash and drops the
+  raw value so on-disk config never contains the plaintext.
+- Empty / missing passphrase is silently dropped (not stored).
+- Round-trip: hash stored by harden ``verify_passphrase`` returns True
+  for the original passphrase, False for a wrong one.
+- ``RELAY_SCHEMA`` capabilityInfo mentions the deployment-mode XOR.
 """
 
 from __future__ import annotations
@@ -22,33 +26,39 @@ from mnemo_mcp.sync.bundle import verify_passphrase
 # ---------------------------------------------------------------------------
 
 
-def test_relay_schema_includes_s3_fields() -> None:
+def test_relay_schema_excludes_s3_fields() -> None:
+    """S3 config belongs to operator env, not per-user relay form."""
     keys = {f["key"] for f in RELAY_SCHEMA["fields"]}
-    assert {
+    forbidden = {
         "SYNC_S3_BUCKET",
         "SYNC_S3_REGION",
         "SYNC_S3_ENDPOINT",
         "SYNC_S3_ACCESS_KEY_ID",
         "SYNC_S3_SECRET_ACCESS_KEY",
-    }.issubset(keys), f"missing S3 fields in {keys}"
+    }
+    leaked = keys & forbidden
+    assert not leaked, f"S3 fields leaked into relay form (operator env only): {leaked}"
 
 
-def test_relay_schema_includes_passphrase_field() -> None:
+def test_relay_schema_excludes_passphrase_field() -> None:
+    """Passphrase is operator env (SYNC_PASSPHRASE), not relay form."""
     keys = {f["key"] for f in RELAY_SCHEMA["fields"]}
-    assert "SYNC_PASSPHRASE" in keys
-
-    pass_field = next(
-        f for f in RELAY_SCHEMA["fields"] if f["key"] == "SYNC_PASSPHRASE"
+    assert "SYNC_PASSPHRASE" not in keys, (
+        "SYNC_PASSPHRASE must be operator env, not per-user relay field"
     )
-    assert pass_field["type"] == "password"
-    assert "Argon2id" in pass_field["helpText"]
-    # Help text must explicitly warn about lost passphrase = unrecoverable.
-    assert "lost passphrase" in pass_field["helpText"].lower()
 
 
-def test_relay_schema_capability_info_mentions_passport_sync() -> None:
+def test_relay_schema_capability_info_mentions_xor_passport_sync() -> None:
     capabilities = {info["label"] for info in RELAY_SCHEMA["capabilityInfo"]}
     assert any("Passport" in label for label in capabilities)
+    # Capability info must document the XOR (mutually exclusive) semantics.
+    passport_info = next(
+        info for info in RELAY_SCHEMA["capabilityInfo"] if "Passport" in info["label"]
+    )
+    desc = passport_info.get("description", "").lower()
+    assert "mutually exclusive" in desc or "xor" in desc.lower(), (
+        f"capabilityInfo must explain XOR semantics: {passport_info}"
+    )
 
 
 # ---------------------------------------------------------------------------

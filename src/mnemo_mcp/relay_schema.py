@@ -1,4 +1,20 @@
-"""Config schema for relay page setup."""
+"""Config schema for relay page setup.
+
+Relay form scope is **API keys only**. Sync backend selection is a
+deployment-mode decision (env-driven, not user-input):
+
+- **Local-relay / uvx (Method 1)**: no SYNC_S3_* env vars set →
+  GDrive Device Code OAuth via existing flow (user authorises Google
+  account, token stored in ~/.mnemo-mcp/tokens/).
+- **HTTP deploy / docker (Method 2/3)**: operator sets SYNC_S3_BUCKET +
+  SYNC_S3_ACCESS_KEY_ID + SYNC_S3_SECRET_ACCESS_KEY (+ optional REGION
+  / ENDPOINT) + SYNC_PASSPHRASE via docker env → server detects S3
+  mode at startup, **disables GDrive flow entirely**, sends encrypted
+  bundles to S3-compatible storage.
+
+The two backends are mutually exclusive at deployment level. See
+docs/passport.md for the full operator runbook.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +25,8 @@ RELAY_SCHEMA: dict[str, Any] = {
     "displayName": "Mnemo MCP",
     "description": (
         "Enter API keys for cloud capabilities. Leave all empty for pure "
-        "local mode (ONNX models). Configure S3 + passphrase for "
-        "encrypted multi-machine passport sync (Phase 2)."
+        "local mode (ONNX models). Multi-machine passport sync is a "
+        "deployment-mode setting (operator env vars, not configured here)."
     ),
     "fields": [
         {
@@ -49,69 +65,6 @@ RELAY_SCHEMA: dict[str, Any] = {
             "helpText": "Embedding + Reranking.",
             "required": False,
         },
-        # Phase 2: passport sync S3 backend (optional)
-        {
-            "key": "SYNC_S3_BUCKET",
-            "label": "S3 Bucket (passport sync)",
-            "type": "text",
-            "placeholder": "my-mnemo-bucket",
-            "helpText": (
-                "Optional. Bucket name for encrypted memory passport "
-                "sync. Works with AWS S3, Cloudflare R2, Backblaze B2, "
-                "MinIO, etc."
-            ),
-            "required": False,
-        },
-        {
-            "key": "SYNC_S3_REGION",
-            "label": "S3 Region",
-            "type": "text",
-            "placeholder": "us-east-1",
-            "helpText": "Bucket region. Use 'auto' for Cloudflare R2.",
-            "required": False,
-        },
-        {
-            "key": "SYNC_S3_ENDPOINT",
-            "label": "S3 Endpoint URL",
-            "type": "text",
-            "placeholder": "https://<acct>.r2.cloudflarestorage.com",
-            "helpText": (
-                "Custom endpoint for non-AWS S3 (R2 / B2 / MinIO). "
-                "Leave blank for AWS S3."
-            ),
-            "required": False,
-        },
-        {
-            "key": "SYNC_S3_ACCESS_KEY_ID",
-            "label": "S3 Access Key ID",
-            "type": "password",
-            "placeholder": "AKIA...",
-            "helpText": "S3-compatible access key.",
-            "required": False,
-        },
-        {
-            "key": "SYNC_S3_SECRET_ACCESS_KEY",
-            "label": "S3 Secret Access Key",
-            "type": "password",
-            "placeholder": "...",
-            "helpText": "S3-compatible secret key.",
-            "required": False,
-        },
-        # Phase 2: passport bundle encryption passphrase
-        {
-            "key": "SYNC_PASSPHRASE",
-            "label": "Passport Encryption Passphrase",
-            "type": "password",
-            "placeholder": "long random phrase",
-            "helpText": (
-                "Required if you enable S3 / GDrive passport sync. "
-                "Used to derive an AES-256-GCM key via Argon2id. "
-                "Only the Argon2id-derived hash is stored in config.enc; "
-                "the raw passphrase NEVER lands on disk. WARNING: lost "
-                "passphrase = unrecoverable bundles (no backdoor)."
-            ),
-            "required": False,
-        },
     ],
     "capabilityInfo": [
         {
@@ -130,12 +83,14 @@ RELAY_SCHEMA: dict[str, Any] = {
             "description": "Used for memory importance scoring and graph analysis. Without a key, basic heuristics are used.",
         },
         {
-            "label": "Passport Sync (Phase 2)",
-            "priority": "S3 (R2 / B2 / MinIO) and / or Google Drive",
+            "label": "Passport Sync (Phase 2, operator-config)",
+            "priority": "S3 (env) XOR Google Drive (default)",
             "description": (
-                "Encrypted memory passport bundles (AES-256-GCM + "
-                "Argon2id KDF). Multi-backend mirror supported. "
-                "Passphrase required."
+                "Mutually exclusive: deployment sets SYNC_S3_BUCKET + "
+                "SYNC_PASSPHRASE env at docker spawn → S3 mode with "
+                "encrypted bundles (AES-256-GCM + Argon2id). No S3 env "
+                "→ Google Drive Device Code OAuth via this relay. See "
+                "docs/passport.md for operator runbook."
             ),
         },
     ],
