@@ -44,6 +44,22 @@ repos:
         types: [python]
         pass_filenames: false
 
+  # uv.lock canonicalizer: this repo has [tool.uv.sources] pointing
+  # n24q02m-mcp-core at an editable host path. Any `uv lock` (incl.
+  # indirect invocations) regenerates the lock with that editable path,
+  # which breaks Docker CD `uv sync --frozen`. This hook re-locks with
+  # UV_NO_SOURCES=1 before tests run so the committed lock always
+  # resolves core-py from the registry. Replaces the manual
+  # `UV_NO_SOURCES=1 uv lock` workaround.
+  - repo: local
+    hooks:
+      - id: uv-lock-no-sources
+        name: uv lock (no local path sources)
+        entry: bash -c 'UV_NO_SOURCES=1 uv lock && git add uv.lock'
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
   # Pytest: Run tests
   - repo: local
     hooks:
