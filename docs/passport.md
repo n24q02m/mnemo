@@ -1,14 +1,14 @@
 # Passport Sync
 
-Mnemo Phase 2 introduces **passport sync**: an end-to-end-encrypted memory
-backup / restore loop that lets you carry your full memory history across
-machines without exposing plaintext to the storage backend.
+**Passport sync** is an end-to-end-encrypted memory backup / restore loop
+that lets you carry your full memory history across machines without
+exposing plaintext to the storage backend.
 
 ## Concept
 
 A *passport* is a single self-contained encrypted bundle that snapshots
 your memory store (manifest + memory rows + entity / edge sections + room
-for Phase 3 embeddings). The bundle is opaque to whichever backend stores
+for embeddings). The bundle is opaque to whichever backend stores
 it -- Cloudflare R2, AWS S3, Backblaze B2, MinIO, or Google Drive only ever
 see ciphertext.
 
@@ -131,8 +131,8 @@ sync mode.
    time `hmac.compare_digest`).
 4. **Lost = unrecoverable.** There is no backdoor. If you forget your
    passphrase the past bundles cannot be decrypted; you must reset and
-   start fresh. `config(action="reset_sync", confirm=true)` (Phase 3) will
-   clear local state without touching remote bundles.
+   start fresh. `config(action="reset_sync", confirm=true)` clears local
+   state without touching remote bundles.
 
 This is by design: a recovery path would also let an attacker decrypt
 your bundles if they obtained either backend access or `config.enc`.
@@ -155,7 +155,7 @@ the `sync_overrides` audit table so divergence is never silently lost.
 
 ## Bootstrap a new machine
 
-Use the `passport-bootstrap` skill (Phase 2 trinity addition):
+Use the `passport-bootstrap` skill:
 
 1. Install mnemo-mcp.
 2. Configure relay form (HTTP) or env vars (stdio) with your S3 / GDrive
@@ -176,7 +176,7 @@ prohibitively expensive. By design.
 **Q: I changed my passphrase. Are my old bundles still readable?**
 Each bundle embeds its own salt + the passphrase used at encode time.
 Old bundles need the old passphrase; new bundles need the new one. There
-is no rotation tool yet (Phase 3 may add one).
+is no passphrase-rotation tool yet.
 
 **Q: Can I have different passphrases for S3 vs GDrive?**
 Moot under XOR semantics (2026-05-14): a single deployment runs ONE
@@ -184,15 +184,16 @@ backend, so the passphrase belongs to that backend's bundles. If you
 need bundles encrypted under separate keys, run two separate deployments
 (one S3, one GDrive) each with its own `SYNC_PASSPHRASE`.
 
-**Q: How do I migrate from Phase 1 GDrive sync (DB-file copy) to Phase 2
+**Q: How do I migrate from the legacy GDrive sync (DB-file copy) to
 passport sync?**
 Both modes coexist on the same OAuth token. Set `SYNC_PASSPHRASE` and
 trigger `config(action="sync_now")` -- this writes a v2 passport bundle
 to `<sync_folder>/passport/seq-NNNNNN.bin` alongside the legacy DB-file
-copy. Phase 3 will deprecate the DB-file path.
+copy. The DB-file path is deprecated and will be removed in a future
+release.
 
 **Q: My passport `.mnemo` file is huge. Why?**
-Phase 2 bundles include the full memory text (compressed when LLM
-available). Phase 3 will add embeddings.bin which roughly triples the
-size for users with cloud embeddings enabled. Argon2id + AES-256-GCM
+Bundles include the full memory text (compressed when an LLM provider is
+available). With cloud embeddings enabled the bundle also carries
+`embeddings.bin`, which roughly triples the size. Argon2id + AES-256-GCM
 both add minimal overhead (<1% over plaintext payload).

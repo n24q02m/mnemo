@@ -83,7 +83,7 @@ RELAY_SCHEMA: dict[str, Any] = {
             "description": "Used for memory importance scoring and graph analysis. Without a key, basic heuristics are used.",
         },
         {
-            "label": "Passport Sync (Phase 2, operator-config)",
+            "label": "Passport Sync (operator-config)",
             "priority": "S3 (env) XOR Google Drive (default)",
             "description": (
                 "Mutually exclusive: deployment sets SYNC_S3_BUCKET + "

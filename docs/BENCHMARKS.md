@@ -1,7 +1,6 @@
 # Benchmarks
 
-This document tracks Mnemo performance baselines + Phase 2 targets per
-spec `2026-04-19-mnemo-v2-design.md` section 3.
+This document tracks Mnemo performance baselines and targets.
 
 ## Phase 1 baseline (v1.27.0-beta.2)
 
@@ -17,21 +16,20 @@ spec `2026-04-19-mnemo-v2-design.md` section 3.
 
 | Metric | Target | Rationale |
 |---|---|---|
-| Compression ratio | >=3x reduction | Spec section 3 |
-| Fact retention after compression | >=0.90 | Spec section 3 |
-| Compression latency p95 | <500 ms | Spec section 3 |
-| Capture latency p95 (with compression) | <600 ms (= baseline + 500ms compression budget) | Composition of Phase 1 + 500ms compression |
-| Delta upload p95 (10k store, 1% delta) | <2s | Spec section 3 |
-| Full sync cold boot (10k store) | <15s | Spec section 3 |
+| Compression ratio | >=3x reduction | Design target |
+| Fact retention after compression | >=0.90 | Design target |
+| Compression latency p95 | <500 ms | Design target |
+| Capture latency p95 (with compression) | <600 ms (= baseline + 500ms compression budget) | Baseline capture + 500ms compression |
+| Delta upload p95 (10k store, 1% delta) | <2s | Design target |
+| Full sync cold boot (10k store) | <15s | Design target |
 
 ## How to measure
 
 Compression ratio + fact retention need a curated fixture
 (`tests/fixtures/compression/conversations.jsonl` 500 turns + a
-ground-truth fact set). Phase 2 baseline release ships the fixture
-infrastructure; the actual ratio + retention numbers are populated as
-the curated dataset matures (initial 50 entries from public AI Studio
-exports + Claude Code transcripts, expanded across follow-up patches).
+ground-truth fact set). The fixture infrastructure ships with the
+compression feature; the actual ratio + retention numbers are populated
+as the curated dataset matures.
 
 Sync metrics are measured against the moto S3 backend (offline,
 deterministic) for delta latency and against a real R2 bucket for full
@@ -52,8 +50,8 @@ pytest marker (skipped by default per pyproject.toml addopts).
 
 ## Phase 1 vs Phase 2 retrieval drift
 
-Phase 2 must stay within +/-10% of Phase 1 on retrieval metrics
-(spec section 3). Compression is content-rewrite, not column-rewrite,
+Phase 2 must stay within +/-10% of Phase 1 on retrieval metrics.
+Compression is content-rewrite, not column-rewrite,
 so FTS5 + vec scores stay anchored to the rewritten text. Fact
 retention >=0.90 plus the explicit prompt to preserve identifiers
 keeps semantic recall comparable; concrete drift numbers populate as
@@ -61,15 +59,14 @@ the eval set lands.
 
 ## Phase 3 targets (v2.0.0)
 
-Spec section 3 Phase 3 row + Phase 3 plan Task 11 Step 4 regression
-gate.
+Temporal knowledge graph performance gate.
 
 | Metric | Target | Rationale |
 |---|---|---|
-| Bitemporal query p95 | <200 ms | Spec section 3 — `memories_as_of` must stay snappy on a 10k-row DB. Indexed via `idx_memories_updated` + COALESCE on `valid_from`. |
-| Entity resolution precision | ≥0.85 | Spec section 3 — over a 200-pair eval (100 same-entity, 100 different) the embedding+name dedup must avoid false-merge ≥85% of the time. |
-| Entity resolution recall | ≥0.80 | Spec section 3 — at the same threshold, must catch ≥80% of true duplicates. |
-| Capture latency p95 (KG_AUTO_ENABLED=true) | <800 ms | Phase 1+2 baseline + LLM extract round-trip (~200 ms) + Phase 3 store overhead. |
+| Bitemporal query p95 | <200 ms | Time-travel queries — `memories_as_of` must stay snappy on a 10k-row DB. Indexed via `idx_memories_updated` + COALESCE on `valid_from`. |
+| Entity resolution precision | ≥0.85 | Dedup accuracy — over a 200-pair eval (100 same-entity, 100 different) the embedding+name dedup must avoid false-merge ≥85% of the time. |
+| Entity resolution recall | ≥0.80 | Dedup coverage — at the same threshold, must catch ≥80% of true duplicates. |
+| Capture latency p95 (KG_AUTO_ENABLED=true) | <800 ms | Baseline capture + LLM extract round-trip (~200 ms) + KG store overhead. |
 | Bundle size growth (Phase 3 vs Phase 2, 10k memories) | ≤2x | KG sections add roughly N entities + 2N edges + N links to the bundle. AES-GCM compression overhead is constant. |
 
 ## Phase 3 measured baselines

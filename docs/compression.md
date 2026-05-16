@@ -1,7 +1,7 @@
 # LLM Compression
 
-Mnemo Phase 2 introduces **per-turn LLM compression** as a post-dedup
-step inside `memory(action="capture")`. The goal is roughly **3x token
+**Per-turn LLM compression** runs as a post-dedup step inside
+`memory(action="capture")`. The goal is roughly **3x token
 reduction at >=0.9 fact retention** so memory recall quality stays
 intact while storage + retrieval costs drop.
 
@@ -57,8 +57,8 @@ Set `LOG_LEVEL=DEBUG` to see when compression skipped and why.
 
 ## Manual re-compression
 
-For rows captured before `COMPRESSION_ENABLED` was true (e.g. Phase 1
-data carried through Phase 2 upgrade), call:
+For rows captured before `COMPRESSION_ENABLED` was true (e.g. older
+data carried through an upgrade), call:
 
 ```
 memory(action="compress", memory_id="<id>")

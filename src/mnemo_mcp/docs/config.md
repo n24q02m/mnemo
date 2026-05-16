@@ -14,7 +14,7 @@ Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
 `setup_complete`, `setup_relay`, `sync_now`, `export_passport`,
 `import_passport`.
 
-> Phase 2 actions (`sync_now`, `export_passport`, `import_passport`)
+> Passport sync actions (`sync_now`, `export_passport`, `import_passport`)
 > require `SYNC_PASSPHRASE` to be set in the process environment (stdio
 > mode) or supplied via the relay form passphrase field (HTTP mode). The
 > raw passphrase is held in process memory only; only the
@@ -175,7 +175,7 @@ Equivalent to `setup_start(key="force")`. Kept for older clients.
 
 **Parameters:** None
 
-### `sync_now` - Push delta passport to a backend (Phase 2)
+### `sync_now` - Push delta passport to a backend
 
 Triggers an explicit sync cycle against one configured backend. Picks
 delta-push (common case) or full-pull-push (sequence gap) automatically.
@@ -196,7 +196,7 @@ delta-push (common case) or full-pull-push (sequence gap) automatically.
 {"action": "sync_now", "key": "s3"}
 ```
 
-### `export_passport` - Write encrypted passport to disk (Phase 2)
+### `export_passport` - Write encrypted passport to disk
 
 Builds a full passport bundle and writes it to
 `<data_dir>/passport-<unix-ts>.mnemo`. Useful for offline backup or
@@ -214,7 +214,7 @@ manual transfer to another machine.
 {"action": "export_passport"}
 ```
 
-### `import_passport` - Pull + apply remote passport (Phase 2)
+### `import_passport` - Pull + apply remote passport
 
 Pulls the latest passport bundle from the named backend, decrypts with
 `SYNC_PASSPHRASE`, and applies each row via last-write-wins per row.
@@ -261,17 +261,17 @@ Configure via environment variables before starting the server:
 | `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
 | `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
-| `COMPRESSION_ENABLED` | `true` | Phase 2: enable LLM compression on capture |
-| `COMPRESSION_PROVIDER` | (auto) | Phase 2: explicit provider override (gemini/openai/anthropic/xai) |
-| `COMPRESSION_MODEL` | (auto) | Phase 2: explicit model override |
+| `COMPRESSION_ENABLED` | `true` | Enable LLM compression on capture |
+| `COMPRESSION_PROVIDER` | (auto) | Explicit provider override (gemini/openai/anthropic/xai) |
+| `COMPRESSION_MODEL` | (auto) | Explicit model override |
 | `SYNC_BACKEND` | `gdrive` | **DEPRECATED (2026-05-14)**: backend now auto-resolved from `SYNC_S3_BUCKET` presence (XOR). Kept for backward compat with persisted `config.enc`. |
-| `SYNC_S3_BUCKET` | (none) | Phase 2: S3 bucket name. **Setting this activates S3 mode (XOR with GDrive).** Required for Method 2/3 docker deploy. |
-| `SYNC_S3_REGION` | `us-east-1` | Phase 2: S3 region (use `auto` for R2) |
-| `SYNC_S3_ENDPOINT` | (none) | Phase 2: custom endpoint URL for R2 / B2 / MinIO |
-| `SYNC_S3_ACCESS_KEY_ID` | (none) | Phase 2: S3 access key |
-| `SYNC_S3_SECRET_ACCESS_KEY` | (none) | Phase 2: S3 secret key |
-| `SYNC_S3_PREFIX` | `passport/` | Phase 2: object key prefix |
-| `SYNC_PASSPHRASE` | (none) | Phase 2: raw passphrase for AES-256-GCM (in-process only) |
+| `SYNC_S3_BUCKET` | (none) | S3 bucket name. **Setting this activates S3 mode (XOR with GDrive).** Required for Method 2/3 docker deploy. |
+| `SYNC_S3_REGION` | `us-east-1` | S3 region (use `auto` for R2) |
+| `SYNC_S3_ENDPOINT` | (none) | Custom endpoint URL for R2 / B2 / MinIO |
+| `SYNC_S3_ACCESS_KEY_ID` | (none) | S3 access key |
+| `SYNC_S3_SECRET_ACCESS_KEY` | (none) | S3 secret key |
+| `SYNC_S3_PREFIX` | `passport/` | Object key prefix |
+| `SYNC_PASSPHRASE` | (none) | Raw passphrase for AES-256-GCM (in-process only) |
 
 ### API_KEYS Format
 

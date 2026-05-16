@@ -7,12 +7,15 @@ Memories survive across sessions, projects, and machines (with sync enabled).
 
 ## Actions (current)
 
-The active action surface is: `add`, `search`, `list`, `update`, `delete`,
-`export`, `import`, `stats`, `restore`, `archived`, `consolidate`.
+The active action surface is: `add`, `capture`, `search`, `list`, `update`,
+`delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate`.
 
-A `capture` action with explicit `context_type` (conversation / fact /
-preference / skill / task / decision) is planned for Phase 1 Task 4 of the
-mnemo v2 roadmap and is **not yet available** in this build.
+The `capture` action records a typed memory with an explicit
+`context_type` (one of `conversation` / `fact` / `preference` / `skill` /
+`task` / `decision`), runs embedding-based duplicate detection before
+storing, and (when an LLM provider is configured) applies compression and
+importance scoring on the way in. It is available now; see the
+[`capture`](#capture---record-a-typed-memory) reference below.
 
 ## Action reference
 
@@ -36,6 +39,35 @@ Save facts, preferences, decisions, code patterns, project context.
 **Example:**
 ```json
 {"action": "add", "content": "User prefers Polars over Pandas for DataFrames", "category": "preference", "tags": ["python", "dataframes"]}
+```
+
+### `capture` - Record a typed memory
+
+Like `add`, but tags the memory with an explicit `context_type` and runs
+embedding-based duplicate detection before storing. When an LLM provider is
+configured, the captured text is compressed and importance-scored on the way
+in; without a provider it stores verbatim.
+
+**Parameters:**
+- `text` (required): The memory content to capture
+- `context_type` (optional): One of `conversation` (default), `fact`,
+  `preference`, `skill`, `task`, `decision`
+- `category` (optional): Organize by category (default: "general")
+- `tags` (optional): List of tags for filtering
+- `source` (optional): Origin label for the memory
+- `importance` (optional): Explicit importance score (0.0-1.0); otherwise
+  LLM-scored when a provider is available
+
+**Returns:**
+- `status`: `"captured"` or `"deduplicated"`
+- `id`: ID of the stored (or matched duplicate) memory
+- `context_type`: Resolved context type
+- `deduplicated`: Whether an existing near-duplicate was matched instead
+- `semantic`: Whether a semantic embedding was attached
+
+**Example:**
+```json
+{"action": "capture", "text": "User prefers dark mode", "context_type": "preference"}
 ```
 
 ### `search` - Find relevant memories
