@@ -30,8 +30,8 @@ dependencies = [
     # Cloud embedding + reranking (Cohere SDK)
     "cohere>=6.1.0",
     # LLM completion (native SDKs)
-    "google-genai>=2.3.0",
-    "openai>=2.37.0",
+    "google-genai>=2.5.0",
+    "openai>=2.38.0",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
@@ -44,7 +44,7 @@ dependencies = [
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.13.0",
     # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
-    "boto3>=1.43.9",
+    "boto3>=1.43.13",
     # Phase 2: AES-256-GCM bundle encryption + Argon2id KDF
     "cryptography>=48.0.0",
     # Transitive pin: urllib3 < 2.7.0 has 2 HIGH CVEs (GHSA-qccp-gfcp-xxvc
@@ -63,7 +63,7 @@ dev = [
     "pre-commit",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "syrupy>=5.1.0",
+    "syrupy>=5.2.0",
     # Phase 2: in-memory S3 fixture for sync backend tests
     "moto[s3]>=5.2.1",
 ]
