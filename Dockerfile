@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # section D6. Build stdio: `docker buildx build --target stdio -t <repo>:stdio .`
 # Build http:  `docker buildx build --target http  -t <repo>:http .`
 # Build latest (= http): `docker buildx build --target http -t <repo>:latest .`
-FROM python:3.13-slim-bookworm@sha256:386df64585134ba00b1d5e307acb1e72f33e9e87dbbb00aad9b8f24dbb51db72 AS runtime
+FROM python:3.13-slim-bookworm@sha256:e4fa1f978c539608a10cdf74700ac32a3f719dfc6e8b6b6001da82deb36302a2 AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
