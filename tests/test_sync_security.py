@@ -8,17 +8,12 @@ from mnemo_mcp.config import Settings
 
 
 def test_google_drive_client_id_default(monkeypatch):
-    """Default ships Google Desktop OAuth client (PUBLIC per Google docs).
-
-    Parity with wet-mcp (both are "http local relay" category MCP servers).
-    Desktop/Installed OAuth client_secret is explicitly PUBLIC per
-    https://developers.google.com/identity/protocols/oauth2#installed.
-    """
+    """Google Drive client ID and secret are empty by default."""
     monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_ID", raising=False)
     monkeypatch.delenv("GOOGLE_DRIVE_CLIENT_SECRET", raising=False)
     s = Settings(api_keys=None)
-    assert s.google_drive_client_id.endswith(".apps.googleusercontent.com")
-    assert s.google_drive_client_secret.startswith("GOCSPX-")
+    assert s.google_drive_client_id == ""
+    assert s.google_drive_client_secret == ""
 
 
 def test_google_drive_credentials_from_env(monkeypatch):
