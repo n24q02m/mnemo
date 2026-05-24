@@ -391,7 +391,10 @@ class MemoryDB:
 
         memory_id = uuid.uuid4().hex
         now = _now_iso()
-        tags_json = json.dumps(tags or [])
+
+        # Bolt Performance Optimization:
+        # Prevent expensive json.dumps calls for the default empty list.
+        tags_json = "[]" if not tags else json.dumps(tags)
 
         self._conn.execute(
             """INSERT INTO memories (id, content, category, tags, source,
@@ -466,7 +469,11 @@ class MemoryDB:
 
         memory_id = uuid.uuid4().hex
         now = _now_iso()
-        tags_json = json.dumps(tags or [])
+
+        # Bolt Performance Optimization:
+        # Prevent expensive json.dumps calls for the default empty list.
+        tags_json = "[]" if not tags else json.dumps(tags)
+
         compressed_int = 1 if compressed else 0
 
         if importance is not None:
@@ -1081,7 +1088,11 @@ class MemoryDB:
                 "content_provided": content is not None,
                 "category": category,
                 "category_provided": category is not None,
-                "tags": json.dumps(tags) if tags is not None else None,
+                # Bolt Performance Optimization:
+                # Prevent expensive json.dumps calls for the default empty list.
+                "tags": ("[]" if not tags else json.dumps(tags))
+                if tags is not None
+                else None,
                 "tags_provided": tags is not None,
                 "source": source,
                 "source_provided": source is not None,
@@ -1221,7 +1232,15 @@ class MemoryDB:
                     rejected += 1
                     continue
                 tags = mem.get("tags", [])
-                tags_json = json.dumps(tags) if isinstance(tags, list) else tags
+
+                # Bolt Performance Optimization:
+                # Prevent expensive json.dumps calls for the default empty list.
+                tags_json = (
+                    "[]"
+                    if tags == []
+                    else (json.dumps(tags) if isinstance(tags, list) else tags)
+                )
+
                 importance = mem.get("importance", 0.5)
                 to_insert.append(
                     (
