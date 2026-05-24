@@ -30,7 +30,7 @@ dependencies = [
     # Cloud embedding + reranking (Cohere SDK)
     "cohere>=6.1.0",
     # LLM completion (native SDKs)
-    "google-genai>=2.5.0",
+    "google-genai>=2.6.0",
     "openai>=2.38.0",
     # SQLite vector search
     "sqlite-vec",
@@ -44,7 +44,7 @@ dependencies = [
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.13.0",
     # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
-    "boto3>=1.43.13",
+    "boto3>=1.43.14",
     # Phase 2: AES-256-GCM bundle encryption + Argon2id KDF
     "cryptography>=48.0.0",
     # Transitive pin: urllib3 < 2.7.0 has 2 HIGH CVEs (GHSA-qccp-gfcp-xxvc
@@ -53,8 +53,8 @@ dependencies = [
     "urllib3>=2.7.0",
     # Transitive pin: idna < 3.15 -> CVE-2026-45409; python-multipart
     # < 0.0.27 -> CVE-2026-42561. Pinned to patched releases.
-    "idna>=3.15",
-    "python-multipart>=0.0.27",
+    "idna>=3.16",
+    "python-multipart>=0.0.29",
 ]
 
 [dependency-groups]
