@@ -22,7 +22,7 @@ class TestRelaySchema:
         assert "modes" not in RELAY_SCHEMA
 
     def test_schema_has_provider_fields_only(self):
-        """Relay form scope: 4 API key provider fields ONLY.
+        """Relay form scope: 6 API key provider fields ONLY.
 
         S3 + passphrase are operator env config (docker spawn), NOT
         per-user relay fields. See docs/passport.md for the runbook
@@ -30,7 +30,7 @@ class TestRelaySchema:
         XOR semantics.
         """
         fields = RELAY_SCHEMA["fields"]
-        assert len(fields) == 4
+        assert len(fields) == 6
         keys = [f["key"] for f in fields]
         assert all(k.endswith("_API_KEY") for k in keys), (
             f"non-API-key fields in relay form: {keys}"
@@ -42,6 +42,8 @@ class TestRelaySchema:
         assert "GEMINI_API_KEY" in keys
         assert "OPENAI_API_KEY" in keys
         assert "COHERE_API_KEY" in keys
+        assert "ANTHROPIC_API_KEY" in keys
+        assert "XAI_API_KEY" in keys
 
     def test_all_fields_optional(self):
         for f in RELAY_SCHEMA["fields"]:
@@ -59,6 +61,8 @@ class TestRelaySchema:
             "GEMINI_API_KEY",
             "OPENAI_API_KEY",
             "COHERE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "XAI_API_KEY",
         }
         for f in RELAY_SCHEMA["fields"]:
             if f["key"] not in provider_keys:

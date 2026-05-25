@@ -65,6 +65,24 @@ RELAY_SCHEMA: dict[str, Any] = {
             "helpText": "Embedding + Reranking.",
             "required": False,
         },
+        {
+            "key": "ANTHROPIC_API_KEY",
+            "label": "Anthropic API Key",
+            "type": "password",
+            "placeholder": "sk-ant-...",
+            "helpUrl": "https://console.anthropic.com/settings/keys",
+            "helpText": "LLM (lower priority than OpenAI).",
+            "required": False,
+        },
+        {
+            "key": "XAI_API_KEY",
+            "label": "xAI API Key",
+            "type": "password",
+            "placeholder": "xai-...",
+            "helpUrl": "https://console.x.ai/",
+            "helpText": "LLM (lower priority than Anthropic).",
+            "required": False,
+        },
     ],
     "capabilityInfo": [
         {
@@ -79,7 +97,7 @@ RELAY_SCHEMA: dict[str, Any] = {
         },
         {
             "label": "LLM",
-            "priority": "Gemini > OpenAI",
+            "priority": "Gemini > OpenAI > Anthropic > xAI",
             "description": "Used for memory importance scoring and graph analysis. Without a key, basic heuristics are used.",
         },
         {
