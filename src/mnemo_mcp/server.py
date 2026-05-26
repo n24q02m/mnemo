@@ -2158,10 +2158,16 @@ async def run_http(port: int = 0) -> None:
         finally:
             _current_sub.reset(token)
 
+    # MCP_AUTH_DISABLE=1 skips Bearer JWT verification on /mcp -- for
+    # deployments behind an external auth boundary (reverse proxy / API
+    # gateway). See mcp-core BearerMCPApp.auth_disabled (>=1.15.0-beta.3).
+    auth_disabled = os.environ.get("MCP_AUTH_DISABLE") == "1"
+
     await run_http_server(
         mcp,  # ty: ignore[invalid-argument-type]
         server_name="mnemo-mcp",
         relay_schema=RELAY_SCHEMA,
+        auth_disabled=auth_disabled,
         port=port,
         host=host,
         on_credentials_saved=save_credentials,
