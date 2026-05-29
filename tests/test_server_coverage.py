@@ -18,6 +18,7 @@ from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.server import (
     _embed,
     _format_memory,
+    _json,
     config,
     main,
     memory,
@@ -598,3 +599,15 @@ class TestWarmupInitEmbeddingBackend:
         mock_logger.error.assert_called_with(
             "Local embedding init failed: Init Backend Failed"
         )
+
+
+class TestJsonHelper:
+    """Tests for the _json formatting helper."""
+
+    def test_json_indentation(self):
+        """Verify _json serializes with indent=2."""
+        data = {"a": 1, "b": [2, 3]}
+        result = _json(data)
+        expected = json.dumps(data, indent=2)
+        assert result == expected
+        assert "\n  " in result  # Check for 2-space indentation
