@@ -101,6 +101,46 @@ class TestValidateCloudModels:
 
         assert result["cloud_ready"] is False
 
+    @patch(
+        "mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["fail-model", "success-model"]
+    )
+    @patch("mnemo_mcp.embedder.init_backend")
+    def test_cloud_first_candidate_fails_continues_to_next(self, mock_init):
+        from mnemo_mcp.setup_tool import _validate_cloud_models
+
+        mock_settings = MagicMock()
+        mock_settings.resolve_embedding_model.return_value = None
+
+        mock_backend_success = MagicMock()
+        mock_backend_success.check_available.return_value = 1024
+
+        def side_effect(mode, model):
+            if model == "fail-model":
+                raise Exception("Service unavailable")
+            return mock_backend_success
+
+        mock_init.side_effect = side_effect
+
+        result = _validate_cloud_models(mock_settings)
+
+        assert result["cloud_ready"] is True
+        assert result["model"] == "success-model"
+        assert result["dims"] == 1024
+
+    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["fail-1", "fail-2"])
+    @patch("mnemo_mcp.embedder.init_backend")
+    def test_cloud_all_candidates_fail_returns_not_ready(self, mock_init):
+        from mnemo_mcp.setup_tool import _validate_cloud_models
+
+        mock_settings = MagicMock()
+        mock_settings.resolve_embedding_model.return_value = None
+
+        mock_init.side_effect = Exception("Service unavailable")
+
+        result = _validate_cloud_models(mock_settings)
+
+        assert result["cloud_ready"] is False
+
 
 class TestDownloadLocalEmbedding:
     """_download_local_embedding downloads and validates local model."""
