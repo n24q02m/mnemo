@@ -117,3 +117,117 @@ async def test_upload_boundary_uses_app_name():
         assert "mnemo_mcp_upload_boundary" in headers.get("Content-Type", "")
 
     file_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Error-log redaction: error responses from the OAuth token / device-code
+# endpoints can echo back token material (refresh tokens, authorization codes,
+# client secrets). We must never log the raw response body on these paths.
+# ---------------------------------------------------------------------------
+
+# A body that simulates an error response leaking sensitive material.
+_SENSITIVE_BODY = (
+    '{"error":"invalid_grant",'
+    '"refresh_token":"1//LEAKED-REFRESH-TOKEN",'
+    '"client_secret":"GOCSPX-LEAKED-SECRET"}'
+)
+_SECRET_MARKERS = ("LEAKED-REFRESH-TOKEN", "GOCSPX-LEAKED-SECRET", "refresh_token")
+
+
+def _mock_async_client(response):
+    """Build a patchable httpx.AsyncClient whose post() returns ``response``."""
+    mock_client = AsyncMock()
+    mock_client.post.return_value = response
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    return mock_client
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_error_does_not_log_response_body():
+    """_refresh_token must log only the status code, never the raw body."""
+    from mnemo_mcp.sync import _refresh_token
+
+    response = MagicMock()
+    response.status_code = 400
+    response.text = _SENSITIVE_BODY
+
+    token = {"refresh_token": "1//USER-REFRESH", "client_id": "client123"}
+
+    with (
+        patch("mnemo_mcp.sync.gdrive.httpx.AsyncClient") as mock_client_cls,
+        patch("mnemo_mcp.sync.gdrive.settings") as mock_settings,
+        patch("mnemo_mcp.sync.gdrive.logger") as mock_logger,
+    ):
+        mock_settings.google_drive_client_id = "client123"
+        mock_settings.google_drive_client_secret = "GOCSPX-USER-SECRET"
+        mock_client_cls.return_value = _mock_async_client(response)
+
+        result = await _refresh_token(token)
+
+    assert result is None
+    logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+    for marker in _SECRET_MARKERS:
+        assert marker not in logged, f"leaked '{marker}' in error log: {logged!r}"
+    assert "400" in logged
+
+
+@pytest.mark.asyncio
+async def test_request_device_code_error_does_not_log_response_body():
+    """_request_device_code must log only the status code, never the raw body."""
+    from mnemo_mcp.sync import _request_device_code
+
+    response = MagicMock()
+    response.status_code = 403
+    response.text = _SENSITIVE_BODY
+
+    with (
+        patch("mnemo_mcp.sync.gdrive.httpx.AsyncClient") as mock_client_cls,
+        patch("mnemo_mcp.sync.gdrive.logger") as mock_logger,
+    ):
+        mock_client_cls.return_value = _mock_async_client(response)
+
+        result = await _request_device_code("client123")
+
+    assert result is None
+    logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+    for marker in _SECRET_MARKERS:
+        assert marker not in logged, f"leaked '{marker}' in error log: {logged!r}"
+    assert "403" in logged
+
+
+@pytest.mark.asyncio
+async def test_upload_file_error_truncates_response_body():
+    """_upload_file must truncate the logged response body to 100 chars."""
+    from mnemo_mcp.sync import _upload_file
+
+    long_body = "X" * 500
+    response = MagicMock()
+    response.status_code = 500
+    response.text = long_body
+
+    token = {"access_token": "test"}
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        f.write(b"test data")
+        f.flush()
+        file_path = Path(f.name)
+
+    with (
+        patch(
+            "mnemo_mcp.sync._drive_request",
+            new_callable=AsyncMock,
+            return_value=response,
+        ),
+        patch("mnemo_mcp.sync.gdrive.logger") as mock_logger,
+    ):
+        result = await _upload_file(token, file_path, "folder_id")
+
+    file_path.unlink(missing_ok=True)
+    assert result is False
+    logged = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+    assert long_body not in logged
+    assert "X" * 100 in logged
+    assert "X" * 101 not in logged

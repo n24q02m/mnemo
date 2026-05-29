@@ -120,7 +120,7 @@ async def _refresh_token(token: dict) -> dict | None:
             )
 
             if response.status_code != 200:
-                logger.error(f"Token refresh failed: {response.text}")
+                logger.error(f"Token refresh failed: (status={response.status_code})")
                 return None
 
             data = response.json()
@@ -305,7 +305,7 @@ async def _find_or_create_folder(token: dict, folder_name: str) -> str | None:
             await _save_folder_id(folder_name, fid)
         return fid
 
-    logger.error(f"Failed to create folder '{folder_name}': {response.text}")
+    logger.error(f"Failed to create folder '{folder_name}': {response.text[:100]}")
     return None
 
 
@@ -397,7 +397,7 @@ async def _upload_file(
     if response.status_code in (200, 201):
         return True
 
-    logger.error(f"Upload failed ({response.status_code}): {response.text[:300]}")
+    logger.error(f"Upload failed ({response.status_code}): {response.text[:100]}")
     return False
 
 
@@ -416,7 +416,7 @@ async def _download_file(token: dict, file_id: str, dest_path: Path) -> bool:
         await asyncio.to_thread(dest_path.write_bytes, response.content)
         return True
 
-    logger.error(f"Download failed ({response.status_code}): {response.text[:300]}")
+    logger.error(f"Download failed ({response.status_code}): {response.text[:100]}")
     return False
 
 
@@ -589,7 +589,9 @@ async def _request_device_code(client_id: str) -> dict | None:
             )
 
             if response.status_code != 200:
-                logger.error(f"Device code request failed: {response.text}")
+                logger.error(
+                    f"Device code request failed: (status={response.status_code})"
+                )
                 return None
 
             return response.json()
@@ -949,7 +951,7 @@ class GDriveBackend(SyncBackend):
         if response.status_code not in (200, 201):
             raise RuntimeError(
                 f"GDriveBackend.push: upload failed ({response.status_code}): "
-                f"{response.text[:200]}"
+                f"{response.text[:100]}"
             )
 
     async def pull(self, sequence: int | None = None) -> bytes | None:
