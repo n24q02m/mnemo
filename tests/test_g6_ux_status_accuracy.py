@@ -120,3 +120,60 @@ class TestSetupStatusLiveDerivedState:
             result = _call_config_setup_status_sync()
 
         assert result["providers_configured"].count("GEMINI_API_KEY") == 1
+
+    def test_gdrive_only_store_counts_as_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A store with only GOOGLE_DRIVE_CLIENT_ID is reported as configured.
+
+        Pre-fix the handler counted only CLOUD_KEYS, so a GDrive-only saved
+        config wrongly reported awaiting_setup with an empty providers list.
+        The fix uses ALL_CONFIG_KEYS (incl GDrive) so the status is accurate.
+        """
+        for k in (
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "XAI_API_KEY",
+            "GOOGLE_DRIVE_CLIENT_ID",
+        ):
+            monkeypatch.delenv(k, raising=False)
+
+        with patch(
+            "mcp_core.storage.per_plugin_store.PerPluginStore.load",
+            return_value={"GOOGLE_DRIVE_CLIENT_ID": "client-id-123"},
+        ):
+            result = _call_config_setup_status_sync()
+
+        assert result["state"] == "configured"
+        assert "GOOGLE_DRIVE_CLIENT_ID" in result["providers_configured"]
+        # GDrive is not a cloud LLM/embedding key, so it must not leak into
+        # the cloud-keys-in-env summary even when present in the env.
+        assert "GOOGLE_DRIVE_CLIENT_ID" not in result["cloud_keys_in_env"]
+
+    def test_gdrive_env_not_listed_as_cloud_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """GOOGLE_DRIVE_CLIENT_ID in env counts as a provider but is not a
+        cloud key in the ``cloud_keys_in_env`` summary."""
+        for k in (
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "XAI_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "client-id-456")
+
+        with patch(
+            "mcp_core.storage.per_plugin_store.PerPluginStore.load",
+            return_value={},
+        ):
+            result = _call_config_setup_status_sync()
+
+        assert "GOOGLE_DRIVE_CLIENT_ID" in result["providers_configured"]
+        assert "GOOGLE_DRIVE_CLIENT_ID" not in result["cloud_keys_in_env"]

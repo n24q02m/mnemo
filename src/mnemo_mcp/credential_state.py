@@ -45,7 +45,7 @@ CLOUD_KEYS = [
 ]
 
 # All config keys that indicate a valid saved config (includes GDrive)
-_ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]
+ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]
 
 
 # Per-request JWT subject (HTTP multi-user remote mode only).
@@ -214,7 +214,7 @@ def resolve_credential_state() -> CredentialState:
             from mcp_core.storage.per_plugin_store import PerPluginStore
 
             saved = PerPluginStore("mnemo").load()
-            if saved and any(saved.get(k) for k in _ALL_CONFIG_KEYS):
+            if saved and any(saved.get(k) for k in ALL_CONFIG_KEYS):
                 # Apply to env vars
                 for key, value in saved.items():
                     if value and key not in os.environ:

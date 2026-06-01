@@ -1720,6 +1720,7 @@ async def _handle_config_setup_status() -> str:
     from mcp_core.storage.per_plugin_store import PerPluginStore
 
     from mnemo_mcp.credential_state import (
+        ALL_CONFIG_KEYS,
         CLOUD_KEYS,
         CredentialState,
         credentials_for_current_request,
@@ -1735,25 +1736,29 @@ async def _handle_config_setup_status() -> str:
     if get_current_sub() is not None:
         _per_sub = credentials_for_current_request()
         _env_keys: list[str] = []
-        _store_keys = [k for k in CLOUD_KEYS if _per_sub.get(k)]
+        _store_keys = [k for k in ALL_CONFIG_KEYS if _per_sub.get(k)]
     else:
         # Derive providers_configured from live PerPluginStore load + env
         # so status is accurate even if module-level _state is stale.
         _saved = PerPluginStore("mnemo").load() or {}
-        _env_keys = [k for k in CLOUD_KEYS if os.environ.get(k)]
-        _store_keys = [k for k in CLOUD_KEYS if _saved.get(k)]
+        _env_keys = [k for k in ALL_CONFIG_KEYS if os.environ.get(k)]
+        _store_keys = [k for k in ALL_CONFIG_KEYS if _saved.get(k)]
     _providers = list(dict.fromkeys(_env_keys + _store_keys))
+    _state = get_state()
+
     if _providers:
         _derived_state = "configured"
-    elif get_state() == CredentialState.LOCAL:
+    elif _state == CredentialState.LOCAL:
         _derived_state = "local"
+    elif _state == CredentialState.SETUP_IN_PROGRESS:
+        _derived_state = "setup_in_progress"
     else:
         _derived_state = "awaiting_setup"
     return _json(
         {
             "state": _derived_state,
             "setup_url": get_setup_url(),
-            "cloud_keys_in_env": _env_keys,
+            "cloud_keys_in_env": [k for k in _env_keys if k in CLOUD_KEYS],
             "providers_configured": _providers,
         }
     )
