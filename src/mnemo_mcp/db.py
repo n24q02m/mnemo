@@ -1018,26 +1018,33 @@ class MemoryDB:
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
 
-        archive_clause = "" if include_archived else " AND archived_at IS NULL"
-
         if category:
-            rows = self._conn.execute(
-                f"""SELECT * FROM memories
-                   WHERE category = ?{archive_clause}
-                   ORDER BY updated_at DESC
-                   LIMIT ? OFFSET ?""",
-                (category, limit, offset),
-            ).fetchall()
+            if include_archived:
+                sql = (
+                    "SELECT * FROM memories "
+                    "WHERE category = ? "
+                    "ORDER BY updated_at DESC "
+                    "LIMIT ? OFFSET ?"
+                )
+            else:
+                sql = (
+                    "SELECT * FROM memories "
+                    "WHERE category = ? AND archived_at IS NULL "
+                    "ORDER BY updated_at DESC "
+                    "LIMIT ? OFFSET ?"
+                )
+            rows = self._conn.execute(sql, (category, limit, offset)).fetchall()
         else:
-            # No leading WHERE -> drop the leading ' AND '.
-            where_sql = "" if include_archived else " WHERE archived_at IS NULL"
-            rows = self._conn.execute(
-                f"""SELECT * FROM memories
-                   {where_sql}
-                   ORDER BY updated_at DESC
-                   LIMIT ? OFFSET ?""",
-                (limit, offset),
-            ).fetchall()
+            if include_archived:
+                sql = "SELECT * FROM memories ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+            else:
+                sql = (
+                    "SELECT * FROM memories "
+                    "WHERE archived_at IS NULL "
+                    "ORDER BY updated_at DESC "
+                    "LIMIT ? OFFSET ?"
+                )
+            rows = self._conn.execute(sql, (limit, offset)).fetchall()
 
         return [dict(r) for r in rows]
 

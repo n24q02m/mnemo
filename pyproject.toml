@@ -70,6 +70,7 @@ dev = [
     "syrupy>=5.2.0",
     # Phase 2: in-memory S3 fixture for sync backend tests
     "moto[s3]>=5.2.1",
+    "bandit>=1.9.4",
 ]
 
 [project.scripts]
