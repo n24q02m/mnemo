@@ -57,7 +57,7 @@ src/mnemo_mcp/
   graph.py         # Knowledge graph: entity/relation extraction via LLM
   relay_setup.py   # Zero-config relay: create session, poll for config
   relay_schema.py  # Relay form schema (local + cloud modes)
-  sync.py          # Google Drive sync (OAuth Device Code, httpx)
+  sync/            # Sync backends: gdrive.py (OAuth Device Code, httpx) + s3.py (R2/B2/MinIO) + delta/bundle/base
   token_store.py   # OAuth token storage (secure file-based, chmod 600)
   docs/            # Tool documentation markdown
 tests/             # 1:1 mapping voi source modules
@@ -75,7 +75,7 @@ Khong co prefix (khac voi cac project khac):
 - `EMBEDDING_BACKEND` -- `cloud` hoac `local` (auto-detect)
 - `EMBEDDING_MODEL` -- Cloud embedding model name
 - `EMBEDDING_DIMS` -- default 768 (0 = auto)
-- `SYNC_ENABLED` -- `true`/`false`, default false
+- `SYNC_ENABLED` -- `true`/`false`, default true
 - `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID (required for sync)
 - `SYNC_FOLDER` -- Google Drive folder name (default: `mnemo-mcp`)
 - `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
