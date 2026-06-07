@@ -291,3 +291,135 @@ def test_decode_truncated_framing_raises() -> None:
 
     with pytest.raises(ValueError, match="truncated section name"):
         decode_bundle(bundle, _PASS)
+
+
+def test_decode_rejects_header_overrun() -> None:
+    bundle = encode_bundle({"x": b"hi"}, _PASS)
+    # Claim header is longer than it is
+    bad_bundle = struct.pack("!I", 1000) + bundle[4:]
+    with pytest.raises(ValueError, match="header overrun"):
+        decode_bundle(bad_bundle, _PASS)
+
+
+def test_decode_truncated_section_name_length() -> None:
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from mnemo_mcp.sync.bundle import _derive_key
+
+    salt = os.urandom(32)
+    nonce = os.urandom(12)
+    header = json.dumps(
+        {
+            "version": 2,
+            "kdf": "argon2id",
+            "salt": salt.hex(),
+            "aead": "aes-256-gcm",
+            "nonce": nonce.hex(),
+        }
+    ).encode()
+    key = _derive_key(_PASS, salt)
+    # Framed payload: truncated name length (needs 4 bytes)
+    framed = b"\x00\x00"
+    ciphertext = AESGCM(key).encrypt(nonce, framed, associated_data=header)
+    bundle = struct.pack("!I", len(header)) + header + ciphertext
+    with pytest.raises(ValueError, match="truncated section name length"):
+        decode_bundle(bundle, _PASS)
+
+
+def test_decode_truncated_section_data_length() -> None:
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from mnemo_mcp.sync.bundle import _derive_key
+
+    salt = os.urandom(32)
+    nonce = os.urandom(12)
+    header = json.dumps(
+        {
+            "version": 2,
+            "kdf": "argon2id",
+            "salt": salt.hex(),
+            "aead": "aes-256-gcm",
+            "nonce": nonce.hex(),
+        }
+    ).encode()
+    key = _derive_key(_PASS, salt)
+    # Framed payload: name_len(4), name("x"), but truncated data length (needs 8 bytes)
+    framed = struct.pack("!I", 1) + b"x" + b"\x00" * 4
+    ciphertext = AESGCM(key).encrypt(nonce, framed, associated_data=header)
+    bundle = struct.pack("!I", len(header)) + header + ciphertext
+    with pytest.raises(ValueError, match="truncated section data length"):
+        decode_bundle(bundle, _PASS)
+
+
+def test_decode_truncated_section_data() -> None:
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from mnemo_mcp.sync.bundle import _derive_key
+
+    salt = os.urandom(32)
+    nonce = os.urandom(12)
+    header = json.dumps(
+        {
+            "version": 2,
+            "kdf": "argon2id",
+            "salt": salt.hex(),
+            "aead": "aes-256-gcm",
+            "nonce": nonce.hex(),
+        }
+    ).encode()
+    key = _derive_key(_PASS, salt)
+    # Framed payload: name_len(4), name("x"), data_len(8), but truncated data
+    framed = struct.pack("!I", 1) + b"x" + struct.pack("!Q", 100) + b"too short"
+    ciphertext = AESGCM(key).encrypt(nonce, framed, associated_data=header)
+    bundle = struct.pack("!I", len(header)) + header + ciphertext
+    with pytest.raises(ValueError, match="truncated section data"):
+        decode_bundle(bundle, _PASS)
+
+
+def test_encode_bundle_structural_integrity() -> None:
+    """Explicitly verify encode_bundle output matches the spec without decode_bundle."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from mnemo_mcp.sync.bundle import _derive_key
+
+    payload = {"manifest.json": b'{"rows": 0}'}
+    bundle = encode_bundle(payload, _PASS)
+
+    # 1. Prefix: 4-byte BE header length
+    assert len(bundle) > 4
+    hdr_len = struct.unpack("!I", bundle[:4])[0]
+    assert 4 + hdr_len < len(bundle)
+
+    # 2. Header: JSON with version/kdf/aead/salt/nonce
+    header_bytes = bundle[4 : 4 + hdr_len]
+    header = json.loads(header_bytes)
+    assert header["version"] == 2
+    assert header["kdf"] == "argon2id"
+    assert header["aead"] == "aes-256-gcm"
+    assert len(bytes.fromhex(header["salt"])) == 32
+    assert len(bytes.fromhex(header["nonce"])) == 12
+
+    # 3. Ciphertext follows header
+    ciphertext = bundle[4 + hdr_len :]
+    assert len(ciphertext) > 16  # GCM tag is 16 bytes
+
+    # 4. Internal framing verification
+    salt = bytes.fromhex(header["salt"])
+    nonce = bytes.fromhex(header["nonce"])
+    key = _derive_key(_PASS, salt)
+    framed = AESGCM(key).decrypt(nonce, ciphertext, associated_data=header_bytes)
+
+    name_len = struct.unpack("!I", framed[:4])[0]
+    assert name_len == len("manifest.json")
+    name = framed[4 : 4 + name_len].decode("utf-8")
+    assert name == "manifest.json"
+    data_len = struct.unpack("!Q", framed[4 + name_len : 4 + name_len + 8])[0]
+    assert data_len == len(payload["manifest.json"])
+    data = framed[4 + name_len + 8 : 4 + name_len + 8 + data_len]
+    assert data == payload["manifest.json"]
