@@ -708,3 +708,13 @@ class TestPrompts:
         result = recall_context("machine learning")
         assert "machine learning" in result
         assert "search" in result.lower()
+
+
+class TestServerVersion:
+    def test_serverinfo_version_matches_package(self):
+        """initialize's serverInfo.version reports the package version,
+        not the MCP SDK version."""
+        from mnemo_mcp.server import __version__, mcp
+
+        init_opts = mcp._mcp_server.create_initialization_options()
+        assert init_opts.server_version == __version__

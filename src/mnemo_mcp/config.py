@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from loguru import logger
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -60,7 +61,9 @@ class Settings(BaseSettings):
     """Mnemo MCP Server configuration.
 
     Environment variables:
-    - DB_PATH: Path to SQLite database (default: ~/.mnemo-mcp/memories.db)
+    - DB_PATH (or MNEMO_DB_PATH): Path to SQLite database
+        (default: ~/.mnemo-mcp/memories.db). Both names are accepted;
+        MNEMO_DB_PATH matches the name used by alembic migrations.
     - API_KEYS: Provider API keys, supports multiple providers
         Format: "ENV_VAR:key,ENV_VAR:key,..."
         Example: "COHERE_API_KEY:co-...,GEMINI_API_KEY:AIza..."
@@ -75,8 +78,10 @@ class Settings(BaseSettings):
     - GOOGLE_DRIVE_CLIENT_SECRET: OAuth client secret for Google Drive sync
     """
 
-    # Database
-    db_path: str = ""
+    # Database. Accepts either DB_PATH (runtime, backward-compat) or
+    # MNEMO_DB_PATH (the name alembic migrations read in alembic/env.py),
+    # so a single env var aligns runtime and migrations.
+    db_path: str = Field("", validation_alias=AliasChoices("DB_PATH", "MNEMO_DB_PATH"))
 
     # Provider API Keys: "ENV_VAR:key,ENV_VAR:key,..."
     api_keys: str | None = None
@@ -159,6 +164,9 @@ class Settings(BaseSettings):
         "env_prefix": "",
         "case_sensitive": False,
         "validate_assignment": True,
+        # Allow init by field name (e.g. Settings(db_path=...)) in addition
+        # to the env aliases declared via validation_alias on db_path.
+        "populate_by_name": True,
     }
 
     def get_db_path(self) -> Path:

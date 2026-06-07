@@ -42,6 +42,7 @@ def clean_env(monkeypatch):
         "GOOGLE_DRIVE_CLIENT_ID",
         "GOOGLE_DRIVE_CLIENT_SECRET",
         "DB_PATH",
+        "MNEMO_DB_PATH",
         "LOG_LEVEL",
         "MCP_RELAY_URL",
         "QWEN3_EMBED_CACHE_PATH",
@@ -107,6 +108,18 @@ class TestDbPath:
     def test_data_dir_default(self):
         s = Settings()
         assert s.get_data_dir() == Path.home() / ".mnemo-mcp"
+
+    def test_db_path_env(self, monkeypatch):
+        """DB_PATH env var is honored (backward-compat)."""
+        monkeypatch.setenv("DB_PATH", "/tmp/db_path.db")
+        s = Settings()
+        assert s.get_db_path() == Path("/tmp/db_path.db")
+
+    def test_mnemo_db_path_env(self, monkeypatch):
+        """MNEMO_DB_PATH env var is honored (matches alembic migrations)."""
+        monkeypatch.setenv("MNEMO_DB_PATH", "/tmp/x.db")
+        s = Settings()
+        assert s.get_db_path() == Path("/tmp/x.db")
 
 
 class TestApiKeys:

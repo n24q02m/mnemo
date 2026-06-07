@@ -15,6 +15,7 @@ import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib import resources as pkg_resources
+from importlib.metadata import version as _pkgver
 
 from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
@@ -22,6 +23,10 @@ from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import _EMBEDDING_CANDIDATES, settings
 from mnemo_mcp.db import MemoryDB
+
+# Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
+# to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
+__version__ = _pkgver("mnemo-mcp")
 
 # Constant embedding dimensions for sqlite-vec.
 # All embeddings are truncated to this size so switching models never
@@ -276,6 +281,10 @@ mcp = FastMCP(
     instructions="Persistent AI memory. Proactively save preferences, decisions, facts. Search before recommending.",
     lifespan=lifespan,
 )
+# FastMCP (mcp.server.fastmcp) has no ``version=`` kwarg; set it on the
+# lowlevel server so initialize's serverInfo.version reports the package
+# version instead of the MCP SDK version.
+mcp._mcp_server.version = __version__
 
 
 # --- Helper ---
