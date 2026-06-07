@@ -28,14 +28,14 @@ dependencies = [
     # Logging
     "loguru",
     # Cloud embedding + reranking (Cohere SDK)
-    "cohere>=7.0.0",
+    "cohere>=7.0.3",
     # LLM completion (native SDKs)
-    "google-genai>=2.6.0",
-    "openai>=2.38.0",
+    "google-genai>=2.8.0",
+    "openai>=2.41.0",
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.10.0",
+    "qwen3-embed>=1.10.1",
     # Zero-env-config credential relay
     "n24q02m-mcp-core>=1.17.2,<2",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
@@ -44,7 +44,7 @@ dependencies = [
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.13.0",
     # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
-    "boto3>=1.43.16",
+    "boto3>=1.43.24",
     # Phase 2: AES-256-GCM bundle encryption + Argon2id KDF
     "cryptography>=48.0.0",
     # Transitive pin: urllib3 < 2.7.0 has 2 HIGH CVEs (GHSA-qccp-gfcp-xxvc
@@ -53,8 +53,8 @@ dependencies = [
     "urllib3>=2.7.0",
     # Transitive pin: idna < 3.15 -> CVE-2026-45409; python-multipart
     # < 0.0.27 -> CVE-2026-42561. Pinned to patched releases.
-    "idna>=3.16",
-    "python-multipart>=0.0.29",
+    "idna>=3.18",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]
@@ -67,9 +67,9 @@ dev = [
     "pre-commit",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "syrupy>=5.2.0",
+    "syrupy>=5.3.1",
     # Phase 2: in-memory S3 fixture for sync backend tests
-    "moto[s3]>=5.2.1",
+    "moto[s3]>=5.2.2",
     "bandit>=1.9.4",
 ]
 
