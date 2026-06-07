@@ -230,6 +230,30 @@ class TestSaveToken:
         saved = json.loads((token_dir / "drive.json").read_text())
         assert saved["access_token"] == "abc"
 
+    def test_save_write_oserror_fallback(self, token_dir):
+        from unittest.mock import MagicMock
+
+        from mnemo_mcp.token_store import save_token
+
+        token = {"access_token": "write_fail_fallback"}
+        mock_file = MagicMock()
+        mock_file.write.side_effect = OSError("Write failed")
+        mock_file.__enter__.return_value = mock_file
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch("mnemo_mcp.token_store.os.open", return_value=999),
+            patch("mnemo_mcp.token_store.os.fchmod"),
+            patch("mnemo_mcp.token_store.os.fdopen", return_value=mock_file),
+            patch("mnemo_mcp.token_store.os.close"),
+        ):
+            m.get_data_dir.return_value = token_dir.parent
+            save_token("drive", token)
+
+        saved = json.loads((token_dir / "drive.json").read_text())
+        assert saved["access_token"] == "write_fail_fallback"
+
 
 class TestDeleteToken:
     def test_delete_existing(self, token_dir):

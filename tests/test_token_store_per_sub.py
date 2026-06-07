@@ -115,6 +115,49 @@ class TestSaveTokenForSub:
         # Restore (defensive)
         os.fchmod = original_fchmod  # noqa: SLF001
 
+    def test_save_write_oserror_fallback(self, data_dir):
+        from unittest.mock import MagicMock
+
+        from mnemo_mcp.token_store import get_token_path_for_sub, save_token_for_sub
+
+        token = {"access_token": "sub_write_fail"}
+        mock_file = MagicMock()
+        mock_file.write.side_effect = OSError("Write failed")
+        mock_file.__enter__.return_value = mock_file
+
+        with (
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch("mnemo_mcp.token_store.os.open", return_value=999),
+            patch("mnemo_mcp.token_store.os.fchmod"),
+            patch("mnemo_mcp.token_store.os.fdopen", return_value=mock_file),
+            patch("mnemo_mcp.token_store.os.close"),
+        ):
+            save_token_for_sub("user-write-fail", "drive", token)
+
+        path = get_token_path_for_sub("user-write-fail", "drive")
+        assert json.loads(path.read_text())["access_token"] == "sub_write_fail"
+
+    def test_save_fallback_chmod_oserror_swallowed(self, data_dir):
+        if os.name == "nt":
+            pytest.skip("POSIX-only fallback chmod path")
+        from mnemo_mcp.token_store import save_token_for_sub
+
+        original_chmod = Path.chmod
+
+        def mock_chmod(self, mode):
+            if self.name == "google_drive.json":
+                raise OSError("simulated chmod fail")
+            return original_chmod(self, mode)
+
+        with (
+            patch(
+                "mnemo_mcp.token_store.os.open", side_effect=OSError("trigger fallback")
+            ),
+            patch.object(Path, "chmod", mock_chmod),
+        ):
+            # Must not raise.
+            save_token_for_sub("user-fb-chmod", "google_drive", {"access_token": "ok"})
+
 
 class TestSaveTokenForSubFallback:
     """Cover the fallback branch when ``os.open`` raises OSError."""
