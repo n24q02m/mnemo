@@ -63,6 +63,12 @@ _TOKEN_PROVIDER = "google_drive"
 # In-memory folder ID cache to avoid duplicate folder creation
 _folder_id_cache: dict[str, str] = {}
 
+
+def _escape_q(value: str) -> str:
+    """Escape single quotes for GDrive q queries."""
+    return value.replace("'", "\\'")
+
+
 # Lock to prevent race conditions during disk cache operations
 _folder_id_disk_lock = asyncio.Lock()
 
@@ -263,7 +269,7 @@ async def _find_or_create_folder(token: dict, folder_name: str) -> str | None:
     import asyncio
 
     query = (
-        f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' "
+        f"name='{_escape_q(folder_name)}' and mimeType='application/vnd.google-apps.folder' "
         f"and trashed=false"
     )
     for attempt in range(3):
@@ -316,7 +322,7 @@ async def _find_file_in_folder(
 
     Returns file metadata dict (id, name, modifiedTime), or None.
     """
-    query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+    query = f"name='{_escape_q(file_name)}' and '{_escape_q(folder_id)}' in parents and trashed=false"
     response = await _drive_request(
         "GET",
         f"{_DRIVE_API_BASE}/files",
@@ -861,7 +867,7 @@ async def _ensure_bundle_folder(token: dict, base_folder: str) -> str | None:
     # GDrive does not support nested folder names in queries directly; we
     # find-or-create a folder named "passport" whose parent is base_id.
     query = (
-        f"name='{_BUNDLE_FOLDER}' and '{base_id}' in parents "
+        f"name='{_escape_q(_BUNDLE_FOLDER)}' and '{_escape_q(base_id)}' in parents "
         f"and mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
     response = await _drive_request(
@@ -1001,7 +1007,7 @@ class GDriveBackend(SyncBackend):
 
     @staticmethod
     async def _max_sequence(token: dict, folder_id: str) -> int:
-        query = f"'{folder_id}' in parents and trashed=false"
+        query = f"'{_escape_q(folder_id)}' in parents and trashed=false"
         response = await _drive_request(
             "GET",
             f"{_DRIVE_API_BASE}/files",
