@@ -696,9 +696,8 @@ class MemoryDB:
                     vec_params.append(category)
 
                 if tags:
-                    q = ",".join(["?"] * len(tags))
-                    vec_sql += f" AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({q}))"
-                    vec_params.extend(tags)
+                    vec_sql += " AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+                    vec_params.append(json.dumps(tags))
 
                 extra_sql, extra_params = self._build_filter_sql(**filter_kwargs)
                 if extra_sql:
@@ -825,9 +824,8 @@ class MemoryDB:
             filter_sql += " AND m.category = ?"
             filter_params.append(category)
         if tags:
-            q = ",".join(["?"] * len(tags))
-            filter_sql += f" AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN ({q}))"
-            filter_params.extend(tags)
+            filter_sql += " AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+            filter_params.append(json.dumps(tags))
 
         extra_sql, extra_params = self._build_filter_sql(
             context_type=context_type,
