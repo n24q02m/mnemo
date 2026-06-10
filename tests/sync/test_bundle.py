@@ -466,3 +466,64 @@ def test_encode_unicode_passphrase() -> None:
     pw = "Sêcrët Pâssphråsë 🎉"
     bundle = encode_bundle(payload, pw)
     assert decode_bundle(bundle, pw) == payload
+
+
+def test_decode_bundle_compatibility_v2() -> None:
+    """Verify that a known-good V2 bundle hex can still be decoded.
+
+    This ensures we don't accidentally break the derivation or framing
+    parameters in future changes.
+    """
+    # Generated with passphrase="static-test-pass", payload={"check": b"ok"}
+    # salt="ff"*32, nonce="ee"*12
+    bundle_hex = "000000a97b2276657273696f6e223a20322c20226b6466223a20226172676f6e326964222c202273616c74223a202266666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666222c202261656164223a20226165732d3235362d67636d222c20226e6f6e6365223a2022656565656565656565656565656565656565656565656565227d3b617c07b2dba0244d3818b9a544cefc6c0c288eb9cf7c73a5f4d89431989420904aff"
+    bundle = bytes.fromhex(bundle_hex)
+    decoded = decode_bundle(bundle, "static-test-pass")
+    assert decoded == {"check": b"ok"}
+
+
+def test_decode_bundle_header_missing_keys() -> None:
+    """Verify behaviour when required header keys are missing."""
+    bundle = encode_bundle({"x": b"hi"}, _PASS)
+    hdr_len = struct.unpack("!I", bundle[:4])[0]
+    header = json.loads(bundle[4 : 4 + hdr_len])
+
+    # Missing salt
+    h_no_salt = header.copy()
+    del h_no_salt["salt"]
+    b_no_salt = (
+        struct.pack("!I", len(json.dumps(h_no_salt)))
+        + json.dumps(h_no_salt).encode()
+        + bundle[4 + hdr_len :]
+    )
+    with pytest.raises(KeyError, match="salt"):
+        decode_bundle(b_no_salt, _PASS)
+
+    # Missing nonce
+    h_no_nonce = header.copy()
+    del h_no_nonce["nonce"]
+    b_no_nonce = (
+        struct.pack("!I", len(json.dumps(h_no_nonce)))
+        + json.dumps(h_no_nonce).encode()
+        + bundle[4 + hdr_len :]
+    )
+    with pytest.raises(KeyError, match="nonce"):
+        decode_bundle(b_no_nonce, _PASS)
+
+
+def test_decode_bundle_header_invalid_hex() -> None:
+    """Verify behaviour when salt/nonce contain invalid hex."""
+    bundle = encode_bundle({"x": b"hi"}, _PASS)
+    hdr_len = struct.unpack("!I", bundle[:4])[0]
+    header = json.loads(bundle[4 : 4 + hdr_len])
+
+    # Invalid salt hex
+    h_bad_salt = header.copy()
+    h_bad_salt["salt"] = "not-hex"
+    b_bad_salt = (
+        struct.pack("!I", len(json.dumps(h_bad_salt)))
+        + json.dumps(h_bad_salt).encode()
+        + bundle[4 + hdr_len :]
+    )
+    with pytest.raises(ValueError, match="non-hexadecimal"):
+        decode_bundle(b_bad_salt, _PASS)
