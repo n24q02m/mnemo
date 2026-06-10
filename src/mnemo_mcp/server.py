@@ -2146,6 +2146,14 @@ def save_summary(summary: str) -> str:
     - Use when a conversation is concluding or shifting topics to persist key takeaways.
     - Parameters: 'summary' (the consolidated text to save).
     """
+    if not summary or not summary.strip():
+        return _json(
+            {
+                "error": "Summary cannot be empty",
+                "suggestion": "Provide a concise summary of the conversation to save as memory.",
+            }
+        )
+
     return (
         f"Save this conversation summary as a memory:\n\n{summary}\n\n"
         "Use the memory tool with action='add', category='context', "
@@ -2161,6 +2169,14 @@ def recall_context(topic: str) -> str:
     - Use when starting a new task or answering a question to retrieve prior context.
     - Parameters: 'topic' (the specific subject or keywords to search for).
     """
+    if not topic or not topic.strip():
+        return _json(
+            {
+                "error": "Topic cannot be empty",
+                "suggestion": "Provide a specific topic or keyword to search for in your memories.",
+            }
+        )
+
     return (
         f"Search your memories for relevant context about: {topic}\n\n"
         "Use the memory tool with action='search' and this query. "
