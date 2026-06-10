@@ -76,23 +76,19 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Types
 
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-- `ci`: CI/CD changes
-- `build`: Build system changes
+This project uses only two commit types:
+
+- `feat`: New feature (triggers a minor version bump)
+- `fix`: Bug fix (triggers a patch version bump)
+
+All other changes (docs, refactors, tests, CI, build, maintenance) are committed under `fix` or `feat` as appropriate. Do not use other types, and do not use the `!` breaking-change indicator.
 
 ### Examples
 
 ```text
 feat: add support for custom embedding models
 fix: handle empty search query gracefully
-docs: update configuration examples
+fix: update configuration examples
 ```
 
 ## Release Process

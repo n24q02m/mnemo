@@ -126,7 +126,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Documentation
 
-Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/](https://mcp.n24q02m.com/servers/mnemo-mcp/)**:
+Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/)**:
 
 - [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
@@ -139,13 +139,15 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/](https://mcp.n24q02m.com/serv
 
 ## Tools
 
-3 MCP tools, 17 memory actions:
+15 MCP tools, 17 memory actions. The memory surface is exposed both as 11 specialized single-purpose tools and a legacy `memory` dispatcher (same actions), plus `config`, `help`, and `config__open_relay`:
 
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
-| `memory` | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history) |
+| `add_memory`, `search_memory`, `list_memories`, `update_memory`, `delete_memory`, `export_memories`, `import_memories`, `memory_stats`, `restore_memory`, `archived_memories`, `consolidate_memories` | (one action each) | Specialized single-purpose memory tools -- the recommended surface |
+| `memory` (legacy dispatcher) | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history) |
 | `config` | `status`, `sync`, `set`, `warmup`, `setup_sync`, `setup_status`, `setup_start`, `setup_skip`, `setup_reset`, `setup_complete`, `setup_relay`, `sync_now`, `export_passport`, `import_passport` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider, manage HTTP setup form lifecycle, passport export/import |
 | `help` | `topic="memory"` or `topic="config"` | Full documentation for any tool |
+| `config__open_relay` | (HTTP relay mode) | Open the zero-config relay setup form (registered via mcp-core) |
 
 Plugin trinity (Claude Code marketplace install):
 
@@ -189,7 +191,7 @@ uv run mnemo-mcp
 
 ## Trust Model
 
-This plugin implements **TC-Local** (machine-bound, single trust principal). See [mcp-core/docs/TRUST-MODEL.md](https://github.com/n24q02m/mcp-core/blob/main/docs/TRUST-MODEL.md) for full classification.
+This plugin implements **TC-Local** (machine-bound, single trust principal). The mode/storage/encryption breakdown below is the full classification.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|

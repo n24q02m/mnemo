@@ -256,7 +256,7 @@ Configure via environment variables before starting the server:
 | `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (qwen3-embed ONNX/GGUF), or empty (auto) |
 | `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
 | `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
-| `SYNC_ENABLED` | `false` | Enable Google Drive sync |
+| `SYNC_ENABLED` | `true` | Enable Google Drive sync |
 | `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID for Google Drive |
 | `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
 | `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |

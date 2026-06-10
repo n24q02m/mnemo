@@ -9,8 +9,8 @@
 +--------------------+        +---------------------+
 | MCP client         |  MCP   | mnemo-mcp           |
 | (Claude Code,      | <----> | FastMCP server      |
-|  Cursor, Codex,    |        | 3 tools: memory,    |
-|  claude.ai web)    |        | config, help        |
+|  Cursor, Codex,    |        | 15 tools (memory    |
+|  claude.ai web)    |        | + config + help)    |
 +--------------------+        +----------+----------+
                                          |
                                          v
@@ -220,8 +220,7 @@ to upgrade when the backup write fails.
 ## Trust model
 
 This plugin implements **TC-Local** (machine-bound, single trust principal).
-See [mcp-core TRUST-MODEL.md](https://github.com/n24q02m/mcp-core/blob/main/docs/TRUST-MODEL.md)
-for the full classification.
+The table below is the full classification.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
