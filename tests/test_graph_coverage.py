@@ -369,6 +369,22 @@ class TestLinkMemoryEntitiesCoverage:
         ).fetchone()[0]
         assert count == 0
 
+    def test_empty_memory_id(self, tmp_db: MemoryDB):
+        """No-op for empty or whitespace memory_id."""
+        conn = tmp_db._conn
+        # Create an entity first
+        entity_ids = upsert_entities(conn, [{"name": "TestEntity", "type": "concept"}])
+
+        # Empty memory_id
+        link_memory_entities(conn, "", entity_ids)
+        count = conn.execute("SELECT COUNT(*) FROM memory_entity_links").fetchone()[0]
+        assert count == 0
+
+        # Whitespace memory_id
+        link_memory_entities(conn, "   ", entity_ids)
+        count = conn.execute("SELECT COUNT(*) FROM memory_entity_links").fetchone()[0]
+        assert count == 0
+
     def test_exception_is_caught_and_logged(self, tmp_db: MemoryDB):
         """Exception during linking is caught and logged with details."""
         conn = MagicMock()
