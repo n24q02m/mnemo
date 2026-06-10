@@ -423,3 +423,46 @@ def test_encode_bundle_structural_integrity() -> None:
     assert data_len == len(payload["manifest.json"])
     data = framed[4 + name_len + 8 : 4 + name_len + 8 + data_len]
     assert data == payload["manifest.json"]
+
+
+# ---------------------------------------------------------------------------
+# Edge Cases & Robustness (Exhaustive verification)
+# ---------------------------------------------------------------------------
+
+
+def test_encode_empty_payload() -> None:
+    """An empty dictionary is a valid (though small) payload."""
+    payload: dict[str, bytes] = {}
+    bundle = encode_bundle(payload, _PASS)
+    decoded = decode_bundle(bundle, _PASS)
+    assert decoded == payload
+
+
+def test_encode_unicode_section_names() -> None:
+    """Non-ASCII section names should round-trip cleanly."""
+    payload = {"🎉.json": b'{"emoji": true}', "München.txt": b"Beer"}
+    bundle = encode_bundle(payload, _PASS)
+    decoded = decode_bundle(bundle, _PASS)
+    assert decoded == payload
+    assert "🎉.json" in decoded
+    assert "München.txt" in decoded
+
+
+def test_encode_is_randomized() -> None:
+    """Repeated calls with same payload + passphrase produce different bytes."""
+    payload = {"x": b"y"}
+    b1 = encode_bundle(payload, _PASS)
+    b2 = encode_bundle(payload, _PASS)
+    # Salt and nonce are random, so headers and ciphertexts MUST differ.
+    assert b1 != b2
+    # But both must decode to the same thing.
+    assert decode_bundle(b1, _PASS) == payload
+    assert decode_bundle(b2, _PASS) == payload
+
+
+def test_encode_unicode_passphrase() -> None:
+    """Passphrases with non-ASCII characters work."""
+    payload = {"x": b"y"}
+    pw = "Sêcrët Pâssphråsë 🎉"
+    bundle = encode_bundle(payload, pw)
+    assert decode_bundle(bundle, pw) == payload
