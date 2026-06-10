@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -69,8 +70,6 @@ class TestLoadToken:
         assert result is None
 
     def test_load_oserror(self, token_dir):
-        from pathlib import Path
-
         from mnemo_mcp.token_store import load_token
 
         (token_dir / "drive.json").write_text('{"access_token": "test"}')
@@ -125,8 +124,6 @@ class TestSaveToken:
         assert saved["access_token"] == "new"
 
     def test_save_chmod_dir_oserror(self, token_dir):
-        from pathlib import Path
-
         from mnemo_mcp.token_store import save_token
 
         token = {"access_token": "abc"}
@@ -186,8 +183,6 @@ class TestSaveToken:
         assert saved["access_token"] == "fallback_token"
 
     def test_save_fallback_chmod_oserror(self, token_dir):
-        from pathlib import Path
-
         from mnemo_mcp.token_store import save_token
 
         token = {"access_token": "fallback_chmod_fail"}
@@ -212,8 +207,6 @@ class TestSaveToken:
         assert saved["access_token"] == "fallback_chmod_fail"
 
     def test_save_nt_os(self, token_dir):
-        from pathlib import Path
-
         from mnemo_mcp.token_store import save_token
 
         token = {"access_token": "abc"}
@@ -307,3 +300,245 @@ class TestAsyncTokenStore:
 
         saved = json.loads((token_dir / "async_drive_save.json").read_text())
         assert saved["access_token"] == "async_save"
+
+
+class TestSubTokenStore:
+    @pytest.fixture
+    def sub_token_dir(self, tmp_path):
+        """Provide a temporary sub-scoped token directory."""
+        sub = "test-user"
+        import hashlib
+
+        safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+        d = tmp_path / "subs" / safe_sub / "tokens"
+        d.mkdir(parents=True, exist_ok=True)
+        with patch("mnemo_mcp.token_store.settings") as mock_settings:
+            mock_settings.get_data_dir.return_value = tmp_path
+            yield d
+
+    def test_get_token_path_for_sub(self, tmp_path):
+        from mnemo_mcp.token_store import get_token_path_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            path = get_token_path_for_sub(sub, provider)
+            import hashlib
+
+            safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+            expected = tmp_path / "subs" / safe_sub / "tokens" / f"{provider}.json"
+            assert path == expected
+
+    def test_save_token_for_sub_creates_file(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import get_token_path_for_sub, save_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "sub-abc", "token_type": "Bearer"}
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            save_token_for_sub(sub, provider, token)
+
+        path = get_token_path_for_sub(sub, provider)
+        assert path.exists()
+        saved = json.loads(path.read_text())
+        assert saved["access_token"] == "sub-abc"
+
+    def test_load_token_for_sub_valid(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "sub-load", "token_type": "Bearer"}
+        path = sub_token_dir / f"{provider}.json"
+        path.write_text(json.dumps(token))
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result == token
+
+    def test_load_token_for_sub_missing(self, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "missing"
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result is None
+
+    def test_load_token_for_sub_invalid_json(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        path = sub_token_dir / f"{provider}.json"
+        path.write_text("not json")
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result is None
+
+    def test_load_token_for_sub_oserror(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        path = sub_token_dir / f"{provider}.json"
+        path.write_text('{"access_token": "test"}')
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch.object(Path, "read_text", side_effect=OSError("Read error")),
+        ):
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result is None
+
+    def test_save_token_for_sub_os_open_oserror_fallback(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import get_token_path_for_sub, save_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "fallback"}
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch("mnemo_mcp.token_store.os.open", side_effect=OSError("Open error")),
+        ):
+            m.get_data_dir.return_value = tmp_path
+            save_token_for_sub(sub, provider, token)
+
+        path = get_token_path_for_sub(sub, provider)
+        saved = json.loads(path.read_text())
+        assert saved["access_token"] == "fallback"
+
+    def test_save_token_for_sub_chmod_oserror(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import save_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "chmod-fail"}
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch.object(Path, "chmod", side_effect=OSError("Chmod error")),
+            patch(
+                "mnemo_mcp.token_store.os.open", side_effect=OSError("Force fallback")
+            ),
+        ):
+            m.get_data_dir.return_value = tmp_path
+            # Should not raise
+            save_token_for_sub(sub, provider, token)
+
+    def test_save_token_for_sub_fchmod_oserror(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import get_token_path_for_sub, save_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "fchmod-fail"}
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch(
+                "mnemo_mcp.token_store.os.fchmod", side_effect=OSError("fchmod error")
+            ),
+        ):
+            m.get_data_dir.return_value = tmp_path
+            save_token_for_sub(sub, provider, token)
+
+        path = get_token_path_for_sub(sub, provider)
+        saved = json.loads(path.read_text())
+        assert saved["access_token"] == "fchmod-fail"
+
+    def test_save_token_for_sub_dir_chmod_oserror(self, tmp_path):
+        from mnemo_mcp.token_store import save_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        token = {"access_token": "dir-chmod-fail"}
+
+        # We need a custom side effect that only raises for the directory
+        def mock_chmod(path_obj, mode):
+            if "tokens" in str(path_obj) and not str(path_obj).endswith(".json"):
+                raise OSError("Dir chmod fail")
+            return None
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "posix"),
+            patch.object(Path, "chmod", side_effect=mock_chmod, autospec=True),
+        ):
+            m.get_data_dir.return_value = tmp_path
+            save_token_for_sub(sub, provider, token)
+
+    @pytest.mark.asyncio
+    async def test_async_sub_ops(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import (
+            async_load_token_for_sub,
+            async_save_token_for_sub,
+        )
+
+        sub = "test-user"
+        provider = "async-google"
+        token = {"access_token": "async-sub"}
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            await async_save_token_for_sub(sub, provider, token)
+            result = await async_load_token_for_sub(sub, provider)
+
+        assert result == token
+
+    def test_save_token_for_sub_nt_os(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import get_token_path_for_sub, save_token_for_sub
+
+        sub = "test-user"
+        provider = "nt-google"
+        token = {"access_token": "nt-sub"}
+
+        with (
+            patch("mnemo_mcp.token_store.settings") as m,
+            patch("mnemo_mcp.token_store.os.name", "nt"),
+            patch.object(Path, "chmod") as mock_chmod,
+        ):
+            m.get_data_dir.return_value = tmp_path
+            save_token_for_sub(sub, provider, token)
+            mock_chmod.assert_not_called()
+
+        path = get_token_path_for_sub(sub, provider)
+        saved = json.loads(path.read_text())
+        assert saved["access_token"] == "nt-sub"
+
+    def test_load_token_for_sub_missing_access_token(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        path = sub_token_dir / f"{provider}.json"
+        path.write_text(json.dumps({"refresh": "only"}))
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result is None
+
+    def test_load_token_for_sub_non_dict(self, sub_token_dir, tmp_path):
+        from mnemo_mcp.token_store import load_token_for_sub
+
+        sub = "test-user"
+        provider = "google"
+        path = sub_token_dir / f"{provider}.json"
+        path.write_text(json.dumps(["not", "a", "dict"]))
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = tmp_path
+            result = load_token_for_sub(sub, provider)
+        assert result is None
