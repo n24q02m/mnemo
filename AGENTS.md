@@ -2,7 +2,7 @@
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
 Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher + config + help + config__open_relay.
-2-mode embedding: Cloud (Jina > Gemini > OpenAI > Cohere) > Local (Qwen3 ONNX). LLM: google-genai + openai.
+2-mode embedding: Cloud (Jina > Gemini > OpenAI > Cohere) > Local (Qwen3 ONNX). LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]).
 
 ## Commands
 
@@ -71,7 +71,9 @@ Khong co prefix (khac voi cac project khac):
 - `GEMINI_API_KEY` -- Google Gemini API key (embedding + LLM)
 - `OPENAI_API_KEY` -- OpenAI API key (embedding)
 - `COHERE_API_KEY` -- Cohere API key (embedding + reranking)
+- `ANTHROPIC_API_KEY` -- Anthropic API key (LLM; chay qua litellm, KHONG can `anthropic` package)
 - `XAI_API_KEY` -- xAI/Grok API key (LLM)
+- LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm`. Custom endpoint: `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
 - `EMBEDDING_BACKEND` -- `cloud` hoac `local` (auto-detect)
 - `EMBEDDING_MODEL` -- Cloud embedding model name
 - `EMBEDDING_DIMS` -- default 768 (0 = auto)
@@ -109,7 +111,7 @@ PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `qwen3-embed>=1.5.1`, `cohere`, `sqlite-vec`.
+- Dependencies: `qwen3-embed`, `sqlite-vec`, `n24q02m-mcp-core[llm]` (litellm). Native SDK (google-genai/openai/cohere/anthropic) da go -- moi LLM/embed/rerank qua litellm passthrough.
 - Pre-commit: ruff lint + format, ty check, pytest.
 - Secrets: skret SSM namespace `/mnemo-mcp/prod` (region `ap-southeast-1`)
 

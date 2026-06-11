@@ -1,5 +1,11 @@
-"""Tests for mnemo_mcp.embedder -- dual-backend embedding (all mocked)."""
+"""Tests for mnemo_mcp.embedder -- dual-backend embedding (all mocked).
 
+Cloud embedding goes through mcp_core.llm (litellm passthrough). Async paths
+patch ``mcp_core.llm.aembedding``; ``check_available`` (sync) patches the sync
+mirror ``mcp_core.llm.embedding``.
+"""
+
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -14,119 +20,96 @@ from mnemo_mcp.embedder import (
 )
 
 
-class TestCloudEmbeddingBackend:
-    @patch("cohere.ClientV2")
-    async def test_returns_embeddings(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
+def _resp(*vectors):
+    """Build a litellm-shaped embedding response (resp.data list of pydantic)."""
+    return SimpleNamespace(
+        data=[
+            SimpleNamespace(index=i, embedding=list(v)) for i, v in enumerate(vectors)
+        ]
+    )
 
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        result = await backend.embed_texts(["hello", "world"])
+
+def _async_resp(*vectors):
+    """AsyncMock returning a litellm embedding response."""
+    return AsyncMock(return_value=_resp(*vectors))
+
+
+class TestCloudEmbeddingBackend:
+    async def test_returns_embeddings(self):
+        mock = _async_resp([0.1, 0.2, 0.3], [0.4, 0.5, 0.6])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="test-key")
+            result = await backend.embed_texts(["hello", "world"])
         assert len(result) == 2
         assert result[0] == [0.1, 0.2, 0.3]
 
-    @patch("cohere.ClientV2")
-    async def test_empty_input(self, mock_client_cls):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        result = await backend.embed_texts([])
+    async def test_empty_input(self):
+        mock = _async_resp([0.1])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="test-key")
+            result = await backend.embed_texts([])
         assert result == []
-        mock_client_cls.assert_not_called()
+        mock.assert_not_called()
 
-    @patch("cohere.ClientV2")
-    async def test_passes_dimensions(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
+    async def test_passes_dimensions(self):
+        mock = _async_resp([0.1])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="embed-multilingual-v3.0", api_key="key"
+            )
+            await backend.embed_texts(["test"], dimensions=512)
+        assert mock.call_args.kwargs.get("dimensions") == 512
 
-        backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0", api_key="key")
-        await backend.embed_texts(["test"], dimensions=512)
-        call_kwargs = mock_client.embed.call_args
-        assert call_kwargs.kwargs.get("output_dimension") == 512
-
-    @patch("cohere.ClientV2")
-    async def test_dimensions_fallback_on_unsupported(self, mock_client_cls):
+    async def test_dimensions_fallback_on_unsupported(self):
         """Falls back to local truncation when provider rejects dimensions."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1] * 1024]
         unsupported_err = Exception("output_dimension is not supported for this model")
-        mock_client.embed.side_effect = [unsupported_err, mock_response]
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0", api_key="key")
-        result = await backend.embed_texts(["test"], dimensions=768)
+        mock = AsyncMock(side_effect=[unsupported_err, _resp([0.1] * 1024)])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="embed-multilingual-v3.0", api_key="key"
+            )
+            result = await backend.embed_texts(["test"], dimensions=768)
         assert len(result[0]) == 768
 
-    @patch("cohere.ClientV2")
-    async def test_local_truncation_when_server_returns_more(self, mock_client_cls):
+    async def test_local_truncation_when_server_returns_more(self):
         """Truncates locally when server returns more dims than requested."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1] * 3072]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        result = await backend.embed_texts(["test"], dimensions=768)
+        mock = _async_resp([0.1] * 3072)
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            result = await backend.embed_texts(["test"], dimensions=768)
         assert len(result[0]) == 768
 
-    @patch("cohere.ClientV2")
-    async def test_embed_single(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1, 0.2, 0.3]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        result = await backend.embed_single("hello")
+    async def test_embed_single(self):
+        mock = _async_resp([0.1, 0.2, 0.3])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            result = await backend.embed_single("hello")
         assert result == [0.1, 0.2, 0.3]
 
-    @patch("cohere.ClientV2")
-    def test_check_available_returns_dims(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1, 0.2]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
+    def test_check_available_returns_dims(self):
+        mock = MagicMock(return_value=_resp([0.1, 0.2]))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            assert backend.check_available() == 2
 
-        backend = CloudEmbeddingBackend(api_key="key")
-        assert backend.check_available() == 2
+    def test_check_available_error(self):
+        mock = MagicMock(side_effect=Exception("Model not found"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            assert backend.check_available() == 0
 
-    @patch("cohere.ClientV2")
-    def test_check_available_error(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Model not found")
-        mock_client_cls.return_value = mock_client
+    async def test_raises_on_non_retryable_error(self):
+        mock = AsyncMock(side_effect=Exception("Invalid API key"))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            with pytest.raises(Exception, match="Invalid API key"):
+                await backend.embed_texts(["test"])
 
-        backend = CloudEmbeddingBackend(api_key="key")
-        assert backend.check_available() == 0
-
-    @patch("cohere.ClientV2")
-    async def test_raises_on_non_retryable_error(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Invalid API key")
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        with pytest.raises(Exception, match="Invalid API key"):
-            await backend.embed_texts(["test"])
-
-    @patch("cohere.ClientV2")
-    def test_check_available_empty_data(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = []
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        assert backend.check_available() == 0
+    def test_check_available_empty_data(self):
+        mock = MagicMock(return_value=SimpleNamespace(data=[]))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            assert backend.check_available() == 0
 
     def test_litellm_backward_compat_alias(self):
         """LiteLLMBackend is an alias for CloudEmbeddingBackend."""
@@ -134,139 +117,109 @@ class TestCloudEmbeddingBackend:
 
 
 class TestBatchSplitting:
-    @patch("cohere.ClientV2")
-    async def test_splits_large_batch(self, mock_client_cls):
+    async def test_splits_large_batch(self):
         """Texts exceeding MAX_BATCH_SIZE are split into sub-batches."""
         n = CloudEmbeddingBackend.MAX_BATCH_SIZE + 50
 
-        mock_client = MagicMock()
+        async def fake(*, input, **kwargs):
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=j, embedding=[float(j)])
+                    for j in range(len(input))
+                ]
+            )
 
-        def mock_embed(**kwargs):
-            count = len(kwargs["texts"])
-            resp = MagicMock()
-            resp.embeddings.float_ = [[float(j)] for j in range(count)]
-            return resp
-
-        mock_client.embed.side_effect = mock_embed
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        vecs = await backend.embed_texts([f"t{i}" for i in range(n)])
+        with patch("mcp_core.llm.aembedding", side_effect=fake):
+            backend = CloudEmbeddingBackend(api_key="key")
+            vecs = await backend.embed_texts([f"t{i}" for i in range(n)])
         assert len(vecs) == n
 
-    @patch("cohere.ClientV2")
-    async def test_batch_call_count(self, mock_client_cls):
+    async def test_batch_call_count(self):
         """Correct number of API calls for split batches."""
         n = CloudEmbeddingBackend.MAX_BATCH_SIZE * 2 + 10
 
-        mock_client = MagicMock()
+        async def fake(*, input, **kwargs):
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=j, embedding=[0.0]) for j in range(len(input))
+                ]
+            )
 
-        def mock_embed(**kwargs):
-            count = len(kwargs["texts"])
-            resp = MagicMock()
-            resp.embeddings.float_ = [[0.0] for _ in range(count)]
-            return resp
+        mock = AsyncMock(side_effect=fake)
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            await backend.embed_texts([f"t{i}" for i in range(n)])
+        assert mock.call_count == 3
 
-        mock_client.embed.side_effect = mock_embed
-        mock_client_cls.return_value = mock_client
+    async def test_no_split_under_limit(self):
+        async def fake(*, input, **kwargs):
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=j, embedding=[0.0]) for j in range(len(input))
+                ]
+            )
 
-        backend = CloudEmbeddingBackend(api_key="key")
-        await backend.embed_texts([f"t{i}" for i in range(n)])
-        assert mock_client.embed.call_count == 3
-
-    @patch("cohere.ClientV2")
-    async def test_no_split_under_limit(self, mock_client_cls):
-        mock_client = MagicMock()
-
-        def mock_embed(**kwargs):
-            count = len(kwargs["texts"])
-            resp = MagicMock()
-            resp.embeddings.float_ = [[0.0] for _ in range(count)]
-            return resp
-
-        mock_client.embed.side_effect = mock_embed
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        await backend.embed_texts(
-            [f"t{i}" for i in range(CloudEmbeddingBackend.MAX_BATCH_SIZE)]
-        )
-        assert mock_client.embed.call_count == 1
+        mock = AsyncMock(side_effect=fake)
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            await backend.embed_texts(
+                [f"t{i}" for i in range(CloudEmbeddingBackend.MAX_BATCH_SIZE)]
+            )
+        assert mock.call_count == 1
 
 
 class TestRetryLogic:
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("cohere.ClientV2")
-    async def test_retries_on_rate_limit(self, mock_client_cls, mock_sleep):
-        mock_client = MagicMock()
-        success_response = MagicMock()
-        success_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.side_effect = [
-            Exception("429 rate limit exceeded"),
-            success_response,
-        ]
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        result = await backend.embed_texts(["test"])
+    async def test_retries_on_rate_limit(self, mock_sleep):
+        mock = AsyncMock(
+            side_effect=[Exception("429 rate limit exceeded"), _resp([0.1])]
+        )
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            result = await backend.embed_texts(["test"])
         assert result == [[0.1]]
         mock_sleep.assert_called_once_with(1.0)
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("cohere.ClientV2")
-    async def test_retries_on_server_error(self, mock_client_cls, mock_sleep):
-        mock_client = MagicMock()
-        success_response = MagicMock()
-        success_response.embeddings.float_ = [[0.2]]
-        mock_client.embed.side_effect = [
-            Exception("503 temporarily unavailable"),
-            success_response,
-        ]
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        result = await backend.embed_texts(["test"])
+    async def test_retries_on_server_error(self, mock_sleep):
+        mock = AsyncMock(
+            side_effect=[Exception("503 temporarily unavailable"), _resp([0.2])]
+        )
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            result = await backend.embed_texts(["test"])
         assert result == [[0.2]]
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("cohere.ClientV2")
-    async def test_no_retry_on_non_retryable(self, mock_client_cls, mock_sleep):
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Invalid API key")
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        with pytest.raises(Exception, match="Invalid API key"):
-            await backend.embed_texts(["test"])
+    async def test_no_retry_on_non_retryable(self, mock_sleep):
+        mock = AsyncMock(side_effect=Exception("Invalid API key"))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            with pytest.raises(Exception, match="Invalid API key"):
+                await backend.embed_texts(["test"])
         mock_sleep.assert_not_called()
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("cohere.ClientV2")
-    async def test_exponential_backoff(self, mock_client_cls, mock_sleep):
-        mock_client = MagicMock()
-        success_response = MagicMock()
-        success_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.side_effect = [
-            Exception("429 rate limit"),
-            Exception("429 rate limit"),
-            success_response,
-        ]
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        await backend.embed_texts(["test"])
+    async def test_exponential_backoff(self, mock_sleep):
+        mock = AsyncMock(
+            side_effect=[
+                Exception("429 rate limit"),
+                Exception("429 rate limit"),
+                _resp([0.1]),
+            ]
+        )
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            await backend.embed_texts(["test"])
         assert mock_sleep.call_args_list == [call(1.0), call(2.0)]
 
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
-    @patch("cohere.ClientV2")
-    async def test_max_retries_exhausted(self, mock_client_cls, mock_sleep):
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("429 rate limit")
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        with pytest.raises(Exception, match="429 rate limit"):
-            await backend.embed_texts(["test"])
+    async def test_max_retries_exhausted(self, mock_sleep):
+        mock = AsyncMock(side_effect=Exception("429 rate limit"))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            with pytest.raises(Exception, match="429 rate limit"):
+                await backend.embed_texts(["test"])
         assert mock_sleep.call_count == 2
 
 
@@ -335,56 +288,40 @@ class TestBackendFactory:
 class TestCheckAvailableApiKeyValidation:
     """check_available() distinguishes API key errors from other failures."""
 
-    @patch("cohere.ClientV2")
-    def test_api_key_401_logs_warning(self, mock_client_cls):
+    def test_api_key_401_logs_warning(self):
         """401 errors are logged at warning level (not debug)."""
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("401 Unauthorized: Invalid API key")
-        mock_client_cls.return_value = mock_client
+        mock = MagicMock(side_effect=Exception("401 Unauthorized: Invalid API key"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="bad-key")
+            assert backend.check_available() == 0
 
-        backend = CloudEmbeddingBackend(api_key="bad-key")
-        result = backend.check_available()
-        assert result == 0
-
-    @patch("cohere.ClientV2")
-    def test_api_key_403_logs_warning(self, mock_client_cls):
+    def test_api_key_403_logs_warning(self):
         """403 forbidden errors are logged at warning level."""
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("403 Forbidden")
-        mock_client_cls.return_value = mock_client
+        mock = MagicMock(side_effect=Exception("403 Forbidden"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="bad-key")
+            assert backend.check_available() == 0
 
-        backend = CloudEmbeddingBackend(api_key="bad-key")
-        assert backend.check_available() == 0
-
-    @patch("cohere.ClientV2")
-    def test_invalid_key_detected(self, mock_client_cls):
+    def test_invalid_key_detected(self):
         """'invalid' keyword in error triggers warning path."""
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Invalid API key provided")
-        mock_client_cls.return_value = mock_client
+        mock = MagicMock(side_effect=Exception("Invalid API key provided"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="bad-key")
+            assert backend.check_available() == 0
 
-        backend = CloudEmbeddingBackend(api_key="bad-key")
-        assert backend.check_available() == 0
-
-    @patch("cohere.ClientV2")
-    def test_unauthorized_detected(self, mock_client_cls):
+    def test_unauthorized_detected(self):
         """'unauthorized' keyword in error triggers warning path."""
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Unauthorized access")
-        mock_client_cls.return_value = mock_client
+        mock = MagicMock(side_effect=Exception("Unauthorized access"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="bad-key")
+            assert backend.check_available() == 0
 
-        backend = CloudEmbeddingBackend(api_key="bad-key")
-        assert backend.check_available() == 0
-
-    @patch("cohere.ClientV2")
-    def test_non_auth_error_logged_at_debug(self, mock_client_cls):
+    def test_non_auth_error_logged_at_debug(self):
         """Non-auth errors (e.g. model not found) go to debug level."""
-        mock_client = MagicMock()
-        mock_client.embed.side_effect = Exception("Model not found: xyz")
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="key")
-        assert backend.check_available() == 0
+        mock = MagicMock(side_effect=Exception("Model not found: xyz"))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            assert backend.check_available() == 0
 
 
 class TestQwen3GetModelWarning:
@@ -414,13 +351,10 @@ class TestQwen3GetModelWarning:
 class TestLegacyCompat:
     """Legacy module-level functions still work."""
 
-    @patch("cohere.ClientV2")
-    async def test_embed_single_legacy(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1, 0.2]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        result = await embed_single("test", "embed-multilingual-v3.0", api_key="key")
+    async def test_embed_single_legacy(self):
+        mock = _async_resp([0.1, 0.2])
+        with patch("mcp_core.llm.aembedding", mock):
+            result = await embed_single(
+                "test", "embed-multilingual-v3.0", api_key="key"
+            )
         assert result == [0.1, 0.2]

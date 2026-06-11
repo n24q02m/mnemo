@@ -1,10 +1,11 @@
-"""Tests for reranker.py -- Jina provider and detection logic coverage.
+"""Tests for reranker.py -- provider detection logic and cloud path coverage.
 
 Targets: _detect_rerank_provider (Jina env fallback, non-rerank/cohere model),
-_strip_provider, CloudReranker Jina backend, CloudReranker._check_jina,
-CloudReranker._check_cohere, Qwen3Reranker lazy load.
+_strip_provider, CloudReranker litellm passthrough (Jina + Cohere routing),
+check_available auth/non-auth branches, Qwen3Reranker lazy load.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from mnemo_mcp.reranker import (
@@ -13,6 +14,12 @@ from mnemo_mcp.reranker import (
     _detect_rerank_provider,
     _strip_provider,
 )
+
+
+def _rerank_resp(*results):
+    """Build a litellm-shaped RerankResponse (resp.results)."""
+    return SimpleNamespace(results=list(results))
+
 
 # ---------------------------------------------------------------------------
 # _detect_rerank_provider
@@ -52,133 +59,84 @@ class TestStripProviderReranker:
 
 
 # ---------------------------------------------------------------------------
-# CloudReranker -- Jina backend
+# CloudReranker -- cloud path (litellm passthrough)
 # ---------------------------------------------------------------------------
 
 
 class TestCloudRerankerJina:
-    @patch("httpx.post")
-    def test_rerank_jina_success(self, mock_post):
-        """Jina reranker returns sorted results."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [
-                {"index": 0, "relevance_score": 0.3},
-                {"index": 1, "relevance_score": 0.9},
-                {"index": 2, "relevance_score": 0.6},
-            ]
-        }
-        mock_post.return_value = mock_response
-
-        reranker = CloudReranker(
-            model="jina_ai/jina-reranker-v3",
-            api_key="jina_test",
+    def test_rerank_jina_success(self):
+        """Jina-model reranker returns sorted results via litellm."""
+        resp = _rerank_resp(
+            {"index": 0, "relevance_score": 0.3},
+            {"index": 1, "relevance_score": 0.9},
+            {"index": 2, "relevance_score": 0.6},
         )
-        results = reranker.rerank("query", ["doc0", "doc1", "doc2"], top_n=2)
+        reranker = CloudReranker(model="jina_ai/jina-reranker-v3", api_key="jina_test")
+        with patch("mcp_core.llm.rerank", return_value=resp) as mock:
+            results = reranker.rerank("query", ["doc0", "doc1", "doc2"], top_n=2)
 
         assert len(results) == 2
         assert results[0] == (1, 0.9)
         assert results[1] == (2, 0.6)
+        assert mock.call_args.kwargs["model"] == "jina_ai/jina-reranker-v3"
 
-    @patch("httpx.post")
-    def test_rerank_jina_failure(self, mock_post):
-        """Jina reranker returns empty on failure."""
-        mock_post.side_effect = Exception("API error")
-
-        reranker = CloudReranker(
-            model="jina_ai/jina-reranker-v3",
-            api_key="jina_test",
-        )
-        results = reranker.rerank("query", ["doc0"])
+    def test_rerank_jina_failure(self):
+        """Reranker returns empty on failure."""
+        reranker = CloudReranker(model="jina_ai/jina-reranker-v3", api_key="jina_test")
+        with patch("mcp_core.llm.rerank", side_effect=Exception("API error")):
+            results = reranker.rerank("query", ["doc0"])
         assert results == []
 
 
 # ---------------------------------------------------------------------------
-# CloudReranker -- check_available (Jina and Cohere paths)
+# CloudReranker -- check_available (auth vs non-auth branches)
 # ---------------------------------------------------------------------------
 
 
 class TestCheckAvailableReranker:
-    @patch("httpx.post")
-    def test_check_jina_available(self, mock_post):
-        """Jina check_available returns True on success."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [{"index": 0, "relevance_score": 0.5}]
-        }
-        mock_post.return_value = mock_response
+    def test_check_jina_available(self):
+        """check_available returns True on success."""
+        resp = _rerank_resp({"index": 0, "relevance_score": 0.5})
+        reranker = CloudReranker(model="jina_ai/jina-reranker-v3", api_key="jina_test")
+        with patch("mcp_core.llm.rerank", return_value=resp):
+            assert reranker.check_available() is True
 
-        reranker = CloudReranker(
-            model="jina_ai/jina-reranker-v3",
-            api_key="jina_test",
-        )
-        assert reranker.check_available() is True
-
-    @patch("httpx.post")
-    def test_check_jina_api_key_invalid(self, mock_post):
-        """Jina check_available returns False and logs warning on 401."""
-        mock_post.side_effect = Exception("401 Unauthorized")
-
-        reranker = CloudReranker(
-            model="jina_ai/jina-reranker-v3",
-            api_key="bad_key",
-        )
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+    def test_check_jina_api_key_invalid(self):
+        """check_available returns False and logs warning on 401."""
+        reranker = CloudReranker(model="jina_ai/jina-reranker-v3", api_key="bad_key")
+        with (
+            patch("mcp_core.llm.rerank", side_effect=Exception("401 Unauthorized")),
+            patch("mnemo_mcp.reranker.logger") as mock_logger,
+        ):
             assert reranker.check_available() is False
             mock_logger.warning.assert_called()
             assert "API key invalid" in mock_logger.warning.call_args[0][0]
 
-    @patch("cohere.ClientV2")
-    def test_check_cohere_available(self, mock_client_cls):
-        """Cohere check_available returns True on success."""
-        mock_result = MagicMock()
-        mock_result.index = 0
-        mock_result.relevance_score = 0.5
+    def test_check_cohere_available(self):
+        """check_available returns True on success for cohere model."""
+        resp = _rerank_resp(SimpleNamespace(index=0, relevance_score=0.5))
+        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="co_test")
+        with patch("mcp_core.llm.rerank", return_value=resp):
+            assert reranker.check_available() is True
 
-        mock_response = MagicMock()
-        mock_response.results = [mock_result]
-
-        mock_client = MagicMock()
-        mock_client.rerank.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        reranker = CloudReranker(
-            model="rerank-v4.0-pro",
-            api_key="co_test",
-        )
-        assert reranker.check_available() is True
-
-    @patch("cohere.ClientV2")
-    def test_check_cohere_api_key_invalid_logging(self, mock_client_cls):
-        """Cohere check_available logs warning for auth errors."""
-        mock_client = MagicMock()
-        mock_client.rerank.side_effect = Exception("invalid api key")
-        mock_client_cls.return_value = mock_client
-
-        reranker = CloudReranker(
-            model="rerank-v4.0-pro",
-            api_key="bad_key",
-        )
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+    def test_check_cohere_api_key_invalid_logging(self):
+        """check_available logs warning for auth errors."""
+        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="bad_key")
+        with (
+            patch("mcp_core.llm.rerank", side_effect=Exception("invalid api key")),
+            patch("mnemo_mcp.reranker.logger") as mock_logger,
+        ):
             assert reranker.check_available() is False
             mock_logger.warning.assert_called()
             assert "API key invalid" in mock_logger.warning.call_args[0][0]
 
-    @patch("cohere.ClientV2")
-    def test_check_cohere_non_auth_error(self, mock_client_cls):
-        """Cohere check_available returns False on non-auth error."""
-        mock_client = MagicMock()
-        mock_client.rerank.side_effect = Exception("Model not found")
-        mock_client_cls.return_value = mock_client
-
-        reranker = CloudReranker(
-            model="rerank-v4.0-pro",
-            api_key="co_test",
-        )
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+    def test_check_cohere_non_auth_error(self):
+        """check_available returns False on non-auth error."""
+        reranker = CloudReranker(model="rerank-v4.0-pro", api_key="co_test")
+        with (
+            patch("mcp_core.llm.rerank", side_effect=Exception("Model not found")),
+            patch("mnemo_mcp.reranker.logger") as mock_logger,
+        ):
             assert reranker.check_available() is False
             mock_logger.debug.assert_called()
             assert "not available" in mock_logger.debug.call_args[0][0]

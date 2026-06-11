@@ -4,42 +4,43 @@ Targets: CloudEmbeddingBackend with api_base/api_key, Qwen3EmbedBackend._get_mod
 embed_texts inner function, embed_single_query, check_available result empty.
 """
 
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from mnemo_mcp.embedder import CloudEmbeddingBackend, Qwen3EmbedBackend, _is_retryable
 
+
+def _resp(*vectors):
+    """Build a litellm-shaped embedding response."""
+    return SimpleNamespace(
+        data=[
+            SimpleNamespace(index=i, embedding=list(v)) for i, v in enumerate(vectors)
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
-# CloudEmbeddingBackend with custom endpoint
+# CloudEmbeddingBackend with custom endpoint / api_key
 # ---------------------------------------------------------------------------
 
 
 class TestCloudEmbeddingBackendCustomEndpoint:
-    @patch("cohere.ClientV2")
-    async def test_passes_api_key(self, mock_client_cls):
-        """api_key is passed through to Cohere client."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
+    async def test_passes_api_key(self):
+        """api_key is passed through to aembedding."""
+        mock = AsyncMock(return_value=_resp([0.1]))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(api_key="sk-custom")
+            await backend.embed_texts(["test"])
+        assert mock.call_args.kwargs["api_key"] == "sk-custom"
 
-        backend = CloudEmbeddingBackend(api_key="sk-custom")
-        await backend.embed_texts(["test"])
-        mock_client_cls.assert_called_with(api_key="sk-custom")
-
-    @patch("cohere.ClientV2")
-    def test_check_available_with_api_key(self, mock_client_cls):
-        """check_available passes api_key for validation."""
-        mock_client = MagicMock()
-        mock_response = MagicMock()
-        mock_response.embeddings.float_ = [[0.1]]
-        mock_client.embed.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(api_key="sk-key")
-        dims = backend.check_available()
+    def test_check_available_with_api_key(self):
+        """check_available passes api_key for validation (sync mirror)."""
+        mock = MagicMock(return_value=_resp([0.1]))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="sk-key")
+            dims = backend.check_available()
         assert dims == 1
-        mock_client_cls.assert_called_with(api_key="sk-key")
+        assert mock.call_args.kwargs["api_key"] == "sk-key"
 
 
 # ---------------------------------------------------------------------------

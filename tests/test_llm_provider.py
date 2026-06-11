@@ -12,11 +12,19 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from mnemo_mcp import llm
+
+
+def _fake_completion(content: str) -> SimpleNamespace:
+    """Build a litellm-shaped completion response (resp.choices[0].message.content)."""
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
+
 
 _ALL_KEYS = (
     "GEMINI_API_KEY",
@@ -123,133 +131,90 @@ def test_call_llm_graceful_skip_no_provider() -> None:
 
 
 def test_call_llm_unknown_explicit_provider_returns_none() -> None:
-    """Explicit but unsupported provider must not silently dispatch."""
-    with patch.object(llm.logger, "warning") as warn:
+    """Explicit but unsupported provider returns None when litellm raises."""
+    mock = AsyncMock(side_effect=Exception("bogus provider"))
+    with (
+        patch("mcp_core.llm.acompletion", mock),
+        patch.object(llm.logger, "warning") as warn,
+    ):
         result = asyncio.run(llm.call_llm("hello", provider="bogus"))
     assert result is None
     assert warn.called
 
 
 # ---------------------------------------------------------------------------
-# call_llm — per-provider dispatch
+# call_llm — litellm passthrough dispatch
 # ---------------------------------------------------------------------------
-
-
-def _install_fake_gemini() -> tuple[MagicMock, SimpleNamespace]:
-    """Install fake ``google.genai`` modules into sys.modules and return handles.
-
-    ``from X import Y`` resolves Y as an attribute of X *after* the import
-    machinery loads X, so the SimpleNamespace standing in for ``google.genai``
-    must expose ``types`` as an attribute too.
-    """
-    fake_response = SimpleNamespace(text="from gemini")
-    fake_models = SimpleNamespace(
-        generate_content=MagicMock(return_value=fake_response)
-    )
-    fake_client_cls = MagicMock(return_value=SimpleNamespace(models=fake_models))
-    fake_types = SimpleNamespace(
-        GenerateContentConfig=lambda **kw: SimpleNamespace(**kw)
-    )
-    fake_genai = SimpleNamespace(Client=fake_client_cls, types=fake_types)
-    fake_google = SimpleNamespace(genai=fake_genai)
-
-    return fake_client_cls, SimpleNamespace(
-        google=fake_google,
-        genai=fake_genai,
-        types=fake_types,
-        models=fake_models,
-    )
 
 
 def test_call_llm_dispatches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
 
-    fake_client_cls, fakes = _install_fake_gemini()
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "google": fakes.google,
-            "google.genai": fakes.genai,
-            "google.genai.types": fakes.types,
-        },
-    ):
+    mock = AsyncMock(return_value=_fake_completion("from gemini"))
+    with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(llm.call_llm("hi"))
 
     assert result == "from gemini"
-    fake_client_cls.assert_called_once_with(api_key="g-key")
-    call_kwargs = fakes.models.generate_content.call_args.kwargs
-    assert call_kwargs["contents"] == "hi"
-    assert call_kwargs["model"] == llm._DEFAULT_MODELS["gemini"]
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"] == f"gemini/{llm._DEFAULT_MODELS['gemini']}"
+    assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
 
 
 def test_call_llm_dispatches_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
 
-    fake_message = SimpleNamespace(content="from openai")
-    fake_choice = SimpleNamespace(message=fake_message)
-    fake_response = SimpleNamespace(choices=[fake_choice])
-    fake_completions = SimpleNamespace(create=MagicMock(return_value=fake_response))
-    fake_chat = SimpleNamespace(completions=fake_completions)
-    fake_client = SimpleNamespace(chat=fake_chat)
-    fake_openai_cls = MagicMock(return_value=fake_client)
-    fake_openai = SimpleNamespace(OpenAI=fake_openai_cls)
-
-    with patch.dict("sys.modules", {"openai": fake_openai}):
+    mock = AsyncMock(return_value=_fake_completion("from openai"))
+    with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(
             llm.call_llm("hi", model="gpt-test", temperature=0.2, max_tokens=42)
         )
 
     assert result == "from openai"
-    fake_openai_cls.assert_called_once_with(api_key="o-key")
-    call_kwargs = fake_completions.create.call_args.kwargs
-    assert call_kwargs["model"] == "gpt-test"
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"] == "openai/gpt-test"
     assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
     assert call_kwargs["temperature"] == 0.2
     assert call_kwargs["max_tokens"] == 42
 
 
 def test_call_llm_dispatches_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ANTHROPIC_API_KEY now works WITHOUT the anthropic package (litellm)."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "a-key")
 
-    fake_part = SimpleNamespace(text="from anthropic")
-    fake_message = SimpleNamespace(content=[fake_part])
-    fake_messages = SimpleNamespace(create=MagicMock(return_value=fake_message))
-    fake_client = SimpleNamespace(messages=fake_messages)
-    fake_anthropic_cls = MagicMock(return_value=fake_client)
-    fake_anthropic = SimpleNamespace(Anthropic=fake_anthropic_cls)
-
-    with patch.dict("sys.modules", {"anthropic": fake_anthropic}):
-        result = asyncio.run(llm.call_llm("hi"))
+    mock = AsyncMock(return_value=_fake_completion("from anthropic"))
+    # No `anthropic` package: ensure import is never attempted.
+    with patch.dict("sys.modules", {"anthropic": None}):
+        with patch("mcp_core.llm.acompletion", mock):
+            result = asyncio.run(llm.call_llm("hi"))
 
     assert result == "from anthropic"
-    fake_anthropic_cls.assert_called_once_with(api_key="a-key")
-    call_kwargs = fake_messages.create.call_args.kwargs
-    assert call_kwargs["model"] == llm._DEFAULT_MODELS["anthropic"]
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"] == f"anthropic/{llm._DEFAULT_MODELS['anthropic']}"
     assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
 
 
 def test_call_llm_dispatches_xai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XAI_API_KEY", "x-key")
 
-    fake_message = SimpleNamespace(content="from xai")
-    fake_choice = SimpleNamespace(message=fake_message)
-    fake_response = SimpleNamespace(choices=[fake_choice])
-    fake_completions = SimpleNamespace(create=MagicMock(return_value=fake_response))
-    fake_chat = SimpleNamespace(completions=fake_completions)
-    fake_client = SimpleNamespace(chat=fake_chat)
-    fake_openai_cls = MagicMock(return_value=fake_client)
-    fake_openai = SimpleNamespace(OpenAI=fake_openai_cls)
-
-    with patch.dict("sys.modules", {"openai": fake_openai}):
+    mock = AsyncMock(return_value=_fake_completion("from xai"))
+    with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(llm.call_llm("hi"))
 
     assert result == "from xai"
-    fake_openai_cls.assert_called_once_with(
-        api_key="x-key", base_url="https://api.x.ai/v1"
-    )
-    call_kwargs = fake_completions.create.call_args.kwargs
-    assert call_kwargs["model"] == llm._DEFAULT_MODELS["xai"]
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"] == f"xai/{llm._DEFAULT_MODELS['xai']}"
+
+
+def test_call_llm_passes_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LLM_API_BASE flows through to acompletion as api_base."""
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
+
+    mock = AsyncMock(return_value=_fake_completion("ok"))
+    with patch("mcp_core.llm.acompletion", mock):
+        asyncio.run(llm.call_llm("hi"))
+
+    assert mock.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
 
 # ---------------------------------------------------------------------------
@@ -264,37 +229,22 @@ def test_call_llm_explicit_provider_override_skips_detection(
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
 
-    fake_message = SimpleNamespace(content="from openai")
-    fake_choice = SimpleNamespace(message=fake_message)
-    fake_response = SimpleNamespace(choices=[fake_choice])
-    fake_completions = SimpleNamespace(create=MagicMock(return_value=fake_response))
-    fake_chat = SimpleNamespace(completions=fake_completions)
-    fake_client = SimpleNamespace(chat=fake_chat)
-    fake_openai_cls = MagicMock(return_value=fake_client)
-    fake_openai = SimpleNamespace(OpenAI=fake_openai_cls)
-
-    with patch.dict("sys.modules", {"openai": fake_openai}):
+    mock = AsyncMock(return_value=_fake_completion("from openai"))
+    with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(llm.call_llm("hi", provider="openai"))
 
     assert result == "from openai"
-    fake_openai_cls.assert_called_once_with(api_key="o-key")
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"].startswith("openai/")
 
 
 def test_call_llm_uses_env_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("LLM_MODELS", "gemini=gemini-3-flash-from-env")
 
-    _, fakes = _install_fake_gemini()
-
-    with patch.dict(
-        "sys.modules",
-        {
-            "google": fakes.google,
-            "google.genai": fakes.genai,
-            "google.genai.types": fakes.types,
-        },
-    ):
+    mock = AsyncMock(return_value=_fake_completion("ok"))
+    with patch("mcp_core.llm.acompletion", mock):
         asyncio.run(llm.call_llm("hi"))
 
-    call_kwargs = fakes.models.generate_content.call_args.kwargs
-    assert call_kwargs["model"] == "gemini-3-flash-from-env"
+    call_kwargs = mock.call_args.kwargs
+    assert call_kwargs["model"] == "gemini/gemini-3-flash-from-env"

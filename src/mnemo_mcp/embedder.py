@@ -1,8 +1,9 @@
-"""Dual-backend embedding: Cloud (multi-provider) + qwen3-embed (local).
+"""Dual-backend embedding: Cloud (litellm passthrough) + qwen3-embed (local).
 
 Supports two backends:
-- **cloud**: Cloud embedding via native SDKs (Jina > Gemini > OpenAI > Cohere).
-  Auto-detects provider from model name or API keys in environment.
+- **cloud**: Cloud embedding via mcp_core.llm (litellm passthrough — Jina,
+  Gemini, OpenAI, Cohere, or any litellm 'provider/model'). Requires API
+  keys. Auto-detects provider from model name or API keys in environment.
 - **local**: Local inference via qwen3-embed. GGUF if GPU + llama-cpp-python,
   ONNX otherwise. No API keys needed, ~0.5GB model download on first use.
 
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Protocol
+from typing import Any, Protocol
 
 from loguru import logger
 
@@ -144,12 +145,39 @@ def _strip_provider(model: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Cloud Embedding Backend (multi-provider: Jina, Gemini, OpenAI, Cohere)
+# Embedding response parsing (litellm-native shapes)
+# ---------------------------------------------------------------------------
+
+
+def _parse_embeddings(response: Any) -> list[list[float]]:
+    """Extract sorted embedding vectors from a litellm embedding response.
+
+    litellm embedding items (``response.data``) may be pydantic ``Embedding``
+    objects or plain dicts depending on provider/version, and ``data`` may be
+    ``None`` — handle all shapes.
+    """
+
+    def _idx(item: Any) -> int:
+        return (
+            item.get("index", 0)
+            if isinstance(item, dict)
+            else getattr(item, "index", 0)
+        )
+
+    def _vec(item: Any) -> list[float]:
+        return item["embedding"] if isinstance(item, dict) else item.embedding
+
+    data = sorted(response.data or [], key=_idx)
+    return [_vec(item) for item in data]
+
+
+# ---------------------------------------------------------------------------
+# Cloud Embedding Backend (litellm passthrough via mcp_core.llm)
 # ---------------------------------------------------------------------------
 
 
 class CloudEmbeddingBackend:
-    """Cloud embedding via native SDKs (Jina, Gemini, OpenAI, Cohere)."""
+    """Cloud embedding via mcp_core.llm (litellm passthrough)."""
 
     # Max texts per batch request (safe for all providers).
     MAX_BATCH_SIZE = 96
@@ -164,125 +192,64 @@ class CloudEmbeddingBackend:
         self.api_key = api_key
         self.api_base = api_base
         self._provider = _detect_embedding_provider(self.model)
-        self._bare_model = _strip_provider(self.model)
 
-    def _call_provider(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Route to the correct provider SDK."""
+    def _litellm_model(self) -> str:
+        """Map mnemo's model naming to a litellm ``provider/model`` string."""
+        if "/" in self.model:
+            return self.model
         if self._provider == "jina":
-            return self._embed_jina(texts, dimensions)
-        elif self._provider == "gemini":
-            return self._embed_gemini(texts, dimensions)
-        elif self._provider == "openai":
-            return self._embed_openai(texts, dimensions)
-        else:
-            return self._embed_cohere(texts, dimensions)
+            return f"jina_ai/{self.model}"
+        if self._provider == "gemini":
+            return f"gemini/{self.model}"
+        if self._provider == "cohere":
+            return f"cohere/{self.model}"
+        # OpenAI-style bare names (text-embedding-3-*) pass through as-is.
+        return self.model
 
-    def _embed_jina(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via Jina AI (httpx, REST API)."""
-        import httpx
-
-        key = self.api_key or os.getenv("JINA_AI_API_KEY") or ""
-        payload: dict = {
-            "model": self._bare_model,
-            "input": texts,
-        }
-        if dimensions:
-            payload["dimensions"] = dimensions
-
-        response = httpx.post(
-            "https://api.jina.ai/v1/embeddings",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        data = response.json()["data"]
-        data_sorted = sorted(data, key=lambda x: x["index"])
-        return [d["embedding"] for d in data_sorted]
-
-    def _embed_gemini(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via Google Gemini (google-genai SDK)."""
-        from google import genai
-        from google.genai import types
-
-        key = (
-            self.api_key
-            or os.getenv("GEMINI_API_KEY")
-            or os.getenv("GOOGLE_API_KEY")
-            or ""
-        )
-        client = genai.Client(api_key=key)
-
-        config_kwargs: dict = {}
-        if dimensions:
-            config_kwargs["output_dimensionality"] = dimensions
-
-        result = client.models.embed_content(
-            model=self._bare_model,
-            contents=texts,
-            config=types.EmbedContentConfig(**config_kwargs) if config_kwargs else None,
-        )
-
-        embeddings = result.embeddings or []
-        return [list(e.values or []) for e in embeddings]
-
-    def _embed_openai(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via OpenAI SDK."""
-        from openai import OpenAI
-
-        key = self.api_key or os.getenv("OPENAI_API_KEY") or ""
-        base = self.api_base or "https://api.openai.com/v1"
-        client = OpenAI(api_key=key, base_url=base)
-
-        kwargs: dict = {
-            "model": self._bare_model,
-            "input": texts,
-        }
+    def _build_kwargs(self, dimensions: int | None) -> dict:
+        """Build provider-specific aembedding/embedding kwargs."""
+        kwargs: dict = {}
         if dimensions:
             kwargs["dimensions"] = dimensions
+        if self._provider == "cohere":
+            kwargs["input_type"] = "search_document"
+        return kwargs
 
-        response = client.embeddings.create(**kwargs)
-        data = sorted(response.data, key=lambda x: x.index)
-        return [d.embedding for d in data]
-
-    def _embed_cohere(
+    async def _call_provider(
         self, texts: list[str], dimensions: int | None = None
     ) -> list[list[float]]:
-        """Embed via Cohere SDK (v5.20+, ClientV2)."""
-        import cohere
+        """Single cloud path via mcp_core.llm (litellm passthrough)."""
+        # Lazy import: litellm costs ~1-2s on first import.
+        from mcp_core.llm import aembedding
 
-        key = (
-            self.api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
+        response = await aembedding(
+            model=self._litellm_model(),
+            input=texts,
+            api_base=self.api_base or os.getenv("EMBEDDING_API_BASE") or None,
+            api_key=self.api_key or None,
+            **self._build_kwargs(dimensions),
         )
-        client = cohere.ClientV2(api_key=key)
-        kwargs: dict = {
-            "model": self._bare_model,
-            "texts": texts,
-            "input_type": "search_document",
-            "embedding_types": ["float"],
-            "truncate": "END",
-        }
-        if dimensions:
-            kwargs["output_dimension"] = dimensions
+        return _parse_embeddings(response)
 
-        response = client.embed(**kwargs)
-        embeddings = response.embeddings.float_
+    def _call_provider_sync(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Sync cloud path for ``check_available`` (sync mirror).
 
-        # Truncate locally if server returned more dims than requested
-        if dimensions and embeddings and len(embeddings[0]) > dimensions:
-            embeddings = [e[:dimensions] for e in embeddings]
-        return embeddings or []
+        Keep in sync with :meth:`_call_provider`: same model/api_base/api_key
+        resolution + ``_build_kwargs`` + ``_parse_embeddings``; only the
+        sync ``embedding`` vs async ``aembedding`` call differs.
+        """
+        from mcp_core.llm import embedding
+
+        response = embedding(
+            model=self._litellm_model(),
+            input=texts,
+            api_base=self.api_base or os.getenv("EMBEDDING_API_BASE") or None,
+            api_key=self.api_key or None,
+            **self._build_kwargs(dimensions),
+        )
+        return _parse_embeddings(response)
 
     async def _embed_batch_inner(
         self,
@@ -300,9 +267,7 @@ class CloudEmbeddingBackend:
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                embeddings = await asyncio.to_thread(
-                    self._call_provider, texts, use_dimensions
-                )
+                embeddings = await self._call_provider(texts, use_dimensions)
 
                 # Truncate locally if server returned more dims than requested
                 if dimensions and embeddings and len(embeddings[0]) > dimensions:
@@ -386,7 +351,7 @@ class CloudEmbeddingBackend:
         failures (debug) so users know when their keys are wrong.
         """
         try:
-            embeddings = self._call_provider(["test"])
+            embeddings = self._call_provider_sync(["test"])
             if embeddings:
                 dim = len(embeddings[0])
                 logger.info(f"Embedding model {self.model} available (dims={dim})")

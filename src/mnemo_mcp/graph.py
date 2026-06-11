@@ -14,14 +14,36 @@ def _has_llm_provider() -> bool:
         os.getenv("GEMINI_API_KEY")
         or os.getenv("GOOGLE_API_KEY")
         or os.getenv("OPENAI_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
         or os.getenv("XAI_API_KEY")
     )
 
 
 def _resolve_llm_model(settings_obj) -> str:
-    """Resolve the LLM model to use from settings."""
+    """Resolve the LLM model to use from settings, in litellm ``provider/model`` form.
+
+    ``LLM_MODELS`` accepts ``provider=model`` (=-form) or ``provider/model``
+    (slash form). A bare =-form first entry (no slash) is normalised to slash
+    form so ``_litellm_model`` does not double-prefix it.
+    """
     models = [m.strip() for m in settings_obj.llm_models.split(",") if m.strip()]
-    return models[0] if models else "gemini/gemini-3-flash-preview"
+    raw = models[0] if models else "gemini/gemini-3-flash-preview"
+    return raw.replace("=", "/", 1) if ("=" in raw and "/" not in raw) else raw
+
+
+def _litellm_model(model: str) -> str:
+    """Normalise a model string to litellm ``provider/model`` form.
+
+    ``_resolve_llm_model`` may yield ``provider/model`` (slash form) or a bare
+    name. litellm infers the provider from the prefix, so a bare gemini model
+    (e.g. ``gemini-3-flash-preview``) is prefixed with ``gemini/``; any other
+    bare name is left as-is for litellm to route via env keys.
+    """
+    if "/" in model:
+        return model
+    if "gemini" in model.lower():
+        return f"gemini/{model}"
+    return model
 
 
 async def _llm_completion(
@@ -31,69 +53,26 @@ async def _llm_completion(
     max_tokens: int = 500,
     response_format: dict | None = None,
 ) -> str:
-    """Call LLM completion using native SDK (google-genai or openai).
+    """Call LLM completion via mcp_core.llm (litellm passthrough).
 
-    Supports gemini/ models via google-genai, and other models via openai SDK.
+    litellm infers the provider from the ``provider/model`` prefix and returns
+    OpenAI-shaped responses (``resp.choices[0].message.content``).
     Returns the response text content.
     """
-    # Strip provider prefix for SDK routing
-    raw_model = model
-    if "/" in model:
-        provider_prefix, model_name = model.split("/", 1)
-    else:
-        provider_prefix, model_name = "", model
+    # Lazy import: litellm costs ~1-2s on first import.
+    from mcp_core.llm import acompletion
 
-    is_gemini = provider_prefix in ("gemini", "") and (
-        "gemini" in model_name or provider_prefix == "gemini"
+    kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
+    if response_format:
+        kwargs["response_format"] = response_format
+
+    resp = await acompletion(
+        model=_litellm_model(model),
+        messages=messages,
+        api_base=os.environ.get("LLM_API_BASE") or None,
+        **kwargs,
     )
-
-    if is_gemini:
-        from google import genai
-
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        client = genai.Client(api_key=api_key)
-
-        # Build config
-        config_kwargs: dict = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-        }
-        if response_format and response_format.get("type") == "json_object":
-            config_kwargs["response_mime_type"] = "application/json"
-
-        # Flatten messages to a single prompt for Gemini
-        prompt = messages[-1]["content"] if messages else ""
-        from google.genai import types
-
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(**config_kwargs),
-        )
-        return response.text or ""
-    else:
-        # Use openai SDK for OpenAI, xAI, and other providers
-        import openai
-
-        # Determine API key and base URL
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("XAI_API_KEY")
-        base_url = None
-        if os.getenv("XAI_API_KEY") and not os.getenv("OPENAI_API_KEY"):
-            base_url = "https://api.x.ai/v1"
-
-        client = openai.OpenAI(api_key=api_key, base_url=base_url)
-
-        kwargs: dict = {
-            "model": model_name if not provider_prefix else raw_model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if response_format:
-            kwargs["response_format"] = response_format
-
-        response = client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+    return resp.choices[0].message.content or ""
 
 
 async def extract_entities(content: str) -> dict | None:

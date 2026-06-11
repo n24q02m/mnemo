@@ -1,5 +1,10 @@
-"""Tests for mnemo_mcp.reranker -- dual-backend reranking."""
+"""Tests for mnemo_mcp.reranker -- dual-backend reranking.
 
+Cloud reranking goes through mcp_core.llm (litellm passthrough); tests patch
+the sync mirror ``mcp_core.llm.rerank``.
+"""
+
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +20,11 @@ from mnemo_mcp.reranker import (
 )
 
 
+def _rerank_resp(*results):
+    """Build a litellm-shaped RerankResponse (resp.results)."""
+    return SimpleNamespace(results=list(results))
+
+
 @pytest.fixture(autouse=True)
 def _reset_reranker_backend():
     """Reset module-level _backend before each test."""
@@ -26,29 +36,15 @@ def _reset_reranker_backend():
 
 class TestCohereReranker:
     def test_rerank_success(self):
-        """Cohere reranker returns sorted (index, score) tuples."""
+        """Cloud reranker returns sorted (index, score) tuples."""
         reranker = CohereReranker(api_key="test-key")
+        resp = _rerank_resp(
+            SimpleNamespace(index=0, relevance_score=0.3),
+            SimpleNamespace(index=1, relevance_score=0.9),
+            SimpleNamespace(index=2, relevance_score=0.6),
+        )
 
-        mock_result_0 = MagicMock()
-        mock_result_0.index = 0
-        mock_result_0.relevance_score = 0.3
-
-        mock_result_1 = MagicMock()
-        mock_result_1.index = 1
-        mock_result_1.relevance_score = 0.9
-
-        mock_result_2 = MagicMock()
-        mock_result_2.index = 2
-        mock_result_2.relevance_score = 0.6
-
-        mock_response = MagicMock()
-        mock_response.results = [mock_result_0, mock_result_1, mock_result_2]
-
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", return_value=resp):
             results = reranker.rerank("test query", ["doc0", "doc1", "doc2"], top_n=2)
 
         assert len(results) == 2
@@ -56,24 +52,28 @@ class TestCohereReranker:
         assert results[1] == (2, 0.6)
 
     def test_rerank_with_dict_results(self):
-        """Cohere reranker handles dict-style results."""
+        """Cloud reranker handles dict-style results."""
         reranker = CohereReranker(api_key="test-key")
-
-        mock_response = MagicMock()
-        mock_response.results = [
+        resp = _rerank_resp(
             {"index": 0, "relevance_score": 0.8},
             {"index": 1, "relevance_score": 0.5},
-        ]
+        )
 
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", return_value=resp):
             results = reranker.rerank("query", ["doc0", "doc1"])
 
         assert results[0] == (0, 0.8)
         assert results[1] == (1, 0.5)
+
+    def test_rerank_none_results_guarded(self):
+        """litellm RerankResponse.results defaults to None -> empty list."""
+        reranker = CohereReranker(api_key="test-key")
+        resp = SimpleNamespace(results=None)
+
+        with patch("mcp_core.llm.rerank", return_value=resp):
+            results = reranker.rerank("query", ["doc"])
+
+        assert results == []
 
     def test_rerank_empty_docs(self):
         """Empty documents list returns empty results."""
@@ -85,11 +85,7 @@ class TestCohereReranker:
         """Reranker returns empty list on failure (never raises)."""
         reranker = CohereReranker(api_key="test-key")
 
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.side_effect = Exception("API error")
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", side_effect=Exception("API error")):
             results = reranker.rerank("query", ["doc"])
 
         assert results == []
@@ -97,38 +93,36 @@ class TestCohereReranker:
     def test_check_available_success(self):
         """check_available returns True when API responds."""
         reranker = CohereReranker(api_key="test-key")
+        resp = _rerank_resp(SimpleNamespace(index=0, relevance_score=0.5))
 
-        mock_response = MagicMock()
-        mock_response.results = [MagicMock()]
-
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", return_value=resp):
             assert reranker.check_available() is True
 
     def test_check_available_failure(self):
         """check_available returns False on API failure."""
         reranker = CohereReranker(api_key="test-key")
 
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.side_effect = Exception("connection error")
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", side_effect=Exception("connection error")):
             assert reranker.check_available() is False
 
     def test_check_available_auth_error(self):
         """check_available logs warning for auth errors."""
         reranker = CohereReranker(api_key="bad-key")
 
-        with patch("cohere.ClientV2") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.rerank.side_effect = Exception("401 unauthorized")
-            mock_client_cls.return_value = mock_client
-
+        with patch("mcp_core.llm.rerank", side_effect=Exception("401 unauthorized")):
             assert reranker.check_available() is False
+
+    def test_litellm_model_mapping(self):
+        """Bare jina/cohere names map to litellm provider/model form."""
+        assert CloudReranker(model="rerank-v4.0-pro")._litellm_model() == (
+            "cohere/rerank-v4.0-pro"
+        )
+        assert CloudReranker(model="jina-reranker-v3")._litellm_model() == (
+            "jina_ai/jina-reranker-v3"
+        )
+        assert CloudReranker(model="cohere/rerank-v4.0-pro")._litellm_model() == (
+            "cohere/rerank-v4.0-pro"
+        )
 
     def test_litellm_backward_compat_alias(self):
         """LiteLLMReranker is an alias for CloudReranker."""

@@ -1,13 +1,15 @@
-"""Dual-backend reranking: Cloud (Jina/Cohere) + qwen3-embed (local ONNX).
+"""Dual-backend reranking: Cloud (litellm passthrough) + qwen3-embed (local ONNX).
 
-Reranker takes search results and re-scores them with a cross-encoder
-for better precision. Pipeline: retrieve top-N*3 -> rerank -> return top-N.
+Cloud reranking goes through mcp_core.llm (litellm passthrough — Jina, Cohere,
+or any litellm rerank 'provider/model'). Reranker takes search results and
+re-scores them with a cross-encoder for better precision.
+Pipeline: retrieve top-N*3 -> rerank -> return top-N.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Protocol
+from typing import Any, Protocol
 
 from loguru import logger
 
@@ -52,7 +54,7 @@ class RerankerBackend(Protocol):
 
 
 class CloudReranker:
-    """Cloud reranking via Jina AI or Cohere SDK."""
+    """Cloud reranking via mcp_core.llm (litellm passthrough)."""
 
     def __init__(
         self,
@@ -64,85 +66,64 @@ class CloudReranker:
         self.api_base = api_base
         self.api_key = api_key
         self._provider = _detect_rerank_provider(self.model)
-        self._bare_model = _strip_provider(self.model)
+
+    def _litellm_model(self) -> str:
+        """Map mnemo's model naming to a litellm ``provider/model`` string."""
+        if "/" in self.model:
+            return self.model
+        if self._provider == "jina":
+            return f"jina_ai/{self.model}"
+        return f"cohere/{self.model}"
+
+    def _call_rerank(
+        self, query: str, documents: list[str], top_n: int
+    ) -> list[tuple[int, float]]:
+        """Single cloud path via mcp_core.llm (sync mirror — runs in to_thread)."""
+        # Lazy import: litellm costs ~1-2s on first import.
+        from mcp_core.llm import rerank as core_rerank
+
+        response = core_rerank(
+            model=self._litellm_model(),
+            query=query,
+            documents=documents,
+            top_n=top_n,
+            api_base=self.api_base or os.getenv("RERANK_API_BASE") or None,
+            api_key=self.api_key or None,
+        )
+
+        # litellm RerankResponse.results defaults to None and rerank items
+        # may be pydantic objects or plain dicts — guard + handle both shapes.
+        def _idx(r: Any) -> int:
+            return r["index"] if isinstance(r, dict) else getattr(r, "index", 0)
+
+        def _score(r: Any) -> float:
+            return (
+                r["relevance_score"]
+                if isinstance(r, dict)
+                else getattr(r, "relevance_score", 0.0)
+            )
+
+        return [(_idx(r), _score(r)) for r in (response.results or [])]
 
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
     ) -> list[tuple[int, float]]:
-        """Rerank documents via cloud API (Jina or Cohere)."""
+        """Rerank documents via the cloud rerank API."""
         if not documents:
             return []
         try:
-            if self._provider == "jina":
-                return self._rerank_jina(query, documents, top_n)
-            return self._rerank_cohere(query, documents, top_n)
+            results = self._call_rerank(query, documents, top_n)
+            results.sort(key=lambda x: x[1], reverse=True)
+            return results[:top_n]
         except Exception as e:
             logger.warning(f"Cloud reranking failed ({self._provider}): {e}")
             return []
 
-    def _rerank_jina(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[tuple[int, float]]:
-        """Rerank via Jina AI REST API."""
-        import httpx
-
-        key = self.api_key or os.getenv("JINA_AI_API_KEY") or ""
-        payload: dict = {
-            "model": self._bare_model,
-            "query": query,
-            "documents": documents,
-            "top_n": top_n,
-        }
-
-        response = httpx.post(
-            "https://api.jina.ai/v1/rerank",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        data = response.json()["results"]
-
-        results: list[tuple[int, float]] = []
-        for item in data:
-            results.append((item["index"], item["relevance_score"]))
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_n]
-
-    def _rerank_cohere(
-        self, query: str, documents: list[str], top_n: int
-    ) -> list[tuple[int, float]]:
-        """Rerank via Cohere SDK."""
-        import cohere
-
-        key = (
-            self.api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
-        )
-        client = cohere.ClientV2(api_key=key)
-        response = client.rerank(
-            model=self._bare_model,
-            query=query,
-            documents=documents,
-            top_n=top_n,
-        )
-        results: list[tuple[int, float]] = []
-        for item in response.results:
-            if isinstance(item, dict):
-                results.append((item["index"], item["relevance_score"]))
-            else:
-                results.append((item.index, item.relevance_score))
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_n]
-
     def check_available(self) -> bool:
         """Check if the cloud reranker model is reachable."""
         try:
-            if self._provider == "jina":
-                return self._check_jina()
-            return self._check_cohere()
+            results = self._call_rerank("test", ["test document"], 1)
+            return bool(results)
         except Exception as e:
             msg = str(e).lower()
             if any(
@@ -152,44 +133,6 @@ class CloudReranker:
             else:
                 logger.debug(f"Reranker {self.model} not available: {e}")
             return False
-
-    def _check_jina(self) -> bool:
-        """Check Jina reranker availability."""
-        import httpx
-
-        key = self.api_key or os.getenv("JINA_AI_API_KEY") or ""
-        response = httpx.post(
-            "https://api.jina.ai/v1/rerank",
-            json={
-                "model": self._bare_model,
-                "query": "test",
-                "documents": ["test"],
-                "top_n": 1,
-            },
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-        return bool(response.json().get("results"))
-
-    def _check_cohere(self) -> bool:
-        """Check Cohere reranker availability."""
-        import cohere
-
-        key = (
-            self.api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
-        )
-        client = cohere.ClientV2(api_key=key)
-        response = client.rerank(
-            model=self._bare_model,
-            query="test",
-            documents=["test"],
-            top_n=1,
-        )
-        return bool(response.results)
 
 
 # Backward compatibility aliases

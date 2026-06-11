@@ -1,14 +1,17 @@
 """Multi-provider LLM dispatch layer (Phase 1 foundation).
 
 Provides a single ``call_llm`` entry point that auto-detects the active
-provider from environment variables and dispatches to the appropriate native
-SDK. The priority order matches the spec
+provider from environment variables and dispatches via ``mcp_core.llm``
+(litellm passthrough). The priority order matches the spec
 (`2026-04-19-mnemo-v2-design.md` §4.2):
 
     1. Gemini (``GEMINI_API_KEY`` or ``GOOGLE_API_KEY``)
     2. OpenAI (``OPENAI_API_KEY``)
     3. Anthropic (``ANTHROPIC_API_KEY``)
     4. xAI / Grok (``XAI_API_KEY``)
+
+litellm calls each provider's API directly, so ``ANTHROPIC_API_KEY`` now
+works WITHOUT the ``anthropic`` package installed (no native SDK import).
 
 If no provider key is available, ``call_llm`` logs a warning and returns
 ``None`` so callers (e.g. the upcoming ``capture`` action's optional fact
@@ -109,7 +112,7 @@ async def call_llm(
             When ``None`` (the default), auto-detection runs.
         model: Optional explicit model override. When ``None``, the result of
             :func:`get_default_model` for the resolved provider is used.
-        temperature: Sampling temperature passed through to the SDK.
+        temperature: Sampling temperature passed through to litellm.
         max_tokens: Maximum response tokens to request from the provider.
 
     Returns:
@@ -129,98 +132,19 @@ async def call_llm(
     resolved_model = model or get_default_model(resolved_provider)
 
     try:
-        if resolved_provider == "gemini":
-            return await _call_gemini(resolved_model, prompt, temperature, max_tokens)
-        if resolved_provider == "openai":
-            return await _call_openai(resolved_model, prompt, temperature, max_tokens)
-        if resolved_provider == "anthropic":
-            return await _call_anthropic(
-                resolved_model, prompt, temperature, max_tokens
-            )
-        if resolved_provider == "xai":
-            return await _call_xai(resolved_model, prompt, temperature, max_tokens)
+        # Lazy import: litellm costs ~1-2s on first import.
+        from mcp_core.llm import acompletion
+
+        response = await acompletion(
+            model=f"{resolved_provider}/{resolved_model}",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_base=os.environ.get("LLM_API_BASE") or None,
+        )
+        return response.choices[0].message.content or ""
     except Exception as e:  # pragma: no cover - per-provider runtime guard
         logger.warning(
             f"call_llm: provider={resolved_provider} model={resolved_model} failed: {e}"
         )
         return None
-
-    logger.warning(f"call_llm: unknown provider {resolved_provider!r}")
-    return None
-
-
-async def _call_gemini(
-    model: str, prompt: str, temperature: float, max_tokens: int
-) -> str:
-    """Dispatch to ``google-genai``. Mirrors graph.py LLM completion path."""
-    from google import genai
-    from google.genai import types
-
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        ),
-    )
-    return response.text or ""
-
-
-async def _call_openai(
-    model: str, prompt: str, temperature: float, max_tokens: int
-) -> str:
-    """Dispatch to OpenAI Chat Completions via the ``openai`` SDK."""
-    import openai
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    client = openai.OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    return response.choices[0].message.content or ""
-
-
-async def _call_anthropic(
-    model: str, prompt: str, temperature: float, max_tokens: int
-) -> str:
-    """Dispatch to Anthropic Messages API via the ``anthropic`` SDK.
-
-    The ``anthropic`` package is not declared as a hard dependency yet — when
-    a user sets ``ANTHROPIC_API_KEY`` without installing it, ``call_llm``
-    catches the ``ImportError`` and returns ``None``.
-    """
-    import anthropic  # noqa: I001 - lazy optional import
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    parts = getattr(message, "content", []) or []
-    return "".join(getattr(p, "text", "") for p in parts)
-
-
-async def _call_xai(
-    model: str, prompt: str, temperature: float, max_tokens: int
-) -> str:
-    """Dispatch to xAI Grok via the OpenAI-compatible endpoint."""
-    import openai
-
-    api_key = os.environ.get("XAI_API_KEY")
-    client = openai.OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    return response.choices[0].message.content or ""

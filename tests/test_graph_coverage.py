@@ -47,151 +47,83 @@ class TestResolveLlmModel:
 # ---------------------------------------------------------------------------
 
 
+def _completion(content):
+    """Build a litellm-shaped completion response."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
+
+
 class TestLlmCompletion:
-    async def test_gemini_path(self, monkeypatch):
-        """Routes to Gemini SDK when model is gemini/..."""
-        monkeypatch.setenv("GEMINI_API_KEY", "AIza_test")
-
-        with patch("google.genai.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.text = '{"result": "test"}'
-            mock_client.models.generate_content.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+    async def test_slash_form_passthrough(self):
+        """A 'provider/model' string is passed to litellm unchanged."""
+        mock = AsyncMock(return_value=_completion('{"result": "test"}'))
+        with patch("mcp_core.llm.acompletion", mock):
             result = await _llm_completion(
                 "gemini/gemini-3-flash-preview",
                 [{"role": "user", "content": "test prompt"}],
                 response_format={"type": "json_object"},
             )
+        assert result == '{"result": "test"}'
+        kwargs = mock.call_args.kwargs
+        assert kwargs["model"] == "gemini/gemini-3-flash-preview"
+        assert kwargs["response_format"] == {"type": "json_object"}
 
-            assert result == '{"result": "test"}'
-            # Verify json_object maps to response_mime_type
-            call_kwargs = mock_client.models.generate_content.call_args
-            config = call_kwargs.kwargs.get("config")
-            assert config is not None
-
-    async def test_gemini_no_prefix(self, monkeypatch):
-        """Routes to Gemini for model without prefix containing 'gemini'."""
-        monkeypatch.setenv("GEMINI_API_KEY", "AIza_test")
-
-        with patch("google.genai.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.text = "0.7"
-            mock_client.models.generate_content.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+    async def test_gemini_bare_name_prefixed(self):
+        """A bare gemini model gets the 'gemini/' prefix for litellm."""
+        mock = AsyncMock(return_value=_completion("0.7"))
+        with patch("mcp_core.llm.acompletion", mock):
             result = await _llm_completion(
                 "gemini-3-flash-preview",
                 [{"role": "user", "content": "score"}],
             )
-            assert result == "0.7"
+        assert result == "0.7"
+        assert mock.call_args.kwargs["model"] == "gemini/gemini-3-flash-preview"
 
-    async def test_gemini_empty_text(self, monkeypatch):
-        """Gemini returns empty string when response.text is None."""
-        monkeypatch.setenv("GEMINI_API_KEY", "AIza_test")
-
-        with patch("google.genai.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_response = MagicMock()
-            mock_response.text = None
-            mock_client.models.generate_content.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+    async def test_empty_content(self):
+        """Returns empty string when message.content is None."""
+        mock = AsyncMock(return_value=_completion(None))
+        with patch("mcp_core.llm.acompletion", mock):
             result = await _llm_completion(
                 "gemini/gemini-3-flash-preview",
                 [{"role": "user", "content": "test"}],
             )
-            assert result == ""
+        assert result == ""
 
-    async def test_openai_path(self, monkeypatch):
-        """Routes to OpenAI SDK when model is openai/..."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk_test")
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
-
-        with patch("openai.OpenAI") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_choice = MagicMock()
-            mock_choice.message.content = '{"entities": []}'
-            mock_response = MagicMock()
-            mock_response.choices = [mock_choice]
-            mock_client.chat.completions.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
-            result = await _llm_completion(
-                "openai/gpt-5.4-mini",
-                [{"role": "user", "content": "test"}],
-                response_format={"type": "json_object"},
-            )
-            assert result == '{"entities": []}'
-
-    async def test_xai_path(self, monkeypatch):
-        """Routes to OpenAI SDK with xAI base_url when XAI_API_KEY is set."""
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.setenv("XAI_API_KEY", "xai_test")
-
-        with patch("openai.OpenAI") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_choice = MagicMock()
-            mock_choice.message.content = "0.5"
-            mock_response = MagicMock()
-            mock_response.choices = [mock_choice]
-            mock_client.chat.completions.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
-            result = await _llm_completion(
-                "xai/grok-4-mini",
-                [{"role": "user", "content": "test"}],
-            )
-            assert result == "0.5"
-            mock_client_cls.assert_called_once_with(
-                api_key="xai_test",
-                base_url="https://api.x.ai/v1",
-            )
-
-    async def test_openai_empty_content(self, monkeypatch):
-        """OpenAI returns empty string when message.content is None."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk_test")
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
-
-        with patch("openai.OpenAI") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_choice = MagicMock()
-            mock_choice.message.content = None
-            mock_response = MagicMock()
-            mock_response.choices = [mock_choice]
-            mock_client.chat.completions.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+    async def test_response_format_omitted_when_none(self):
+        """response_format is not forwarded when not provided."""
+        mock = AsyncMock(return_value=_completion('{"entities": []}'))
+        with patch("mcp_core.llm.acompletion", mock):
             result = await _llm_completion(
                 "openai/gpt-5.4-mini",
                 [{"role": "user", "content": "test"}],
             )
-            assert result == ""
+        assert result == '{"entities": []}'
+        assert "response_format" not in mock.call_args.kwargs
 
-    async def test_openai_no_prefix(self, monkeypatch):
-        """Non-gemini model without prefix uses openai SDK."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk_test")
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
-
-        with patch("openai.OpenAI") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_choice = MagicMock()
-            mock_choice.message.content = "0.8"
-            mock_response = MagicMock()
-            mock_response.choices = [mock_choice]
-            mock_client.chat.completions.create.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
+    async def test_non_gemini_bare_name_passthrough(self):
+        """A non-gemini bare model name is passed to litellm as-is."""
+        mock = AsyncMock(return_value=_completion("0.8"))
+        with patch("mcp_core.llm.acompletion", mock):
             result = await _llm_completion(
                 "gpt-5.4-mini",
                 [{"role": "user", "content": "test"}],
             )
-            assert result == "0.8"
-            # Model should be used as-is (no prefix)
-            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
-            assert call_kwargs["model"] == "gpt-5.4-mini"
+        assert result == "0.8"
+        assert mock.call_args.kwargs["model"] == "gpt-5.4-mini"
+
+    async def test_api_base_from_env(self, monkeypatch):
+        """LLM_API_BASE flows through to acompletion as api_base."""
+        monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
+        mock = AsyncMock(return_value=_completion("ok"))
+        with patch("mcp_core.llm.acompletion", mock):
+            await _llm_completion(
+                "gemini/gemini-3-flash-preview",
+                [{"role": "user", "content": "test"}],
+            )
+        assert mock.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
 
 # ---------------------------------------------------------------------------

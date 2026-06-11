@@ -7,7 +7,10 @@ from mnemo_mcp.embedder import MAX_RETRIES, CloudEmbeddingBackend
 
 @pytest.mark.asyncio
 class TestDimensionRecovery:
-    @patch("mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider")
+    @patch(
+        "mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider",
+        new_callable=AsyncMock,
+    )
     async def test_dimension_unsupported_recovery(self, mock_call_provider):
         """
         Test that if the provider rejects the 'dimensions' parameter,
@@ -38,7 +41,10 @@ class TestDimensionRecovery:
             [call(["hello"], 512), call(["hello"], None)]
         )
 
-    @patch("mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider")
+    @patch(
+        "mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider",
+        new_callable=AsyncMock,
+    )
     async def test_no_recovery_on_other_error(self, mock_call_provider):
         """
         Test that other non-retryable errors do not trigger recovery.
@@ -53,7 +59,10 @@ class TestDimensionRecovery:
         # Should only be called once if it's not retryable and not unsupported param
         assert mock_call_provider.call_count == 1
 
-    @patch("mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider")
+    @patch(
+        "mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider",
+        new_callable=AsyncMock,
+    )
     @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retryable_error_takes_precedence(
         self, mock_sleep, mock_call_provider

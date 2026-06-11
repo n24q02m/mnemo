@@ -5,7 +5,8 @@ Jina embed backend, Gemini embed backend, OpenAI embed backend,
 _embed_batch_inner no-retry RuntimeError path, CloudEmbeddingBackend routing.
 """
 
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -13,8 +14,16 @@ from mnemo_mcp.embedder import (
     CloudEmbeddingBackend,
     _detect_embedding_provider,
     _is_unsupported_param,
+    _parse_embeddings,
     _strip_provider,
 )
+
+
+def _embedding_response(*vectors, indexed=True):
+    """Build a litellm-shaped embedding response (resp.data list)."""
+    data = [SimpleNamespace(index=i, embedding=list(v)) for i, v in enumerate(vectors)]
+    return SimpleNamespace(data=data if indexed else list(vectors))
+
 
 # ---------------------------------------------------------------------------
 # _detect_embedding_provider
@@ -121,225 +130,153 @@ class TestIsUnsupportedParam:
 
 
 # ---------------------------------------------------------------------------
-# CloudEmbeddingBackend -- Jina provider
+# _litellm_model mapping (provider -> litellm 'provider/model')
 # ---------------------------------------------------------------------------
 
 
-class TestJinaEmbedding:
-    @patch("httpx.post")
-    async def test_jina_embed(self, mock_post):
-        """Jina embedding via REST API."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"index": 0, "embedding": [0.1, 0.2, 0.3]},
-                {"index": 1, "embedding": [0.4, 0.5, 0.6]},
-            ]
-        }
-        mock_post.return_value = mock_response
+class TestLitellmModelMapping:
+    def test_jina_bare_name_prefixed(self):
+        backend = CloudEmbeddingBackend(model="jina-embeddings-v5", api_key="key")
+        assert backend._litellm_model() == "jina_ai/jina-embeddings-v5"
 
+    def test_gemini_bare_name_prefixed(self):
+        backend = CloudEmbeddingBackend(model="gemini-embedding-001", api_key="key")
+        assert backend._litellm_model() == "gemini/gemini-embedding-001"
+
+    def test_cohere_bare_name_prefixed(self):
+        backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0", api_key="key")
+        assert backend._litellm_model() == "cohere/embed-multilingual-v3.0"
+
+    def test_openai_bare_name_passthrough(self):
+        backend = CloudEmbeddingBackend(model="text-embedding-3-large", api_key="key")
+        assert backend._litellm_model() == "text-embedding-3-large"
+
+    def test_slash_form_passthrough(self):
         backend = CloudEmbeddingBackend(
-            model="jina_ai/jina-embeddings-v5-text-small",
-            api_key="jina_test",
+            model="jina_ai/jina-embeddings-v5", api_key="key"
         )
-        result = await backend.embed_texts(["hello", "world"])
+        assert backend._litellm_model() == "jina_ai/jina-embeddings-v5"
+
+
+# ---------------------------------------------------------------------------
+# CloudEmbeddingBackend -- litellm passthrough (aembedding)
+# ---------------------------------------------------------------------------
+
+
+class TestCloudEmbeddingPassthrough:
+    async def test_jina_embed(self):
+        """Embeds via aembedding and returns sorted vectors."""
+        mock = AsyncMock(
+            return_value=_embedding_response([0.1, 0.2, 0.3], [0.4, 0.5, 0.6])
+        )
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="jina_ai/jina-embeddings-v5-text-small", api_key="jina_test"
+            )
+            result = await backend.embed_texts(["hello", "world"])
 
         assert len(result) == 2
         assert result[0] == [0.1, 0.2, 0.3]
         assert result[1] == [0.4, 0.5, 0.6]
+        assert mock.call_args.kwargs["model"] == "jina_ai/jina-embeddings-v5-text-small"
 
-    @patch("httpx.post")
-    async def test_jina_embed_with_dimensions(self, mock_post):
-        """Jina embedding passes dimensions param."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"data": [{"index": 0, "embedding": [0.1]}]}
-        mock_post.return_value = mock_response
+    async def test_dimensions_forwarded(self):
+        """dimensions is forwarded to aembedding."""
+        mock = AsyncMock(return_value=_embedding_response([0.1]))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="jina_ai/jina-embeddings-v5-text-small", api_key="jina_test"
+            )
+            await backend.embed_texts(["test"], dimensions=512)
 
-        backend = CloudEmbeddingBackend(
-            model="jina_ai/jina-embeddings-v5-text-small",
-            api_key="jina_test",
-        )
-        await backend.embed_texts(["test"], dimensions=512)
+        assert mock.call_args.kwargs["dimensions"] == 512
 
-        call_kwargs = mock_post.call_args
-        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert payload["dimensions"] == 512
-
-    @patch("httpx.post")
-    async def test_jina_embed_unsorted_data(self, mock_post):
-        """Jina results are sorted by index."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"index": 1, "embedding": [0.4]},
-                {"index": 0, "embedding": [0.1]},
+    async def test_results_sorted_by_index(self):
+        """Out-of-order embedding data is sorted by index."""
+        resp = SimpleNamespace(
+            data=[
+                SimpleNamespace(index=1, embedding=[0.4]),
+                SimpleNamespace(index=0, embedding=[0.1]),
             ]
-        }
-        mock_post.return_value = mock_response
-
-        backend = CloudEmbeddingBackend(
-            model="jina_ai/test",
-            api_key="key",
         )
-        result = await backend.embed_texts(["a", "b"])
+        mock = AsyncMock(return_value=resp)
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(model="jina_ai/test", api_key="key")
+            result = await backend.embed_texts(["a", "b"])
         assert result[0] == [0.1]
         assert result[1] == [0.4]
 
+    async def test_cohere_input_type_forwarded(self):
+        """Cohere provider passes input_type='search_document'."""
+        mock = AsyncMock(return_value=_embedding_response([0.1]))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="embed-multilingual-v3.0", api_key="key"
+            )
+            await backend.embed_texts(["test"])
+        assert mock.call_args.kwargs["input_type"] == "search_document"
+        assert mock.call_args.kwargs["model"] == "cohere/embed-multilingual-v3.0"
 
-# ---------------------------------------------------------------------------
-# CloudEmbeddingBackend -- Gemini provider
-# ---------------------------------------------------------------------------
-
-
-class TestGeminiEmbedding:
-    @patch("google.genai.Client")
-    async def test_gemini_embed(self, mock_client_cls):
-        """Gemini embedding via google-genai SDK."""
-        mock_embedding = MagicMock()
-        mock_embedding.values = [0.1, 0.2, 0.3]
-
-        mock_result = MagicMock()
-        mock_result.embeddings = [mock_embedding]
-
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_result
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="gemini/gemini-embedding-001",
-            api_key="AIza_test",
-        )
-        result = await backend.embed_texts(["hello"])
-
-        assert len(result) == 1
-        assert result[0] == [0.1, 0.2, 0.3]
-
-    @patch("google.genai.Client")
-    async def test_gemini_embed_with_dimensions(self, mock_client_cls):
-        """Gemini passes output_dimensionality in config."""
-        mock_embedding = MagicMock()
-        mock_embedding.values = [0.1]
-
-        mock_result = MagicMock()
-        mock_result.embeddings = [mock_embedding]
-
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_result
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="gemini/gemini-embedding-001",
-            api_key="AIza_test",
-        )
-        await backend.embed_texts(["test"], dimensions=768)
-
-        call_kwargs = mock_client.models.embed_content.call_args
-        config = call_kwargs.kwargs.get("config")
-        assert config is not None
-
-    @patch("google.genai.Client")
-    async def test_gemini_embed_empty_embeddings(self, mock_client_cls):
-        """Gemini handles empty embeddings list."""
-        mock_result = MagicMock()
-        mock_result.embeddings = None
-
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_result
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="gemini/gemini-embedding-001",
-            api_key="AIza_test",
-        )
-        result = await backend.embed_texts(["test"])
+    async def test_none_data_returns_empty(self):
+        """resp.data=None is guarded and yields []."""
+        mock = AsyncMock(return_value=SimpleNamespace(data=None))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="gemini/gemini-embedding-001", api_key="AIza_test"
+            )
+            result = await backend.embed_texts(["test"])
         assert result == []
 
+    async def test_dict_items_parsed(self):
+        """Embedding items may be plain dicts."""
+        resp = SimpleNamespace(
+            data=[{"index": 0, "embedding": [0.7, 0.8]}],
+        )
+        mock = AsyncMock(return_value=resp)
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="text-embedding-3-large", api_key="sk_test"
+            )
+            result = await backend.embed_texts(["x"])
+        assert result == [[0.7, 0.8]]
+
+    async def test_api_base_forwarded(self):
+        """Custom api_base flows through to aembedding."""
+        mock = AsyncMock(return_value=_embedding_response([0.1]))
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="openai/text-embedding-3-large",
+                api_key="sk_test",
+                api_base="https://proxy.example.com/v1",
+            )
+            await backend.embed_texts(["test"])
+        assert mock.call_args.kwargs["api_base"] == "https://proxy.example.com/v1"
+        assert mock.call_args.kwargs["api_key"] == "sk_test"
+
 
 # ---------------------------------------------------------------------------
-# CloudEmbeddingBackend -- OpenAI provider
+# _parse_embeddings shape handling
 # ---------------------------------------------------------------------------
 
 
-class TestOpenAIEmbedding:
-    @patch("openai.OpenAI")
-    async def test_openai_embed(self, mock_client_cls):
-        """OpenAI embedding via SDK."""
-        mock_data_0 = MagicMock()
-        mock_data_0.index = 0
-        mock_data_0.embedding = [0.1, 0.2]
-
-        mock_data_1 = MagicMock()
-        mock_data_1.index = 1
-        mock_data_1.embedding = [0.3, 0.4]
-
-        mock_response = MagicMock()
-        mock_response.data = [mock_data_1, mock_data_0]  # Out of order
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="text-embedding-3-large",
-            api_key="sk_test",
+class TestParseEmbeddings:
+    def test_pydantic_items(self):
+        resp = SimpleNamespace(
+            data=[
+                SimpleNamespace(index=1, embedding=[0.4]),
+                SimpleNamespace(index=0, embedding=[0.1]),
+            ]
         )
-        result = await backend.embed_texts(["hello", "world"])
+        assert _parse_embeddings(resp) == [[0.1], [0.4]]
 
-        assert result[0] == [0.1, 0.2]
-        assert result[1] == [0.3, 0.4]
-
-    @patch("openai.OpenAI")
-    async def test_openai_embed_with_dimensions(self, mock_client_cls):
-        """OpenAI passes dimensions param."""
-        mock_data = MagicMock()
-        mock_data.index = 0
-        mock_data.embedding = [0.1]
-
-        mock_response = MagicMock()
-        mock_response.data = [mock_data]
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="text-embedding-3-large",
-            api_key="sk_test",
+    def test_dict_items(self):
+        resp = SimpleNamespace(
+            data=[{"index": 0, "embedding": [0.1]}, {"index": 1, "embedding": [0.2]}]
         )
-        await backend.embed_texts(["test"], dimensions=512)
+        assert _parse_embeddings(resp) == [[0.1], [0.2]]
 
-        call_kwargs = mock_client.embeddings.create.call_args
-        assert call_kwargs.kwargs.get("dimensions") == 512
-
-    @patch("openai.OpenAI")
-    async def test_openai_embed_with_api_base(self, mock_client_cls):
-        """OpenAI respects custom api_base."""
-        mock_data = MagicMock()
-        mock_data.index = 0
-        mock_data.embedding = [0.1]
-
-        mock_response = MagicMock()
-        mock_response.data = [mock_data]
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-        mock_client_cls.return_value = mock_client
-
-        backend = CloudEmbeddingBackend(
-            model="openai/text-embedding-3-large",
-            api_key="sk_test",
-            api_base="https://proxy.example.com/v1",
-        )
-        await backend.embed_texts(["test"])
-
-        mock_client_cls.assert_called_with(
-            api_key="sk_test",
-            base_url="https://proxy.example.com/v1",
-        )
+    def test_none_data(self):
+        assert _parse_embeddings(SimpleNamespace(data=None)) == []
 
 
 # ---------------------------------------------------------------------------
