@@ -70,8 +70,8 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Features
 
-- **Hybrid retrieval** -- FTS5 + sqlite-vec, fused via Reciprocal Rank Fusion (k=60), then re-ranked by a cross-encoder chain (qwen3-reranker local -> Jina -> Cohere) with temporal decay and importance boost
-- **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a multi-provider LLM dispatcher (Gemini > OpenAI > Anthropic > xAI)
+- **Hybrid retrieval** -- FTS5 + sqlite-vec, fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> local qwen3-reranker) with temporal decay and importance boost
+- **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a configurable LLM chain (`LLM_MODELS`, order = litellm fallback)
 - **Knowledge graph** -- Automatic entity extraction and relation tracking; top results boosted by graph proximity
 - **Importance scoring + archive policy** -- LLM-scored 0.0-1.0 importance; soft-archive when `recency_factor * (1 - importance) > 1.0`; restore action available
 - **Auto-archive trigger** -- Background sweep every Nth capture (default 100) -- no cron required
@@ -95,7 +95,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | Importance boost in rank | yes (LLM 0.0-1.0) | no | no | no |
 | Soft-archive + restore policy | yes (importance x recency) | no | no | no |
 | Self-hostable (single SQLite file) | yes (zero ext deps) | partial (cloud-first) | yes (Postgres) | yes (Postgres + Qdrant) |
-| Multi-provider LLM dispatch | yes (Gemini/OpenAI/Anthropic/xAI auto-detect) | partial | yes | partial |
+| Multi-provider LLM dispatch | yes (`LLM_MODELS` chain, any litellm provider) | partial | yes | partial |
 | Plugin trinity (skills + hooks) | yes (recall-context + memory-commit) | n/a | n/a | n/a |
 | Multi-machine sync | yes (GDrive bundled OAuth) | yes (cloud) | n/a | n/a |
 | E2E-encrypted passport sync | yes (AES-256-GCM + Argon2id, S3 + GDrive) | no | no | no |

@@ -53,10 +53,13 @@ class Settings(BaseSettings):
     - API_KEYS: Provider API keys, supports multiple providers
         Format: "ENV_VAR:key,ENV_VAR:key,..."
         Example: "COHERE_API_KEY:co-...,GEMINI_API_KEY:AIza..."
-        Embedding: Jina > Gemini > OpenAI > Cohere. LLM: Gemini, OpenAI, xAI.
-    - EMBEDDING_MODEL: Embedding model (auto-detected if not set)
+        Provider is implied by the model prefix; key per litellm convention.
+    - EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS: ordered chains
+        "provider/model,provider/model" (order = litellm fallback). Empty
+        embedding/rerank -> local ONNX; empty LLM -> feature off.
     - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
-    - EMBEDDING_BACKEND: "cloud" | "local" (auto: API_KEYS -> cloud, else local)
+    - EMBEDDING_MODEL / EMBEDDING_BACKEND: DEPRECATED (folded into the
+        *_MODELS chains; backend inferred). Honored one release with a warning.
     - SYNC_ENABLED: Enable Google Drive sync (default: true)
     - SYNC_FOLDER: Google Drive folder name (default: "mnemo-mcp")
     - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)

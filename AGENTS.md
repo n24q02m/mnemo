@@ -2,7 +2,7 @@
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
 Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher + config + help + config__open_relay.
-2-mode embedding: Cloud (Jina > Gemini > OpenAI > Cohere) > Local (Qwen3 ONNX). LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]).
+2-mode embedding: cloud chain (`EMBEDDING_MODELS`) > Local (Qwen3 ONNX khi chain rong). Per-task model chains (`EMBEDDING_MODELS`/`RERANK_MODELS`/`LLM_MODELS`, order = litellm fallback). LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]).
 
 ## Commands
 
@@ -67,23 +67,29 @@ tests/             # 1:1 mapping voi source modules
 
 Khong co prefix (khac voi cac project khac):
 - `DB_PATH` -- default `~/.mnemo-mcp/memories.db`
-- `JINA_AI_API_KEY` -- Jina AI API key (embedding + reranking, highest priority)
-- `GEMINI_API_KEY` -- Google Gemini API key (embedding + LLM)
-- `OPENAI_API_KEY` -- OpenAI API key (embedding)
-- `COHERE_API_KEY` -- Cohere API key (embedding + reranking)
-- `ANTHROPIC_API_KEY` -- Anthropic API key (LLM; chay qua litellm, KHONG can `anthropic` package)
-- `XAI_API_KEY` -- xAI/Grok API key (LLM)
-- LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm`. Custom endpoint: `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
-- `EMBEDDING_BACKEND` -- `cloud` hoac `local` (auto-detect)
-- `EMBEDDING_MODEL` -- Cloud embedding model name
+- `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (qwen3-embed).
+- `RERANK_MODELS` -- chain rerank, CSV `provider/model,...`; order = fallback. Rong = local ONNX cross-encoder.
+- `LLM_MODELS` -- chain LLM (graph extraction), CSV `provider/model,...`; order = fallback. Rong = tat feature LLM.
+- Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 6 provider servers goi y:
+
+  | model prefix | key env var | get it at |
+  |---|---|---|
+  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
+  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
+  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
+  | `xai/` | `XAI_API_KEY` | console.x.ai |
+  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
+
+  For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
+- Custom endpoint (SSRF-guarded): `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
 - `EMBEDDING_DIMS` -- default 768 (0 = auto)
+- Deprecated (honored mot release voi warning): singular `EMBEDDING_MODEL`/`RERANK_MODEL` + `EMBEDDING_BACKEND`/`RERANK_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
 - `SYNC_ENABLED` -- `true`/`false`, default true
 - `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID (required for sync)
 - `SYNC_FOLDER` -- Google Drive folder name (default: `mnemo-mcp`)
 - `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
 - `RERANK_ENABLED` -- `true`/`false`, default true
-- `RERANK_BACKEND` -- `cloud`, `local`, hoac auto-detect
-- `RERANK_MODEL` -- Cloud rerank model name (auto-detected: Jina > Cohere)
 - `RERANK_TOP_N` -- so ket qua rerank giu lai (default: 10)
 - `ARCHIVE_ENABLED` -- `true`/`false`, default true
 - `ARCHIVE_AFTER_DAYS` -- so ngay truoc khi archive (default: 90)
@@ -91,13 +97,31 @@ Khong co prefix (khac voi cac project khac):
 - `DEDUP_THRESHOLD` -- nguong similarity de coi la duplicate (default: 0.9)
 - `DEDUP_WARN_THRESHOLD` -- nguong similarity de canh bao (default: 0.7)
 - `RECENCY_HALF_LIFE_DAYS` -- half-life cho temporal decay scoring (default: 7)
-- `LLM_MODELS` -- danh sach LLM models, format `provider/model,...` (default: gemini + openai)
 - `LOG_LEVEL` -- log level (default: INFO)
+
+### Manual config example
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx", "args": ["mnemo-mcp"],
+      "env": {
+        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+        "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+        "LLM_MODELS": "gemini/gemini-3-flash-preview",
+        "JINA_AI_API_KEY": "jina_xxx",
+        "GEMINI_API_KEY": "AIza_xxx"
+      }
+    }
+  }
+}
+```
 
 ## Embedding architecture
 
-1. **Cloud** (API_KEYS) -- Jina > Gemini > OpenAI > Cohere
-2. **Local** -- Qwen3-Embedding-0.6B ONNX, zero config, luon available
+1. **Cloud** (`EMBEDDING_MODELS` chain) -- thu lan luot theo thu tu, fallback qua litellm.
+2. **Local** -- Qwen3-Embedding-0.6B ONNX, dung khi chain rong, zero config, luon available
 - Tat ca embeddings luu tai 768 dims. Doi provider khong break vector table.
 
 ## CD Pipeline

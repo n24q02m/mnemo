@@ -18,7 +18,7 @@
       },
       "environmentVariables": [
         {
-          "description": "API keys for cloud embedding (format: ENV_VAR:key). Without this, uses built-in local Qwen3 model.",
+          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chain falls back to the built-in local Qwen3 model.",
           "isRequired": false,
           "isSecret": true,
           "name": "API_KEYS"
@@ -34,7 +34,7 @@
       },
       "environmentVariables": [
         {
-          "description": "API keys for cloud embedding (format: ENV_VAR:key). Without this, uses built-in local Qwen3 model.",
+          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chain falls back to the built-in local Qwen3 model.",
           "isRequired": false,
           "isSecret": true,
           "name": "API_KEYS"
