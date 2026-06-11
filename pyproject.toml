@@ -30,7 +30,7 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.11.0",
+    "qwen3-embed>=1.11.1",
     # Zero-env-config credential relay + LLM/embed/rerank via litellm passthrough
     "n24q02m-mcp-core[llm]>=1.18.0b2,<2",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
@@ -39,9 +39,9 @@ dependencies = [
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.13.0",
     # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
-    "boto3>=1.43.25",
+    "boto3>=1.43.27",
     # Phase 2: AES-256-GCM bundle encryption + Argon2id KDF
-    "cryptography>=48.0.0",
+    "cryptography>=48.0.1",
     # Transitive pin: urllib3 < 2.7.0 has 2 HIGH CVEs (GHSA-qccp-gfcp-xxvc
     # sensitive-header cross-origin forwarding + GHSA-mf9v-mfxr-j63j
     # decompression-bomb bypass). Both patched in 2.7.0.
@@ -62,7 +62,7 @@ dev = [
     "pre-commit",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "syrupy>=5.3.1",
+    "syrupy>=5.3.2",
     # Phase 2: in-memory S3 fixture for sync backend tests
     "moto[s3]>=5.2.2",
     "bandit>=1.9.4",
