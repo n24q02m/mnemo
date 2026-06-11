@@ -193,12 +193,12 @@ class TestQwen3Reranker:
     def test_default_model_name(self):
         """Default model name is used when none specified."""
         reranker = Qwen3Reranker()
-        assert reranker._model_name == "n24q02m/Qwen3-Reranker-0.6B-ONNX"
+        assert reranker._model_name == "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
 
     def test_none_model_uses_default(self):
         """None model name falls back to default."""
         reranker = Qwen3Reranker(None)
-        assert reranker._model_name == "n24q02m/Qwen3-Reranker-0.6B-ONNX"
+        assert reranker._model_name == "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
 
     def test_lazy_load(self):
         """Model is not loaded until _get_model is called."""

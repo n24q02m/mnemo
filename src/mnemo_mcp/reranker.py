@@ -143,7 +143,9 @@ LiteLLMReranker = CloudReranker
 class Qwen3Reranker:
     """Local ONNX cross-encoder reranking via qwen3-embed."""
 
-    DEFAULT_MODEL = "n24q02m/Qwen3-Reranker-0.6B-ONNX"
+    # YesNo variant: ~598 MB at inference vs ~12 GB for the full-vocab build,
+    # mathematically equivalent, batch-invariant since qwen3-embed 1.11.2b3 (#725).
+    DEFAULT_MODEL = "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
 
     def __init__(self, model_name: str | None = None):
         self._model_name = model_name or self.DEFAULT_MODEL
