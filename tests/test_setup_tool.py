@@ -36,13 +36,12 @@ class TestClearModelCache:
 class TestValidateCloudModels:
     """_validate_cloud_models checks cloud embedding availability."""
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["gemini/model-1"])
     @patch("mnemo_mcp.embedder.init_backend")
     def test_cloud_ready(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["gemini/model-1"]
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 768
@@ -54,13 +53,12 @@ class TestValidateCloudModels:
         assert result["model"] == "gemini/model-1"
         assert result["dims"] == 768
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["model-a"])
     @patch("mnemo_mcp.embedder.init_backend")
     def test_cloud_not_ready(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["model-a"]
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 0
@@ -70,13 +68,12 @@ class TestValidateCloudModels:
 
         assert result["cloud_ready"] is False
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["model-a"])
     @patch("mnemo_mcp.embedder.init_backend")
     def test_explicit_model_tried_first(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = "explicit/model"
+        mock_settings.embedding_chain.return_value = ["explicit/model"]
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 512
@@ -87,13 +84,12 @@ class TestValidateCloudModels:
         assert result["cloud_ready"] is True
         mock_init.assert_called_once_with("cloud", "explicit/model")
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["model-a"])
     @patch("mnemo_mcp.embedder.init_backend")
     def test_cloud_exception_returns_not_ready(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["model-a"]
 
         mock_init.side_effect = Exception("auth error")
 
@@ -101,15 +97,12 @@ class TestValidateCloudModels:
 
         assert result["cloud_ready"] is False
 
-    @patch(
-        "mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["fail-model", "success-model"]
-    )
     @patch("mnemo_mcp.embedder.init_backend")
     def test_cloud_first_candidate_fails_continues_to_next(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["fail-model", "success-model"]
 
         mock_backend_success = MagicMock()
         mock_backend_success.check_available.return_value = 1024
@@ -127,13 +120,12 @@ class TestValidateCloudModels:
         assert result["model"] == "success-model"
         assert result["dims"] == 1024
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["fail-1", "fail-2"])
     @patch("mnemo_mcp.embedder.init_backend")
     def test_cloud_all_candidates_fail_returns_not_ready(self, mock_init):
         from mnemo_mcp.setup_tool import _validate_cloud_models
 
         mock_settings = MagicMock()
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["fail-1", "fail-2"]
 
         mock_init.side_effect = Exception("Service unavailable")
 
@@ -231,14 +223,13 @@ class TestDownloadLocalEmbedding:
 class TestRunWarmup:
     """run_warmup() async function for MCP tool."""
 
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["gemini/model-1"])
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.setup_tool.settings")
     async def test_cloud_embedding_success(self, mock_settings, mock_init):
         from mnemo_mcp.setup_tool import run_warmup
 
         mock_settings.setup_api_keys.return_value = {"GEMINI_API_KEY": "key"}
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["gemini/model-1"]
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = 768
@@ -271,7 +262,6 @@ class TestRunWarmup:
         assert result["steps"][0]["status"] == "ok"
 
     @patch("qwen3_embed.TextEmbedding")
-    @patch("mnemo_mcp.setup_tool._EMBEDDING_CANDIDATES", ["model-a"])
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.setup_tool.settings")
     async def test_cloud_fail_falls_back_to_local(
@@ -280,7 +270,7 @@ class TestRunWarmup:
         from mnemo_mcp.setup_tool import run_warmup
 
         mock_settings.setup_api_keys.return_value = {"KEY": "val"}
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = ["model-a"]
         mock_settings.resolve_local_embedding_model.return_value = "local/model"
 
         mock_backend = MagicMock()

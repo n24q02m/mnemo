@@ -21,7 +21,7 @@ from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from mnemo_mcp.config import _EMBEDDING_CANDIDATES, settings
+from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
@@ -58,7 +58,7 @@ async def _init_embedding_backend(
         logger.info("Embedding: skipped (credentials not configured, FTS5 mode)")
         return
 
-    embedding_model = settings.resolve_embedding_model()
+    embedding_chain = settings.embedding_chain()
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
 
@@ -83,44 +83,26 @@ async def _init_embedding_backend(
             logger.error(f"Local embedding init failed: {e}")
         return
 
-    # CONFIGURED + cloud backend -- no local fallback
-    if embedding_model:
-        # Explicit model -- validate it
+    # CONFIGURED + cloud backend -- no local fallback.
+    # Try each model in the chain (litellm fallback order) until one validates.
+    for candidate in embedding_chain:
         try:
-            backend = await asyncio.to_thread(init_backend, "cloud", embedding_model)
+            backend = await asyncio.to_thread(init_backend, "cloud", candidate)
             native_dims = await asyncio.to_thread(backend.check_available)
             if native_dims > 0:
                 if embedding_dims == 0:
                     embedding_dims = _DEFAULT_EMBEDDING_DIMS
                 logger.info(
-                    f"Embedding: {embedding_model} "
+                    f"Embedding: {candidate} "
                     f"(native={native_dims}, stored={embedding_dims})"
                 )
-                ctx["embedding_model"] = embedding_model
+                ctx["embedding_model"] = candidate
                 ctx["embedding_dims"] = embedding_dims
                 return
             else:
-                logger.warning(f"Embedding model {embedding_model} not available")
+                logger.warning(f"Embedding model {candidate} not available")
         except Exception as e:
-            logger.warning(f"Embedding model {embedding_model} not available: {e}")
-    elif mode == "sdk":
-        # Auto-detect: try candidate models
-        for candidate in _EMBEDDING_CANDIDATES:
-            try:
-                backend = await asyncio.to_thread(init_backend, "cloud", candidate)
-                native_dims = await asyncio.to_thread(backend.check_available)
-                if native_dims > 0:
-                    if embedding_dims == 0:
-                        embedding_dims = _DEFAULT_EMBEDDING_DIMS
-                    logger.info(
-                        f"Embedding: {candidate} "
-                        f"(native={native_dims}, stored={embedding_dims})"
-                    )
-                    ctx["embedding_model"] = candidate
-                    ctx["embedding_dims"] = embedding_dims
-                    return
-            except Exception:
-                continue
+            logger.warning(f"Embedding model {candidate} not available: {e}")
 
     logger.error("Cloud embedding not available and local fallback is disabled")
 
@@ -160,10 +142,10 @@ async def _init_reranker_backend(mode: str) -> None:
             logger.error(f"Local reranker init failed: {e}")
         return
 
-    # CONFIGURED + cloud backend -- no local fallback
+    # CONFIGURED + cloud backend -- no local fallback.
+    # Try each model in the chain (litellm fallback order) until one validates.
     if backend_type in ("cloud", "litellm"):
-        model = settings.resolve_rerank_model()
-        if model:
+        for model in settings.rerank_chain():
             try:
                 backend = await asyncio.to_thread(init_reranker, "cloud", model)
                 available = await asyncio.to_thread(backend.check_available)

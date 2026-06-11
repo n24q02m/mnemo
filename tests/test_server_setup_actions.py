@@ -191,7 +191,7 @@ class TestSetupComplete:
         ):
             set_state(CredentialState.CONFIGURED)
             mock_settings.setup_providers.return_value = "sdk"
-            mock_settings.resolve_embedding_model.return_value = "test/model"
+            mock_settings.embedding_chain.return_value = ["test/model"]
             mock_settings.resolve_embedding_dims.return_value = 768
             mock_settings.resolve_embedding_backend.return_value = "cloud"
 
@@ -270,7 +270,12 @@ class TestInitEmbeddingBackendAwaitingSetup:
         """When in AWAITING_SETUP, embedding init is skipped."""
         set_state(CredentialState.AWAITING_SETUP)
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = [
+            "jina_ai/jina-embeddings-v5-text-small",
+            "gemini/gemini-embedding-001",
+            "text-embedding-3-large",
+            "embed-multilingual-v3.0",
+        ]
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
 

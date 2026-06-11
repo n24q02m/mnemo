@@ -220,10 +220,15 @@ class TestInitEmbeddingBackendCandidate:
         self, mock_settings, mock_init, _mock_thread
     ):
         """When a candidate raises exception, continues to next (no local fallback)."""
-        from mnemo_mcp.config import _EMBEDDING_CANDIDATES
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        embedding_chain = [
+            "jina_ai/jina-embeddings-v5-text-small",
+            "gemini/gemini-embedding-001",
+            "text-embedding-3-large",
+            "embed-multilingual-v3.0",
+        ]
+        mock_settings.embedding_chain.return_value = embedding_chain
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
 
@@ -234,7 +239,7 @@ class TestInitEmbeddingBackendCandidate:
         await _init_embedding_backend("sdk", ctx)
 
         # Should have tried all cloud candidates only -- no local fallback
-        assert mock_init.call_count == len(_EMBEDDING_CANDIDATES)
+        assert mock_init.call_count == len(embedding_chain)
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
@@ -248,7 +253,7 @@ class TestInitEmbeddingBackendCandidate:
         """When local backend check_available returns 0, logs error."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = []
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
@@ -344,7 +349,7 @@ class TestInitRerankerBackend:
         from mnemo_mcp.server import _init_reranker_backend
 
         mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.resolve_rerank_model.return_value = "cloud-model"
+        mock_settings.rerank_chain.return_value = ["cloud-model"]
 
         mock_init.side_effect = Exception("Cloud failed")
 
@@ -391,7 +396,7 @@ class TestMemoryLimitClamping:
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = []
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
@@ -433,7 +438,7 @@ class TestWarmupInitEmbeddingBackend:
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = "gemini/model"
+        mock_settings.embedding_chain.return_value = ["gemini/model"]
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
 
@@ -460,12 +465,15 @@ class TestWarmupInitEmbeddingBackend:
     async def test_cloud_auto_detect_candidates(
         self, mock_settings, mock_init, _mock_thread
     ):
-        """Auto-detect iterates through _EMBEDDING_CANDIDATES."""
+        """Auto-detect iterates through the embedding chain."""
         from unittest.mock import MagicMock
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = [
+            "jina_ai/jina-embeddings-v5-text-small",
+            "gemini/gemini-embedding-001",
+        ]
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
 
@@ -497,7 +505,7 @@ class TestWarmupInitEmbeddingBackend:
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = "model"
+        mock_settings.embedding_chain.return_value = ["model"]
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "cloud"
 
@@ -527,7 +535,7 @@ class TestWarmupInitEmbeddingBackend:
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = []
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
@@ -557,7 +565,7 @@ class TestWarmupInitEmbeddingBackend:
 
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = []
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"
@@ -585,7 +593,7 @@ class TestWarmupInitEmbeddingBackend:
         """When init_backend raises exception, logs error and ctx stays None."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.resolve_embedding_model.return_value = None
+        mock_settings.embedding_chain.return_value = []
         mock_settings.resolve_embedding_dims.return_value = 0
         mock_settings.resolve_embedding_backend.return_value = "local"
         mock_settings.resolve_local_embedding_model.return_value = "local/m"

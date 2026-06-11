@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from loguru import logger
+from mcp_core.llm.providers import key_env_for_model
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
@@ -42,21 +43,6 @@ def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
     return onnx_name
 
 
-_EMBEDDING_PROVIDERS: dict[str, str] = {
-    "JINA_AI_API_KEY": "jina_ai/jina-embeddings-v5-text-small",
-    "GEMINI_API_KEY": "gemini/gemini-embedding-001",
-    "GOOGLE_API_KEY": "gemini/gemini-embedding-001",
-    "OPENAI_API_KEY": "text-embedding-3-large",
-    "COHERE_API_KEY": "embed-multilingual-v3.0",
-}
-
-_RERANK_PROVIDERS: dict[str, str] = {
-    "JINA_AI_API_KEY": "jina_ai/jina-reranker-v3",
-    "COHERE_API_KEY": "rerank-v4.0-pro",
-    "CO_API_KEY": "rerank-v4.0-pro",
-}
-
-
 class Settings(BaseSettings):
     """Mnemo MCP Server configuration.
 
@@ -86,7 +72,15 @@ class Settings(BaseSettings):
     # Provider API Keys: "ENV_VAR:key,ENV_VAR:key,..."
     api_keys: str | None = None
 
-    # Embedding model (auto-detected from API_KEYS if not set)
+    # Per-task model chains "provider/model,provider/model" (order = litellm
+    # fallback). Empty -> local ONNX. Replaces the priority-router auto-detect
+    # and the singular EMBEDDING_MODEL/EMBEDDING_BACKEND (deprecated shims).
+    embedding_models: str = ""
+    rerank_models: str = ""
+
+    # DEPRECATED (2026-06-11, removed next release): singular model + backend
+    # env vars. Folded into the plural *_MODELS chain (with a deprecation
+    # warning); backend is now inferred from the chain (non-empty -> cloud).
     embedding_model: str = ""
     embedding_dims: int = 0  # 0 = use server default (768)
     embedding_backend: str = (
@@ -95,6 +89,7 @@ class Settings(BaseSettings):
 
     # Reranking
     rerank_enabled: bool = True
+    # DEPRECATED (2026-06-11, removed next release): see embedding_* above.
     rerank_backend: str = ""  # "cloud" | "local" | "" (auto)
     rerank_model: str = ""
     rerank_top_n: int = 10
@@ -258,11 +253,74 @@ class Settings(BaseSettings):
 
         return mode
 
-    def resolve_embedding_model(self) -> str | None:
-        """Return explicit EMBEDDING_MODEL or None for auto-detect."""
-        if self.embedding_model:
-            return self.embedding_model
-        return None
+    # Explicit provider prefixes so key-availability filtering + litellm
+    # routing are unambiguous (cohere/openai bare names would mis-detect).
+    _DEFAULT_EMBEDDING_CHAIN = (
+        "jina_ai/jina-embeddings-v5-text-small",
+        "gemini/gemini-embedding-001",
+        "openai/text-embedding-3-large",
+        "cohere/embed-multilingual-v3.0",
+    )
+    _DEFAULT_RERANK_CHAIN = (
+        "jina_ai/jina-reranker-v3",
+        "cohere/rerank-v3.5",
+    )
+
+    def _chain(self, primary: str, legacy: str, default: tuple[str, ...]) -> list[str]:
+        if primary:
+            return [m.strip() for m in primary.split(",") if m.strip()]
+        if legacy:
+            logger.warning(
+                "Deprecated singular model env honored; migrate to the plural "
+                "<TASK>_MODELS chain (removed next release): {!r}",
+                legacy,
+            )
+            return [legacy.strip()]
+        # No explicit chain: fall back to the curated default, but ONLY the
+        # models whose provider key is actually configured. If none are (e.g.
+        # an OpenAI-only key with a Jina/Cohere rerank default), the chain is
+        # empty -> the task falls to local ONNX. This keeps "no usable key ->
+        # local-core still runs" (spec §5.4) without a priority-router.
+        return [m for m in default if self._key_available(key_env_for_model(m))]
+
+    def _key_available(self, env_var: str) -> bool:
+        """Whether a provider key is configured via env, bundled api_keys, or alias.
+
+        Mirrors the resolution that ``setup_api_keys`` performs at startup so
+        chain filtering is correct before the env export (and in tests that
+        pass ``api_keys=`` without calling setup).
+        """
+        bundled = self.api_keys or ""
+        if os.getenv(env_var) or env_var in bundled:
+            return True
+        # An alias (e.g. GOOGLE_API_KEY) satisfies its canonical key (GEMINI).
+        for alias, canonical in self._ENV_ALIASES.items():
+            if canonical == env_var and (os.getenv(alias) or alias in bundled):
+                return True
+        return False
+
+    def embedding_chain(self) -> list[str]:
+        return self._chain(
+            self.embedding_models, self.embedding_model, self._DEFAULT_EMBEDDING_CHAIN
+        )
+
+    def rerank_chain(self) -> list[str]:
+        if not self.rerank_enabled:
+            return []
+        return self._chain(
+            self.rerank_models, self.rerank_model, self._DEFAULT_RERANK_CHAIN
+        )
+
+    def embedding_primary(self) -> str | None:
+        chain = self.embedding_chain()
+        return chain[0] if chain else None
+
+    def rerank_primary(self) -> str | None:
+        chain = self.rerank_chain()
+        return chain[0] if chain else None
+
+    def llm_chain(self) -> list[str]:
+        return [m.strip() for m in self.llm_models.split(",") if m.strip()]
 
     def resolve_embedding_dims(self) -> int:
         """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""
@@ -278,66 +336,42 @@ class Settings(BaseSettings):
     def resolve_embedding_backend(self) -> str:
         """Resolve embedding backend: 'local' or 'cloud'.
 
-        Always returns a valid backend (never empty).
-
-        Auto-detect order:
-        1. Explicit EMBEDDING_BACKEND setting
-        2. 'cloud' if in sdk mode (API keys configured)
-        3. 'local' (qwen3-embed built-in, always available)
+        Always returns a valid backend (never empty). Backend is inferred
+        from EMBEDDING_MODELS (non-empty chain -> cloud, empty -> local);
+        the deprecated EMBEDDING_BACKEND env var is honored for one release.
         """
         if self.embedding_backend:
-            # Backward compat: 'litellm' maps to 'cloud'
-            if self.embedding_backend == "litellm":
-                return "cloud"
-            return self.embedding_backend
-        mode = self.resolve_provider_mode()
-        if mode == "sdk":
-            return "cloud"
-        return "local"
+            logger.warning(
+                "Deprecated EMBEDDING_BACKEND honored; backend is now "
+                "inferred from EMBEDDING_MODELS."
+            )
+            return (
+                "cloud"
+                if self.embedding_backend in ("cloud", "litellm")
+                else self.embedding_backend
+            )
+        return "cloud" if self.embedding_chain() else "local"
 
     def resolve_rerank_backend(self) -> str:
         """Resolve reranker backend: 'cloud', 'local', or '' (disabled).
 
-        Auto-detect order:
-        1. Disabled if rerank_enabled is False
-        2. Explicit rerank_backend setting
-        3. 'cloud' if rerank_model set
-        4. 'cloud' if a known rerank provider key is in env or API_KEYS
-        5. 'local' (qwen3-embed cross-encoder, always available)
+        Disabled when rerank_enabled is False. Otherwise inferred from
+        RERANK_MODELS (non-empty chain -> cloud, empty -> local); the
+        deprecated RERANK_BACKEND env var is honored for one release.
         """
         if not self.rerank_enabled:
             return ""
         if self.rerank_backend:
-            # Backward compat: 'litellm' maps to 'cloud'
-            if self.rerank_backend == "litellm":
-                return "cloud"
-            return self.rerank_backend
-        if self.rerank_model:
-            return "cloud"
-        for key in _RERANK_PROVIDERS:
-            if os.environ.get(key):
-                return "cloud"
-        if self.api_keys:
-            for key in _RERANK_PROVIDERS:
-                if key in self.api_keys:
-                    return "cloud"
-        return "local"
-
-    def resolve_rerank_model(self) -> str | None:
-        """Resolve reranker model name from config or env.
-
-        Returns None if no known provider key is found.
-        """
-        if self.rerank_model:
-            return self.rerank_model
-        for key, model in _RERANK_PROVIDERS.items():
-            if os.environ.get(key):
-                return model
-        if self.api_keys:
-            for key, model in _RERANK_PROVIDERS.items():
-                if key in self.api_keys:
-                    return model
-        return None
+            logger.warning(
+                "Deprecated RERANK_BACKEND honored; backend is now "
+                "inferred from RERANK_MODELS."
+            )
+            return (
+                "cloud"
+                if self.rerank_backend in ("cloud", "litellm")
+                else self.rerank_backend
+            )
+        return "cloud" if self.rerank_chain() else "local"
 
     def resolve_local_rerank_model(self) -> str:
         """Resolve local reranker model: GGUF if GPU + llama-cpp, else ONNX."""
@@ -346,14 +380,5 @@ class Settings(BaseSettings):
             "n24q02m/Qwen3-Reranker-0.6B-GGUF",
         )
 
-
-# Embedding models to try during auto-detection (in priority order).
-# Cloud backend validates each against its API key -- first success wins.
-_EMBEDDING_CANDIDATES = [
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "text-embedding-3-large",
-    "embed-multilingual-v3.0",
-]
 
 settings = Settings()

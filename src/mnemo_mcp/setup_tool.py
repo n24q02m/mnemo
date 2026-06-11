@@ -12,7 +12,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from mnemo_mcp.config import _EMBEDDING_CANDIDATES, settings
+from mnemo_mcp.config import settings
 
 
 def clear_model_cache(model_name: str) -> str | None:
@@ -38,8 +38,7 @@ def _validate_cloud_models(settings_obj) -> dict:
     """Check if cloud embedding models are valid."""
     from mnemo_mcp.embedder import init_backend
 
-    model = settings_obj.resolve_embedding_model()
-    candidates = [model] if model else _EMBEDDING_CANDIDATES
+    candidates = settings_obj.embedding_chain()
 
     for candidate in candidates:
         try:

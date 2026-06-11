@@ -50,7 +50,7 @@ class TestInitRerankerBackend:
     async def test_cloud_reranker_success(self, mock_settings, _mock_thread):
         """Cloud reranker initializes successfully."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.resolve_rerank_model.return_value = "rerank-v4.0-pro"
+        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
 
         mock_backend = MagicMock()
         mock_backend.check_available.return_value = True
@@ -68,7 +68,7 @@ class TestInitRerankerBackend:
     ):
         """Cloud reranker not available does NOT fall back to local (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.resolve_rerank_model.return_value = "rerank-v4.0-pro"
+        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
 
         cloud_backend = MagicMock()
         cloud_backend.check_available.return_value = False
@@ -96,7 +96,7 @@ class TestInitRerankerBackend:
     ):
         """Cloud reranker exception does NOT fall back to local (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.resolve_rerank_model.return_value = "rerank-v4.0-pro"
+        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
 
         call_count = 0
 
@@ -162,7 +162,7 @@ class TestInitRerankerBackend:
     async def test_cloud_no_model_no_local_fallback(self, mock_settings, _mock_thread):
         """Cloud reranker with no model logs error, no local fallback (CONFIGURED state)."""
         mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.resolve_rerank_model.return_value = None
+        mock_settings.rerank_chain.return_value = []
 
         with patch("mnemo_mcp.reranker.init_reranker") as mock_init:
             await _init_reranker_backend("sdk")

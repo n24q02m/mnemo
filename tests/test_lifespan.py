@@ -14,7 +14,7 @@ def mock_settings():
         # Default happy path settings
         m.setup_api_keys.return_value = {"KEY": "123"}
         m.setup_providers.return_value = "sdk"
-        m.resolve_embedding_model.return_value = "test-model"
+        m.embedding_chain.return_value = ["test-model"]
         m.resolve_embedding_dims.return_value = 0
         m.resolve_embedding_backend.return_value = "cloud"
         m.sync_enabled = False
@@ -57,7 +57,7 @@ async def test_lifespan_happy_path_cloud(
 ):
     """Test normal startup with cloud embedding."""
     mock_settings.resolve_embedding_backend.return_value = "cloud"
-    mock_settings.resolve_embedding_model.return_value = "cloud-model"
+    mock_settings.embedding_chain.return_value = ["cloud-model"]
     mock_settings.resolve_embedding_dims.return_value = 128
 
     # Setup backend mock
@@ -129,7 +129,7 @@ async def test_lifespan_explicit_cloud_exception_no_local_fallback(
 ):
     """Test no local fallback when explicit cloud model init raises exception."""
     mock_settings.resolve_embedding_backend.return_value = "cloud"
-    mock_settings.resolve_embedding_model.return_value = "crash-model"
+    mock_settings.embedding_chain.return_value = ["crash-model"]
     mock_settings.resolve_embedding_dims.return_value = 0
 
     # Cloud raises exception -- no local fallback in CONFIGURED state
@@ -148,7 +148,7 @@ async def test_lifespan_all_backends_fail(
 ):
     """Test behavior when both cloud and local backends fail."""
     mock_settings.resolve_embedding_backend.return_value = "cloud"
-    mock_settings.resolve_embedding_model.return_value = "crash-model"
+    mock_settings.embedding_chain.return_value = ["crash-model"]
 
     # Cloud raises, Local raises
     mock_embedder.side_effect = [Exception("Cloud fail"), Exception("Local fail")]

@@ -187,26 +187,42 @@ class TestApiKeys:
 
 
 class TestEmbeddingModel:
-    def test_explicit_model(self):
-        s = Settings(embedding_model="custom/model")
-        assert s.resolve_embedding_model() == "custom/model"
+    def test_explicit_models_chain(self):
+        s = Settings(embedding_models="custom/model")
+        assert s.embedding_primary() == "custom/model"
+        assert s.embedding_chain() == ["custom/model"]
 
-    def test_no_model_returns_none(self):
-        """Without explicit EMBEDDING_MODEL, returns None (auto-detect in server)."""
+    def test_sdk_mode_returns_default_chain(self):
+        """Default chain keeps only models whose provider key is configured.
+
+        A GOOGLE/GEMINI key yields the gemini default (jina/openai/cohere
+        models are dropped — no key for them).
+        """
         s = Settings(api_keys="GOOGLE_API_KEY:key")
-        assert s.resolve_embedding_model() is None
+        assert s.embedding_primary() == "gemini/gemini-embedding-001"
 
-    def test_no_keys_returns_none(self):
+    def test_sdk_mode_default_filters_to_keyed_models(self):
+        """With a Jina key, the jina default model leads the chain."""
+        s = Settings(api_keys="JINA_AI_API_KEY:key")
+        assert s.embedding_primary() == "jina_ai/jina-embeddings-v5-text-small"
+
+    def test_no_keys_returns_empty(self):
         s = Settings()
-        assert s.resolve_embedding_model() is None
+        assert s.embedding_chain() == []
+        assert s.embedding_primary() is None
 
-    def test_explicit_overrides_auto(self):
-        """Explicit EMBEDDING_MODEL takes priority over API_KEYS."""
+    def test_explicit_overrides_default(self):
+        """Explicit EMBEDDING_MODELS takes priority over the default chain."""
         s = Settings(
-            embedding_model="custom/model",
+            embedding_models="custom/model",
             api_keys="GOOGLE_API_KEY:key",
         )
-        assert s.resolve_embedding_model() == "custom/model"
+        assert s.embedding_primary() == "custom/model"
+
+    def test_legacy_singular_folded_into_chain(self):
+        """Deprecated EMBEDDING_MODEL is honored as a single-element chain."""
+        s = Settings(embedding_model="custom/model")
+        assert s.embedding_chain() == ["custom/model"]
 
 
 class TestEmbeddingDims:
@@ -221,27 +237,32 @@ class TestEmbeddingDims:
 
 
 class TestEmbeddingBackend:
-    def test_explicit_litellm(self):
+    def test_deprecated_litellm(self):
+        """Deprecated EMBEDDING_BACKEND='litellm' maps to 'cloud'."""
         s = Settings(embedding_backend="litellm")
         assert s.resolve_embedding_backend() == "cloud"
 
-    def test_explicit_local(self):
+    def test_deprecated_local(self):
         s = Settings(embedding_backend="local")
         assert s.resolve_embedding_backend() == "local"
 
-    def test_auto_detect_cloud_with_keys(self):
-        """Falls back to cloud when keys provided."""
+    def test_inferred_cloud_with_chain(self):
+        """Non-empty chain (sdk mode) infers 'cloud'."""
         s = Settings(api_keys="GOOGLE_API_KEY:key")
-        assert s.resolve_embedding_backend() in ("cloud", "local")
+        assert s.resolve_embedding_backend() == "cloud"
 
-    def test_auto_detect_no_keys_no_local(self):
-        """Returns 'local' when no keys configured."""
+    def test_inferred_local_no_chain(self):
+        """Empty chain (no keys) infers 'local'."""
         s = Settings()
-        result = s.resolve_embedding_backend()
-        assert result == "local"
+        assert s.resolve_embedding_backend() == "local"
 
-    def test_explicit_overrides_auto(self):
-        """Explicit backend takes priority over auto-detection."""
+    def test_inferred_cloud_with_explicit_models(self):
+        """Explicit EMBEDDING_MODELS infers 'cloud' even without API keys."""
+        s = Settings(embedding_models="jina_ai/jina-embeddings-v5-text-small")
+        assert s.resolve_embedding_backend() == "cloud"
+
+    def test_deprecated_backend_overrides_inference(self):
+        """Deprecated explicit backend takes priority over inference."""
         s = Settings(embedding_backend="litellm")
         assert s.resolve_embedding_backend() == "cloud"
 
@@ -267,17 +288,17 @@ class TestRerankSettings:
         s = Settings(rerank_enabled=False)
         assert s.resolve_rerank_backend() == ""
 
-    def test_resolve_rerank_backend_explicit(self):
+    def test_resolve_rerank_backend_deprecated_litellm(self):
         s = Settings(rerank_backend="litellm")
         assert s.resolve_rerank_backend() == "cloud"
 
-    def test_resolve_rerank_backend_custom(self):
-        """resolve_rerank_backend returns custom backend if set."""
+    def test_resolve_rerank_backend_deprecated_custom(self):
+        """Deprecated rerank_backend returns custom backend if set."""
         s = Settings(rerank_backend="custom")
         assert s.resolve_rerank_backend() == "custom"
 
-    def test_resolve_rerank_backend_model_set(self):
-        s = Settings(rerank_model="custom/reranker")
+    def test_resolve_rerank_backend_models_set(self):
+        s = Settings(rerank_models="custom/reranker")
         assert s.resolve_rerank_backend() == "cloud"
 
     def test_resolve_rerank_backend_cohere_env(self, monkeypatch):
@@ -297,36 +318,42 @@ class TestRerankSettings:
         s = Settings()
         assert s.resolve_rerank_backend() == "local"
 
-    def test_resolve_rerank_model_explicit(self):
-        s = Settings(rerank_model="custom/reranker")
-        assert s.resolve_rerank_model() == "custom/reranker"
+    def test_rerank_chain_explicit(self):
+        s = Settings(rerank_models="custom/reranker")
+        assert s.rerank_chain() == ["custom/reranker"]
+        assert s.rerank_primary() == "custom/reranker"
 
-    def test_resolve_rerank_model_cohere_env(self, monkeypatch):
+    def test_rerank_chain_legacy_singular_folded(self):
+        s = Settings(rerank_model="custom/reranker")
+        assert s.rerank_chain() == ["custom/reranker"]
+
+    def test_rerank_chain_sdk_mode_default(self, monkeypatch):
+        # Cohere key -> only the cohere default reranker survives the filter
+        # (jina is dropped: no Jina key).
         monkeypatch.setenv("COHERE_API_KEY", "test-key")
         s = Settings()
-        assert s.resolve_rerank_model() == "rerank-v4.0-pro"
+        assert s.rerank_primary() == "cohere/rerank-v3.5"
 
-    def test_resolve_rerank_model_cohere_in_api_keys(self):
-        s = Settings(api_keys="COHERE_API_KEY:test-key")
-        assert s.resolve_rerank_model() == "rerank-v4.0-pro"
-
-    def test_resolve_rerank_model_jina_in_api_keys(self):
-        s = Settings(api_keys="JINA_AI_API_KEY:test-key")
-        assert s.resolve_rerank_model() == "jina_ai/jina-reranker-v3"
-
-    def test_resolve_rerank_model_none_no_keys(self):
+    def test_rerank_chain_jina_key_leads(self, monkeypatch):
+        monkeypatch.setenv("JINA_AI_API_KEY", "test-key")
         s = Settings()
-        assert s.resolve_rerank_model() is None
+        assert s.rerank_primary() == "jina_ai/jina-reranker-v3"
 
-    def test_resolve_rerank_backend_non_rerank_api_keys(self):
-        """Returns 'local' when api_keys set but no reranker keys present."""
+    def test_rerank_chain_empty_no_keys(self):
+        s = Settings()
+        assert s.rerank_chain() == []
+        assert s.rerank_primary() is None
+
+    def test_rerank_chain_disabled_returns_empty(self):
+        s = Settings(rerank_enabled=False, rerank_models="custom/reranker")
+        assert s.rerank_chain() == []
+
+    def test_resolve_rerank_backend_non_rerank_key_infers_local(self):
+        """A non-rerank key (OpenAI) leaves the rerank default chain empty
+        (no Jina/Cohere key) -> 'local', so reranking still works via ONNX."""
         s = Settings(api_keys="OPENAI_API_KEY:test-key")
+        assert s.rerank_chain() == []
         assert s.resolve_rerank_backend() == "local"
-
-    def test_resolve_rerank_model_non_rerank_api_keys(self):
-        """Returns None when api_keys set but no reranker keys present."""
-        s = Settings(api_keys="OPENAI_API_KEY:test-key")
-        assert s.resolve_rerank_model() is None
 
     def test_resolve_local_rerank_model(self):
         s = Settings()
@@ -530,3 +557,56 @@ class TestCompressionSettings:
         monkeypatch.setenv("COMPRESSION_MODEL", "gemini-2.5-flash")
         s = Settings()
         assert s.compression_model == "gemini-2.5-flash"
+
+
+def test_embedding_models_chain_primary_and_fallbacks(monkeypatch):
+    monkeypatch.setenv(
+        "EMBEDDING_MODELS",
+        "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+    )
+    s = Settings()
+    assert s.embedding_chain() == [
+        "jina_ai/jina-embeddings-v5-text-small",
+        "gemini/gemini-embedding-001",
+    ]
+    assert s.embedding_primary() == "jina_ai/jina-embeddings-v5-text-small"
+    assert s.resolve_embedding_backend() == "cloud"
+
+
+def test_embedding_empty_falls_back_to_local(monkeypatch):
+    for v in (
+        "EMBEDDING_MODELS",
+        "EMBEDDING_MODEL",
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "COHERE_API_KEY",
+        "CO_API_KEY",
+        "XAI_API_KEY",
+    ):
+        monkeypatch.delenv(v, raising=False)
+    s = Settings()
+    assert s.embedding_chain() == []
+    assert s.resolve_embedding_backend() == "local"
+
+
+def test_legacy_singular_embedding_model_honored_with_warning(monkeypatch):
+    monkeypatch.delenv("EMBEDDING_MODELS", raising=False)
+    monkeypatch.setenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
+    s = Settings()
+    assert s.embedding_chain() == ["gemini/gemini-embedding-001"]
+    assert s.resolve_embedding_backend() == "cloud"
+
+
+def test_rerank_models_chain(monkeypatch):
+    monkeypatch.setenv("RERANK_MODELS", "jina_ai/jina-reranker-v3,cohere/rerank-v3.5")
+    s = Settings()
+    assert s.rerank_chain() == ["jina_ai/jina-reranker-v3", "cohere/rerank-v3.5"]
+    assert s.rerank_primary() == "jina_ai/jina-reranker-v3"
+
+
+def test_llm_models_chain_default_preserved(monkeypatch):
+    monkeypatch.delenv("LLM_MODELS", raising=False)
+    s = Settings()
+    assert s.llm_chain()[0] == "gemini/gemini-3-flash-preview"
