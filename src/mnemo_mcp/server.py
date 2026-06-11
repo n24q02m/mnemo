@@ -1504,7 +1504,7 @@ async def memory(
 
 @mcp.tool(
     description=(
-        "Server config, sync, and setup. Actions: status|sync|set|models|warmup|setup_sync.\n"
+        "Server config, sync, and setup. Actions: status|sync|set|warmup|setup_sync.\n"
         "\n"
         "ACTION GUIDE — when to use each:\n"
         "- status: Show current configuration, setup status, and database stats.\n"
@@ -1512,8 +1512,6 @@ async def memory(
         "- set: Update a setting. Requires 'key' and 'value'.\n"
         "  Valid keys: 'sync_enabled' (true/false), 'sync_interval' (int), 'log_level' (str).\n"
         "  Example: action='set', key='sync_enabled', value='true'\n"
-        "- models: List cloud models (chat/embedding/rerank) for configured\n"
-        "  providers; key='all' lists the full catalog.\n"
         "- warmup: Pre-download embedding model (~570 MB) to avoid delays later.\n"
         "- setup_sync: Authenticate Google Drive via Device Code OAuth flow."
     ),
@@ -1537,8 +1535,6 @@ async def config(
     - status: Show current config
     - sync: Trigger manual Google Drive sync (requires sync_enabled + google_drive_client_id)
     - set: Update setting (key + value required)
-    - models: List cloud models (chat/embedding/rerank) for configured
-      providers; key='all' lists the full catalog
     - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
     - setup_sync: Authenticate Google Drive via Device Code OAuth flow
     """
@@ -1549,8 +1545,6 @@ async def config(
             return await _handle_config_sync(ctx)
         case "set":
             return await _handle_config_set(key, value)
-        case "models":
-            return await _handle_config_models(key)
         case "warmup":
             return await _handle_config_warmup()
         case "setup_sync":
@@ -1579,7 +1573,6 @@ async def config(
             valid_actions = [
                 "export_passport",
                 "import_passport",
-                "models",
                 "set",
                 "setup_complete",
                 "setup_relay",
@@ -1602,26 +1595,6 @@ async def config(
                     "hint": "Common actions: 'status' to view config, 'set' to update settings, 'sync' to manual sync.",
                 }
             )
-
-
-async def _handle_config_models(key: str | None) -> str:
-    from mcp_core.llm import list_models
-
-    show_all = key == "all"
-    # to_thread: first list_models call imports litellm (~1-2s, blocking).
-    models = await asyncio.to_thread(
-        list_models,
-        modes=("chat", "embedding", "rerank"),
-        configured_only=not show_all,
-        limit=200,
-    )
-    return _json(
-        {
-            "models": models,
-            "note": "Any litellm 'provider/model' works via passthrough, "
-            "even if not listed here.",
-        }
-    )
 
 
 async def _handle_config_status(ctx: Context | None) -> str:

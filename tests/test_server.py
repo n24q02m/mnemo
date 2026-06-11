@@ -403,36 +403,12 @@ class TestConfigTool:
         assert "valid_actions" in result
         assert "suggestion" not in result
 
-    async def test_models_action_configured_only(self, ctx_with_db):
-        """models action lists configured-provider models via mcp_core.llm."""
-        from unittest.mock import patch
-
+    async def test_models_action_removed(self, ctx_with_db):
+        """The 'models' catalog-listing action no longer exists."""
         ctx, _ = ctx_with_db
-        with patch(
-            "mcp_core.llm.list_models",
-            return_value=["gemini/gemini-3-flash-preview"],
-        ) as mock_list:
-            result = json.loads(await config(action="models", ctx=ctx))
-        assert result["models"] == ["gemini/gemini-3-flash-preview"]
-        assert "passthrough" in result["note"]
-        assert mock_list.call_args.kwargs["configured_only"] is True
-
-    async def test_models_action_all_bypasses_configured_only(self, ctx_with_db):
-        """key='all' lists the full catalog (configured_only=False)."""
-        from unittest.mock import patch
-
-        ctx, _ = ctx_with_db
-        with patch("mcp_core.llm.list_models", return_value=["a", "b"]) as mock_list:
-            result = json.loads(await config(action="models", key="all", ctx=ctx))
-        assert result["models"] == ["a", "b"]
-        assert mock_list.call_args.kwargs["configured_only"] is False
-        assert mock_list.call_args.kwargs["modes"] == ("chat", "embedding", "rerank")
-
-    async def test_models_action_in_valid_actions(self, ctx_with_db):
-        """'models' appears in the unknown-action valid_actions list."""
-        ctx, _ = ctx_with_db
-        result = json.loads(await config(action="bogus", ctx=ctx))
-        assert "models" in result["valid_actions"]
+        result = json.loads(await config(action="models", ctx=ctx))
+        assert "Unknown action 'models'" in result["error"]
+        assert "models" not in result["valid_actions"]
 
 
 class TestHelpTool:
