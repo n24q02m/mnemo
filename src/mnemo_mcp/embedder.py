@@ -317,20 +317,39 @@ class CloudEmbeddingBackend:
             return await self._embed_batch_inner(texts, dimensions)
 
         # Split into batches
-        all_embeddings: list[list[float]] = []
         total_batches = (len(texts) + self.MAX_BATCH_SIZE - 1) // self.MAX_BATCH_SIZE
         logger.info(
             f"Splitting {len(texts)} texts into {total_batches} batches "
             f"(max {self.MAX_BATCH_SIZE}/batch)"
         )
 
+        # Bolt Performance Optimization:
+        # Process batches concurrently using asyncio.gather with a Semaphore.
+        # This optimizes throughput for large text arrays while safely preventing
+        # rate-limit (HTTP 429) failures from the embedding provider.
+        sem = asyncio.Semaphore(5)
+
+        async def process_batch(
+            batch_idx: int, batch_texts: list[str]
+        ) -> tuple[int, list[list[float]]]:
+            async with sem:
+                logger.debug(
+                    f"Embedding batch {batch_idx + 1}/{total_batches}: {len(batch_texts)} texts"
+                )
+                res = await self._embed_batch_inner(batch_texts, dimensions)
+                return batch_idx, res
+
+        tasks = []
         for i in range(0, len(texts), self.MAX_BATCH_SIZE):
             batch = texts[i : i + self.MAX_BATCH_SIZE]
-            batch_num = i // self.MAX_BATCH_SIZE + 1
-            logger.debug(
-                f"Embedding batch {batch_num}/{total_batches}: {len(batch)} texts"
-            )
-            batch_result = await self._embed_batch_inner(batch, dimensions)
+            batch_idx = i // self.MAX_BATCH_SIZE
+            tasks.append(process_batch(batch_idx, batch))
+
+        results = await asyncio.gather(*tasks)
+        # Ensure ordered flattening
+        results.sort(key=lambda x: x[0])
+        all_embeddings: list[list[float]] = []
+        for _, batch_result in results:
             all_embeddings.extend(batch_result)
 
         return all_embeddings
