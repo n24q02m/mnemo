@@ -2,7 +2,7 @@
 
 mcp-name: io.github.n24q02m/mnemo-mcp
 
-**Persistent memory MCP server with hybrid retrieval (FTS5 + sqlite-vec + RRF fusion + cross-encoder rerank + temporal decay) and embedded sync. Open, free, unlimited.**
+**Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
