@@ -37,6 +37,34 @@ _DEFAULT_EMBEDDING_DIMS = 768
 # --- Lifespan ---
 
 
+def _maybe_register_custom_embed(model_id: str) -> None:
+    """Register a BYO local embedding model with qwen3-embed.
+
+    Built-in ``n24q02m/Qwen3-*`` ids are already known to qwen3-embed, so
+    they are skipped. Any other id (set via ``LOCAL_EMBEDDING_MODEL``) is
+    registered via ``CustomModelSpec`` using the companion ``LOCAL_EMBEDDING_*``
+    settings, so ``TextEmbedding(model_id)`` can load it.
+    """
+    if model_id.startswith("n24q02m/Qwen3-"):
+        return
+
+    from qwen3_embed import CustomModelSpec
+
+    dim = settings.local_embedding_dim or settings.resolve_embedding_dims()
+    if dim <= 0:
+        dim = _DEFAULT_EMBEDDING_DIMS
+
+    CustomModelSpec(
+        model_id=model_id,
+        hf=model_id,
+        model_file=settings.local_embedding_model_file,
+        dim=dim,
+        pooling=settings.local_embedding_pooling,
+        normalization=settings.local_embedding_normalize,
+    ).register()
+    logger.info(f"Registered custom local embedding model: {model_id}")
+
+
 async def _init_embedding_backend(
     mode: str,
     ctx: dict,
@@ -67,6 +95,7 @@ async def _init_embedding_backend(
         # Local-only path
         local_model = settings.resolve_local_embedding_model()
         try:
+            await asyncio.to_thread(_maybe_register_custom_embed, local_model)
             backend = await asyncio.to_thread(init_backend, "local", local_model)
             native_dims = await asyncio.to_thread(backend.check_available)
             if native_dims > 0:

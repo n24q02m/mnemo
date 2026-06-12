@@ -35,7 +35,12 @@ def mock_db():
 
 @pytest.fixture
 def mock_embedder():
-    with patch("mnemo_mcp.embedder.init_backend") as m:
+    with (
+        patch("mnemo_mcp.embedder.init_backend") as m,
+        # Isolate the BYO custom-model registration side effect; tests here
+        # exercise backend selection, not qwen3-embed registration.
+        patch("mnemo_mcp.server._maybe_register_custom_embed"),
+    ):
         backend = MagicMock()
         backend.check_available.return_value = 100
         m.return_value = backend

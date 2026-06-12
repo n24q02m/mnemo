@@ -241,6 +241,7 @@ class TestInitEmbeddingBackendCandidate:
         # Should have tried all cloud candidates only -- no local fallback
         assert mock_init.call_count == len(embedding_chain)
 
+    @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
@@ -248,7 +249,7 @@ class TestInitEmbeddingBackendCandidate:
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
     async def test_local_backend_zero_dims(
-        self, mock_settings, mock_init, _mock_thread
+        self, mock_settings, mock_init, _mock_thread, _mock_register
     ):
         """When local backend check_available returns 0, logs error."""
         from mnemo_mcp.server import _init_embedding_backend
@@ -383,6 +384,7 @@ class TestMemoryLimitClamping:
         # Should not crash, limit is clamped
         assert isinstance(result["results"], list)
 
+    @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
@@ -390,7 +392,7 @@ class TestMemoryLimitClamping:
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
     async def test_local_backend_init_fails(
-        self, mock_settings, mock_init, _mock_thread
+        self, mock_settings, mock_init, _mock_thread, _mock_register
     ):
         """When local backend init raises exception, logs error."""
 
@@ -523,13 +525,16 @@ class TestWarmupInitEmbeddingBackend:
         # Only cloud was tried (1 call)
         assert mock_init.call_count == 1
 
+    @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
-    async def test_direct_local_backend(self, mock_settings, mock_init, _mock_thread):
+    async def test_direct_local_backend(
+        self, mock_settings, mock_init, _mock_thread, _mock_register
+    ):
         """When backend_type is "local", skips cloud entirely."""
         from unittest.mock import MagicMock
 
@@ -551,6 +556,7 @@ class TestWarmupInitEmbeddingBackend:
         mock_init.assert_called_once_with("local", "local/m")
         assert ctx["embedding_model"] == "__local__"
 
+    @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
@@ -558,7 +564,7 @@ class TestWarmupInitEmbeddingBackend:
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
     async def test_local_backend_failure_logs_error(
-        self, mock_settings, mock_init, _mock_thread
+        self, mock_settings, mock_init, _mock_thread, _mock_register
     ):
         """When local backend also fails, ctx stays with None model."""
         from unittest.mock import MagicMock
@@ -580,6 +586,7 @@ class TestWarmupInitEmbeddingBackend:
 
         assert ctx["embedding_model"] is None
 
+    @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
@@ -588,7 +595,7 @@ class TestWarmupInitEmbeddingBackend:
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.server.settings")
     async def test_local_backend_init_raises_exception(
-        self, mock_settings, mock_init, mock_logger, _mock_thread
+        self, mock_settings, mock_init, mock_logger, _mock_thread, _mock_register
     ):
         """When init_backend raises exception, logs error and ctx stays None."""
         from mnemo_mcp.server import _init_embedding_backend

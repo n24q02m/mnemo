@@ -90,6 +90,19 @@ class Settings(BaseSettings):
         ""  # "cloud" | "local" | "" (auto: API_KEYS->cloud, else local)
     )
 
+    # BYO (bring-your-own) LOCAL model override. When set, the local
+    # embed/rerank backend loads this model id instead of the bundled
+    # Qwen3 default. A non-built-in id is registered with qwen3-embed via
+    # CustomModelSpec (server.py) using the companion vars below.
+    local_embedding_model: str = ""
+    local_rerank_model: str = ""
+
+    # Companion vars for registering a custom LOCAL embedding model.
+    local_embedding_pooling: str = "MEAN"
+    local_embedding_dim: int = 0  # 0 = use EMBEDDING_DIMS / server default
+    local_embedding_normalize: bool = True
+    local_embedding_model_file: str = "onnx/model.onnx"
+
     # Reranking
     rerank_enabled: bool = True
     # DEPRECATED (2026-06-11, removed next release): see embedding_* above.
@@ -330,7 +343,9 @@ class Settings(BaseSettings):
         return self.embedding_dims
 
     def resolve_local_embedding_model(self) -> str:
-        """Resolve local embedding model: GGUF if GPU + llama-cpp, else ONNX."""
+        """Resolve local embedding model: BYO override, else GGUF/ONNX default."""
+        if self.local_embedding_model:
+            return self.local_embedding_model
         return _resolve_local_model(
             "n24q02m/Qwen3-Embedding-0.6B-ONNX",
             "n24q02m/Qwen3-Embedding-0.6B-GGUF",
@@ -382,7 +397,10 @@ class Settings(BaseSettings):
         The ONNX default is the YesNo variant (~598 MB at inference vs ~12 GB
         for the full-vocab build); it is mathematically equivalent and, since
         qwen3-embed 1.11.2b3, produces batch-invariant scores (issue #725).
+        A BYO ``LOCAL_RERANK_MODEL`` override takes precedence when set.
         """
+        if self.local_rerank_model:
+            return self.local_rerank_model
         return _resolve_local_model(
             "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo",
             "n24q02m/Qwen3-Reranker-0.6B-GGUF",

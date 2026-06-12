@@ -15,6 +15,7 @@ from mnemo_mcp.server import (
     _handle_consolidate,
     _handle_search,
     _handle_update,
+    _maybe_register_custom_embed,
     config,
     help,
     main,
@@ -725,3 +726,35 @@ class TestServerVersion:
 
         init_opts = mcp._mcp_server.create_initialization_options()
         assert init_opts.server_version == __version__
+
+
+class TestMaybeRegisterCustomEmbed:
+    """BYO local embedding model registration (no model download)."""
+
+    def test_builtin_id_skips_registration(self):
+        import qwen3_embed
+
+        with patch.object(qwen3_embed.TextEmbedding, "add_custom_model") as mock_add:
+            _maybe_register_custom_embed("n24q02m/Qwen3-Embedding-0.6B-ONNX")
+            mock_add.assert_not_called()
+
+    def test_custom_id_registers_with_dim_and_pooling(self):
+        import qwen3_embed
+        from qwen3_embed.common.model_description import PoolingType
+
+        with patch.object(qwen3_embed.TextEmbedding, "add_custom_model") as mock_add:
+            with patch("mnemo_mcp.server.settings") as mock_settings:
+                mock_settings.local_embedding_dim = 1024
+                mock_settings.resolve_embedding_dims.return_value = 768
+                mock_settings.local_embedding_model_file = "onnx/model.onnx"
+                mock_settings.local_embedding_pooling = "CLS"
+                mock_settings.local_embedding_normalize = True
+
+                _maybe_register_custom_embed("Org/custom-embed")
+
+            mock_add.assert_called_once()
+            description = mock_add.call_args.args[0]
+            assert description.model == "Org/custom-embed"
+            assert description.dim == 1024
+            assert mock_add.call_args.kwargs["pooling"] == PoolingType.CLS
+            assert mock_add.call_args.kwargs["normalization"] is True

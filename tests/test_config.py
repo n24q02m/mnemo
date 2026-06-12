@@ -49,6 +49,12 @@ def clean_env(monkeypatch):
         "COMPRESSION_ENABLED",
         "COMPRESSION_PROVIDER",
         "COMPRESSION_MODEL",
+        "LOCAL_EMBEDDING_MODEL",
+        "LOCAL_RERANK_MODEL",
+        "LOCAL_EMBEDDING_POOLING",
+        "LOCAL_EMBEDDING_DIM",
+        "LOCAL_EMBEDDING_NORMALIZE",
+        "LOCAL_EMBEDDING_MODEL_FILE",
     }
     # Thoroughly clear any variant of these keys in os.environ
     for k in list(os.environ.keys()):
@@ -360,6 +366,28 @@ class TestRerankSettings:
         model = s.resolve_local_rerank_model()
         # Should return ONNX or GGUF depending on environment
         assert "Qwen3-Reranker-0.6B" in model
+
+    def test_local_embedding_model_override(self, monkeypatch):
+        monkeypatch.setenv("LOCAL_EMBEDDING_MODEL", "Org/custom-embed")
+        s = Settings()
+        assert s.resolve_local_embedding_model() == "Org/custom-embed"
+
+    def test_local_rerank_model_override(self, monkeypatch):
+        monkeypatch.setenv("LOCAL_RERANK_MODEL", "Org/custom-reranker")
+        s = Settings()
+        assert s.resolve_local_rerank_model() == "Org/custom-reranker"
+
+    def test_local_rerank_model_default_is_yesno(self):
+        """No override keeps the YesNo ONNX default (~598MB vs ~12GB)."""
+        with (
+            patch("mnemo_mcp.config._detect_gpu", return_value=False),
+            patch("mnemo_mcp.config._has_gguf_support", return_value=False),
+        ):
+            s = Settings()
+            assert (
+                s.resolve_local_rerank_model()
+                == "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
+            )
 
 
 class TestGoogleDriveCredentials:
