@@ -79,12 +79,17 @@ def _maybe_register_custom_rerank(model_id: str) -> None:
 
     from qwen3_embed import CustomRerankerSpec
 
-    CustomRerankerSpec(
-        model_id=model_id,
-        hf=model_id,
-        model_file=settings.local_rerank_model_file,
-    ).register()
-    logger.info(f"Registered custom local reranker: {model_id}")
+    try:
+        CustomRerankerSpec(
+            model_id=model_id,
+            hf=model_id,
+            model_file=settings.local_rerank_model_file,
+        ).register()
+        logger.info(f"Registered custom local reranker: {model_id}")
+    except ValueError as e:
+        # Already registered (reranker backend re-init) or invalid spec --
+        # non-fatal; the existing registration is reused.
+        logger.debug(f"Custom reranker registration skipped: {e}")
 
 
 async def _init_embedding_backend(
