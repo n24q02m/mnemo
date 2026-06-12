@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.6 (2026-06-12)
+
+### Features
+
+- Guard vector store against embedding-model mismatch with opt-in reindex
+  ([#777](https://github.com/n24q02m/mnemo-mcp/pull/777),
+  [`b21301c`](https://github.com/n24q02m/mnemo-mcp/commit/b21301c8cc9db54441e7c3521089f7de9737fc5e))
+
+
 ## v2.3.0-beta.5 (2026-06-12)
 
 ### Bug Fixes
