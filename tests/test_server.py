@@ -760,6 +760,25 @@ class TestMaybeRegisterCustomEmbed:
             assert mock_add.call_args.kwargs["pooling"] == PoolingType.CLS
             assert mock_add.call_args.kwargs["normalization"] is True
 
+    def test_reregistration_is_graceful(self):
+        """A second register (backend re-init) swallows 'already registered'."""
+        import qwen3_embed
+
+        with patch.object(
+            qwen3_embed.TextEmbedding,
+            "add_custom_model",
+            side_effect=ValueError("Model Org/custom-embed is already registered"),
+        ):
+            with patch("mnemo_mcp.server.settings") as mock_settings:
+                mock_settings.local_embedding_dim = 768
+                mock_settings.resolve_embedding_dims.return_value = 768
+                mock_settings.local_embedding_model_file = "onnx/model.onnx"
+                mock_settings.local_embedding_pooling = "CLS"
+                mock_settings.local_embedding_normalize = True
+
+                # Must not raise -- re-init reuses the existing registration.
+                _maybe_register_custom_embed("Org/custom-embed")
+
 
 class TestMaybeRegisterCustomRerank:
     """BYO local reranker registration (no model download)."""

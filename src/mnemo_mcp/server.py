@@ -54,15 +54,20 @@ def _maybe_register_custom_embed(model_id: str) -> None:
     if dim <= 0:
         dim = _DEFAULT_EMBEDDING_DIMS
 
-    CustomModelSpec(
-        model_id=model_id,
-        hf=model_id,
-        model_file=settings.local_embedding_model_file,
-        dim=dim,
-        pooling=settings.local_embedding_pooling,
-        normalization=settings.local_embedding_normalize,
-    ).register()
-    logger.info(f"Registered custom local embedding model: {model_id}")
+    try:
+        CustomModelSpec(
+            model_id=model_id,
+            hf=model_id,
+            model_file=settings.local_embedding_model_file,
+            dim=dim,
+            pooling=settings.local_embedding_pooling,
+            normalization=settings.local_embedding_normalize,
+        ).register()
+        logger.info(f"Registered custom local embedding model: {model_id}")
+    except ValueError as e:
+        # Already registered (embedding backend re-init) or invalid spec --
+        # non-fatal; the existing registration is reused.
+        logger.debug(f"Custom embedding registration skipped: {e}")
 
 
 def _maybe_register_custom_rerank(model_id: str) -> None:
