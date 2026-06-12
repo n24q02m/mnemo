@@ -197,6 +197,7 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). The
 |---|---|---|---|
 | stdio (default) | `~/.mnemo-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
 | HTTP self-host | Same as stdio | Same | Only you (admin = user) |
+| HTTP multi-user remote (`PUBLIC_URL`) | Per-JWT-sub credential store | AES-GCM | Only the authenticated user (per-`sub` isolation) |
 
 ## License
 

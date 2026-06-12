@@ -40,7 +40,7 @@ caller text
 [embedding] (cloud or local Qwen3 ONNX)
    |
    v
-[dedup probe] check_duplicate(text, threshold=DEDUP_THRESHOLD/0.92)
+[dedup probe] check_duplicate(text, threshold=DEDUP_THRESHOLD/0.9)
    |
    +-- duplicate? -----> return existing memory_id, status="deduplicated"
    |
