@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.7 (2026-06-12)
+
+### Bug Fixes
+
+- Sync README tagline to current capability description
+  ([#778](https://github.com/n24q02m/mnemo-mcp/pull/778),
+  [`ada65ad`](https://github.com/n24q02m/mnemo-mcp/commit/ada65adf5793f7735910d090c57cefa54060eb0c))
+
+### Features
+
+- Register a BYO local reranker via CustomRerankerSpec
+  ([#780](https://github.com/n24q02m/mnemo-mcp/pull/780),
+  [`010cbb6`](https://github.com/n24q02m/mnemo-mcp/commit/010cbb6388d323037c4818aa0d9a75375acf055f))
+
+- Sync cross-promo section ([#779](https://github.com/n24q02m/mnemo-mcp/pull/779),
+  [`3b55e43`](https://github.com/n24q02m/mnemo-mcp/commit/3b55e43adf8adf17c8ffa0cc635972622c8adb80))
+
+
 ## v2.3.0-beta.6 (2026-06-12)
 
 ### Features
