@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.9 (2026-06-12)
+
+### Bug Fixes
+
+- Make BYO embedding registration tolerant of re-init
+  ([#782](https://github.com/n24q02m/mnemo-mcp/pull/782),
+  [`3caf44a`](https://github.com/n24q02m/mnemo-mcp/commit/3caf44a6f4a289ca1d6e99360df924d9284e586e))
+
+
 ## v2.3.0-beta.8 (2026-06-12)
 
 ### Bug Fixes
