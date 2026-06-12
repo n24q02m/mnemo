@@ -16,6 +16,7 @@ from mnemo_mcp.server import (
     _handle_search,
     _handle_update,
     _maybe_register_custom_embed,
+    _maybe_register_custom_rerank,
     config,
     help,
     main,
@@ -758,3 +759,29 @@ class TestMaybeRegisterCustomEmbed:
             assert description.dim == 1024
             assert mock_add.call_args.kwargs["pooling"] == PoolingType.CLS
             assert mock_add.call_args.kwargs["normalization"] is True
+
+
+class TestMaybeRegisterCustomRerank:
+    """BYO local reranker registration (no model download)."""
+
+    def test_builtin_id_skips_registration(self):
+        import qwen3_embed
+
+        with patch.object(qwen3_embed.TextCrossEncoder, "add_custom_model") as mock_add:
+            _maybe_register_custom_rerank("n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo")
+            mock_add.assert_not_called()
+
+    def test_custom_id_registers_with_model_file(self):
+        import qwen3_embed
+
+        with patch.object(qwen3_embed.TextCrossEncoder, "add_custom_model") as mock_add:
+            with patch("mnemo_mcp.server.settings") as mock_settings:
+                mock_settings.local_rerank_model_file = "onnx/model_quantized.onnx"
+
+                _maybe_register_custom_rerank("Org/custom-reranker")
+
+            mock_add.assert_called_once()
+            description = mock_add.call_args.args[0]
+            assert description.model == "Org/custom-reranker"
+            assert description.model_file == "onnx/model_quantized.onnx"
+            assert description.sources.hf == "Org/custom-reranker"

@@ -65,6 +65,28 @@ def _maybe_register_custom_embed(model_id: str) -> None:
     logger.info(f"Registered custom local embedding model: {model_id}")
 
 
+def _maybe_register_custom_rerank(model_id: str) -> None:
+    """Register a BYO local reranker with qwen3-embed.
+
+    Built-in ``n24q02m/Qwen3-Reranker-*`` ids are already known to qwen3-embed,
+    so they are skipped. Any other id (set via ``LOCAL_RERANK_MODEL``) is
+    registered via ``CustomRerankerSpec`` using ``LOCAL_RERANK_MODEL_FILE``, so
+    ``TextCrossEncoder(model_id)`` can load it. A cross-encoder needs no
+    dim/pooling.
+    """
+    if model_id.startswith("n24q02m/Qwen3-Reranker-"):
+        return
+
+    from qwen3_embed import CustomRerankerSpec
+
+    CustomRerankerSpec(
+        model_id=model_id,
+        hf=model_id,
+        model_file=settings.local_rerank_model_file,
+    ).register()
+    logger.info(f"Registered custom local reranker: {model_id}")
+
+
 async def _init_embedding_backend(
     mode: str,
     ctx: dict,
@@ -162,6 +184,7 @@ async def _init_reranker_backend(mode: str) -> None:
         # Local-only path
         local_model = settings.resolve_local_rerank_model()
         try:
+            await asyncio.to_thread(_maybe_register_custom_rerank, local_model)
             backend = await asyncio.to_thread(init_reranker, "local", local_model)
             available = await asyncio.to_thread(backend.check_available)
             if available:
