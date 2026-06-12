@@ -214,11 +214,23 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         embedding_dims = _DEFAULT_EMBEDDING_DIMS
 
     # 3. Initialize database (fast, no network)
+    # Resolve the active embedding-model identity synchronously so the vector
+    # store can guard against silent corruption when the model changes. The
+    # background _init_embedding_backend task only refines availability; the
+    # configured identity (local resolved id, or cloud chain head) is already
+    # known here. dims is the primary guard; the model id is a secondary tag.
+    if settings.resolve_embedding_backend() == "local":
+        embedding_model_identity = settings.resolve_local_embedding_model()
+    else:
+        embedding_model_identity = settings.embedding_primary() or ""
+
     db_path = settings.get_db_path()
     db = MemoryDB(
         db_path,
         embedding_dims=embedding_dims,
         recency_half_life_days=settings.recency_half_life_days,
+        embedding_model=embedding_model_identity,
+        reindex_on_model_change=settings.reindex_on_model_change,
     )
     stats = db.stats()
     logger.info(

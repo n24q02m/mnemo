@@ -178,6 +178,10 @@ class TestInitSchemaVecCreateBranch:
             db._conn.execute("DROP TABLE IF EXISTS memories_vec")
         except Exception:
             pass
+        # Clear the embedding-identity stamp so _guard_embedding_identity
+        # re-stamps cleanly instead of raising EmbeddingModelMismatch first;
+        # this test targets the _ensure_vec_table dimension-bounds ValueError.
+        db._conn.execute("DELETE FROM store_meta")
         db._conn.commit()
 
         with pytest.raises(ValueError, match="embedding_dims must be between"):

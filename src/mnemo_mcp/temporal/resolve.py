@@ -29,7 +29,25 @@ from datetime import UTC, datetime
 from loguru import logger
 
 _DEFAULT_THRESHOLD: float = 0.85
-_EMBEDDING_DIMS: int = 768  # matches memories_vec / memory_entities_vec schema
+# Fallback when EMBEDDING_DIMS is unset (0). Kept as a module constant so the
+# serializer has a default; the active value is resolved via _resolve_dims().
+_DEFAULT_EMBEDDING_DIMS: int = 768
+
+
+def _resolve_dims() -> int:
+    """Resolve the active embedding dimension.
+
+    Uses the configured ``EMBEDDING_DIMS`` (0 = auto) so a custom-dim BYO model
+    stays consistent with the ``memories_vec`` / ``memory_entities_vec`` schema.
+    Falls back to :data:`_DEFAULT_EMBEDDING_DIMS` when unset or unresolvable.
+    """
+    try:
+        from mnemo_mcp.config import settings
+
+        dims = settings.resolve_embedding_dims()
+    except Exception:
+        dims = 0
+    return dims if dims > 0 else _DEFAULT_EMBEDDING_DIMS
 
 
 def _resolve_threshold() -> float:
@@ -48,12 +66,13 @@ def _resolve_threshold() -> float:
 
 
 def _serialize(vec: list[float]) -> bytes:
-    n = min(len(vec), _EMBEDDING_DIMS)
-    if n < _EMBEDDING_DIMS:
-        vec = vec + [0.0] * (_EMBEDDING_DIMS - n)
+    dims = _resolve_dims()
+    n = min(len(vec), dims)
+    if n < dims:
+        vec = vec + [0.0] * (dims - n)
     else:
-        vec = vec[:_EMBEDDING_DIMS]
-    return struct.Struct(f"{_EMBEDDING_DIMS}f").pack(*vec)
+        vec = vec[:dims]
+    return struct.Struct(f"{dims}f").pack(*vec)
 
 
 def _vec_table_exists(conn) -> bool:

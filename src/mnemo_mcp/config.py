@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # warning); backend is now inferred from the chain (non-empty -> cloud).
     embedding_model: str = ""
     embedding_dims: int = 0  # 0 = use server default (768)
+
+    # Safe-by-default vector-store guard. When the active embedding model /
+    # dims differ from what produced the stored vectors, the DB raises
+    # EmbeddingModelMismatch (touching no data). Set this True to instead DROP
+    # the stored vectors + rebuild on the next embed pass (destructive, opt-in).
+    reindex_on_model_change: bool = False
     embedding_backend: str = (
         ""  # "cloud" | "local" | "" (auto: API_KEYS->cloud, else local)
     )

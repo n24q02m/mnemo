@@ -690,6 +690,96 @@ class TestArchive:
     def test_list_archived_empty(self, tmp_db: MemoryDB):
         assert tmp_db.list_archived() == []
 
+
+class TestEmbeddingModelIdentityGuard:
+    """Guard against silent vector-store corruption on embedding-model change.
+
+    The store stamps the active ``(embedding_model, embedding_dims)`` on first
+    open. Re-opening with a different identity raises EmbeddingModelMismatch
+    unless ``reindex_on_model_change=True`` is set (which drops the vectors,
+    re-stamps, and lets the embed pipeline rebuild).
+    """
+
+    def test_fresh_store_stamps_identity(self, tmp_path):
+        from mnemo_mcp.db import MemoryDB
+
+        db_path = tmp_path / "stamp.db"
+        db = MemoryDB(
+            db_path,
+            embedding_dims=768,
+            embedding_model="provider/model-a",
+        )
+        assert db.get_store_meta("embedding_model") == "provider/model-a"
+        assert db.get_store_meta("embedding_dims") == "768"
+        db.close()
+
+    def test_reopen_same_identity_proceeds(self, tmp_path):
+        from mnemo_mcp.db import MemoryDB
+
+        db_path = tmp_path / "same.db"
+        db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
+        db.add("first")
+        db.close()
+
+        # Reopen with the SAME identity -- no error, data intact.
+        db2 = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
+        assert db2.get_store_meta("embedding_model") == "provider/model-a"
+        assert db2.get_store_meta("embedding_dims") == "768"
+        assert db2.stats()["total_memories"] == 1
+        db2.close()
+
+    def test_reopen_different_identity_raises(self, tmp_path):
+        from mnemo_mcp.db import MemoryDB
+        from mnemo_mcp.exceptions import EmbeddingModelMismatch
+
+        db_path = tmp_path / "mismatch.db"
+        db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
+        db.close()
+
+        with pytest.raises(EmbeddingModelMismatch) as exc_info:
+            MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-b")
+
+        msg = str(exc_info.value)
+        # Message names stored vs requested + the remediation env var.
+        assert "provider/model-a" in msg
+        assert "provider/model-b" in msg
+        assert "REINDEX_ON_MODEL_CHANGE" in msg
+
+    def test_reopen_different_dims_raises(self, tmp_path):
+        from mnemo_mcp.db import MemoryDB
+        from mnemo_mcp.exceptions import EmbeddingModelMismatch
+
+        db_path = tmp_path / "dimsmismatch.db"
+        db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
+        db.close()
+
+        with pytest.raises(EmbeddingModelMismatch) as exc_info:
+            MemoryDB(db_path, embedding_dims=1024, embedding_model="provider/model-a")
+        assert "768" in str(exc_info.value)
+        assert "1024" in str(exc_info.value)
+
+    def test_reindex_on_mismatch_drops_and_restamps(self, tmp_path):
+        from mnemo_mcp.db import MemoryDB
+
+        db_path = tmp_path / "reindex.db"
+        db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
+        db.add("survivor row")
+        db.close()
+
+        # Mismatch + opt-in reindex: no raise, identity re-stamped, vectors cleared.
+        db2 = MemoryDB(
+            db_path,
+            embedding_dims=1024,
+            embedding_model="provider/model-b",
+            reindex_on_model_change=True,
+        )
+        assert db2.get_store_meta("embedding_model") == "provider/model-b"
+        assert db2.get_store_meta("embedding_dims") == "1024"
+        # Memories themselves are NOT destroyed -- only vectors are cleared so
+        # the embed pipeline can re-populate on the next pass.
+        assert db2.stats()["total_memories"] == 1
+        db2.close()
+
     def test_list_archived_limit(self, tmp_db: MemoryDB):
         for i in range(5):
             mid = tmp_db.add(f"old {i}")

@@ -14,7 +14,25 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.db import (
+    _ALEMBIC_INI_PATH,
+    _ALEMBIC_SCRIPT_LOCATION,
+    MemoryDB,
+)
+
+
+def _resolve_head_revision() -> str | None:
+    """Return the current Alembic head so 'lands at head' assertions don't
+    churn each time a new migration is appended to the lineage."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(_ALEMBIC_INI_PATH))
+    cfg.set_main_option("script_location", str(_ALEMBIC_SCRIPT_LOCATION))
+    return ScriptDirectory.from_config(cfg).get_current_head()
+
+
+_HEAD_REVISION = _resolve_head_revision()
 
 
 @pytest.fixture
@@ -55,7 +73,7 @@ def test_migration_baseline_to_mem_001_adds_columns(isolated_db_path: Path) -> N
     # Importance was added pre-Alembic but should still be present.
     assert "importance" in cols
 
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def test_existing_data_preserved_with_default_context_type(
@@ -107,7 +125,7 @@ def test_existing_data_preserved_with_default_context_type(
     assert row[1] == "legacy content"
     assert row[2] == "conversation", "expected default context_type"
     assert row[3] is None, "archived_at should be NULL by default"
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def test_idempotent_rerun_does_not_error(isolated_db_path: Path) -> None:
@@ -123,7 +141,7 @@ def test_idempotent_rerun_does_not_error(isolated_db_path: Path) -> None:
     # Columns appear exactly once each
     assert sum(1 for c in cols if c == "context_type") == 1
     assert sum(1 for c in cols if c == "archived_at") == 1
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def _table_exists(db_path: Path, table: str) -> bool:
@@ -194,7 +212,7 @@ def test_mem_002_adds_compression_columns(isolated_db_path: Path) -> None:
             f"expected NULL compression_provider on legacy row, got {row[3]}"
         )
 
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def test_mem_002_creates_sync_state_table(isolated_db_path: Path) -> None:
@@ -225,7 +243,7 @@ def test_mem_002_idempotent(isolated_db_path: Path) -> None:
             f"{col} appeared more than once in {cols}"
         )
 
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def test_mem_002_sync_state_helpers_round_trip(isolated_db_path: Path) -> None:
@@ -482,7 +500,7 @@ def test_mem_003_idempotent(isolated_db_path: Path) -> None:
     for col in ("memory_id", "valid_from", "valid_to"):
         assert sum(1 for c in edge_cols if c == col) == 1
 
-    assert _alembic_version(isolated_db_path) == "mem_003_temporal"
+    assert _alembic_version(isolated_db_path) == _HEAD_REVISION
 
 
 def test_mem_003_memory_edges_has_bitemporal(isolated_db_path: Path) -> None:

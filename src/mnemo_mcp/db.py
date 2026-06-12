@@ -23,6 +23,8 @@ from pathlib import Path
 import sqlite_vec
 from loguru import logger
 
+from mnemo_mcp.exceptions import EmbeddingModelMismatch
+
 # Alembic migration constants
 _ALEMBIC_INI_PATH = Path(__file__).resolve().parent / "alembic.ini"
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
@@ -99,6 +101,9 @@ class MemoryDB:
         db_path: Path,
         embedding_dims: int = 0,
         recency_half_life_days: float = 7.0,
+        *,
+        embedding_model: str = "",
+        reindex_on_model_change: bool = False,
     ):
         """Open or create memory database.
 
@@ -106,6 +111,19 @@ class MemoryDB:
             db_path: Path to SQLite database file.
             embedding_dims: Embedding dimensions (0 = no vector search).
             recency_half_life_days: Half-life in days for recency decay.
+            embedding_model: Active embedding model identity string. Stamped
+                into ``store_meta`` on first open and compared on subsequent
+                opens to guard against silent vector-store corruption when the
+                embedding model changes. Empty string skips the model-id check
+                (dims are still guarded).
+            reindex_on_model_change: When True and the stored identity mismatches
+                the requested one, DROP the vector table + clear stored vectors
+                and re-stamp the new identity instead of raising. The embed
+                pipeline re-populates on the next pass.
+
+        Raises:
+            EmbeddingModelMismatch: When the stored embedding identity differs
+                from the requested one and ``reindex_on_model_change`` is False.
         """
         self._db_path = db_path
         if type(embedding_dims) is not int:
@@ -117,6 +135,8 @@ class MemoryDB:
             raise ValueError(
                 f"embedding_dims must be between 0 and 10000, got {embedding_dims}"
             )
+        self._embedding_model = embedding_model
+        self._reindex_on_model_change = reindex_on_model_change
         self._recency_half_life = float(recency_half_life_days)
 
         # Create parent directory
@@ -160,8 +180,134 @@ class MemoryDB:
         self._init_memory_schema()
         self._init_graph_schema()
         self._init_archive_schema()
+        self._init_store_meta_schema()
+        # Guard BEFORE _ensure_vec_table: the latter detects an existing
+        # memories_vec and silently adopts its stored dimension, which would
+        # mask a dims mismatch. The guard compares the REQUESTED identity
+        # against the stamped one, and on opt-in reindex drops + recreates the
+        # vec table itself.
+        self._guard_embedding_identity()
         self._ensure_vec_table(self._embedding_dims)
         self._conn.commit()
+
+    def _init_store_meta_schema(self) -> None:
+        """Initialize the ``store_meta`` key/value table.
+
+        Holds store-level identity that the DB layer must read/write at open
+        time, independent of (and before) best-effort Alembic migrations. Used
+        to record which embedding model + dimension produced the stored vectors
+        so a later model change cannot silently corrupt similarity search.
+        """
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS store_meta (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT
+            )
+        """)
+
+    def get_store_meta(self, key: str) -> str | None:
+        """Return the ``store_meta`` value for ``key`` or ``None`` if unset."""
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM store_meta WHERE key = ?", (key,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if row is None:
+            return None
+        return row[0] if not isinstance(row, sqlite3.Row) else row["value"]
+
+    def _set_store_meta(self, key: str, value: str) -> None:
+        """Insert-or-replace a ``store_meta`` key/value pair."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+    def _guard_embedding_identity(self) -> None:
+        """Stamp or verify the embedding-model identity of the vector store.
+
+        Safe-by-default: a fresh store (no stamp) records the current
+        ``(embedding_model, embedding_dims)``; a matching store proceeds; a
+        MISMATCH raises :class:`EmbeddingModelMismatch` and touches NO data
+        unless ``reindex_on_model_change`` is set, in which case the vector
+        table is dropped + cleared and the new identity re-stamped so the embed
+        pipeline rebuilds cleanly on the next pass.
+
+        When ``embedding_dims == 0`` the store has no vectors, so there is
+        nothing to corrupt and the guard is a no-op.
+        """
+        if self._embedding_dims <= 0:
+            return
+
+        stored_model = self.get_store_meta("embedding_model")
+        stored_dims_raw = self.get_store_meta("embedding_dims")
+
+        # Fresh store (no identity recorded yet): stamp current values.
+        if stored_dims_raw is None and stored_model is None:
+            self._stamp_embedding_identity()
+            return
+
+        try:
+            stored_dims = int(stored_dims_raw) if stored_dims_raw is not None else 0
+        except ValueError:
+            stored_dims = 0
+
+        # Compare. The model id is only compared when BOTH a stored id and a
+        # requested id are present; dims are always compared (dims mismatch
+        # alone already catches the most dangerous corruption case).
+        dims_match = stored_dims == self._embedding_dims
+        model_match = (
+            not stored_model
+            or not self._embedding_model
+            or stored_model == self._embedding_model
+        )
+        if dims_match and model_match:
+            return
+
+        if self._reindex_on_model_change:
+            logger.warning(
+                "Embedding identity changed (stored model={!r} dims={}, "
+                "requested model={!r} dims={}); REINDEX_ON_MODEL_CHANGE is set "
+                "-- dropping stored vectors. They will be rebuilt on the next "
+                "embed pass.",
+                stored_model,
+                stored_dims,
+                self._embedding_model,
+                self._embedding_dims,
+            )
+            self._drop_vectors_for_reindex()
+            self._stamp_embedding_identity()
+            return
+
+        raise EmbeddingModelMismatch(
+            stored_model=stored_model or "",
+            stored_dims=stored_dims,
+            requested_model=self._embedding_model or "",
+            requested_dims=self._embedding_dims,
+        )
+
+    def _stamp_embedding_identity(self) -> None:
+        """Record the current embedding model + dims into ``store_meta``."""
+        self._set_store_meta("embedding_dims", str(self._embedding_dims))
+        if self._embedding_model:
+            self._set_store_meta("embedding_model", self._embedding_model)
+
+    def _drop_vectors_for_reindex(self) -> None:
+        """Drop the vector table(s) so they rebuild with the new identity.
+
+        Only the embedding vectors are destroyed -- the ``memories`` rows
+        themselves are preserved so the embed pipeline can re-populate vectors
+        on the next pass. The dropped table is recreated immediately at the new
+        dimension so subsequent inserts have a target.
+        """
+        for table in ("memories_vec", "memory_entities_vec"):
+            try:
+                self._conn.execute(f"DROP TABLE IF EXISTS {table}")
+            except Exception as e:  # pragma: no cover - runtime guard
+                logger.warning(f"Failed to drop {table} during reindex: {e}")
+        # Recreate memories_vec at the new dimension for immediate writes.
+        self._ensure_vec_table(self._embedding_dims)
 
     def _init_memory_schema(self) -> None:
         """Initialize core memory tables, indexes, FTS5, and importance column."""
