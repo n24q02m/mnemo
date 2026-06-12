@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.8 (2026-06-12)
+
+### Bug Fixes
+
+- Make BYO reranker registration tolerant of re-init
+  ([#781](https://github.com/n24q02m/mnemo-mcp/pull/781),
+  [`11daf28`](https://github.com/n24q02m/mnemo-mcp/commit/11daf2864cbab5609c50aa5c006dc5500c206a3a))
+
+
 ## v2.3.0-beta.7 (2026-06-12)
 
 ### Bug Fixes
