@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.5 (2026-06-12)
+
+### Bug Fixes
+
+- Correct dedup threshold doc and add multi-user trust row
+  ([#773](https://github.com/n24q02m/mnemo-mcp/pull/773),
+  [`f9f6041`](https://github.com/n24q02m/mnemo-mcp/commit/f9f6041d1fba1275c91179a40b3a34421a560811))
+
+- Remove orphaned Qodo pr-agent config ([#770](https://github.com/n24q02m/mnemo-mcp/pull/770),
+  [`9758c86`](https://github.com/n24q02m/mnemo-mcp/commit/9758c86859a6608be83bb91c7706f8d2af41e8a6))
+
+- Restore PSR changelog generation and backfill version history
+  ([#772](https://github.com/n24q02m/mnemo-mcp/pull/772),
+  [`7ede24d`](https://github.com/n24q02m/mnemo-mcp/commit/7ede24d785b628eb1b2610fe26856f3d8f268790))
+
+### Features
+
+- Allow overriding the local embed/rerank model via env
+  ([#774](https://github.com/n24q02m/mnemo-mcp/pull/774),
+  [`6a3442f`](https://github.com/n24q02m/mnemo-mcp/commit/6a3442f656ac41848dc3dd5e24764af859859b34))
+
+
 ## v2.3.0-beta.4 (2026-06-11)
 
 ### Bug Fixes
