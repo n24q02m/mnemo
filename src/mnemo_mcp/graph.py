@@ -192,8 +192,9 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
     """Insert or update entities. Returns list of entity IDs."""
     now = datetime.now(UTC).isoformat()
 
-    unique_ents = {}
-    ordered_ents = []
+    unique_ents: dict[tuple[str, str], str] = {}
+    ordered_ents: list[tuple[str, str]] = []
+    unique_keys: list[tuple[str, str]] = []
 
     for ent in entities:
         name = ent.get("name", "").strip()
@@ -203,12 +204,13 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
         key = (name, etype)
         ordered_ents.append(key)
         if key not in unique_ents:
-            unique_ents[key] = None
+            # Reserve the slot now; the real ID is filled in after the bulk
+            # SELECT below. Tracked separately in unique_keys to preserve order.
+            unique_ents[key] = ""
+            unique_keys.append(key)
 
     if not ordered_ents:
         return []
-
-    unique_keys = list(unique_ents.keys())
 
     # Use UPSERT (INSERT ... ON CONFLICT) for bulk write in one pass.
     # This eliminates N+1 SELECTs and conditional INSERT/UPDATE overhead.
