@@ -122,7 +122,7 @@ Khong co prefix (khac voi cac project khac):
 
 1. **Cloud** (`EMBEDDING_MODELS` chain) -- thu lan luot theo thu tu, fallback qua litellm.
 2. **Local** -- Qwen3-Embedding-0.6B ONNX, dung khi chain rong, zero config, luon available
-- Tat ca embeddings luu tai 768 dims. Doi provider khong break vector table.
+- Tat ca embeddings luu tai 768 dims. Doi embedding MODEL = doi vector space -> B2 identity guard chan boot (set REINDEX_ON_MODEL_CHANGE=true de re-embed). 768-dim chung chi giu table khong vo; KHONG cho mix vector 2 model khac nhau (cung dims van rac search).
 
 ## CD Pipeline
 
