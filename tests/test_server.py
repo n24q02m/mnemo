@@ -17,12 +17,23 @@ from mnemo_mcp.server import (
     _handle_update,
     _maybe_register_custom_embed,
     _maybe_register_custom_rerank,
+    add_memory,
+    archived_memories,
     config,
+    consolidate_memories,
+    delete_memory,
+    export_memories,
     help,
+    import_memories,
+    list_memories,
     main,
     memory,
+    memory_stats,
     recall_context,
+    restore_memory,
     save_summary,
+    search_memory,
+    update_memory,
 )
 
 
@@ -804,3 +815,91 @@ class TestMaybeRegisterCustomRerank:
             assert description.model == "Org/custom-reranker"
             assert description.model_file == "onnx/model_quantized.onnx"
             assert description.sources.hf == "Org/custom-reranker"
+
+
+class TestSpecializedTools:
+    """Tests for direct invocation of @mcp.tool decorated functions."""
+
+    async def test_tool_workflow(self, ctx_with_db):
+        ctx, db = ctx_with_db
+
+        # 1. Add
+        add_res = json.loads(
+            await add_memory(content="tool testing", category="test", ctx=ctx)
+        )
+        assert add_res["status"] == "saved"
+        mid = add_res["id"]
+
+        # 2. Search
+        search_res = json.loads(await search_memory(query="tool testing", ctx=ctx))
+        assert search_res["count"] >= 1
+        assert search_res["results"][0]["id"] == mid
+
+        # 3. List
+        list_res = json.loads(await list_memories(category="test", ctx=ctx))
+        assert any(r["id"] == mid for r in list_res["results"])
+
+        # 4. Update
+        update_res = json.loads(
+            await update_memory(memory_id=mid, content="updated tool", ctx=ctx)
+        )
+        assert update_res["status"] == "updated"
+        assert db.get(mid)["content"] == "updated tool"
+
+        # 5. Delete
+        delete_res = json.loads(await delete_memory(memory_id=mid, ctx=ctx))
+        assert delete_res["status"] == "deleted"
+        assert db.get(mid) is None
+
+    async def test_update_memory_error(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        # Missing memory_id handled by _handle_update
+        res = json.loads(await update_memory(memory_id="", content="fails", ctx=ctx))
+        assert "error" in res
+        assert "memory_id is required" in res["error"]
+
+    async def test_extra_tools(self, ctx_with_db):
+        ctx, db = ctx_with_db
+
+        # Add a memory
+        add_res = json.loads(await add_memory(content="to be archived", ctx=ctx))
+        mid = add_res["id"]
+
+        # Soft archive it manually in DB since delete_memory does hard delete
+        db._conn.execute(
+            "UPDATE memories SET archived_at = ? WHERE id = ?",
+            ("2023-01-01T00:00:00Z", mid),
+        )
+        db._conn.commit()
+
+        # 6. Archived list
+        archived_res = json.loads(await archived_memories(ctx=ctx))
+        assert any(r["id"] == mid for r in archived_res["results"])
+
+        # 7. Restore
+        restore_res = json.loads(await restore_memory(memory_id=mid, ctx=ctx))
+        assert restore_res["status"] == "restored"
+
+        # Check it is no longer archived
+        mem = db.get(mid)
+        assert mem["archived_at"] is None
+
+        # 8. Stats
+        stats_res = json.loads(await memory_stats(ctx=ctx))
+        assert "total_memories" in stats_res
+
+        # 9. Export
+        export_res = await export_memories(ctx=ctx)
+        assert mid in export_res
+
+        # 10. Import
+        import_res = json.loads(await import_memories(data=export_res, ctx=ctx))
+        assert "imported" in import_res or "status" in import_res
+
+        # 11. Consolidate (requires LLM usually, might just return error if no keys, but it covers the tool entry point)
+        with patch(
+            "mnemo_mcp.server._handle_consolidate", new_callable=AsyncMock
+        ) as mock_handle:
+            mock_handle.return_value = json.dumps({"status": "consolidated"})
+            await consolidate_memories(category="test", ctx=ctx)
+            mock_handle.assert_called_once()
