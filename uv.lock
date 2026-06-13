@@ -1105,7 +1105,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.4" },
-    { name = "boto3", specifier = ">=1.43.27" },
+    { name = "boto3", specifier = ">=1.43.29" },
     { name = "cryptography", specifier = ">=49.0.0" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.18" },
