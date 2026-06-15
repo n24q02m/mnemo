@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.11 (2026-06-15)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.18.0b5 for vertex_express support
+  ([#812](https://github.com/n24q02m/mnemo-mcp/pull/812),
+  [`fa3c157`](https://github.com/n24q02m/mnemo-mcp/commit/fa3c157040273b54972d2dc48228f86952be8ad6))
+
+- Correct stale config.enc references to config.json in docstrings
+  ([#812](https://github.com/n24q02m/mnemo-mcp/pull/812),
+  [`fa3c157`](https://github.com/n24q02m/mnemo-mcp/commit/fa3c157040273b54972d2dc48228f86952be8ad6))
+
+
 ## v2.3.0-beta.10 (2026-06-15)
 
 ### Bug Fixes
