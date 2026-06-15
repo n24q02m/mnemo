@@ -2,6 +2,55 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.10 (2026-06-15)
+
+### Bug Fixes
+
+- Clarify embedding-model switch requires reindex (B2 guard)
+  ([#789](https://github.com/n24q02m/mnemo-mcp/pull/789),
+  [`b3fd2c3`](https://github.com/n24q02m/mnemo-mcp/commit/b3fd2c3a411608cecaadfca3df3242741ec9d3be))
+
+- Correct credential storage and relay setup docs to match runtime
+  ([`48b186d`](https://github.com/n24q02m/mnemo-mcp/commit/48b186d633900534333eb3efbe9862efa2445910))
+
+- Correct stale config.enc references to config.json in docstrings
+  ([`f40fc4e`](https://github.com/n24q02m/mnemo-mcp/commit/f40fc4e901dc53fb26e6ccf6178168ab527e3410))
+
+- Drop vestigial mcp-core checkout from CI
+  ([`586c531`](https://github.com/n24q02m/mnemo-mcp/commit/586c5312cbc49f4da0c2e47c56d5f1a976b629bf))
+
+- Remove literal v<auto> placeholder from stabilization note
+  ([#775](https://github.com/n24q02m/mnemo-mcp/pull/775),
+  [`a989724`](https://github.com/n24q02m/mnemo-mcp/commit/a989724df419f25ad2a1a2c75213e3d768452874))
+
+- Type-safe entity ID accumulation in upsert_entities
+  ([#788](https://github.com/n24q02m/mnemo-mcp/pull/788),
+  [`c58e3c9`](https://github.com/n24q02m/mnemo-mcp/commit/c58e3c95c289581265a64357adf9f9eaa06b6f17))
+
+- **deps**: Update dependency cryptography to v49
+  ([#785](https://github.com/n24q02m/mnemo-mcp/pull/785),
+  [`7d73369`](https://github.com/n24q02m/mnemo-mcp/commit/7d733694f25e96962b100fba4fd72f923910663a))
+
+- **deps**: Update non-major dependencies to >=1.43.29
+  ([#784](https://github.com/n24q02m/mnemo-mcp/pull/784),
+  [`572e4a4`](https://github.com/n24q02m/mnemo-mcp/commit/572e4a4d836658db89a5352860a27d519e55c52d))
+
+### Chores
+
+- **deps**: Lock file maintenance ([#786](https://github.com/n24q02m/mnemo-mcp/pull/786),
+  [`f0288d4`](https://github.com/n24q02m/mnemo-mcp/commit/f0288d411f822bfd6d47ca5be1e56ca75493614a))
+
+- **deps**: Update python:3.13-slim-bookworm docker digest to 05b9539
+  ([#783](https://github.com/n24q02m/mnemo-mcp/pull/783),
+  [`fc19362`](https://github.com/n24q02m/mnemo-mcp/commit/fc19362d8c5eeaa294404027d5afd05151c71051))
+
+### Features
+
+- Add actionable suggestions to JSON error responses
+  ([#787](https://github.com/n24q02m/mnemo-mcp/pull/787),
+  [`9006a86`](https://github.com/n24q02m/mnemo-mcp/commit/9006a86ce6b3a40b70ce4b92f77e600a638caa7f))
+
+
 ## v2.3.0-beta.9 (2026-06-12)
 
 ### Bug Fixes
