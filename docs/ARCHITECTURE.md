@@ -381,12 +381,12 @@ inspect divergence without losing the local change.
 The relay form collects `SYNC_PASSPHRASE` as a single password input.
 Before persistence, `credential_state._harden_passphrase` swaps it for
 `SYNC_PASSPHRASE_SALT` + `SYNC_PASSPHRASE_HASH` (Argon2id-derived hex).
-The raw passphrase NEVER lands in `config.enc`; the user must supply it
+The raw passphrase NEVER lands in `config.json`; the user must supply it
 again per session (env var in stdio mode, relay form in HTTP mode).
 
 Verification uses `bundle.verify_passphrase` which is constant-time
 (`hmac.compare_digest`) so timing attacks cannot leak digest contents.
-A leaked `config.enc` exposes only the Argon2id digest (which still
+A leaked `config.json` exposes only the Argon2id digest (which still
 needs to be brute-forced against the 64 MiB / 3-iter Argon2id cost).
 
 ### Background sync scheduler

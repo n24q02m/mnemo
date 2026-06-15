@@ -55,7 +55,7 @@ src/mnemo_mcp/
   embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
   reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (qwen3-embed cross-encoder)
   graph.py         # Knowledge graph: entity/relation extraction via LLM
-  relay_setup.py   # Zero-config relay: create session, poll for config
+  relay_setup.py   # Legacy ECDH relay client (ensure_config); no live caller -- HTTP setup uses the OAuth-AS browser form at <PUBLIC_URL>/authorize
   relay_schema.py  # Relay form schema (local + cloud modes)
   sync/            # Sync backends: gdrive.py (OAuth Device Code, httpx) + s3.py (R2/B2/MinIO) + delta/bundle/base
   token_store.py   # OAuth token storage (secure file-based, chmod 600)

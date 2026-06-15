@@ -36,7 +36,7 @@ Resolution rule (`sync.resolve_active_backend`):
   Device Code flow for the end-user's Google account.
 
 Env var takes precedence over the pydantic field so an operator can
-override a persisted bucket from `config.enc` without rewriting it.
+override a persisted bucket from `config.json` without rewriting it.
 
 ### Per-mode runbook
 
@@ -70,7 +70,7 @@ docker run \
 ```
 
 The `SYNC_PASSPHRASE` env var lives ONLY in the container process — it
-is hashed via Argon2id for any persisted `config.enc` record. No
+is hashed via Argon2id for any persisted `config.json` record. No
 end-user input is needed for passport sync in S3 mode.
 
 ### Switching modes (local → prod migration)
@@ -125,7 +125,7 @@ sync mode.
    var (stdio mode).
 2. **Argon2id-hashed** by `credential_state._harden_passphrase` before
    persistence. Only the hash (`SYNC_PASSPHRASE_SALT` +
-   `SYNC_PASSPHRASE_HASH`) lands in `config.enc`. The raw passphrase
+   `SYNC_PASSPHRASE_HASH`) lands in `config.json`. The raw passphrase
    never touches disk.
 3. **Verified** on each sync via `bundle.verify_passphrase` (constant-
    time `hmac.compare_digest`).
@@ -135,7 +135,7 @@ sync mode.
    state without touching remote bundles.
 
 This is by design: a recovery path would also let an attacker decrypt
-your bundles if they obtained either backend access or `config.enc`.
+your bundles if they obtained either backend access or `config.json`.
 
 ## Delta vs full sync
 

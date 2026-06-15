@@ -18,7 +18,7 @@ Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
 > require `SYNC_PASSPHRASE` to be set in the process environment (stdio
 > mode) or supplied via the relay form passphrase field (HTTP mode). The
 > raw passphrase is held in process memory only; only the
-> Argon2id-derived hash lands in `config.enc`.
+> Argon2id-derived hash lands in `config.json`.
 
 ### `status` - Show current configuration
 
@@ -264,7 +264,7 @@ Configure via environment variables before starting the server:
 | `COMPRESSION_ENABLED` | `true` | Enable LLM compression on capture |
 | `COMPRESSION_PROVIDER` | (auto) | Explicit provider override (gemini/openai/anthropic/xai) |
 | `COMPRESSION_MODEL` | (auto) | Explicit model override |
-| `SYNC_BACKEND` | `gdrive` | **DEPRECATED (2026-05-14)**: backend now auto-resolved from `SYNC_S3_BUCKET` presence (XOR). Kept for backward compat with persisted `config.enc`. |
+| `SYNC_BACKEND` | `gdrive` | **DEPRECATED (2026-05-14)**: backend now auto-resolved from `SYNC_S3_BUCKET` presence (XOR). Kept for backward compat with persisted `config.json`. |
 | `SYNC_S3_BUCKET` | (none) | S3 bucket name. **Setting this activates S3 mode (XOR with GDrive).** Required for Method 2/3 docker deploy. |
 | `SYNC_S3_REGION` | `us-east-1` | S3 region (use `auto` for R2) |
 | `SYNC_S3_ENDPOINT` | (none) | Custom endpoint URL for R2 / B2 / MinIO |
