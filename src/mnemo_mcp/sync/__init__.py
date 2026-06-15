@@ -117,7 +117,7 @@ def resolve_active_backend() -> str:
     Pure function — no side effects, safe to call from lifespan startup,
     scheduler loop, MCP tool handlers, anywhere. The env var takes
     precedence over the pydantic field so an operator can override a
-    persisted setting without rewriting ``config.enc``.
+    persisted setting without rewriting ``config.json``.
     """
     import os as _os
 

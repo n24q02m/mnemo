@@ -2,7 +2,7 @@
 
 Resolution order (relay only when ALL local sources are empty):
 1. ENV VARS          -- User explicitly set (highest priority, skip everything)
-2. RELAY CONFIG      -- Saved from previous relay setup (~/.config/mcp/config.enc)
+2. RELAY CONFIG      -- Saved from previous relay setup (~/.mnemo-mcp/config.json)
 3. RELAY SETUP       -- Interactive, ONLY when steps 1-2 are ALL empty (30s timeout)
 4. LOCAL MODE        -- Fallback (Qwen3-Embedding ONNX)
 """

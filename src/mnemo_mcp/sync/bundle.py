@@ -40,7 +40,7 @@ Passphrase handling:
   cost - matches OWASP 2024 recommendations).
 - :func:`hash_passphrase` + :func:`verify_passphrase` provide a constant-
   time gate so the relay form can store an Argon2id hash in
-  ``config.enc`` instead of the raw passphrase. The gate uses
+  ``config.json`` instead of the raw passphrase. The gate uses
   :func:`hmac.compare_digest` so timing attacks against the digest leak
   no information about the passphrase.
 """
@@ -245,10 +245,10 @@ def _unframe_payload(framed: bytes) -> dict[str, bytes]:
 
 
 def hash_passphrase(passphrase: str, salt: bytes | None = None) -> tuple[str, str]:
-    """Argon2id-hash ``passphrase`` for storage in encrypted ``config.enc``.
+    """Argon2id-hash ``passphrase`` for storage in encrypted ``config.json``.
 
     Returns ``(salt_hex, digest_hex)`` so callers can store both fields
-    in ``config.enc`` and pass them back to :func:`verify_passphrase`
+    in ``config.json`` and pass them back to :func:`verify_passphrase`
     on subsequent unlock attempts.
 
     The salt is generated fresh when ``salt`` is None (production path);
@@ -265,7 +265,7 @@ def verify_passphrase(passphrase: str, salt_hex: str, digest_hex: str) -> bool:
     """Constant-time check ``passphrase`` against a stored Argon2id digest.
 
     Returns False on any malformed input (hex parse fail, wrong length)
-    so a corrupted ``config.enc`` cannot trigger an exception that would
+    so a corrupted ``config.json`` cannot trigger an exception that would
     otherwise look like a passphrase-mismatch oracle to a calling tool.
     """
     if not passphrase:

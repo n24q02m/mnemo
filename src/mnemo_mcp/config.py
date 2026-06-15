@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     sync_s3_prefix: str = "passport/"
 
     # Phase 2: passport bundle passphrase (Argon2id-derived hash stored
-    # in encrypted config.enc; raw passphrase NEVER written to disk).
+    # in encrypted config.json; raw passphrase NEVER written to disk).
     sync_passphrase: str = ""  # set ONLY for in-process derivation
 
     # Phase 3: temporal KG.

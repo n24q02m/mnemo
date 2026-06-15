@@ -7,7 +7,7 @@ mnemo-mcp works fully in local mode (Qwen3-Embedding ONNX), so credentials
 are optional. In stdio mode, credentials are read from env vars only -- no
 local form spawn. In HTTP mode, ``run_http_server`` renders the relay schema
 form for the user to paste API keys; ``save_credentials`` persists them to
-``config.enc``. GDrive device-code progress is surfaced through
+``config.json``. GDrive device-code progress is surfaced through
 ``setup_complete_hook``.
 
 See ``~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md``
@@ -318,14 +318,14 @@ def store_for_sub(sub: str, config: dict[str, str]) -> None:
 
 
 def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | None:
-    """Save credentials from OAuth form to config.enc and apply to environment.
+    """Save credentials from OAuth form to config.json and apply to environment.
 
     ``context`` carries the per-authorize ``sub``. In multi-user remote mode
     (``PUBLIC_URL`` set), credentials are scoped per-subject under
     ``$MNEMO_DATA_DIR/subs/<sub>/config.json`` and we skip the shared
     single-user state machine + GDrive device-code flow (each subject runs
     their own OAuth via the relay form). In single-user local mode, the
-    SQLite memory DB and optional API keys live in one shared ``config.enc``
+    SQLite memory DB and optional API keys live in one shared ``config.json``
     on the host so the subject is intentionally unused.
 
     Called by the local OAuth AS when the user submits API keys via the
@@ -375,7 +375,7 @@ def _harden_passphrase(config: dict[str, str]) -> dict[str, str]:
     swap it for ``SYNC_PASSPHRASE_SALT`` + ``SYNC_PASSPHRASE_HASH`` (both
     hex-encoded). Subsequent unlock attempts call
     :func:`mnemo_mcp.sync.bundle.verify_passphrase` against the stored
-    pair so a leaked ``config.enc`` never exposes the raw passphrase.
+    pair so a leaked ``config.json`` never exposes the raw passphrase.
 
     The raw passphrase is deliberately NOT kept in-memory beyond this
     function: the orchestrator passes the user-provided passphrase

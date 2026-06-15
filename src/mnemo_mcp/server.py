@@ -1968,10 +1968,10 @@ def _resolve_sync_passphrase() -> str | None:
     2. ``settings.sync_passphrase`` Pydantic value (env-driven).
 
     Note: we deliberately do NOT load the Argon2id-derived hash from
-    ``config.enc`` here - that hash is for verification only, never
+    ``config.json`` here - that hash is for verification only, never
     decryption. The user must supply the raw passphrase per session
     (HTTP relay form keeps the raw value in process memory only) so a
-    leaked ``config.enc`` cannot decrypt past bundles.
+    leaked ``config.json`` cannot decrypt past bundles.
     """
     raw = os.environ.get("SYNC_PASSPHRASE", "").strip()
     if raw:
@@ -2314,14 +2314,14 @@ async def run_http(port: int = 0) -> None:
     """Run as HTTP server with local OAuth 2.1 AS.
 
     Single-user mode (default): bind ``127.0.0.1`` and persist credentials
-    to one shared ``config.enc`` on the host.
+    to one shared ``config.json`` on the host.
 
     Multi-user remote mode (``PUBLIC_URL`` set): bind ``0.0.0.0:8080`` (or
     ``MCP_PORT``) and scope credential storage per-JWT-sub via
     ``save_credentials``. The ``MCP_DCR_SERVER_SECRET`` env var is required
     as proof of intentional multi-user deployment -- without it, refuse to
     start so a misconfigured single-user instance never accidentally
-    accepts other users' OAuth flows into the same shared ``config.enc``.
+    accepts other users' OAuth flows into the same shared ``config.json``.
     """
     from mcp_core.transport.local_server import run_http_server
 
