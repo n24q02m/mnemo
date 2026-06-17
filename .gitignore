@@ -41,6 +41,8 @@ package-lock.json
 .wrangler-dryrun/
 # Deploy-time config with REAL resource IDs filled in (never commit live IDs)
 wrangler.deploy.jsonc
+# Live OAuth token dumped by scripts/cf_full_flow_mnemo.py --save-only (a real JWT)
+scripts/.mnemo_cf_token
 
 # Build artifacts
 dist/

@@ -620,5 +620,121 @@ class MemoryDBD1:
             "db_path": "cf-d1",
         }
 
+    # ------------------------------------------------------------------
+    # JSONL export / import -- parity with db.MemoryDB.export_jsonl /
+    # import_jsonl, scoped to self.sub. Export reads only this sub's rows;
+    # import writes every row under this sub (any `sub` in the payload is
+    # ignored), so a single-user dump lands under the importing session's
+    # identity (DECISION D3). This is the path the export_memories /
+    # import_memories tools take on the CF backend; without it those tools
+    # AttributeError on cf-d1 and a memory migration has no canonical route.
+    # ------------------------------------------------------------------
+
+    def export_jsonl(self) -> tuple[str, int]:
+        """Export this sub's memories as JSONL (mirrors db.py:1309 field set)."""
+        query = (
+            "SELECT json_object("
+            "'id', id, 'content', content, 'category', category, "
+            "'tags', json(tags), 'source', source, "
+            "'created_at', created_at, 'updated_at', updated_at, "
+            "'access_count', access_count, 'last_accessed', last_accessed"
+            ") AS json_data "
+            "FROM memories WHERE sub = ? ORDER BY created_at"
+        )
+        rows = self._d1.execute(query, [self.sub])
+        out = "".join(r["json_data"] + "\n" for r in rows)
+        return out, len(rows)
+
+    @staticmethod
+    def _parse_import_data(data: str | list | dict) -> tuple[list[dict], int]:
+        """Parse JSONL string / list / dict into dicts (mirrors db.py:1350)."""
+        if isinstance(data, list):
+            return data, 0
+        if isinstance(data, dict):
+            return [data], 0
+        if isinstance(data, str):
+            items: list[dict] = []
+            rejected = 0
+            for raw in data.strip().split("\n"):
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    rejected += 1
+            return items, rejected
+        return [], 0
+
+    def _count_rows(self) -> int:
+        rows = self._d1.execute(
+            "SELECT COUNT(*) AS n FROM memories WHERE sub = ?", [self.sub]
+        )
+        return rows[0]["n"] if rows else 0
+
+    def import_jsonl(self, data: str | list | dict, mode: str = "merge") -> dict:
+        """Import memories under self.sub (mirrors db.py:1434).
+
+        ``mode='merge'`` keeps existing ids (INSERT OR IGNORE); ``'replace'``
+        clears this sub's rows first (INSERT OR REPLACE). Rows are inserted
+        WITHOUT embeddings -- parity with the local import, which writes rows
+        only -- and FTS is trigger-maintained, so imports are immediately
+        keyword-searchable. Vectorize is left untouched: a stale vector for a
+        replaced id is harmless because search() hydrates from D1 and drops
+        vector hits with no matching row. Counts are derived from a
+        before/after row count since D1 executemany returns no rowcount.
+        """
+        items, rejected = self._parse_import_data(data)
+        now = _now_iso()
+        to_insert: list[list] = []
+        for mem in items:
+            try:
+                content = mem.get("content", "")
+                if not content or len(content) > MAX_CONTENT_LENGTH:
+                    rejected += 1
+                    continue
+                tags = mem.get("tags", [])
+                tags_json = (
+                    "[]"
+                    if tags == []
+                    else (json.dumps(tags) if isinstance(tags, list) else tags)
+                )
+                to_insert.append(
+                    [
+                        mem.get("id", uuid.uuid4().hex),
+                        self.sub,
+                        content,
+                        mem.get("category", "general"),
+                        tags_json,
+                        mem.get("source"),
+                        mem.get("created_at", now),
+                        mem.get("updated_at", now),
+                        mem.get("access_count", 0),
+                        mem.get("last_accessed", now),
+                        mem.get("importance", 0.5),
+                    ]
+                )
+            except Exception:
+                rejected += 1
+
+        if mode == "replace":
+            self._d1.execute("DELETE FROM memories WHERE sub = ?", [self.sub])
+        before = self._count_rows()
+        if to_insert:
+            op = "REPLACE" if mode == "replace" else "IGNORE"
+            self._d1.executemany(
+                f"INSERT OR {op} INTO memories "
+                "(id, sub, content, category, tags, source, "
+                "created_at, updated_at, access_count, last_accessed, importance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                to_insert,
+            )
+        after = self._count_rows()
+        imported = after - before
+        skipped = len(to_insert) - imported
+        if imported > 0:
+            logger.info(f"[AUDIT] import count={imported} sub={self.sub} mode={mode}")
+        return {"imported": imported, "skipped": skipped, "rejected": rejected}
+
     def close(self) -> None:
         return None
