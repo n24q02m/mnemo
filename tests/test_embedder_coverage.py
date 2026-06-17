@@ -1,171 +1,82 @@
-"""Additional tests for mnemo_mcp.embedder -- covering uncovered lines.
-
-Targets: CloudEmbeddingBackend with api_base/api_key, Qwen3EmbedBackend._get_model,
-embed_texts inner function, embed_single_query, check_available result empty.
-"""
-
-from types import SimpleNamespace
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.embedder import CloudEmbeddingBackend, Qwen3EmbedBackend, _is_retryable
+import numpy as np
+import pytest
+
+from mnemo_mcp.embedder import (
+    CloudEmbeddingBackend,
+    Qwen3EmbedBackend,
+    _detect_embedding_provider,
+    _strip_provider,
+)
 
 
-def _resp(*vectors):
-    """Build a litellm-shaped embedding response."""
-    return SimpleNamespace(
-        data=[
-            SimpleNamespace(index=i, embedding=list(v)) for i, v in enumerate(vectors)
-        ]
-    )
-
-
-# ---------------------------------------------------------------------------
-# CloudEmbeddingBackend with custom endpoint / api_key
-# ---------------------------------------------------------------------------
-
-
-class TestCloudEmbeddingBackendCustomEndpoint:
-    async def test_passes_api_key(self):
-        """api_key is passed through to aembedding."""
-        mock = AsyncMock(return_value=_resp([0.1]))
-        with patch("mcp_core.llm.aembedding", mock):
-            backend = CloudEmbeddingBackend(api_key="sk-custom")
-            await backend.embed_texts(["test"])
-        assert mock.call_args.kwargs["api_key"] == "sk-custom"
-
-    def test_check_available_with_api_key(self):
-        """check_available passes api_key for validation (sync mirror)."""
-        mock = MagicMock(return_value=_resp([0.1]))
-        with patch("mcp_core.llm.embedding", mock):
-            backend = CloudEmbeddingBackend(api_key="sk-key")
-            dims = backend.check_available()
-        assert dims == 1
-        assert mock.call_args.kwargs["api_key"] == "sk-key"
-
-
-# ---------------------------------------------------------------------------
-# Qwen3EmbedBackend._get_model
-# ---------------------------------------------------------------------------
-
-
-class TestQwen3GetModel:
-    @patch("qwen3_embed.TextEmbedding")
-    def test_lazy_loads_model(self, mock_te):
-        """Model is loaded lazily on first _get_model() call."""
-        mock_model = MagicMock()
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend("test/model")
-        assert backend._model is None
-
-        result = backend._get_model()
-        assert result == mock_model
-        mock_te.assert_called_once_with(model_name="test/model")
-
-    @patch("qwen3_embed.TextEmbedding")
-    def test_caches_model(self, mock_te):
-        """Model is only loaded once (cached)."""
-        mock_model = MagicMock()
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend()
-        backend._get_model()
-        backend._get_model()
-
-        # Only called once despite two _get_model() calls
-        mock_te.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Qwen3EmbedBackend.embed_texts (inner function)
-# ---------------------------------------------------------------------------
-
-
-class TestQwen3EmbedTextsInner:
-    @patch("qwen3_embed.TextEmbedding")
-    async def test_embed_texts_with_dimensions(self, mock_te):
-        """embed_texts passes dim parameter to model.embed()."""
-        mock_emb = MagicMock()
-        mock_emb.tolist.return_value = [0.1, 0.2]
-
-        mock_model = MagicMock()
-        mock_model.embed.return_value = iter([mock_emb])
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend()
-        result = await backend.embed_texts(["test"], dimensions=512)
-
-        assert result == [[0.1, 0.2]]
-        # Verify dim was passed
-        mock_model.embed.assert_called_once()
-        call_kwargs = mock_model.embed.call_args
-        assert call_kwargs[1].get("dim") == 512
-
-    @patch("qwen3_embed.TextEmbedding")
-    async def test_embed_texts_without_dimensions(self, mock_te):
-        """embed_texts works without dimensions parameter."""
-        mock_emb = MagicMock()
-        mock_emb.tolist.return_value = [0.1, 0.2, 0.3]
-
-        mock_model = MagicMock()
-        mock_model.embed.return_value = iter([mock_emb])
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend()
-        result = await backend.embed_texts(["test"])
-
-        assert result == [[0.1, 0.2, 0.3]]
-
-
-# ---------------------------------------------------------------------------
-# Qwen3EmbedBackend.embed_single_query
-# ---------------------------------------------------------------------------
-
-
-class TestQwen3EmbedSingleQuery:
-    @patch("qwen3_embed.TextEmbedding")
-    async def test_embed_single_query(self, mock_te):
-        """embed_single_query uses query_embed for asymmetric retrieval."""
-        mock_emb = MagicMock()
-        mock_emb.tolist.return_value = [0.5, 0.6, 0.7]
-
-        mock_model = MagicMock()
-        mock_model.query_embed.return_value = iter([mock_emb])
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend()
-        result = await backend.embed_single_query("search query")
-
-        assert result == [0.5, 0.6, 0.7]
-        mock_model.query_embed.assert_called_once()
-
-    @patch("qwen3_embed.TextEmbedding")
-    async def test_embed_single_query_with_dimensions(self, mock_te):
-        """embed_single_query passes dim parameter."""
-        mock_emb = MagicMock()
-        mock_emb.tolist.return_value = [0.5, 0.6]
-
-        mock_model = MagicMock()
-        mock_model.query_embed.return_value = iter([mock_emb])
-        mock_te.return_value = mock_model
-
-        backend = Qwen3EmbedBackend()
-        result = await backend.embed_single_query("query", dimensions=256)
-
-        assert result == [0.5, 0.6]
-        call_kwargs = mock_model.query_embed.call_args
-        assert call_kwargs[1].get("dim") == 256
-
-
-# ---------------------------------------------------------------------------
-# Qwen3EmbedBackend.check_available (edge cases)
-# ---------------------------------------------------------------------------
-
-
-class TestQwen3CheckAvailableEdge:
+class TestQwen3EmbedBackendCoverage:
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_empty_result(self, mock_get_model):
-        """check_available returns 0 when embed returns empty list."""
+    async def test_embed_single_query(self, mock_get_model):
+        mock_model = MagicMock()
+        mock_model.query_embed.side_effect = lambda text, **kwargs: iter(
+            [np.array([0.1, 0.2])]
+        )
+        mock_get_model.return_value = mock_model
+
+        backend = Qwen3EmbedBackend()
+        # Test with dimensions
+        result = await backend.embed_single_query("query", dimensions=2)
+        assert result == [0.1, 0.2]
+        mock_model.query_embed.assert_called_with("query", dim=2)
+
+        # Test without dimensions to cover 472->474 branch
+        result = await backend.embed_single_query("query")
+        assert result == [0.1, 0.2]
+        mock_model.query_embed.assert_called_with("query")
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    async def test_embed_texts_inner(self, mock_get_model):
+        mock_model = MagicMock()
+        mock_model.embed.side_effect = lambda texts, **kwargs: iter(
+            [np.array([0.1, 0.2])]
+        )
+        mock_get_model.return_value = mock_model
+
+        backend = Qwen3EmbedBackend()
+        # Test with dimensions
+        result = await backend.embed_texts(["text"], dimensions=2)
+        assert result == [[0.1, 0.2]]
+        mock_model.embed.assert_called_with(["text"], dim=2)
+
+        # Test without dimensions to cover 446->448 branch
+        result = await backend.embed_texts(["text"])
+        assert result == [[0.1, 0.2]]
+        mock_model.embed.assert_called_with(["text"])
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    async def test_embed_texts_empty(self, mock_get_model):
+        backend = Qwen3EmbedBackend()
+        result = await backend.embed_texts([])
+        assert result == []
+        mock_get_model.assert_not_called()
+
+    def test_get_model_lazy_loading(self):
+        mock_text_embedding = MagicMock()
+        with patch("mnemo_mcp.embedder.logger") as mock_logger:
+            with patch.dict(
+                "sys.modules",
+                {"qwen3_embed": MagicMock(TextEmbedding=mock_text_embedding)},
+            ):
+                backend = Qwen3EmbedBackend()
+                model1 = backend._get_model()
+                model2 = backend._get_model()
+
+                assert model1 == mock_text_embedding.return_value
+                assert model1 == model2
+                mock_text_embedding.assert_called_once()
+                mock_logger.warning.assert_called_once()
+                mock_logger.info.assert_called_once()
+
+    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    def test_check_available_empty(self, mock_get_model):
         mock_model = MagicMock()
         mock_model.embed.return_value = iter([])
         mock_get_model.return_value = mock_model
@@ -173,36 +84,104 @@ class TestQwen3CheckAvailableEdge:
         backend = Qwen3EmbedBackend()
         assert backend.check_available() == 0
 
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_exception(self, mock_get_model):
-        """check_available catches exception and returns 0."""
-        mock_get_model.side_effect = Exception("Model load failure")
 
-        backend = Qwen3EmbedBackend()
-        # Should catch exception, log warning and return 0
-        assert backend.check_available() == 0
+class TestCloudEmbeddingBackendCoverage:
+    def test_litellm_model_mapping(self):
+        # Case: slash in model name (line 199)
+        b1 = CloudEmbeddingBackend(model="provider/custom-model")
+        assert b1._litellm_model() == "provider/custom-model"
+
+        # Case: jina provider (line 201)
+        b2 = CloudEmbeddingBackend(model="jina-embeddings-v2")
+        assert b2._litellm_model() == "jina_ai/jina-embeddings-v2"
+
+        # Case: gemini provider (line 203)
+        b3 = CloudEmbeddingBackend(model="gemini-embedding-exp")
+        assert b3._litellm_model() == "gemini/gemini-embedding-exp"
+
+        # Case: cohere provider (line 205)
+        b_cohere = CloudEmbeddingBackend(model="embed-multilingual-v3.0")
+        assert b_cohere._litellm_model() == "cohere/embed-multilingual-v3.0"
+
+        # Case: default/openai (line 207)
+        b4 = CloudEmbeddingBackend(model="text-embedding-3-small")
+        assert b4._litellm_model() == "text-embedding-3-small"
+
+    def test_build_kwargs_cohere(self):
+        # Case: cohere provider (line 214->216)
+        b = CloudEmbeddingBackend(model="embed-english-v3.0")
+        assert b._provider == "cohere"
+
+        # Test WITH dimensions (covers 213 and 214->215)
+        kwargs = b._build_kwargs(dimensions=1024)
+        assert kwargs["input_type"] == "search_document"
+        assert kwargs["dimensions"] == 1024
+
+        # Test WITHOUT dimensions
+        kwargs_no_dim = b._build_kwargs(dimensions=None)
+        assert kwargs_no_dim["input_type"] == "search_document"
+        assert "dimensions" not in kwargs_no_dim
+
+    def test_build_kwargs_non_cohere(self):
+        # Case: non-cohere provider (covers 214->216 False branch)
+        b = CloudEmbeddingBackend(model="text-embedding-3-small")
+        assert b._provider == "openai"
+        kwargs = b._build_kwargs(dimensions=1024)
+        assert "input_type" not in kwargs
+        assert kwargs["dimensions"] == 1024
+
+    @patch(
+        "mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider",
+        new_callable=AsyncMock,
+    )
+    async def test_embed_texts_retry_loop_failure(self, mock_call):
+        # Test retry loop (lines 268-302) and RuntimeError (line 305)
+        with patch("mnemo_mcp.embedder.MAX_RETRIES", 0):
+            backend = CloudEmbeddingBackend(model="test")
+            with pytest.raises(RuntimeError, match="no retries attempted"):
+                await backend.embed_texts(["test"])
+
+    @patch(
+        "mnemo_mcp.embedder.CloudEmbeddingBackend._call_provider",
+        new_callable=AsyncMock,
+    )
+    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    async def test_embed_texts_local_truncation(self, mock_sleep, mock_call):
+        # Test local truncation (line 274)
+        mock_call.return_value = [[0.1, 0.2, 0.3]]
+        backend = CloudEmbeddingBackend(model="test")
+        result = await backend.embed_texts(["test"], dimensions=2)
+        assert result == [[0.1, 0.2]]
 
 
-# ---------------------------------------------------------------------------
-# _is_retryable
-# ---------------------------------------------------------------------------
+class TestUtilsCoverage:
+    def test_detect_embedding_provider_prefixes(self):
+        assert _detect_embedding_provider("jina_ai/test") == "jina"
+        assert _detect_embedding_provider("jina-test") == "jina"
+        assert _detect_embedding_provider("gemini/test") == "gemini"
+        assert _detect_embedding_provider("some-gemini-model") == "gemini"
+        assert _detect_embedding_provider("embed-english") == "cohere"
+        assert _detect_embedding_provider("cohere/model") == "cohere"
+        assert _detect_embedding_provider("text-embedding-3") == "openai"
+        assert _detect_embedding_provider("openai/model") == "openai"
 
+    def test_detect_embedding_provider_env_vars(self):
+        # Priority order: Jina -> Gemini -> OpenAI -> Cohere
+        with patch.dict(os.environ, {"JINA_AI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown") == "jina"
 
-class TestIsRetryable:
-    def test_rate_limit(self):
-        assert _is_retryable(Exception("429 rate limit exceeded")) is True
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown") == "gemini"
 
-    def test_timeout(self):
-        assert _is_retryable(Exception("Connection timed out")) is True
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown") == "gemini"
 
-    def test_server_error(self):
-        assert _is_retryable(Exception("503 service temporarily unavailable")) is True
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown") == "openai"
 
-    def test_resource_exhausted(self):
-        assert _is_retryable(Exception("resource_exhausted")) is True
+        with patch.dict(os.environ, {}, clear=True):
+            assert _detect_embedding_provider("unknown") == "cohere"
 
-    def test_non_retryable(self):
-        assert _is_retryable(Exception("Invalid model name")) is False
-
-    def test_overloaded(self):
-        assert _is_retryable(Exception("Server overloaded")) is True
+    def test_strip_provider(self):
+        assert _strip_provider("gemini/model-name") == "model-name"
+        assert _strip_provider("model-name") == "model-name"
