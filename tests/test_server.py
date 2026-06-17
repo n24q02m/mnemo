@@ -889,12 +889,15 @@ class TestSpecializedTools:
         assert "total_memories" in stats_res
 
         # 9. Export
-        export_res = await export_memories(ctx=ctx)
-        assert mid in export_res
+        export_payload = json.loads(await export_memories(ctx=ctx))
+        assert mid in export_payload["data"]
 
         # 10. Import
-        import_res = json.loads(await import_memories(data=export_res, ctx=ctx))
-        assert "imported" in import_res or "status" in import_res
+        import_res = json.loads(
+            await import_memories(data=export_payload["data"], mode="replace", ctx=ctx)
+        )
+        assert import_res["status"] == "imported"
+        assert import_res["imported"] >= 1
 
         # 11. Consolidate (requires LLM usually, might just return error if no keys, but it covers the tool entry point)
         with patch(
