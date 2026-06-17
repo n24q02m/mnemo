@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.13 (2026-06-17)
+
+### Features
+
+- Add JSONL import/export to MemoryDBD1 for CF memory migration
+  ([#816](https://github.com/n24q02m/mnemo-mcp/pull/816),
+  [`f5a309f`](https://github.com/n24q02m/mnemo-mcp/commit/f5a309ff2d7ff413690255d4fed7c402684eae5a))
+
+
 ## v2.3.0-beta.12 (2026-06-17)
 
 ### Bug Fixes
