@@ -250,10 +250,23 @@ def start_passport_scheduler(db, interval: int | None = None) -> bool:
     """Start the background passport sync loop.
 
     Returns True if a task was spawned, False when the loop is disabled
-    (interval <= 0) or already running.
+    (Cloudflare, ``interval <= 0``, or already running).
+
+    Mode gate: on Cloudflare (``DOCS_DB_BACKEND=cf-d1``) D1 + Vectorize are the
+    durable store across container recreates, so the GDrive/S3 passport
+    delta-sync is redundant and its raw ``db._conn`` LWW writes would fight the
+    D1 shim -- the scheduler is OFF. Local / self-host (sqlite) keeps sync ON.
     """
     global _PASSPORT_SYNC_TASK
+    import os
+
     from mnemo_mcp.config import settings as _settings
+
+    if os.environ.get("DOCS_DB_BACKEND") == "cf-d1":
+        from loguru import logger
+
+        logger.info("Passport delta-sync disabled on Cloudflare (D1 is durable)")
+        return False
 
     if interval is None:
         interval = int(_settings.sync_interval or 0)

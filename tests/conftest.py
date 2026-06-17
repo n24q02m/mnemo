@@ -13,7 +13,7 @@ import pytest
 
 from mnemo_mcp.db import MemoryDB
 
-pytest_plugins = ["conftest_e2e"]
+pytest_plugins = ["conftest_e2e", "conftest_cf"]
 
 
 @pytest.fixture(autouse=True)

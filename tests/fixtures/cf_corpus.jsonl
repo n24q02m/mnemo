@@ -1,0 +1,100 @@
+{"content": "Define an async function item-0 in Python with await and structured error handling.", "category": "general", "tags": ["tag0"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-1.", "category": "fact", "tags": ["tag1"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-2.", "category": "preference", "tags": ["tag2"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-3.", "category": "skill", "tags": ["tag3"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-4.", "category": "decision", "tags": ["tag4"], "source": "src-1"}
+{"content": "Define an async function item-5 in Python with await and structured error handling.", "category": "general", "tags": ["tag5"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-6.", "category": "fact", "tags": ["tag6"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-7.", "category": "preference", "tags": ["tag0"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-8.", "category": "skill", "tags": ["tag1"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-9.", "category": "decision", "tags": ["tag2"], "source": "src-0"}
+{"content": "Define an async function item-10 in Python with await and structured error handling.", "category": "general", "tags": ["tag3"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-11.", "category": "fact", "tags": ["tag4"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-12.", "category": "preference", "tags": ["tag5"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-13.", "category": "skill", "tags": ["tag6"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-14.", "category": "decision", "tags": ["tag0"], "source": "src-2"}
+{"content": "Define an async function item-15 in Python with await and structured error handling.", "category": "general", "tags": ["tag1"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-16.", "category": "fact", "tags": ["tag2"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-17.", "category": "preference", "tags": ["tag3"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-18.", "category": "skill", "tags": ["tag4"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-19.", "category": "decision", "tags": ["tag5"], "source": "src-1"}
+{"content": "Define an async function item-20 in Python with await and structured error handling.", "category": "general", "tags": ["tag6"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-21.", "category": "fact", "tags": ["tag0"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-22.", "category": "preference", "tags": ["tag1"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-23.", "category": "skill", "tags": ["tag2"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-24.", "category": "decision", "tags": ["tag3"], "source": "src-0"}
+{"content": "Define an async function item-25 in Python with await and structured error handling.", "category": "general", "tags": ["tag4"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-26.", "category": "fact", "tags": ["tag5"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-27.", "category": "preference", "tags": ["tag6"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-28.", "category": "skill", "tags": ["tag0"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-29.", "category": "decision", "tags": ["tag1"], "source": "src-2"}
+{"content": "Define an async function item-30 in Python with await and structured error handling.", "category": "general", "tags": ["tag2"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-31.", "category": "fact", "tags": ["tag3"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-32.", "category": "preference", "tags": ["tag4"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-33.", "category": "skill", "tags": ["tag5"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-34.", "category": "decision", "tags": ["tag6"], "source": "src-1"}
+{"content": "Define an async function item-35 in Python with await and structured error handling.", "category": "general", "tags": ["tag0"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-36.", "category": "fact", "tags": ["tag1"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-37.", "category": "preference", "tags": ["tag2"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-38.", "category": "skill", "tags": ["tag3"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-39.", "category": "decision", "tags": ["tag4"], "source": "src-0"}
+{"content": "Define an async function item-40 in Python with await and structured error handling.", "category": "general", "tags": ["tag5"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-41.", "category": "fact", "tags": ["tag6"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-42.", "category": "preference", "tags": ["tag0"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-43.", "category": "skill", "tags": ["tag1"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-44.", "category": "decision", "tags": ["tag2"], "source": "src-2"}
+{"content": "Define an async function item-45 in Python with await and structured error handling.", "category": "general", "tags": ["tag3"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-46.", "category": "fact", "tags": ["tag4"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-47.", "category": "preference", "tags": ["tag5"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-48.", "category": "skill", "tags": ["tag6"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-49.", "category": "decision", "tags": ["tag0"], "source": "src-1"}
+{"content": "Define an async function item-50 in Python with await and structured error handling.", "category": "general", "tags": ["tag1"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-51.", "category": "fact", "tags": ["tag2"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-52.", "category": "preference", "tags": ["tag3"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-53.", "category": "skill", "tags": ["tag4"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-54.", "category": "decision", "tags": ["tag5"], "source": "src-0"}
+{"content": "Define an async function item-55 in Python with await and structured error handling.", "category": "general", "tags": ["tag6"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-56.", "category": "fact", "tags": ["tag0"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-57.", "category": "preference", "tags": ["tag1"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-58.", "category": "skill", "tags": ["tag2"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-59.", "category": "decision", "tags": ["tag3"], "source": "src-2"}
+{"content": "Define an async function item-60 in Python with await and structured error handling.", "category": "general", "tags": ["tag4"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-61.", "category": "fact", "tags": ["tag5"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-62.", "category": "preference", "tags": ["tag6"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-63.", "category": "skill", "tags": ["tag0"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-64.", "category": "decision", "tags": ["tag1"], "source": "src-1"}
+{"content": "Define an async function item-65 in Python with await and structured error handling.", "category": "general", "tags": ["tag2"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-66.", "category": "fact", "tags": ["tag3"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-67.", "category": "preference", "tags": ["tag4"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-68.", "category": "skill", "tags": ["tag5"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-69.", "category": "decision", "tags": ["tag6"], "source": "src-0"}
+{"content": "Define an async function item-70 in Python with await and structured error handling.", "category": "general", "tags": ["tag0"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-71.", "category": "fact", "tags": ["tag1"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-72.", "category": "preference", "tags": ["tag2"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-73.", "category": "skill", "tags": ["tag3"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-74.", "category": "decision", "tags": ["tag4"], "source": "src-2"}
+{"content": "Define an async function item-75 in Python with await and structured error handling.", "category": "general", "tags": ["tag5"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-76.", "category": "fact", "tags": ["tag6"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-77.", "category": "preference", "tags": ["tag0"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-78.", "category": "skill", "tags": ["tag1"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-79.", "category": "decision", "tags": ["tag2"], "source": "src-1"}
+{"content": "Define an async function item-80 in Python with await and structured error handling.", "category": "general", "tags": ["tag3"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-81.", "category": "fact", "tags": ["tag4"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-82.", "category": "preference", "tags": ["tag5"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-83.", "category": "skill", "tags": ["tag6"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-84.", "category": "decision", "tags": ["tag0"], "source": "src-0"}
+{"content": "Define an async function item-85 in Python with await and structured error handling.", "category": "general", "tags": ["tag1"], "source": "src-1"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-86.", "category": "fact", "tags": ["tag2"], "source": "src-2"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-87.", "category": "preference", "tags": ["tag3"], "source": "src-0"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-88.", "category": "skill", "tags": ["tag4"], "source": "src-1"}
+{"content": "User preference: keep concise replies in Vietnamese for item-89.", "category": "decision", "tags": ["tag5"], "source": "src-2"}
+{"content": "Define an async function item-90 in Python with await and structured error handling.", "category": "general", "tags": ["tag6"], "source": "src-0"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-91.", "category": "fact", "tags": ["tag0"], "source": "src-1"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-92.", "category": "preference", "tags": ["tag1"], "source": "src-2"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-93.", "category": "skill", "tags": ["tag2"], "source": "src-0"}
+{"content": "User preference: keep concise replies in Vietnamese for item-94.", "category": "decision", "tags": ["tag3"], "source": "src-1"}
+{"content": "Define an async function item-95 in Python with await and structured error handling.", "category": "general", "tags": ["tag4"], "source": "src-2"}
+{"content": "Vector search ranks embeddings by cosine similarity for memory item-96.", "category": "fact", "tags": ["tag5"], "source": "src-0"}
+{"content": "Error handling: wrap the call in try/except and log the failure for item-97.", "category": "preference", "tags": ["tag6"], "source": "src-1"}
+{"content": "Rate limit the loop to N requests per second to avoid 429 for item-98.", "category": "skill", "tags": ["tag0"], "source": "src-2"}
+{"content": "User preference: keep concise replies in Vietnamese for item-99.", "category": "decision", "tags": ["tag1"], "source": "src-0"}

@@ -10,6 +10,16 @@
 .pytest_cache
 __pycache__
 
+# Virtual environment (uv rebuilds deps inside the image; never ship the host venv)
+.venv
+venv
+
+# Node / Cloudflare Worker toolchain (build-context bloat, not needed in the image)
+node_modules
+package-lock.json
+.wrangler
+.wrangler-dryrun
+
 # Development
 tests/
 temp/

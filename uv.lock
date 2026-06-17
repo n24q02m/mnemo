@@ -1066,7 +1066,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.3.0b9"
+version = "2.3.0b11"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1111,7 +1111,7 @@ requires-dist = [
     { name = "idna", specifier = ">=3.18" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"] },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.18.0b2,<2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.18.0b9,<2" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
@@ -1217,7 +1217,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.18.0b5"
+version = "1.18.0b9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -1232,9 +1232,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7b/ee/982810a18e8ed8fb72bd93d0bc4cf4cea96ac3a705879ffe90739aeee767/n24q02m_mcp_core-1.18.0b5.tar.gz", hash = "sha256:05c68523b428bc5145d32d4cb6daeb2808550691956a194b399daa66b5675368", size = 274193, upload-time = "2026-06-14T04:00:56.416Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/d0/13cdea1f6ccf7adf6a2bf921b380c1d9b6d06eb8e4b844bf51ed9d958dac/n24q02m_mcp_core-1.18.0b9.tar.gz", hash = "sha256:7b42fd9a72d28055b3f4b32b6dd93b01cea22ad6c4d5b372fe959d7333568a04", size = 281264, upload-time = "2026-06-16T10:16:31.033Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/2b/dca7a6cfea2c356e0b9165a4940e6efb1cea1a099348dcb06061d7c92153/n24q02m_mcp_core-1.18.0b5-py3-none-any.whl", hash = "sha256:6640023ed5308d837b6d6e76d1431763efe9fab99a5908051971720f4bd9d9fc", size = 150469, upload-time = "2026-06-14T04:00:57.785Z" },
+    { url = "https://files.pythonhosted.org/packages/21/64/36d9231ce0353cf27fd74ef5df0b70328bbd1d804d42787a4b0c02651f47/n24q02m_mcp_core-1.18.0b9-py3-none-any.whl", hash = "sha256:3e9b802f7f5855a3ed93359de4c1a4d75a07e5624209f498bfa41a8bc0532d9f", size = 156425, upload-time = "2026-06-16T10:16:29.942Z" },
 ]
 
 [package.optional-dependencies]

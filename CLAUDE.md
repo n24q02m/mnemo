@@ -124,6 +124,46 @@ Khong co prefix (khac voi cac project khac):
 2. **Local** -- Qwen3-Embedding-0.6B ONNX, dung khi chain rong, zero config, luon available
 - Tat ca embeddings luu tai 768 dims. Doi embedding MODEL = doi vector space -> B2 identity guard chan boot (set REINDEX_ON_MODEL_CHANGE=true de re-embed). 768-dim chung chi giu table khong vo; KHONG cho mix vector 2 model khac nhau (cung dims van rac search).
 
+## Cloudflare serverless mode
+
+Externalizing all state lets `mnemo.n24q02m.com` run on Cloudflare (Worker + per-`sub`
+Container Durable Object + KV + D1 + Vectorize) instead of the OCI VM. The container then
+survives scale-to-zero / delete+recreate without re-auth or memory loss:
+
+| concern | local (default) | Cloudflare |
+|---|---|---|
+| creds + OAuth tokens | encrypted file under `~/.mnemo-mcp/` | KV via `PerPluginStore` (`cf-kv`) |
+| memories + graph + FTS5 | local SQLite `MemoryDB` | D1 via `MemoryDBD1` (`cf-d1`) |
+| embedding vectors | `sqlite-vec` `vec0` | Vectorize index |
+
+Selection env vars (forwarded into the container by `worker.ts` `CONTAINER_ENV_KEYS`):
+
+| env var | value |
+|---|---|
+| `MCP_STORAGE_BACKEND` | `cf-kv` (+ `MCP_KV_BASE_URL=http://kv.internal`) |
+| `DOCS_DB_BACKEND` | `cf-d1` (+ `MCP_D1_BASE_URL` / `MCP_VECTORIZE_BASE_URL` / `MCP_VECTORIZE_IDX`) |
+| `EMBEDDING_MODELS` | `jina_ai/jina-embeddings-v5-text-small` (cloud forced -> no local ONNX) |
+| `RERANK_MODELS` | `jina_ai/jina-reranker-v3` |
+| `LLM_MODELS` | `vertex_express/gemini-3.5-flash` (graph extraction) |
+| `CREDENTIAL_SECRET` | stable secret -- derives the per-`sub` KV encryption key |
+
+`server.py:_make_db` builds `MemoryDBD1` when `DOCS_DB_BACKEND=cf-d1`, else the local
+`MemoryDB`. **Per-`sub` isolation:** every D1 table carries a `sub` column and Vectorize
+queries filter on `{sub}` metadata, so one shared D1 + index serves all users without
+leakage (the Worker also routes each JWT `sub` to its own Container DO via
+`idFromName(sub)`). A non-empty `*_MODELS` chain whose provider key is set forces the cloud
+backend, so `qwen3-embed` is never instantiated and the container stays slim. GDrive /
+Passport sync is a no-op on CF (`DOCS_DB_BACKEND=cf-d1` makes D1+Vectorize the durable
+store; delta-sync redundant).
+
+- **Infra:** `src/worker.ts` (per-user DO + kv/d1/vectorize outbound handlers) +
+  `wrangler.jsonc` (placeholder resource IDs, filled at deploy). Security invariants:
+  outbound handlers stay OFF the public `fetch` (a spoofed `kv.internal` request must not
+  reach the credential KV); `MnemoContainer.outboundByHost` is an **assignment** (a class
+  field bypasses the setter -> empty registry); `ContainerProxy` is re-exported. **Gate A:**
+  `MCP_RELAY_PASSWORD` must be forwarded (the OAuth-AS login form is gated by it). Verify
+  with `npx wrangler deploy --dry-run` + `npx vitest run tests/worker.test.ts`.
+
 ## CD Pipeline
 
 PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry.

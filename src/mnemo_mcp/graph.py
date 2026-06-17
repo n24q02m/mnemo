@@ -214,27 +214,52 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
 
     # Use UPSERT (INSERT ... ON CONFLICT) for bulk write in one pass.
     # This eliminates N+1 SELECTs and conditional INSERT/UPDATE overhead.
-    upsert_data = [(str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys]
-    conn.executemany(
-        "INSERT INTO memory_entities (id, name, entity_type, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
-        upsert_data,
-    )
+    # On the D1 shim (conn.sub set) inject `sub` into the row, the conflict
+    # target, and the lookup so a shared D1 stays per-user isolated (D3); the
+    # local sqlite path (no `.sub` attribute) keeps the original sub-less SQL.
+    sub = getattr(conn, "sub", None)
+    if sub is None:
+        upsert_data = [
+            (str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys
+        ]
+        conn.executemany(
+            "INSERT INTO memory_entities (id, name, entity_type, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
+            upsert_data,
+        )
+    else:
+        upsert_data = [
+            (str(uuid.uuid4()), sub, key[0], key[1], now, now) for key in unique_keys
+        ]
+        conn.executemany(
+            "INSERT INTO memory_entities (id, sub, name, entity_type, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(sub, name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
+            upsert_data,
+        )
 
     # Fetch all IDs in bulk. Batch to stay under SQLITE_MAX_VARIABLE_NUMBER.
+    # Column-name row access works for both sqlite3.Row (local) and dict (D1).
     BATCH_SIZE = 400
     for i in range(0, len(unique_keys), BATCH_SIZE):
         batch = unique_keys[i : i + BATCH_SIZE]
         placeholders = ", ".join(["(?, ?)"] * len(batch))
         params = [val for key in batch for val in key]
-        rows = conn.execute(
-            "SELECT name, entity_type, id FROM memory_entities "
-            f"WHERE (name, entity_type) IN (VALUES {placeholders})",
-            params,
-        ).fetchall()
-        for r_name, r_type, r_id in rows:
-            unique_ents[(r_name, r_type)] = r_id
+        if sub is None:
+            rows = conn.execute(
+                "SELECT name, entity_type, id FROM memory_entities "
+                f"WHERE (name, entity_type) IN (VALUES {placeholders})",
+                params,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT name, entity_type, id FROM memory_entities "
+                f"WHERE sub = ? AND (name, entity_type) IN (VALUES {placeholders})",
+                [sub, *params],
+            ).fetchall()
+        for r in rows:
+            unique_ents[(r["name"], r["entity_type"])] = r["id"]
 
     return [unique_ents[key] for key in ordered_ents]
 
@@ -244,6 +269,7 @@ def create_relations(
 ) -> None:
     """Create relations between entities."""
     now = datetime.now(UTC).isoformat()
+    sub = getattr(conn, "sub", None)
     seen = set()
     to_insert = []
 
@@ -276,12 +302,21 @@ def create_relations(
         # backed by the `idx_memory_edges_unique` database index.
         # This reduces SQLite virtual machine overhead, providing up to ~4x speedup
         # for bulk graph relationship generation.
-        conn.executemany(
-            "INSERT OR IGNORE INTO memory_edges "
-            "(id, source_id, target_id, relation_type, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            to_insert,
-        )
+        # D1 shim path injects `sub`; OR IGNORE is backed by idx_edges_sub_unique.
+        if sub is None:
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_edges "
+                "(id, source_id, target_id, relation_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                to_insert,
+            )
+        else:
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_edges "
+                "(id, sub, source_id, target_id, relation_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(eid, sub, s, t, rt, ts) for (eid, s, t, rt, ts) in to_insert],
+            )
 
 
 def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
@@ -290,16 +325,26 @@ def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
         return
 
     try:
+        sub = getattr(conn, "sub", None)
         # Bolt Performance Optimization:
         # Use executemany to prevent N+1 SQLite query overhead.
         # This reduces round-trips and improves bulk insert performance by ~60-65%
         # for batches of 100+ entities compared to individual execute calls.
-        params = [(memory_id, eid) for eid in entity_ids]
-        conn.executemany(
-            "INSERT OR IGNORE INTO memory_entity_links (memory_id, entity_id) "
-            "VALUES (?, ?)",
-            params,
-        )
+        # D1 shim path injects `sub` into the per-sub link key.
+        if sub is None:
+            params = [(memory_id, eid) for eid in entity_ids]
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_entity_links (memory_id, entity_id) "
+                "VALUES (?, ?)",
+                params,
+            )
+        else:
+            params = [(sub, memory_id, eid) for eid in entity_ids]
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_entity_links (sub, memory_id, entity_id) "
+                "VALUES (?, ?, ?)",
+                params,
+            )
     except Exception as e:
         logger.debug(f"Failed to link memory entities: {e}")
 
@@ -309,33 +354,61 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
 
     Uses a recursive CTE to traverse the knowledge graph in a single query,
     eliminating N+1 loop overhead and reducing database round-trips to O(1).
+    On the D1 shim (conn.sub set) every table access is scoped by `sub` so a
+    shared D1 never traverses across users (D3); the local sqlite path keeps the
+    original sub-less query. Column-name row access works for both backends.
     """
-    query = """
-        WITH RECURSIVE traverse(entity_id, depth) AS (
-            -- Seed with initial entities linked to the memory
-            SELECT entity_id, 1 FROM memory_entity_links WHERE memory_id = ?
-            UNION
-            -- Follow edges forward
-            SELECT r.target_id, t.depth + 1
-            FROM memory_edges r
-            JOIN traverse t ON r.source_id = t.entity_id
-            WHERE t.depth < ?
-            UNION
-            -- Follow edges backward (undirected graph)
-            SELECT r.source_id, t.depth + 1
-            FROM memory_edges r
-            JOIN traverse t ON r.target_id = t.entity_id
-            WHERE t.depth < ?
-        )
-        -- Bolt Performance Optimization:
-        -- Replaced `JOIN traverse t` with an `IN (SELECT entity_id FROM traverse)` semi-join.
-        -- This prevents row multiplication caused by CTEs yielding the same entity_id at multiple depths,
-        -- allowing the SQLite engine to short-circuit evaluation early for significant speedups
-        -- on highly-connected graphs.
-        SELECT DISTINCT memory_id
-        FROM memory_entity_links
-        WHERE memory_id != ? AND entity_id IN (SELECT entity_id FROM traverse)
-    """
-    rows = conn.execute(query, (memory_id, max_depth, max_depth, memory_id)).fetchall()
+    sub = getattr(conn, "sub", None)
+    if sub is None:
+        query = """
+            WITH RECURSIVE traverse(entity_id, depth) AS (
+                -- Seed with initial entities linked to the memory
+                SELECT entity_id, 1 FROM memory_entity_links WHERE memory_id = ?
+                UNION
+                -- Follow edges forward
+                SELECT r.target_id, t.depth + 1
+                FROM memory_edges r
+                JOIN traverse t ON r.source_id = t.entity_id
+                WHERE t.depth < ?
+                UNION
+                -- Follow edges backward (undirected graph)
+                SELECT r.source_id, t.depth + 1
+                FROM memory_edges r
+                JOIN traverse t ON r.target_id = t.entity_id
+                WHERE t.depth < ?
+            )
+            -- Bolt Performance Optimization:
+            -- Replaced `JOIN traverse t` with an `IN (SELECT entity_id FROM traverse)` semi-join.
+            -- This prevents row multiplication caused by CTEs yielding the same entity_id at multiple depths,
+            -- allowing the SQLite engine to short-circuit evaluation early for significant speedups
+            -- on highly-connected graphs.
+            SELECT DISTINCT memory_id
+            FROM memory_entity_links
+            WHERE memory_id != ? AND entity_id IN (SELECT entity_id FROM traverse)
+        """
+        params: tuple = (memory_id, max_depth, max_depth, memory_id)
+    else:
+        query = """
+            WITH RECURSIVE traverse(entity_id, depth) AS (
+                SELECT entity_id, 1 FROM memory_entity_links
+                WHERE memory_id = ? AND sub = ?
+                UNION
+                SELECT r.target_id, t.depth + 1
+                FROM memory_edges r
+                JOIN traverse t ON r.source_id = t.entity_id
+                WHERE t.depth < ? AND r.sub = ?
+                UNION
+                SELECT r.source_id, t.depth + 1
+                FROM memory_edges r
+                JOIN traverse t ON r.target_id = t.entity_id
+                WHERE t.depth < ? AND r.sub = ?
+            )
+            SELECT DISTINCT memory_id
+            FROM memory_entity_links
+            WHERE memory_id != ? AND sub = ?
+              AND entity_id IN (SELECT entity_id FROM traverse)
+        """
+        params = (memory_id, sub, max_depth, sub, max_depth, sub, memory_id, sub)
+    rows = conn.execute(query, params).fetchall()
 
-    return [r[0] for r in rows]
+    return [r["memory_id"] for r in rows]

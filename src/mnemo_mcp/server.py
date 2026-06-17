@@ -220,6 +220,46 @@ async def _init_reranker_backend(mode: str) -> None:
         logger.error("Cloud reranker not available and local fallback is disabled")
 
 
+def _make_db(
+    sub,
+    embedding_dims,
+    embedding_model,
+    recency_half_life_days,
+    reindex_on_model_change,
+):
+    """Select the local SQLite ``MemoryDB`` or the CF D1+Vectorize ``MemoryDBD1``.
+
+    ``DOCS_DB_BACKEND=cf-d1`` -> ``MemoryDBD1`` (relational + FTS5 + graph on D1,
+    vectors on Vectorize, per-sub); otherwise the local SQLite ``MemoryDB``. On
+    Cloudflare the container is per-sub (Worker ``idFromName(sub)``), so the
+    lifespan sub (``None`` at boot -> ``"default"``) is refined per request by
+    the sub-column WHERE every MemoryDBD1 statement emits.
+    """
+    import os
+
+    if os.environ.get("DOCS_DB_BACKEND") == "cf-d1":
+        from mcp_core.storage import d1_backend_from_env, vectorize_backend_from_env
+
+        from mnemo_mcp.db_cf import MemoryDBD1
+
+        return MemoryDBD1(
+            d1=d1_backend_from_env(),
+            vectorize=vectorize_backend_from_env(),
+            sub=sub or "default",
+            embedding_dims=embedding_dims,
+            recency_half_life_days=recency_half_life_days,
+            embedding_model=embedding_model,
+            reindex_on_model_change=reindex_on_model_change,
+        )
+    return MemoryDB(
+        settings.get_db_path(),
+        embedding_dims=embedding_dims,
+        recency_half_life_days=recency_half_life_days,
+        embedding_model=embedding_model,
+        reindex_on_model_change=reindex_on_model_change,
+    )
+
+
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Initialize DB, embeddings, and sync on startup.
@@ -257,17 +297,18 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     else:
         embedding_model_identity = settings.embedding_primary() or ""
 
-    db_path = settings.get_db_path()
-    db = MemoryDB(
-        db_path,
+    from mnemo_mcp.credential_state import get_current_sub
+
+    db = _make_db(
+        sub=get_current_sub(),
         embedding_dims=embedding_dims,
-        recency_half_life_days=settings.recency_half_life_days,
         embedding_model=embedding_model_identity,
+        recency_half_life_days=settings.recency_half_life_days,
         reindex_on_model_change=settings.reindex_on_model_change,
     )
     stats = db.stats()
     logger.info(
-        f"Database: {db_path} ({stats['total_memories']} memories, "
+        f"Database: {stats.get('db_path', '?')} ({stats['total_memories']} memories, "
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
 
@@ -1716,7 +1757,9 @@ async def _handle_config_status(ctx: Context | None) -> str:
     return _json(
         {
             "database": {
-                "path": str(settings.get_db_path()),
+                # MemoryDBD1.stats() reports db_path="cf-d1"; the local MemoryDB
+                # omits it, so fall back to the on-disk path only off Cloudflare.
+                "path": s.get("db_path") or str(settings.get_db_path()),
                 "total_memories": s["total_memories"],
                 "categories": s["categories"],
                 "vec_enabled": s["vec_enabled"],
@@ -1997,6 +2040,19 @@ def _resolve_default_backend() -> str:
 
 async def _handle_config_sync_now(ctx: Context | None, backend: str | None) -> str:
     """``config(action="sync_now")`` - delta push (or full-pull-push on gap)."""
+    import os
+
+    if os.environ.get("DOCS_DB_BACKEND") == "cf-d1":
+        return _json(
+            {
+                "error": "Passport sync is disabled on Cloudflare",
+                "hint": (
+                    "D1 + Vectorize are the durable store across container "
+                    "recreates, so GDrive/S3 delta-sync is redundant."
+                ),
+            }
+        )
+
     db, _, _ = _get_ctx(ctx)
     passphrase = _resolve_sync_passphrase()
     if not passphrase:

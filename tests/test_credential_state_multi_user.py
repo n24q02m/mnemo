@@ -12,6 +12,14 @@ import hashlib
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _credential_secret(monkeypatch):
+    """Per-sub config routes through PerPluginStore, whose multi-user key
+    derivation requires CREDENTIAL_SECRET (always set in real remote
+    deployments via skret ``/mnemo-mcp/prod``)."""
+    monkeypatch.setenv("CREDENTIAL_SECRET", "test-secret")
+
+
 def _read_for_sub(sub: str) -> dict[str, str]:
     from mnemo_mcp.credential_state import _current_sub, credentials_for_current_request
 

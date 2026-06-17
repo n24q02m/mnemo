@@ -16,6 +16,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _credential_secret(monkeypatch):
+    """Per-sub config now routes through PerPluginStore, whose multi-user key
+    derivation (PBKDF2, salt ``mnemo:<hash(sub)>``) requires CREDENTIAL_SECRET.
+    Real remote deployments always set it (skret ``/mnemo-mcp/prod``)."""
+    monkeypatch.setenv("CREDENTIAL_SECRET", "test-secret")
+
+
+@pytest.fixture(autouse=True)
 def _reset_current_sub():
     """Make sure ``_current_sub`` is ``None`` before/after every test.
 

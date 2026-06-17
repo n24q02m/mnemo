@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import hashlib
-import json
 import os
 import sys
 from collections.abc import Callable
@@ -71,6 +70,14 @@ def get_current_sub() -> str | None:
     return _current_sub.get()
 
 
+def _cred_backend():
+    """Active credential backend for per-sub config (LocalFs on a workstation,
+    CfKv on Cloudflare). Indirection so tests can swap an ``InMemoryBackend``."""
+    from mcp_core.storage.backends import backend_from_env
+
+    return backend_from_env()
+
+
 def credentials_for_current_request() -> dict[str, str]:
     """Return the credential dict for the current request.
 
@@ -83,8 +90,10 @@ def credentials_for_current_request() -> dict[str, str]:
     sub = _current_sub.get()
     if sub is None:
         return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
-    p = _sub_data_dir(sub) / "config.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    from mcp_core.storage.per_plugin_store import PerPluginStore
+
+    safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+    return PerPluginStore("mnemo", safe_sub, backend=_cred_backend()).load() or {}
 
 
 class CredentialState(Enum):
@@ -296,25 +305,20 @@ def _sub_data_dir(sub: str) -> Path:
 
 
 def store_for_sub(sub: str, config: dict[str, str]) -> None:
-    """Persist a config dict for a single JWT subject (multi-user remote mode)."""
-    import stat
+    """Persist a config dict for a single JWT subject (multi-user remote mode).
 
-    path = _sub_data_dir(sub) / "config.json"
-    config_json = json.dumps(config)
+    Routed through ``PerPluginStore`` so the config lands as AES-GCM ciphertext
+    in the active backend -- ``LocalFsBackend`` on a workstation, ``CfKvBackend``
+    on Cloudflare -- instead of a plaintext ``config.json``. The ``sub`` is
+    SHA-256 hashed before it reaches the store key (path-traversal +
+    arbitrary-charset safe), matching :func:`_sub_data_dir` and the per-sub read
+    in :func:`credentials_for_current_request`. PerPluginStore derives the
+    per-sub key from ``CREDENTIAL_SECRET`` (required in multi-user remote mode).
+    """
+    from mcp_core.storage.per_plugin_store import PerPluginStore
 
-    # SECURITY: Ensure the credential file is created with 0600 permissions
-    # (read/write for owner only) to prevent unauthorized access by other
-    # local users, mitigating a TOCTOU vulnerability from using write_text.
-    flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-    mode = stat.S_IRUSR | stat.S_IWUSR
-    fd = os.open(path, flags, mode)
-    try:
-        if os.name != "nt":
-            os.fchmod(fd, mode)
-    except OSError:
-        pass
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(config_json)
+    safe_sub = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+    PerPluginStore("mnemo", safe_sub, backend=_cred_backend()).save(config)
 
 
 def save_credentials(config: dict[str, str], context: dict[str, str]) -> dict | None:

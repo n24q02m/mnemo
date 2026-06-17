@@ -367,6 +367,10 @@ class Settings(BaseSettings):
         Always returns a valid backend (never empty). Backend is inferred
         from EMBEDDING_MODELS (non-empty chain -> cloud, empty -> local);
         the deprecated EMBEDDING_BACKEND env var is honored for one release.
+
+        Cloudflare serverless mode sets EMBEDDING_MODELS (Jina) via wrangler
+        vars so this returns 'cloud' and the 570MB qwen3-embed ONNX model is
+        never instantiated in the container.
         """
         if self.embedding_backend:
             logger.warning(
