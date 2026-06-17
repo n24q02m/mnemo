@@ -1256,10 +1256,10 @@ async def _handle_consolidate(
 
 @mcp.tool(
     description=(
-        "Store NEW information. Use for preferences, decisions, facts.\n"
+        "Store new information in the persistent memory graph.\n"
         "\n"
         "ACTION GUIDE — when to use:\n"
-        "- Use when saving new information for the first time.\n"
+        "- Use when saving new facts, preferences, constraints, or context.\n"
         "  Example: content='User prefers dark mode', category='preference', tags=['ui']"
     ),
     annotations=ToolAnnotations(

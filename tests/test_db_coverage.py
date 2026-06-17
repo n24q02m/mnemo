@@ -429,7 +429,7 @@ class TestImportJsonlEdgeCases:
     def test_import_invalid_type(self, tmp_db: MemoryDB):
         """Import with unsupported type returns empty result."""
         invalid_input: Any = 12345
-        result = tmp_db.import_jsonl(invalid_input, mode="merge")  # ty: ignore[invalid-argument-type]
+        result = tmp_db.import_jsonl(invalid_input, mode="merge")
         assert result["imported"] == 0
         assert result["skipped"] == 0
 
