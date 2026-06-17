@@ -209,52 +209,93 @@ def _ensure_overrides_table(db: MemoryDB) -> None:
     )
 
 
+def _upsert_rows_lww_batch(db: MemoryDB, remote_rows: list[dict]) -> dict:
+    """Batch insert / update / skip per LWW. Returns count dict.
+
+    Optimized batch implementation to resolve N+1 queries.
+    Returns: {"inserted": <int>, "updated": <int>, "skipped": <int>}
+    """
+    counts = {"inserted": 0, "updated": 0, "skipped": 0}
+    if not remote_rows:
+        return counts
+
+    cursor = db._conn.cursor()
+    ids = [r["id"] for r in remote_rows]
+    chunk_size = 999
+    existing = {}
+
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        placeholders = ",".join("?" * len(chunk))
+        res = cursor.execute(
+            f"SELECT id, updated_at, content FROM memories WHERE id IN ({placeholders})",
+            chunk,
+        ).fetchall()
+        for r in res:
+            existing[r["id"]] = r
+
+    to_insert = []
+    to_audit = []
+    now = time.time()
+
+    for remote in remote_rows:
+        rid = remote["id"]
+        exist_row = existing.get(rid)
+
+        if exist_row is None:
+            counts["inserted"] += 1
+            to_insert.append(tuple(remote.get(c) for c in _INSERT_COLS))
+        else:
+            local_updated = exist_row["updated_at"]
+            remote_updated = remote.get("updated_at", "")
+            if local_updated >= remote_updated:
+                counts["skipped"] += 1
+                to_audit.append(
+                    (
+                        rid,
+                        local_updated,
+                        remote_updated,
+                        exist_row["content"],
+                        remote.get("content"),
+                        now,
+                    )
+                )
+            else:
+                counts["updated"] += 1
+                to_insert.append(tuple(remote.get(c) for c in _INSERT_COLS))
+
+    if to_insert:
+        placeholders = ", ".join("?" for _ in _INSERT_COLS)
+        cols_csv = ", ".join(_INSERT_COLS)
+        cursor.executemany(
+            f"INSERT OR REPLACE INTO memories ({cols_csv}) VALUES ({placeholders})",
+            to_insert,
+        )
+
+    if to_audit:
+        _ensure_overrides_table(db)
+        cursor.executemany(
+            "INSERT INTO sync_overrides "
+            "(memory_id, local_updated_at, remote_updated_at, "
+            "local_content, remote_content, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            to_audit,
+        )
+
+    db._conn.commit()
+    return counts
+
+
 def _upsert_row_lww(db: MemoryDB, remote: dict) -> str:
     """Insert / update / skip per LWW. Returns 'inserted', 'updated', 'skipped'.
 
-    'inserted' = no local row, INSERT OR REPLACE applied.
-    'updated' = remote.updated_at > local.updated_at, REPLACE applied.
-    'skipped' = local.updated_at >= remote.updated_at, audit row written.
+    Legacy single-row version.
     """
-    cursor = db._conn.cursor()
-    existing = cursor.execute(
-        "SELECT updated_at, content FROM memories WHERE id = ?",
-        (remote["id"],),
-    ).fetchone()
-
-    if existing is None:
-        outcome = "inserted"
-    else:
-        local_updated = existing["updated_at"]
-        remote_updated = remote.get("updated_at", "")
-        if local_updated >= remote_updated:
-            _ensure_overrides_table(db)
-            cursor.execute(
-                "INSERT INTO sync_overrides "
-                "(memory_id, local_updated_at, remote_updated_at, "
-                "local_content, remote_content, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    remote["id"],
-                    local_updated,
-                    remote_updated,
-                    existing["content"],
-                    remote.get("content"),
-                    time.time(),
-                ),
-            )
-            db._conn.commit()
-            return "skipped"
-        outcome = "updated"
-
-    placeholders = ", ".join("?" for _ in _INSERT_COLS)
-    cols_csv = ", ".join(_INSERT_COLS)
-    cursor.execute(
-        f"INSERT OR REPLACE INTO memories ({cols_csv}) VALUES ({placeholders})",
-        tuple(remote.get(c) for c in _INSERT_COLS),
-    )
-    db._conn.commit()
-    return outcome
+    counts = _upsert_rows_lww_batch(db, [remote])
+    for k, v in counts.items():
+        if v > 0:
+            return k
+    return "skipped"
 
 
 def _apply_kg_sections(db: MemoryDB, payload: dict[str, bytes]) -> dict:
@@ -401,9 +442,10 @@ async def apply_bundle(db: MemoryDB, bundle: bytes, passphrase: str) -> dict:
             logger.warning("apply_bundle: skipping malformed JSONL line")
             continue
 
-    for row in rows:
-        outcome = await asyncio.to_thread(_upsert_row_lww, db, row)
-        counts[outcome] += 1
+    if rows:
+        batch_counts = await asyncio.to_thread(_upsert_rows_lww_batch, db, rows)
+        for k, v in batch_counts.items():
+            counts[k] += v
 
     # Phase 3 KG sections.
     kg_counts = await asyncio.to_thread(_apply_kg_sections, db, payload)
