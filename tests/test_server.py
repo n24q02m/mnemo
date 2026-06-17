@@ -18,6 +18,7 @@ from mnemo_mcp.server import (
     _maybe_register_custom_embed,
     _maybe_register_custom_rerank,
     config,
+    delete_memory,
     help,
     main,
     memory,
@@ -214,6 +215,22 @@ class TestMemoryDelete:
             )
         )
         assert "error" in result
+
+
+class TestDeleteMemoryTool:
+    async def test_delete_memory_success(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        mid = db.add("to delete via tool")
+        result = json.loads(await delete_memory(memory_id=mid, ctx=ctx))
+        assert result["status"] == "deleted"
+        assert result["id"] == mid
+        assert db.get(mid) is None
+
+    async def test_delete_memory_not_found(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(await delete_memory(memory_id="fake123", ctx=ctx))
+        assert "error" in result
+        assert "Memory fake123 not found" in result["error"]
 
 
 class TestMemoryExportImport:
