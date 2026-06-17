@@ -26,6 +26,16 @@ from mnemo_mcp._d1_conn import D1Connection
 MAX_CONTENT_LENGTH = 5000
 MAX_TAGS_FILTER = 50
 
+# D1's HTTP query API caps bound parameters at 100 per statement -- the SQLite
+# 999-variable ceiling does NOT apply over D1's wire protocol. The bulk-import
+# INSERT binds _IMPORT_COLS columns per row, so a multi-row batch must stay under
+# the param ceiling or D1 drops the request (the container disconnects mid-call).
+# D1Backend.executemany chunks by ROW count (default 100), which is param-unsafe
+# for a wide row, so import_jsonl pre-chunks by the param-derived row budget.
+_D1_MAX_BOUND_PARAMS = 100
+_IMPORT_COLS = 11
+_D1_SAFE_IMPORT_ROWS = max(1, _D1_MAX_BOUND_PARAMS // _IMPORT_COLS)
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -722,13 +732,18 @@ class MemoryDBD1:
         before = self._count_rows()
         if to_insert:
             op = "REPLACE" if mode == "replace" else "IGNORE"
-            self._d1.executemany(
+            sql = (
                 f"INSERT OR {op} INTO memories "
                 "(id, sub, content, category, tags, source, "
                 "created_at, updated_at, access_count, last_accessed, importance) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                to_insert,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
+            # Pre-chunk to the D1 param-safe row budget: each executemany call then
+            # expands into a single multi-row INSERT that stays under the 100 bound
+            # parameter ceiling (a 264-row import that previously crashed D1 now
+            # lands as ~30 safe statements).
+            for j in range(0, len(to_insert), _D1_SAFE_IMPORT_ROWS):
+                self._d1.executemany(sql, to_insert[j : j + _D1_SAFE_IMPORT_ROWS])
         after = self._count_rows()
         imported = after - before
         skipped = len(to_insert) - imported

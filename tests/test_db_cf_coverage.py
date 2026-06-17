@@ -302,3 +302,33 @@ def test_import_jsonl_accepts_prestringified_tags(fake_d1_http, fake_vectorize_h
     res = db.import_jsonl([{"id": "pt", "content": "tagged", "tags": '["a", "b"]'}])
     assert res["imported"] == 1
     assert db.get("pt")["tags"] == '["a", "b"]'
+
+
+def test_import_jsonl_bulk_stays_under_d1_param_limit(
+    fake_d1_http, fake_vectorize_http
+):
+    """A bulk import must never bind more than D1's 100-parameter-per-query
+    ceiling. Regression: D1Backend.executemany chunks by ROW (default 100), so a
+    wide-row batch (11 cols) overflowed D1's wire limit and disconnected the
+    container live -- the in-memory FakeD1Http does not enforce it, so this spies
+    on the wire params directly. import_jsonl must pre-chunk to stay safe.
+    """
+    import json as _json
+
+    max_params = {"n": 0}
+    original = fake_d1_http.request
+
+    def spy(method, url, data=None, headers=None):
+        if data and url.endswith("/query"):
+            params = _json.loads(data.decode()).get("params", [])
+            max_params["n"] = max(max_params["n"], len(params))
+        return original(method, url, data=data, headers=headers)
+
+    fake_d1_http.request = spy
+    db = _db(fake_d1_http, fake_vectorize_http)
+    rows = [{"id": f"m{i}", "content": f"bulk memory number {i}"} for i in range(25)]
+    res = db.import_jsonl(rows)
+    assert res["imported"] == 25
+    assert max_params["n"] <= 100, (
+        f"a single D1 query bound {max_params['n']} params (> 100 ceiling)"
+    )
