@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.14 (2026-06-17)
+
+### Bug Fixes
+
+- Chunk MemoryDBD1 bulk import under D1's 100-bound-parameter ceiling
+  ([#817](https://github.com/n24q02m/mnemo-mcp/pull/817),
+  [`e354a3b`](https://github.com/n24q02m/mnemo-mcp/commit/e354a3b7302fe46b72932c38419a75314a5e733b))
+
+
 ## v2.3.0-beta.13 (2026-06-17)
 
 ### Features
