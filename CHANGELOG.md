@@ -2,6 +2,101 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.12 (2026-06-17)
+
+### Bug Fixes
+
+- Cover MemoryDBD1 search/stats/sync_state to restore 95% gate
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Exclude node_modules and venv from docker build context
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Report cf-d1 db_path in config status on Cloudflare
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+### Features
+
+- Add CF full-flow self-test (OAuth + memory-survives-recreate + per-sub)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add cloud-embed-forcing regression gate for Cloudflare
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add Cloudflare Worker (per-user DO + KV/D1/Vectorize outbound)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add Cloudflare-migration test harness (fakes, parity corpus, golden)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add D1 schema (per-sub isolation, FTS5, graph, sync_state PK fix)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add D1Connection shim (sqlite3-like surface over D1, per-sub)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add MemoryDBD1 CRUD on D1 + Vectorize (per-sub scoped)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Add wrangler config + document Cloudflare serverless mode
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Bump mcp-core pin to 1.18.0b9 for CF storage backends
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Disable passport delta-sync on Cloudflare (D1 is durable store)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Encrypt OAuth tokens via PerPluginStore (KV-routable, per-sub)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Make knowledge-graph SQL per-sub aware via connection shim
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Migrate mnemo-mcp to Cloudflare (D1 + Vectorize + KV)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Per-sub embedding-identity guard on D1 store_meta
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Per-sub sync_state on D1 (fixes mem_002 PK collision)
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Pin D3 per-sub isolation schema contract test
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Rewrite hybrid search as D1-FTS + Vectorize + app-side RRF
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Route per-sub credentials through PerPluginStore cf-kv seam
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+- Select MemoryDBD1 on Cloudflare via DOCS_DB_BACKEND
+  ([#815](https://github.com/n24q02m/mnemo-mcp/pull/815),
+  [`4f828ff`](https://github.com/n24q02m/mnemo-mcp/commit/4f828ff85e007a296aa5362f45c2c2f930319205))
+
+
 ## v2.3.0-beta.11 (2026-06-15)
 
 ### Bug Fixes
