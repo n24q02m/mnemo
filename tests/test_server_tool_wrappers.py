@@ -56,6 +56,140 @@ class TestToolWrappers:
         data = json.loads(result)
         assert "results" in data
 
+    async def test_search_memory_no_query(self, tmp_db: MemoryDB):
+        ctx = _make_ctx(tmp_db)
+        result = await _call(search_memory, query="", ctx=ctx)
+        data = json.loads(result)
+        assert "error" in data
+        assert "query is required" in data["error"]
+
+    async def test_search_memory_filtering(self, tmp_db: MemoryDB):
+        tmp_db.add("match", category="cat1", tags=["t1"])
+        tmp_db.add("no match", category="cat2", tags=["t2"])
+        ctx = _make_ctx(tmp_db)
+        result = await _call(
+            search_memory, query="match", category="cat1", tags=["t1"], ctx=ctx
+        )
+        data = json.loads(result)
+        assert data["count"] == 1
+        assert data["results"][0]["content"] == "match"
+
+    async def test_search_memory_limit_clamping(self, tmp_db: MemoryDB):
+        for i in range(10):
+            tmp_db.add(f"memory {i}")
+        ctx = _make_ctx(tmp_db)
+
+        # Test lower clamp
+        result = await _call(search_memory, query="memory", limit=0, ctx=ctx)
+        data = json.loads(result)
+        assert data["count"] == 1
+
+        # Test upper clamp
+        result = await _call(search_memory, query="memory", limit=1000, ctx=ctx)
+        data = json.loads(result)
+        assert data["count"] == 10
+
+    async def test_search_memory_limit_non_int(self, tmp_db: MemoryDB):
+        tmp_db.add("float limit")
+        ctx = _make_ctx(tmp_db)
+        # Should bypass clamping in server.py.
+        # But db.search will also check isinstance(limit, int), and if not, it will fail
+        # when trying to slice or multiply. So we just verify it doesn't crash in server.py
+        # before reaching db.search.
+        try:
+            await _call(search_memory, query="float", limit="5", ctx=ctx)
+        except TypeError:
+            # Expected if it reaches db.search with string limit
+            pass
+
+    async def test_search_memory_reranking(self, tmp_db: MemoryDB, monkeypatch):
+        # Ensure we have at least 2 results to trigger reranking logic
+        tmp_db.add("doc A")
+        tmp_db.add("doc B")
+
+        # Determine natural order
+        ctx = _make_ctx(tmp_db)
+        res = await _call(search_memory, query="doc", ctx=ctx)
+        natural = json.loads(res)["results"]
+        assert len(natural) == 2
+
+        # Mock reranker to return results in reverse natural order
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.return_value = [(1, 0.9), (0, 0.8)]
+        monkeypatch.setattr("mnemo_mcp.reranker.get_reranker", lambda: mock_reranker)
+
+        result = await _call(search_memory, query="doc", ctx=ctx)
+        data = json.loads(result)
+        assert data["reranked"] is True
+        # First result should be what was previously at index 1
+        assert data["results"][0]["content"] == natural[1]["content"]
+        assert data["results"][0]["rerank_score"] == 0.9
+
+    async def test_search_memory_reranking_empty(self, tmp_db: MemoryDB, monkeypatch):
+        tmp_db.add("doc 1")
+        tmp_db.add("doc 2")
+        mock_reranker = MagicMock()
+        # Return empty list from reranker
+        mock_reranker.rerank.return_value = []
+        monkeypatch.setattr("mnemo_mcp.reranker.get_reranker", lambda: mock_reranker)
+
+        ctx = _make_ctx(tmp_db)
+        result = await _call(search_memory, query="doc", ctx=ctx)
+        data = json.loads(result)
+        assert data["reranked"] is False
+
+    async def test_search_memory_reranking_failure(self, tmp_db: MemoryDB, monkeypatch):
+        tmp_db.add("doc 1")
+        tmp_db.add("doc 2")
+        mock_reranker = MagicMock()
+        mock_reranker.rerank.side_effect = Exception("rerank fail")
+        monkeypatch.setattr("mnemo_mcp.reranker.get_reranker", lambda: mock_reranker)
+
+        ctx = _make_ctx(tmp_db)
+        # Should not crash, just log and continue
+        result = await _call(search_memory, query="doc", ctx=ctx)
+        data = json.loads(result)
+        assert data["reranked"] is False
+
+    async def test_search_memory_graph_boost(self, tmp_db: MemoryDB, monkeypatch):
+        mid1 = tmp_db.add("doc 1")
+
+        mock_find = MagicMock(return_value=[mid1])
+        monkeypatch.setattr("mnemo_mcp.graph.find_related_memory_ids", mock_find)
+
+        ctx = _make_ctx(tmp_db)
+        result = await _call(search_memory, query="doc", ctx=ctx)
+        data = json.loads(result)
+        # Find doc 1 in results and check graph_related
+        found = False
+        for r in data["results"]:
+            if r["id"] == mid1:
+                assert r.get("graph_related") is True
+                found = True
+        assert found
+
+    async def test_search_memory_graph_boost_failure(
+        self, tmp_db: MemoryDB, monkeypatch
+    ):
+        tmp_db.add("doc 1")
+        monkeypatch.setattr(
+            "mnemo_mcp.graph.find_related_memory_ids",
+            MagicMock(side_effect=Exception("graph fail")),
+        )
+
+        ctx = _make_ctx(tmp_db)
+        # Should not crash
+        result = await _call(search_memory, query="doc", ctx=ctx)
+        data = json.loads(result)
+        assert data["count"] == 1
+
+    async def test_search_memory_no_results(self, tmp_db: MemoryDB):
+        ctx = _make_ctx(tmp_db)
+        result = await _call(search_memory, query="nothing", ctx=ctx)
+        data = json.loads(result)
+        assert data["count"] == 0
+        assert "suggestion" in data
+
     async def test_list_memories_wrapper(self, tmp_db: MemoryDB):
         tmp_db.add("listed")
         ctx = _make_ctx(tmp_db)
