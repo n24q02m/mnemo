@@ -2,6 +2,58 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.15 (2026-06-18)
+
+### Bug Fixes
+
+- Add coverage for add_memory tool and entity history handler
+  ([`5725904`](https://github.com/n24q02m/mnemo-mcp/commit/57259041db7775900b463cb39c1f3c0a66fd7fa1))
+
+- Add coverage for FallbackChainReranker and rerank chain builder
+  ([`ec0aea9`](https://github.com/n24q02m/mnemo-mcp/commit/ec0aea9b2fe7da909223fcb3e67a5333535c8a87))
+
+- Add test coverage for credential_state set_current_sub/get_current_sub
+  ([`c833145`](https://github.com/n24q02m/mnemo-mcp/commit/c833145e2f6f261358a47e40445579188ade1c25))
+
+- Add tests for search_memory tool query/limit/rerank/graph-boost paths
+  ([`7abca3f`](https://github.com/n24q02m/mnemo-mcp/commit/7abca3f07d16a6d4cb0dbee05cb74fe979a1bb74))
+
+- Add unit tests for delete_memory tool in server.py
+  ([`76ac51f`](https://github.com/n24q02m/mnemo-mcp/commit/76ac51f1a298f2d470f76e2384af60548e7fe538))
+
+- Add unit tests for MemoryDB sync_state get/upsert helpers
+  ([`8171b7f`](https://github.com/n24q02m/mnemo-mcp/commit/8171b7f3e2dde00eae62de2673348306bf92432b))
+
+- Batch LWW apply_bundle upserts to remove per-row N+1 in delta sync
+  ([`766c70f`](https://github.com/n24q02m/mnemo-mcp/commit/766c70f0c0e112df59c54384d8293cffea58de52))
+
+- Bump mcp-core to 1.18.0b10
+  ([`6689ee3`](https://github.com/n24q02m/mnemo-mcp/commit/6689ee3534422849d724f399a6b2d4f91fbbf3a7))
+
+- Cover Qwen3EmbedBackend query/embed paths and cloud provider mapping in embedder tests
+  ([`5fc5f31`](https://github.com/n24q02m/mnemo-mcp/commit/5fc5f3148a43fc32fe90be6ec84c6bec67ed32c2))
+
+- Prefix unused account var to satisfy RUF059
+  ([`75f8186`](https://github.com/n24q02m/mnemo-mcp/commit/75f8186feac7b7c4501baa85c97dd5e12ae40777))
+
+- Refresh lockfile (renovate maintenance)
+  ([`8096fd3`](https://github.com/n24q02m/mnemo-mcp/commit/8096fd32d3150f32b3db20ef29d8b7a3ed58496b))
+
+- Standardize error-response hints under the 'suggestion' key
+  ([`5a439b1`](https://github.com/n24q02m/mnemo-mcp/commit/5a439b1a8ce4a1f1549cf4cf4a54228c154a4efa))
+
+- Update mcp-core pin-guard test to 1.18.0b10 floor
+  ([`6689ee3`](https://github.com/n24q02m/mnemo-mcp/commit/6689ee3534422849d724f399a6b2d4f91fbbf3a7))
+
+- Update non-major dependencies
+  ([`fd51782`](https://github.com/n24q02m/mnemo-mcp/commit/fd51782dcce61df8d6a2854a59b0d813ca384a70))
+
+### Features
+
+- Add CF deploy script with post-deploy canary gate and auto-rollback
+  ([`75f8186`](https://github.com/n24q02m/mnemo-mcp/commit/75f8186feac7b7c4501baa85c97dd5e12ae40777))
+
+
 ## v2.3.0-beta.14 (2026-06-17)
 
 ### Bug Fixes
