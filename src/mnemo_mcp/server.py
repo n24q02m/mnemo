@@ -2439,6 +2439,7 @@ async def run_http(port: int = 0) -> None:
         # "Waiting for authorization..." forever. Accepts legacy 1-arg core.
         setup_complete_hook=wire_gdrive_callbacks,
         auth_scope=_per_request_sub_scope if public_url else None,
+        stable_sub_enabled=True,
     )
 
 
