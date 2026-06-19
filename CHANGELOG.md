@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.17 (2026-06-19)
+
+### Bug Fixes
+
+- Bump mcp-core floor to 1.18.0b14 for the key-rotation primitive
+  ([`23d10f6`](https://github.com/n24q02m/mnemo-mcp/commit/23d10f622a66396d002d44667a1a85ad46c74a0b))
+
+
 ## v2.3.0-beta.16 (2026-06-19)
 
 ### Bug Fixes
