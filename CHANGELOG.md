@@ -2,6 +2,35 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.16 (2026-06-19)
+
+### Bug Fixes
+
+- Make canary gate utf-8-safe (decode+encode) and Cloudflare-UA-aware
+  ([`e14d20d`](https://github.com/n24q02m/mnemo-mcp/commit/e14d20d530ad42c033a54c493265939bb3b40816))
+
+- Make canary gate utf-8-safe and Cloudflare-UA-aware
+  ([`e14d20d`](https://github.com/n24q02m/mnemo-mcp/commit/e14d20d530ad42c033a54c493265939bb3b40816))
+
+- Neutral default endpoint + env-first secrets in CF self-host scripts
+  ([`82704c7`](https://github.com/n24q02m/mnemo-mcp/commit/82704c74d17fdbe4d7189195dfc6d60577f0e923))
+
+- Use contextlib.suppress for stdout reconfigure (SIM105)
+  ([`e14d20d`](https://github.com/n24q02m/mnemo-mcp/commit/e14d20d530ad42c033a54c493265939bb3b40816))
+
+### Features
+
+- Add CF protocol-test harness cf_full_flow.py
+  ([`8c1fb61`](https://github.com/n24q02m/mnemo-mcp/commit/8c1fb61cac8929fae4151c49126ef2e31cd7bab1))
+
+- DISABLE_LOCAL_EMBED / DISABLE_LOCAL_RERANK disable-local toggles
+  ([#826](https://github.com/n24q02m/mnemo-mcp/pull/826),
+  [`66d2203`](https://github.com/n24q02m/mnemo-mcp/commit/66d2203e2d35b7d7a9ee8ba8e3912b8a55582cc2))
+
+- Enable username-stable-sub workspace bucket
+  ([`813f0b1`](https://github.com/n24q02m/mnemo-mcp/commit/813f0b11419ebb2011063a053f7961c41ff9fcb4))
+
+
 ## v2.3.0-beta.15 (2026-06-18)
 
 ### Bug Fixes
