@@ -272,6 +272,29 @@ class TestEmbeddingBackend:
         s = Settings(embedding_backend="litellm")
         assert s.resolve_embedding_backend() == "cloud"
 
+    def test_unavailable_when_local_disabled_and_no_chain(self, monkeypatch):
+        """DISABLE_LOCAL_EMBED + empty chain -> 'unavailable' (NOT forced)."""
+        for v in (
+            "EMBEDDING_MODELS",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+        ):
+            monkeypatch.delenv(v, raising=False)
+        s = Settings(
+            embedding_backend="", embedding_models="", disable_local_embed=True
+        )
+        assert s.resolve_embedding_backend() == "unavailable"
+
+    def test_cloud_wins_even_when_local_disabled(self):
+        """A configured cloud chain still resolves to 'cloud' with local disabled."""
+        s = Settings(
+            embedding_models="gemini/gemini-embedding-001", disable_local_embed=True
+        )
+        assert s.resolve_embedding_backend() == "cloud"
+
 
 class TestRerankSettings:
     def test_rerank_enabled_default(self):
@@ -323,6 +346,22 @@ class TestRerankSettings:
     def test_resolve_rerank_backend_local_fallback(self):
         s = Settings()
         assert s.resolve_rerank_backend() == "local"
+
+    def test_resolve_rerank_unavailable_when_local_disabled(self, monkeypatch):
+        """DISABLE_LOCAL_RERANK + empty chain (rerank enabled) -> 'unavailable'."""
+        for v in ("RERANK_MODELS", "JINA_AI_API_KEY", "COHERE_API_KEY"):
+            monkeypatch.delenv(v, raising=False)
+        s = Settings(
+            rerank_enabled=True,
+            rerank_backend="",
+            rerank_models="",
+            disable_local_rerank=True,
+        )
+        assert s.resolve_rerank_backend() == "unavailable"
+
+    def test_resolve_rerank_disabled_overrides_toggle(self):
+        s = Settings(rerank_enabled=False, disable_local_rerank=True)
+        assert s.resolve_rerank_backend() == ""
 
     def test_rerank_chain_explicit(self):
         s = Settings(rerank_models="custom/reranker")
