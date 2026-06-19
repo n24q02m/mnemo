@@ -11,8 +11,9 @@ def test_mcp_core_pin_includes_cf_backends():
     deps = pyproject["project"]["dependencies"]
     core = next(d for d in deps if d.startswith("n24q02m-mcp-core"))
     # 1.18.0b12 promoted the CF storage backends; 1.18.0b13 added mcp_core.chains
-    # (resolve_backend) used by the DISABLE_LOCAL_EMBED/_RERANK toggles. Pin the latter.
-    assert "1.18.0b13" in core, f"expected >=1.18.0b13 floor, got: {core}"
+    # (resolve_backend); 1.18.0b14 added mcp_core.llm.key_rotation, so the embed/
+    # rerank dispatch rotates provider API keys on rate-limit. Pin the latter.
+    assert "1.18.0b14" in core, f"expected >=1.18.0b14 floor, got: {core}"
 
 
 def test_no_uv_path_source_for_mcp_core():
