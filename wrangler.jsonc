@@ -5,6 +5,9 @@
   "name": "mnemo-mcp-worker",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-14",
+  // Custom-domain-only: never expose a *.workers.dev subdomain (an extra public
+  // endpoint that bypasses the mnemo.n24q02m.com route + its auth front door).
+  "workers_dev": false,
   "containers": [
     {
       "name": "mnemo-mcp-worker",
