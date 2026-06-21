@@ -46,7 +46,11 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Table of contents
 
+- [Roadmap](#roadmap)
 - [Features](#features)
+- [Quick install](#quick-install)
+- [Configuration](#configuration)
+- [Comparison vs. peers](#comparison-vs-peers)
 - [Status](#status)
 - [Documentation](#documentation)
 - [Tools](#tools)
@@ -61,13 +65,15 @@ mcp-name: io.github.n24q02m/mnemo-mcp
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/mnemo-mcp/badge" alt="Mnemo MCP server" />
 </a>
 
-## Roadmap (current = Phase 1 / v1.x)
+## Roadmap
+
+All three phases below have shipped. The temporal knowledge graph (Phase 3) is the current major line (v2.x).
 
 | Phase | Version | Status | Highlights |
 |---|---|---|---|
-| **Phase 1** | **v1.x** | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
-| **Phase 2** | v1.x+1 | **Shipped** | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) -- AES-256-GCM + Argon2id, S3 / R2 / B2 / MinIO + GDrive backends, delta-sync with LWW per row |
-| **Phase 3** | **v2.0.0** | **Shipped (BREAKING)** | Temporal knowledge graph -- bitemporal `valid_from` / `valid_to` columns -- entity resolution via embedding KNN -- `entity_search` / `entity_graph` / `history` actions -- KG-aware passport bundle sections -- `KG_AUTO_ENABLED` opt-in auto-extract on capture |
+| **Phase 1** | v1.x | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
+| **Phase 2** | v1.x | **Shipped** | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) -- AES-256-GCM + Argon2id, S3 / R2 / B2 / MinIO + GDrive backends, delta-sync with LWW per row |
+| **Phase 3** | v2.x | **Shipped (BREAKING)** | Temporal knowledge graph -- bitemporal `valid_from` / `valid_to` columns -- entity resolution via embedding KNN -- `entity_search` / `entity_graph` / `history` actions -- KG-aware passport bundle sections -- `KG_AUTO_ENABLED` opt-in auto-extract on capture |
 
 ## Features
 
@@ -82,9 +88,109 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - **Multi-machine sync** -- JSONL-based merge sync via Google Drive (bundled Desktop OAuth public client)
 - **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
-- **LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.9 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
+- **LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.90 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
 - **Encrypted passport sync** -- AES-256-GCM bundles + Argon2id KDF, S3 (R2 / B2 / MinIO) and Google Drive backends, delta-sync with last-write-wins per row (see [docs/passport.md](docs/passport.md)). Bootstrap via the `passport-bootstrap` skill.
 - **Temporal knowledge graph** -- Bitemporal columns (`valid_from` / `valid_to` / `superseded_by`) on every memory + entity-resolution dedup (embedding KNN at default 0.85 cosine threshold) + audit trail (`memory_audit` table with prev/new state hashes) + new actions (`entity_search` / `entity_graph` / `history`) + opt-in `KG_AUTO_ENABLED` auto-extract on capture. **BREAKING** for clients that called `memory.get` expecting historical-inclusive results: pass `as_of` for time-travel; default now filters to current-state (`valid_to IS NULL`).
+
+## Quick install
+
+```bash
+# Method 1 (default): plugin install via Claude Code
+/plugin marketplace add n24q02m/claude-plugins
+/plugin install mnemo-mcp@n24q02m-plugins
+
+# Method 1 (CLI): direct uvx invocation (zero config -- runs on the built-in local model)
+claude mcp add mnemo -- uvx mnemo-mcp
+
+# Method 3 (HTTP / multi-device / multi-user)
+docker run -d --name mnemo-mcp-http -p 8085:8080 \
+  -v mnemo-data:/data -e MCP_TRANSPORT=http \
+  -e PUBLIC_URL=https://mnemo.example.com \
+  n24q02m/mnemo-mcp:latest
+```
+
+No API keys are required: with no provider keys set, mnemo runs fully offline on the
+bundled local Qwen3 ONNX embedding + reranker. Add cloud provider keys only to switch
+embedding / rerank / LLM onto a hosted model (see [Configuration](#configuration)).
+
+Full setup matrices live at the canonical docs site
+[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/)
+and the paste-to-agent snippet at
+[claude-plugins/plugins/mnemo-mcp/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/mnemo-mcp/setup-with-agent.md).
+
+## Configuration
+
+All settings are plain environment variables (no prefix). Everything is optional --
+mnemo runs zero-config on the local model. The most common knobs:
+
+### Model selection (per-task chains)
+
+Embedding, reranking, and LLM features each take an ordered, comma-separated chain of
+`provider/model` entries (tried in order, litellm fallback). Leave a chain empty to use
+the bundled local model (embedding / rerank) or to disable the feature (LLM).
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `EMBEDDING_MODELS` | (empty -> local Qwen3 ONNX) | Embedding chain, e.g. `jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001` |
+| `RERANK_MODELS` | (empty -> local Qwen3 cross-encoder) | Rerank chain, e.g. `jina_ai/jina-reranker-v3,cohere/rerank-v3.5` |
+| `LLM_MODELS` | (built-in cloud chain) | LLM chain for graph extraction / importance / compression; empty disables those features |
+| `EMBEDDING_DIMS` | `768` | Embedding dimensions (`0` = auto-detect) |
+
+Provider is inferred from the model prefix; supply each provider's key via the litellm
+`<PROVIDER>_API_KEY` convention:
+
+| model prefix | key env var | get it at |
+|---|---|---|
+| `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-dashboard |
+| `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+| `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com/api-keys |
+| `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com/api-keys |
+
+Any other litellm provider works via env passthrough; see
+`https://docs.litellm.ai/docs/providers/<provider>` for its `<PROVIDER>_API_KEY` name.
+Custom OpenAI-compatible endpoints (SSRF-guarded): `LLM_API_BASE`, `EMBEDDING_API_BASE`,
+`RERANK_API_BASE`.
+
+> Changing the embedding **model** changes the vector space. A safe-by-default guard
+> blocks boot on mismatch; set `REINDEX_ON_MODEL_CHANGE=true` to re-embed.
+
+### Storage, sync, retrieval, and archive
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path (also accepts `MNEMO_DB_PATH`) |
+| `SYNC_ENABLED` | `true` | Enable Google Drive multi-machine sync |
+| `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID required for sync |
+| `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
+| `SYNC_INTERVAL` | `300` | Auto-sync interval in seconds (`0` = manual only) |
+| `RERANK_ENABLED` | `true` | Enable reranking of fused results |
+| `RERANK_TOP_N` | `10` | Number of reranked results to keep |
+| `ARCHIVE_ENABLED` | `true` | Enable importance x recency soft-archive sweeps |
+| `ARCHIVE_AFTER_DAYS` | `90` | Age before a memory is eligible for archive |
+| `DEDUP_THRESHOLD` | `0.9` | Similarity above which a new memory is a duplicate |
+| `RECENCY_HALF_LIFE_DAYS` | `7` | Half-life for temporal decay scoring |
+| `KG_AUTO_ENABLED` | `false` | Auto-extract entities + relations on capture |
+| `LOG_LEVEL` | `INFO` | Log verbosity |
+
+### Manual config example
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": ["mnemo-mcp"],
+      "env": {
+        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+        "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+        "LLM_MODELS": "gemini/gemini-3-flash-preview",
+        "JINA_AI_API_KEY": "jina_xxx",
+        "GEMINI_API_KEY": "AIza_xxx"
+      }
+    }
+  }
+}
+```
 
 ## Comparison vs. peers
 
@@ -132,6 +238,13 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.co
 - [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
 - [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
+
+In-repo references:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) -- storage layout, embedding / rerank dispatch, knowledge graph, plugin trinity
+- [`docs/compression.md`](docs/compression.md) -- LLM compression pipeline
+- [`docs/passport.md`](docs/passport.md) -- encrypted passport sync (S3 / GDrive backends)
+- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) -- retrieval quality + latency metrics
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
@@ -194,11 +307,14 @@ uv run mnemo-mcp
 
 This plugin implements **TC-Local** (machine-bound, single trust principal). The mode/storage/encryption breakdown below is the full classification.
 
-| Mode | Storage | Encryption | Who can read your data? |
+| Mode | Credentials | Memory data | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.mnemo-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-| HTTP self-host | Same as stdio | Same | Only you (admin = user) |
-| HTTP multi-user remote (`PUBLIC_URL`) | Per-JWT-sub credential store | AES-GCM | Only the authenticated user (per-`sub` isolation) |
+| stdio (default) | Read from environment variables (no credential file written) | Local SQLite at `~/.mnemo-mcp/memories.db` | Only your OS user |
+| HTTP self-host (single user) | Encrypted `config.enc` under `~/.mnemo-mcp/` | Local SQLite (same host) | Only you (admin = user) |
+| HTTP multi-user remote (`PUBLIC_URL`) | Per-JWT-`sub` store at `subs/<sub>/config.json` | Per-`sub` isolated rows | Only the authenticated user (per-`sub` isolation) |
+
+Passport sync bundles are always end-to-end encrypted (AES-256-GCM + Argon2id); backends
+never see plaintext.
 
 ## License
 
