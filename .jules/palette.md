@@ -1,3 +1,3 @@
-## 2025-05-18 - Added context-aware `suggestion` to JSON error responses
-**Learning:** In a backend/CLI-focused MCP server, traditional frontend UX paradigms translate to Developer/Agent Experience (DX). When the server returns raw errors without guidance, consumers (like LLMs or developers debugging tools) struggle to recover. Standardizing on a top-level `suggestion` key in JSON error responses makes the API significantly more actionable and "intuitive".
-**Action:** When adding or refactoring error paths in server tool handlers (like `_handle_add`, `_handle_capture`, etc.), always ensure `_json({"error": ...})` includes a corresponding `"suggestion": "..."` field with concrete next steps.
+## 2026-06-20 - [UX Improvement for Unknown Help Topics]
+**Learning:** In backend CLI/MCP APIs where user interfaces are limited, explicitly providing default suggestions for missing inputs acts as a crucial fallback when fuzzy-matching algorithms (like `difflib`) fail to find close matches. Without an explicit UI, textual errors must bridge the interaction gap.
+**Action:** Always provide a default `suggestion` alongside API-driven error responses for missing or severely misspelled inputs, ensuring the user (or consuming agent) has actionable next steps rather than a dead end.

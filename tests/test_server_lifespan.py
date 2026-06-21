@@ -234,11 +234,12 @@ class TestHelpTool:
         assert "Did you mean 'memory'?" in result["suggestion"]
 
     async def test_help_no_match(self):
-        """Completely invalid topic returns error without suggestion."""
+        """Completely invalid topic returns error with suggestion."""
         result = json.loads(await help(topic="xyzxyz"))
         assert "error" in result
         assert "valid_topics" in result
-        assert "suggestion" not in result
+        assert "suggestion" in result
+        assert "Available topics:" in result["suggestion"]
 
     async def test_help_setup_redirects_to_config(self):
         """'setup' topic is redirected to 'config'."""
