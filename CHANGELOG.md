@@ -2,6 +2,71 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.18 (2026-06-21)
+
+### Bug Fixes
+
+- Add cf:deploy script for live wrangler deploy
+  ([#842](https://github.com/n24q02m/mnemo-mcp/pull/842),
+  [`ad3007f`](https://github.com/n24q02m/mnemo-mcp/commit/ad3007f5e758f22e37b0418327818ca7a0da0742))
+
+- Drop env-derived value from cf_deploy log (CodeQL js/clear-text-logging)
+  ([#842](https://github.com/n24q02m/mnemo-mcp/pull/842),
+  [`ad3007f`](https://github.com/n24q02m/mnemo-mcp/commit/ad3007f5e758f22e37b0418327818ca7a0da0742))
+
+- Migrate mnemo LLM dispatch to the per-task model chain
+  ([#836](https://github.com/n24q02m/mnemo-mcp/pull/836),
+  [`20e3870`](https://github.com/n24q02m/mnemo-mcp/commit/20e3870bd8f8370a9caad761ce642e441aa42902))
+
+- Right-size CF container to basic instance to cut GiB-second cost
+  ([#841](https://github.com/n24q02m/mnemo-mcp/pull/841),
+  [`0e69bc0`](https://github.com/n24q02m/mnemo-mcp/commit/0e69bc0b132e8ed78d928ea49d8cfa5b0553871c))
+
+- Skip custom-domain re-assert + disable workers.dev on cf:deploy
+  ([#842](https://github.com/n24q02m/mnemo-mcp/pull/842),
+  [`ad3007f`](https://github.com/n24q02m/mnemo-mcp/commit/ad3007f5e758f22e37b0418327818ca7a0da0742))
+
+- Skip GDrive device-code on Cloudflare (D1+Vectorize is the store)
+  ([#837](https://github.com/n24q02m/mnemo-mcp/pull/837),
+  [`6bba970`](https://github.com/n24q02m/mnemo-mcp/commit/6bba9708ce460667788184c7dea54a09fcb6c92f))
+
+- Wire per-sub credentials into live embed/rerank/llm dispatch
+  ([#840](https://github.com/n24q02m/mnemo-mcp/pull/840),
+  [`993f5fc`](https://github.com/n24q02m/mnemo-mcp/commit/993f5fc596204fb548999d78595e485496a10706))
+
+- **deps**: Update non-major dependencies ([#829](https://github.com/n24q02m/mnemo-mcp/pull/829),
+  [`87c1ff1`](https://github.com/n24q02m/mnemo-mcp/commit/87c1ff11032818517a0c9f9b9b80693085065bbb))
+
+### Chores
+
+- **deps**: Bump pydantic-settings in the uv group across 1 directory
+  ([#838](https://github.com/n24q02m/mnemo-mcp/pull/838),
+  [`ca38dad`](https://github.com/n24q02m/mnemo-mcp/commit/ca38dad924f97474db23d01144f0b6470dde0a5d))
+
+- **deps**: Lock file maintenance ([#834](https://github.com/n24q02m/mnemo-mcp/pull/834),
+  [`01b9475`](https://github.com/n24q02m/mnemo-mcp/commit/01b9475b388fec6d007fedfb098464c83fa86277))
+
+- **deps**: Update actions/checkout action to v7
+  ([#830](https://github.com/n24q02m/mnemo-mcp/pull/830),
+  [`69be095`](https://github.com/n24q02m/mnemo-mcp/commit/69be095c5596705e069a084a2938e8b10f986b0f))
+
+- **deps**: Update dependency typescript to v6
+  ([#831](https://github.com/n24q02m/mnemo-mcp/pull/831),
+  [`f56dd71`](https://github.com/n24q02m/mnemo-mcp/commit/f56dd71172fe33bb96625275b40e90ae11d3003d))
+
+### Features
+
+- **ux**: Provide default suggestion for unknown help topics
+  ([#835](https://github.com/n24q02m/mnemo-mcp/pull/835),
+  [`3f652c9`](https://github.com/n24q02m/mnemo-mcp/commit/3f652c9d5ab6ea70614ae932d3782674883036dd))
+
+### Performance Improvements
+
+- **db**: Optimize phase 3 backfill using executemany
+  ([#839](https://github.com/n24q02m/mnemo-mcp/pull/839),
+  [`468cc1a`](https://github.com/n24q02m/mnemo-mcp/commit/468cc1a5234b32f759a088feaa5204cb5b54b657))
+
+
 ## v2.3.0-beta.17 (2026-06-19)
 
 ### Bug Fixes
