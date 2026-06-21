@@ -96,6 +96,37 @@ def credentials_for_current_request() -> dict[str, str]:
     return PerPluginStore("mnemo", safe_sub, backend=_cred_backend()).load() or {}
 
 
+def api_key_for_model(model: str) -> str | None:
+    """Resolve the per-request API key for a litellm ``model`` at dispatch time.
+
+    The credential for one user MUST NOT be applied to the process-global
+    ``os.environ`` (it would leak to concurrent requests of a different JWT
+    ``sub``). Instead, the live embed / rerank / LLM dispatch paths call this
+    helper and pass the returned key explicitly down to the litellm call.
+
+    Behaviour:
+
+    - **Single-user** (``_current_sub`` unset -- stdio or single-user HTTP):
+      returns ``None`` so litellm keeps reading the key from ``os.environ``
+      (the existing singleton / ``apply_config`` -> env path is unchanged).
+    - **Multi-user remote** (``_current_sub`` set): resolves the canonical key
+      env var for ``model`` (via the mcp-core ``key_env_for_model`` primitive,
+      e.g. ``jina_ai/...`` -> ``JINA_AI_API_KEY``) and returns the matching
+      value from the per-``sub`` config, or ``None`` when that user has not
+      configured the provider.
+
+    Returning ``None`` is always safe: the cloud backends treat a falsy
+    ``api_key`` as "let litellm resolve from env", and in multi-user mode the
+    process env carries no per-sub secrets.
+    """
+    if _current_sub.get() is None:
+        return None
+    from mcp_core.llm.providers import key_env_for_model
+
+    env_var = key_env_for_model(model)
+    return credentials_for_current_request().get(env_var) or None
+
+
 class CredentialState(Enum):
     AWAITING_SETUP = "awaiting_setup"
     SETUP_IN_PROGRESS = "setup_in_progress"

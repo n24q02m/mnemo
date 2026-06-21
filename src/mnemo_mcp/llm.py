@@ -93,18 +93,27 @@ async def acomplete(
     # Lazy import: litellm costs ~1-2s on first import.
     from mcp_core.llm import acompletion
 
+    from mnemo_mcp.credential_state import api_key_for_model
+
     api_base = os.environ.get("LLM_API_BASE") or None
     extra: dict = {"response_format": response_format} if response_format else {}
 
     last_exc: Exception | None = None
     for model in chain:
+        normalized = _normalize_model(model)
         try:
+            # Multi-user remote: resolve THIS request's per-``sub`` key for the
+            # model and pass it explicitly so one tenant's key never reaches
+            # another's request (the key is never applied to process env).
+            # Single-user: ``api_key_for_model`` returns ``None`` -> litellm
+            # reads the key from env (existing behaviour preserved).
             resp = await acompletion(
-                model=_normalize_model(model),
+                model=normalized,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 api_base=api_base,
+                api_key=api_key_for_model(normalized),
                 **extra,
             )
             return resp.choices[0].message.content or ""

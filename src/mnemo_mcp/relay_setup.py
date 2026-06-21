@@ -51,9 +51,19 @@ def load_relay_config() -> dict[str, str] | None:
 
 
 def apply_config(config: dict[str, str]) -> None:
-    """Apply config dict to environment variables."""
+    """Apply config dict to environment variables (single-user mode only).
+
+    Overwrites an existing env var when the new value differs so a single-user
+    reconfigure (e.g. rotating a key via the relay form) actually takes effect.
+    The previous ``key not in os.environ`` guard silently dropped the new value
+    whenever the var was already set, leaving stale credentials in the process.
+
+    This MUST stay single-user only: callers route multi-user per-``sub``
+    credentials through ``store_for_sub`` + request-scoped dispatch, never to
+    the process-global ``os.environ`` (which would leak across tenants).
+    """
     for key, value in config.items():
-        if value and key not in os.environ:
+        if value and os.environ.get(key) != value:
             os.environ[key] = value
             logger.debug("Applied relay config: {}", key)
 

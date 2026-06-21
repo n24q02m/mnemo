@@ -452,6 +452,57 @@ def _format_memory(mem: dict) -> dict:
     return mem
 
 
+def _resolve_request_embed_backend(model: str):
+    """Pick the embedding backend for the current request.
+
+    Single-user (``_current_sub`` unset): return the startup singleton -- the
+    cloud singleton already carries the env-resolved key, the local Qwen3
+    singleton needs none. Behaviour is unchanged.
+
+    Multi-user remote (``_current_sub`` set): the startup singleton must NOT be
+    used for cloud models, because it was created once with no per-``sub`` key
+    (litellm would read the process env, which carries no per-``sub`` secret --
+    or worse, one tenant's leaked key). Instead build a *request-scoped*
+    ``CloudEmbeddingBackend`` with this ``sub``'s key resolved at dispatch time
+    via :func:`credentials_for_current_request`. The local ``__local__`` model
+    needs no key, so the singleton is reused for it.
+    """
+    from mnemo_mcp.credential_state import api_key_for_model, get_current_sub
+    from mnemo_mcp.embedder import CloudEmbeddingBackend, get_backend
+
+    singleton = get_backend()
+    if get_current_sub() is None or model == "__local__":
+        return singleton
+
+    # Multi-user cloud dispatch: per-request backend keyed by this sub's key.
+    return CloudEmbeddingBackend(model, api_key=api_key_for_model(model))
+
+
+def _resolve_request_reranker(singleton):
+    """Pick the reranker for the current request.
+
+    Single-user (``_current_sub`` unset): return the startup singleton
+    unchanged (cloud singleton carries the env key; local needs none).
+
+    Multi-user remote (``_current_sub`` set) with a configured cloud rerank
+    chain: build a *request-scoped* :class:`CloudReranker` keyed by this
+    ``sub``'s key, resolved at dispatch time -- never the shared singleton
+    (which carries no per-``sub`` key). When the deployment has no cloud rerank
+    chain (local ONNX cross-encoder), reuse the singleton since it needs no key.
+    """
+    from mnemo_mcp.credential_state import api_key_for_model, get_current_sub
+    from mnemo_mcp.reranker import CloudReranker
+
+    if get_current_sub() is None:
+        return singleton
+
+    model = settings.rerank_primary()
+    if not model:
+        # No cloud rerank chain configured -> local ONNX path, no key needed.
+        return singleton
+    return CloudReranker(model, api_key=api_key_for_model(model))
+
+
 async def _embed(
     text: str, model: str | None, dims: int, is_query: bool = False
 ) -> list[float] | None:
@@ -467,9 +518,9 @@ async def _embed(
     if not model:
         return None
 
-    from mnemo_mcp.embedder import Qwen3EmbedBackend, get_backend
+    from mnemo_mcp.embedder import Qwen3EmbedBackend
 
-    backend = get_backend()
+    backend = _resolve_request_embed_backend(model)
     if backend is None:
         # Should not happen if model is set (implies init succeeded), but safe guard.
         logger.warning(f"Embedding backend not initialized despite model={model}")
@@ -652,7 +703,7 @@ async def _handle_search(
     # when a reranker is active and otherwise stay at the LLM-requested limit.
     from mnemo_mcp.reranker import get_reranker
 
-    reranker = get_reranker()
+    reranker = _resolve_request_reranker(get_reranker())
     rerank_pool = max(50, limit * 5) if reranker else None
 
     results = await asyncio.to_thread(

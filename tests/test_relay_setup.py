@@ -40,14 +40,25 @@ class TestApplyConfig:
         assert os.environ.get("JINA_AI_API_KEY") == "jina_test_key"
         assert os.environ.get("GEMINI_API_KEY") == "AIza_test_key"
 
-    def test_skips_existing_env_vars(self, monkeypatch):
-        """Does not overwrite existing env vars."""
+    def test_overwrites_existing_env_var_on_differing_value(self, monkeypatch):
+        """Single-user reconfigure: a differing value overwrites the stale env
+        var so a rotated key actually takes effect (the old ``key not in
+        os.environ`` guard silently dropped the new value)."""
         monkeypatch.setenv("JINA_AI_API_KEY", "existing_key")
 
         config = {"JINA_AI_API_KEY": "new_key"}
         apply_config(config)
 
-        assert os.environ.get("JINA_AI_API_KEY") == "existing_key"
+        assert os.environ.get("JINA_AI_API_KEY") == "new_key"
+
+    def test_noop_when_value_unchanged(self, monkeypatch):
+        """An identical value is a no-op (no needless rewrite)."""
+        monkeypatch.setenv("JINA_AI_API_KEY", "same_key")
+
+        config = {"JINA_AI_API_KEY": "same_key"}
+        apply_config(config)
+
+        assert os.environ.get("JINA_AI_API_KEY") == "same_key"
 
     def test_skips_empty_values(self, monkeypatch):
         """Does not set empty string values."""
@@ -61,19 +72,21 @@ class TestApplyConfig:
         assert os.environ.get("OPENAI_API_KEY") == "sk_test"
 
     def test_multiple_keys_with_mixed_states(self, monkeypatch):
-        """Handles a mix of new, existing, and empty values."""
+        """Handles a mix of new, changed, and empty values: a changed value
+        overwrites the stale env var, a new value is set, an empty value is
+        skipped."""
         monkeypatch.setenv("COHERE_API_KEY", "existing")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
 
         config = {
-            "COHERE_API_KEY": "should_not_overwrite",
+            "COHERE_API_KEY": "rotated",
             "OPENAI_API_KEY": "new_openai",
             "JINA_AI_API_KEY": "",
         }
         apply_config(config)
 
-        assert os.environ.get("COHERE_API_KEY") == "existing"
+        assert os.environ.get("COHERE_API_KEY") == "rotated"
         assert os.environ.get("OPENAI_API_KEY") == "new_openai"
         assert os.environ.get("JINA_AI_API_KEY") is None
 
