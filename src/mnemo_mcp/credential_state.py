@@ -434,6 +434,16 @@ def _save_local_credentials(config: dict[str, str]) -> None:
         )
 
 
+def _sync_redundant_on_cf() -> bool:
+    """Whether Google Drive docs-sync is redundant on this deployment.
+
+    On Cloudflare the memory DB is D1 + Vectorize (durable across container
+    recreate), so the GDrive delta-sync is redundant. Skip the device-code flow
+    there so the relay never offers a non-functional Google Drive setup.
+    """
+    return os.environ.get("DOCS_DB_BACKEND", "").strip().lower() == "cf-d1"
+
+
 def _trigger_gdrive_flow(
     sub: str | None = None, auto_open: bool = False
 ) -> dict | None:
@@ -455,6 +465,13 @@ def _trigger_gdrive_flow(
     except Exception:
         # Resolver failure is non-fatal — fall through to legacy GDrive path.
         logger.opt(exception=True).debug("resolve_active_backend failed")
+
+    if _sync_redundant_on_cf():
+        logger.info(
+            "GDrive flow skipped: DOCS_DB_BACKEND=cf-d1 (D1+Vectorize durable, "
+            "delta-sync redundant on Cloudflare)"
+        )
+        return None
 
     try:
         from mnemo_mcp.config import settings as s
