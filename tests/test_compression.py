@@ -1,8 +1,8 @@
 """Tests for the Phase 2 LLM-driven compression pipeline.
 
 Covers:
-- ``compress`` returns compressed text when a provider is available.
-- Graceful skip when no provider env vars are set.
+- ``compress`` returns compressed text when an LLM chain is available.
+- Graceful skip when no provider env vars are set (empty chain).
 - ``COMPRESSION_ENABLED=false`` env override skips even with a provider.
 - Empty / whitespace-only LLM response degrades to graceful skip.
 - Token counting via tiktoken cl100k_base is reflected in ``tokens_in/out``.
@@ -42,8 +42,8 @@ def _clear_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "XAI_API_KEY",
+        "LLM_MODELS",
         "COMPRESSION_ENABLED",
-        "COMPRESSION_PROVIDER",
         "COMPRESSION_MODEL",
         "DEDUP_THRESHOLD",
     ):
@@ -64,7 +64,7 @@ SAMPLE_TURN = (
 
 
 async def test_compress_graceful_skip_when_no_provider() -> None:
-    """No provider env -> returns original text + compressed=False."""
+    """No provider env -> empty chain -> original text + compressed=False."""
     result = await compress("any text")
     assert result["compressed"] is False
     assert result["text"] == "any text"
@@ -77,7 +77,7 @@ async def test_compress_graceful_skip_when_no_provider() -> None:
 async def test_compress_returns_compressed_text_when_provider_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With Gemini key + mocked call_llm, compress rewrites text."""
+    """With a Gemini key + mocked call_llm, the default chain compresses text."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
 
     short_compressed = (
@@ -86,8 +86,10 @@ async def test_compress_returns_compressed_text_when_provider_available(
         "GEMINI_API_KEY in env. Budget $1500. Email user@example.com."
     )
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        assert provider == "gemini"
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
+        # Default key-gated chain resolves to a gemini model when only the
+        # Gemini key is configured.
+        assert models and models[0].startswith("gemini/")
         assert "<turn>" in prompt
         assert temperature == 0.0
         return short_compressed
@@ -119,55 +121,37 @@ async def test_compress_disabled_via_env(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result["text_raw"] is None
 
 
-async def test_compress_provider_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit provider arg wins over env auto-detection."""
+async def test_compress_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit ``model`` arg becomes the single-model chain."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
 
-    captured_provider: dict = {"value": None}
+    captured: dict = {"models": None}
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured_provider["value"] = provider
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
+        captured["models"] = models
         return "compressed"
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
-        await compress("text", provider="openai")
+        await compress("text", model="openai/gpt-4o-mini")
 
-    assert captured_provider["value"] == "openai"
-
-
-async def test_compress_env_provider_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """COMPRESSION_PROVIDER env wins when no explicit arg passed."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-2")
-    monkeypatch.setenv("COMPRESSION_PROVIDER", "openai")
-
-    captured: dict = {"value": None}
-
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured["value"] = provider
-        return "compressed"
-
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
-        await compress("text")
-
-    assert captured["value"] == "openai"
+    assert captured["models"] == ["openai/gpt-4o-mini"]
 
 
 async def test_compress_env_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """COMPRESSION_MODEL env passes through to call_llm."""
+    """COMPRESSION_MODEL env becomes the single-model chain for compression."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    monkeypatch.setenv("COMPRESSION_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("COMPRESSION_MODEL", "gemini/gemini-2.5-flash")
 
-    captured: dict = {"value": None}
+    captured: dict = {"models": None}
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured["value"] = model
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
+        captured["models"] = models
         return "compressed"
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
         await compress("text")
 
-    assert captured["value"] == "gemini-2.5-flash"
+    assert captured["models"] == ["gemini/gemini-2.5-flash"]
 
 
 async def test_compress_empty_response_degrades_to_skip(
@@ -176,7 +160,7 @@ async def test_compress_empty_response_degrades_to_skip(
     """Empty / whitespace LLM response -> graceful skip path."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
         return "   "
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
@@ -192,7 +176,7 @@ async def test_compress_sdk_exception_degrades_to_skip(
     """SDK raising mid-call must not bubble into the caller."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
         raise RuntimeError("simulated SDK failure")
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
@@ -220,7 +204,7 @@ async def test_capture_writes_compression_columns_when_provider_active(
 ) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
         return "tight summary keeping facts"
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):

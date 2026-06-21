@@ -36,7 +36,7 @@ from typing import Final
 import tiktoken
 from loguru import logger
 
-from mnemo_mcp.llm import call_llm, detect_provider, get_default_model
+from mnemo_mcp.llm import call_llm, llm_chain, provider_for_model
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -78,24 +78,21 @@ def _env_compression_enabled() -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _resolve_provider(explicit: str | None) -> str | None:
-    """Pick provider: explicit arg > COMPRESSION_PROVIDER env > auto-detect."""
-    if explicit:
-        return explicit
-    env = os.environ.get("COMPRESSION_PROVIDER", "").strip()
-    if env:
-        return env
-    return detect_provider()
+def _resolve_models(explicit_model: str | None) -> list[str]:
+    """Pick the compression model chain.
 
-
-def _resolve_model(provider: str, explicit: str | None) -> str:
-    """Pick model: explicit arg > COMPRESSION_MODEL env > provider default."""
-    if explicit:
-        return explicit
+    Priority: explicit ``model`` arg (single-model chain) > ``COMPRESSION_MODEL``
+    env (single-model chain) > the resolved, key-gated LLM chain
+    (``settings.llm_chain()``). Provider is derived from each model's prefix by
+    litellm, so there is no separate provider step. Returns ``[]`` when nothing
+    is configured so the caller gracefully skips compression.
+    """
+    if explicit_model:
+        return [explicit_model]
     env = os.environ.get("COMPRESSION_MODEL", "").strip()
     if env:
-        return env
-    return get_default_model(provider)
+        return [env]
+    return llm_chain()
 
 
 def count_tokens(text: str) -> int:
@@ -147,36 +144,31 @@ async def compress(
         logger.debug("compression: COMPRESSION_ENABLED=false, skipping")
         return skip_payload
 
-    resolved_provider = _resolve_provider(provider)
-    if resolved_provider is None:
+    models = _resolve_models(model)
+    if not models:
         logger.warning(
-            "compression: no LLM provider available - storing raw text "
-            "(set GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / "
-            "XAI_API_KEY to enable compression)"
+            "compression: no LLM model available - storing raw text "
+            "(set LLM_MODELS, COMPRESSION_MODEL, or a <PROVIDER>_API_KEY for a "
+            "default-chain model to enable compression)"
         )
         return skip_payload
 
-    resolved_model = _resolve_model(resolved_provider, model)
+    primary = models[0]
 
     try:
         compressed_text = await call_llm(
             COMPRESSION_PROMPT.format(text=text),
-            provider=resolved_provider,
-            model=resolved_model,
+            models=models,
             temperature=0.0,
             max_tokens=max(64, tokens_in // 2),
         )
     except Exception as e:  # pragma: no cover - SDK guard
-        logger.warning(
-            f"compression: provider={resolved_provider} model={resolved_model} "
-            f"failed with {e}; storing raw text"
-        )
+        logger.warning(f"compression: chain={models} failed with {e}; storing raw text")
         return skip_payload
 
     if not compressed_text or not compressed_text.strip():
         logger.warning(
-            f"compression: provider={resolved_provider} returned empty text; "
-            "storing raw text"
+            f"compression: chain head {primary} returned empty text; storing raw text"
         )
         return skip_payload
 
@@ -185,8 +177,8 @@ async def compress(
         "text": compressed_text,
         "text_raw": text,
         "compressed": True,
-        "compression_provider": resolved_provider,
-        "compression_model": resolved_model,
+        "compression_provider": provider_for_model(primary),
+        "compression_model": primary,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
     }

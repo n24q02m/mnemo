@@ -146,13 +146,19 @@ class Settings(BaseSettings):
     # Temporal decay
     recency_half_life_days: int = 7
 
-    # LLM for graph/importance (reuse existing SDK config)
-    llm_models: str = "gemini/gemini-3-flash-preview,openai/gpt-5.4-mini-2026-03-17"
+    # LLM chain (graph/importance/compression). Empty -> the key-gated default
+    # chain (only default models whose provider key is configured); if none ->
+    # empty -> LLM feature gracefully unavailable. Explicit LLM_MODELS is honored
+    # verbatim (not key-filtered), matching EMBEDDING_MODELS / RERANK_MODELS.
+    llm_models: str = ""
 
     # Phase 2: LLM compression
     compression_enabled: bool = True
-    compression_provider: str = ""  # "" = auto-detect via llm.detect_provider
-    compression_model: str = ""  # "" = use llm.get_default_model(provider)
+    # "" = use the resolved llm_chain(); set to pin a single model (provider
+    # derived from its prefix). compression_provider is kept for backward
+    # compat with persisted config.enc but is no longer consulted by dispatch.
+    compression_provider: str = ""
+    compression_model: str = ""
 
     # DEPRECATED (2026-05-14): backend is auto-resolved from SYNC_S3_BUCKET
     # presence via :func:`mnemo_mcp.sync.resolve_active_backend` (XOR
@@ -299,6 +305,10 @@ class Settings(BaseSettings):
         "jina_ai/jina-reranker-v3",
         "cohere/rerank-v3.5",
     )
+    _DEFAULT_LLM_CHAIN = (
+        "gemini/gemini-3-flash-preview",
+        "openai/gpt-5.4-mini-2026-03-17",
+    )
 
     def _chain(self, primary: str, legacy: str, default: tuple[str, ...]) -> list[str]:
         if primary:
@@ -354,7 +364,31 @@ class Settings(BaseSettings):
         return chain[0] if chain else None
 
     def llm_chain(self) -> list[str]:
-        return [m.strip() for m in self.llm_models.split(",") if m.strip()]
+        """Resolve the LLM model chain.
+
+        Explicit ``LLM_MODELS`` is honored verbatim. When unset, the curated
+        default chain is key-gated: only default models whose provider key is
+        configured survive (reusing the same ``_key_available`` /
+        ``key_env_for_model`` filter as the embedding/rerank defaults). If no
+        default model has a configured key, the chain is empty and the LLM
+        feature is gracefully unavailable -- no keyless cloud model is emitted.
+        """
+        # No legacy singular LLM env var; pass "" so _chain skips to the
+        # key-gated default when llm_models is empty.
+        return self._chain(self.llm_models, "", self._DEFAULT_LLM_CHAIN)
+
+    def llm_primary(self) -> str | None:
+        chain = self.llm_chain()
+        return chain[0] if chain else None
+
+    def resolve_llm_backend(self) -> str:
+        """Resolve the LLM backend: 'cloud' (non-empty chain) or 'unavailable'.
+
+        The LLM feature has no local fallback: an empty chain (no LLM_MODELS and
+        no default-model provider key) means the feature is off, reported as
+        'unavailable' so ``config(action="status")`` can show it cleanly.
+        """
+        return "cloud" if self.llm_chain() else "unavailable"
 
     def resolve_embedding_dims(self) -> int:
         """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""

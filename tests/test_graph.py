@@ -63,7 +63,7 @@ class TestExtractEntities:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value='{"entities": [{"name": "Python", "type": "tool"}], "relations": []}',
             ),
@@ -80,7 +80,7 @@ class TestExtractEntities:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 side_effect=Exception("API error"),
             ),
@@ -95,7 +95,7 @@ class TestExtractEntities:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value="not json",
             ),
@@ -110,7 +110,7 @@ class TestExtractEntities:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value='{"relations": []}',
             ),
@@ -125,7 +125,7 @@ class TestExtractEntities:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value='{"entities": [{"name": "Test", "type": "concept"}], "relations": []}',
             ) as mock_llm,
@@ -136,124 +136,6 @@ class TestExtractEntities:
             result = await extract_entities("test content")
             assert result is not None
             mock_llm.assert_called_once()
-
-    async def test_llm_completion_gemini_bare_name_gets_prefixed(self):
-        """Bare gemini model is prefixed to litellm 'gemini/...' form."""
-        from types import SimpleNamespace
-
-        mock = AsyncMock(
-            return_value=SimpleNamespace(
-                choices=[
-                    SimpleNamespace(message=SimpleNamespace(content="gemini response"))
-                ]
-            )
-        )
-        with patch("mcp_core.llm.acompletion", mock):
-            from mnemo_mcp.graph import _llm_completion
-
-            res = await _llm_completion(
-                "gemini-pro", [{"role": "user", "content": "hi"}]
-            )
-            assert res == "gemini response"
-            assert mock.call_args.kwargs["model"] == "gemini/gemini-pro"
-
-    async def test_llm_completion_slash_form_passes_through(self):
-        """A 'provider/model' string is passed to litellm unchanged."""
-        from types import SimpleNamespace
-
-        mock = AsyncMock(
-            return_value=SimpleNamespace(
-                choices=[
-                    SimpleNamespace(message=SimpleNamespace(content="openai response"))
-                ]
-            )
-        )
-        with patch("mcp_core.llm.acompletion", mock):
-            from mnemo_mcp.graph import _llm_completion
-
-            res = await _llm_completion(
-                "openai/gpt-4", [{"role": "user", "content": "hi"}]
-            )
-            assert res == "openai response"
-            assert mock.call_args.kwargs["model"] == "openai/gpt-4"
-
-    async def test_llm_completion_response_format_forwarded(self):
-        """response_format is forwarded to litellm only when provided."""
-        from types import SimpleNamespace
-
-        mock = AsyncMock(
-            return_value=SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))]
-            )
-        )
-        with patch("mcp_core.llm.acompletion", mock):
-            from mnemo_mcp.graph import _llm_completion
-
-            await _llm_completion(
-                "gemini/gemini-3-flash-preview",
-                [{"role": "user", "content": "hi"}],
-                response_format={"type": "json_object"},
-            )
-            assert mock.call_args.kwargs["response_format"] == {"type": "json_object"}
-
-    async def test_resolve_llm_model_custom(self):
-        from mnemo_mcp.graph import _resolve_llm_model
-
-        class MockSettings:
-            llm_models = " custom/model , other/model "
-
-        assert _resolve_llm_model(MockSettings()) == "custom/model"
-
-    async def test_resolve_llm_model_empty(self):
-        from mnemo_mcp.graph import _resolve_llm_model
-
-        class MockSettings:
-            llm_models = ""
-
-        assert _resolve_llm_model(MockSettings()) == "gemini/gemini-3-flash-preview"
-
-    async def test_resolve_llm_model_equals_form_normalised(self):
-        """=-form first entry is normalised to slash form for litellm."""
-        from mnemo_mcp.graph import _resolve_llm_model
-
-        class MockSettings:
-            llm_models = "gemini=gemini-2.0-flash,openai=gpt-5-mini"
-
-        assert _resolve_llm_model(MockSettings()) == "gemini/gemini-2.0-flash"
-
-    async def test_resolve_llm_model_slash_form_unchanged(self):
-        """Slash-form first entry is passed through unchanged."""
-        from mnemo_mcp.graph import _resolve_llm_model
-
-        class MockSettings:
-            llm_models = "openai/gpt-5.4-mini,gemini/gemini-3-flash-preview"
-
-        assert _resolve_llm_model(MockSettings()) == "openai/gpt-5.4-mini"
-
-    async def test_equals_form_reaches_litellm_as_slash(self):
-        """End-to-end: =-form resolved model reaches acompletion as provider/model."""
-        from types import SimpleNamespace
-
-        from mnemo_mcp.graph import _litellm_model, _resolve_llm_model
-
-        class MockSettings:
-            llm_models = "openai=gpt-5-mini"
-
-        resolved = _resolve_llm_model(MockSettings())
-        assert resolved == "openai/gpt-5-mini"
-        # _litellm_model must NOT double-prefix an already-slash model.
-        assert _litellm_model(resolved) == "openai/gpt-5-mini"
-
-        mock = AsyncMock(
-            return_value=SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
-            )
-        )
-        with patch("mcp_core.llm.acompletion", mock):
-            from mnemo_mcp.graph import _llm_completion
-
-            await _llm_completion(resolved, [{"role": "user", "content": "hi"}])
-        assert mock.call_args.kwargs["model"] == "openai/gpt-5-mini"
 
 
 class TestScoreImportance:
@@ -270,7 +152,7 @@ class TestScoreImportance:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value="0.8",
             ),
@@ -285,7 +167,7 @@ class TestScoreImportance:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value="1.5",
             ),
@@ -300,7 +182,7 @@ class TestScoreImportance:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value="-0.3",
             ),
@@ -315,7 +197,7 @@ class TestScoreImportance:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 side_effect=Exception("API error"),
             ),

@@ -673,7 +673,58 @@ def test_rerank_models_chain(monkeypatch):
     assert s.rerank_primary() == "jina_ai/jina-reranker-v3"
 
 
-def test_llm_models_chain_default_preserved(monkeypatch):
-    monkeypatch.delenv("LLM_MODELS", raising=False)
-    s = Settings()
-    assert s.llm_chain()[0] == "gemini/gemini-3-flash-preview"
+class TestLlmChain:
+    """LLM chain resolution + key-gated default (F4) + backend status."""
+
+    def test_explicit_models_honored_verbatim(self, monkeypatch):
+        """Explicit LLM_MODELS is honored as-is (not key-filtered)."""
+        monkeypatch.setenv("LLM_MODELS", "openai/gpt-test,gemini/gem-test")
+        s = Settings()
+        assert s.llm_chain() == ["openai/gpt-test", "gemini/gem-test"]
+        assert s.llm_primary() == "openai/gpt-test"
+
+    def test_default_key_gated_to_gemini(self, monkeypatch):
+        """Unset LLM_MODELS + a GEMINI key -> only the gemini default survives."""
+        monkeypatch.delenv("LLM_MODELS", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+        s = Settings()
+        assert s.llm_chain() == ["gemini/gemini-3-flash-preview"]
+        assert s.resolve_llm_backend() == "cloud"
+
+    def test_default_key_gated_to_openai(self, monkeypatch):
+        """An OpenAI key -> only the openai default survives (gemini dropped)."""
+        monkeypatch.delenv("LLM_MODELS", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "o-key")
+        s = Settings()
+        assert s.llm_chain() == ["openai/gpt-5.4-mini-2026-03-17"]
+
+    def test_default_both_keys_keeps_chain_order(self, monkeypatch):
+        """Both keys -> both default models survive, in default order."""
+        monkeypatch.delenv("LLM_MODELS", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "o-key")
+        s = Settings()
+        assert s.llm_chain() == [
+            "gemini/gemini-3-flash-preview",
+            "openai/gpt-5.4-mini-2026-03-17",
+        ]
+
+    def test_default_no_key_is_empty_and_unavailable(self, monkeypatch):
+        """No LLM_MODELS + no provider key -> empty chain -> 'unavailable'.
+
+        No keyless cloud model is emitted (F4).
+        """
+        for v in ("LLM_MODELS", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
+            monkeypatch.delenv(v, raising=False)
+        s = Settings()
+        assert s.llm_chain() == []
+        assert s.llm_primary() is None
+        assert s.resolve_llm_backend() == "unavailable"
+
+    def test_default_google_alias_satisfies_gemini(self, monkeypatch):
+        """GOOGLE_API_KEY (alias) keeps the gemini default model."""
+        monkeypatch.delenv("LLM_MODELS", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
+        s = Settings()
+        assert s.llm_chain() == ["gemini/gemini-3-flash-preview"]

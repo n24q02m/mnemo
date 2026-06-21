@@ -649,7 +649,7 @@ class TestConsolidate:
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.llm.acomplete",
                 new_callable=AsyncMock,
                 return_value="Python is excellent",
             ),
@@ -671,7 +671,7 @@ class TestConsolidate:
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.llm.acomplete",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("LLM error"),
             ),

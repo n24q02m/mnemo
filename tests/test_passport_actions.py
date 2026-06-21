@@ -276,7 +276,7 @@ async def test_memory_compress_rewrites_existing_row(
     )
     isolated_db._conn.commit()
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
+    async def _fake_call(prompt, *, models, temperature, max_tokens):
         return "tight summary"
 
     ctx = _make_ctx(isolated_db)

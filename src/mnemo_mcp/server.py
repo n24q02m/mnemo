@@ -1221,16 +1221,13 @@ async def _handle_consolidate(
         )
 
     try:
-        from mnemo_mcp.graph import _llm_completion, _resolve_llm_model
-
-        model = _resolve_llm_model(settings)
+        from mnemo_mcp.llm import acomplete
 
         content_list = "\n---\n".join(
             f"[{m['id'][:8]}] {m['content']}" for m in memories[:20]
         )
 
-        summary = await _llm_completion(
-            model=model,
+        summary = await acomplete(
             messages=[
                 {
                     "role": "user",
@@ -1244,6 +1241,13 @@ async def _handle_consolidate(
             temperature=0,
             max_tokens=1000,
         )
+        if not summary:
+            return _json(
+                {
+                    "error": "Consolidation failed: no LLM model configured",
+                    "suggestion": "Set LLM_MODELS or a <PROVIDER>_API_KEY to enable consolidation.",
+                }
+            )
 
         return _json(
             {

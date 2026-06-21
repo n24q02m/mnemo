@@ -1,11 +1,12 @@
-"""Tests for the multi-provider LLM dispatch layer (``mnemo_mcp.llm``).
+"""Tests for the chain-based LLM dispatch layer (``mnemo_mcp.llm``).
 
 Focus is on:
-- Auto-detection priority order across the 4 supported providers.
-- Graceful skip path when no provider key is present.
-- Explicit ``provider`` / ``model`` overrides bypass detection.
-- ``LLM_MODELS`` env override resolves model names per provider.
-- Per-provider dispatch routes to the correct SDK call site.
+- ``acomplete`` dispatches over the resolved ``settings.llm_chain()``.
+- Ordered fallback: a failing primary falls through to the next chain entry.
+- Empty chain (no provider key, no LLM_MODELS) -> graceful ``None``.
+- Provider is derived from each model's prefix (bare gemini gets prefixed).
+- ``call_llm`` is a single-user-message wrapper over ``acomplete``.
+- ``LLM_MODELS`` env override flows through the chain.
 """
 
 from __future__ import annotations
@@ -32,219 +33,203 @@ _ALL_KEYS = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
+    "JINA_AI_API_KEY",
+    "COHERE_API_KEY",
     "LLM_MODELS",
+    "LLM_API_BASE",
 )
 
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Strip all provider env vars before each test for deterministic dispatch."""
+    """Strip provider env vars before each test for deterministic dispatch."""
     for key in _ALL_KEYS:
         monkeypatch.delenv(key, raising=False)
 
 
 # ---------------------------------------------------------------------------
-# detect_provider
+# _normalize_model
 # ---------------------------------------------------------------------------
 
 
-def test_detect_provider_gemini_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-    assert llm.detect_provider() == "gemini"
+def test_normalize_model_slash_form_passthrough() -> None:
+    assert llm._normalize_model("openai/gpt-test") == "openai/gpt-test"
 
 
-def test_detect_provider_google_alias_resolves_to_gemini(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
-    assert llm.detect_provider() == "gemini"
-
-
-def test_detect_provider_priority_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    # OpenAI beats Anthropic and xAI when Gemini is absent.
-    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "a-key")
-    monkeypatch.setenv("XAI_API_KEY", "x-key")
-    assert llm.detect_provider() == "openai"
-
-    # Removing OpenAI promotes Anthropic.
-    monkeypatch.delenv("OPENAI_API_KEY")
-    assert llm.detect_provider() == "anthropic"
-
-    # Removing Anthropic promotes xAI as last resort.
-    monkeypatch.delenv("ANTHROPIC_API_KEY")
-    assert llm.detect_provider() == "xai"
-
-
-def test_detect_provider_none_when_no_keys() -> None:
-    assert llm.detect_provider() is None
-
-
-# ---------------------------------------------------------------------------
-# get_default_model
-# ---------------------------------------------------------------------------
-
-
-def test_get_default_model_falls_back_to_builtin() -> None:
-    assert llm.get_default_model("gemini") == llm._DEFAULT_MODELS["gemini"]
-    assert llm.get_default_model("openai") == llm._DEFAULT_MODELS["openai"]
-    assert llm.get_default_model("anthropic") == llm._DEFAULT_MODELS["anthropic"]
-    assert llm.get_default_model("xai") == llm._DEFAULT_MODELS["xai"]
-
-
-def test_get_default_model_from_env_equals_form(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LLM_MODELS", "gemini=gemini-3-flash-test,openai=gpt-test")
-    assert llm.get_default_model("gemini") == "gemini-3-flash-test"
-    assert llm.get_default_model("openai") == "gpt-test"
-
-
-def test_get_default_model_from_env_slash_form(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(
-        "LLM_MODELS", "gemini/gemini-3-flash,openai/gpt-5.4-mini-2026-03-17"
+def test_normalize_model_bare_gemini_prefixed() -> None:
+    assert (
+        llm._normalize_model("gemini-3-flash-preview")
+        == "gemini/gemini-3-flash-preview"
     )
-    assert llm.get_default_model("gemini") == "gemini-3-flash"
-    assert llm.get_default_model("openai") == "gpt-5.4-mini-2026-03-17"
 
 
-def test_get_default_model_unknown_provider_returns_empty() -> None:
-    assert llm.get_default_model("unknown-provider") == ""
+def test_normalize_model_bare_other_passthrough() -> None:
+    assert llm._normalize_model("gpt-5.4-mini") == "gpt-5.4-mini"
+
+
+def test_provider_for_model_derives_from_prefix() -> None:
+    assert llm.provider_for_model("gemini/gemini-3-flash-preview") == "gemini"
+    assert llm.provider_for_model("openai/gpt-test") == "openai"
+    # bare gemini normalises then resolves to gemini
+    assert llm.provider_for_model("gemini-3-flash-preview") == "gemini"
+    # bare non-gemini is an OpenAI model by litellm convention
+    assert llm.provider_for_model("gpt-5.4-mini") == "openai"
 
 
 # ---------------------------------------------------------------------------
-# call_llm — graceful skip
+# acomplete — chain dispatch
 # ---------------------------------------------------------------------------
 
 
-def test_call_llm_graceful_skip_no_provider() -> None:
-    """When no provider is configured, call_llm returns None and warns."""
+def test_acomplete_dispatches_primary_of_explicit_chain() -> None:
+    mock = AsyncMock(return_value=_fake_completion("ok"))
+    with patch("mcp_core.llm.acompletion", mock):
+        result = asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}],
+                models=["gemini/gemini-3-flash-preview"],
+            )
+        )
+    assert result == "ok"
+    assert mock.call_args.kwargs["model"] == "gemini/gemini-3-flash-preview"
+    assert mock.call_args.kwargs["messages"] == [{"role": "user", "content": "hi"}]
+
+
+def test_acomplete_empty_chain_returns_none() -> None:
     with patch.object(llm.logger, "warning") as warn:
-        result = asyncio.run(llm.call_llm("hello"))
-    assert result is None
-    assert warn.called, "expected a warning log on graceful skip"
-    msg = warn.call_args.args[0] if warn.call_args.args else ""
-    assert "no LLM provider" in msg
-
-
-def test_call_llm_unknown_explicit_provider_returns_none() -> None:
-    """Explicit but unsupported provider returns None when litellm raises."""
-    mock = AsyncMock(side_effect=Exception("bogus provider"))
-    with (
-        patch("mcp_core.llm.acompletion", mock),
-        patch.object(llm.logger, "warning") as warn,
-    ):
-        result = asyncio.run(llm.call_llm("hello", provider="bogus"))
+        result = asyncio.run(
+            llm.acomplete([{"role": "user", "content": "hi"}], models=[])
+        )
     assert result is None
     assert warn.called
 
 
-# ---------------------------------------------------------------------------
-# call_llm — litellm passthrough dispatch
-# ---------------------------------------------------------------------------
-
-
-def test_call_llm_dispatches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-
-    mock = AsyncMock(return_value=_fake_completion("from gemini"))
-    with patch("mcp_core.llm.acompletion", mock):
-        result = asyncio.run(llm.call_llm("hi"))
-
-    assert result == "from gemini"
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"] == f"gemini/{llm._DEFAULT_MODELS['gemini']}"
-    assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
-
-
-def test_call_llm_dispatches_openai(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-
-    mock = AsyncMock(return_value=_fake_completion("from openai"))
+def test_acomplete_falls_back_to_next_model_on_failure() -> None:
+    mock = AsyncMock(
+        side_effect=[Exception("primary down"), _fake_completion("from fallback")]
+    )
     with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(
-            llm.call_llm("hi", model="gpt-test", temperature=0.2, max_tokens=42)
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}],
+                models=["gemini/gemini-3-flash-preview", "openai/gpt-test"],
+            )
         )
-
-    assert result == "from openai"
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"] == "openai/gpt-test"
-    assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
-    assert call_kwargs["temperature"] == 0.2
-    assert call_kwargs["max_tokens"] == 42
+    assert result == "from fallback"
+    assert mock.await_count == 2
+    # Second call used the fallback model.
+    assert mock.call_args.kwargs["model"] == "openai/gpt-test"
 
 
-def test_call_llm_dispatches_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ANTHROPIC_API_KEY now works WITHOUT the anthropic package (litellm)."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "a-key")
+def test_acomplete_all_fail_returns_none() -> None:
+    mock = AsyncMock(side_effect=Exception("boom"))
+    with (
+        patch("mcp_core.llm.acompletion", mock),
+        patch.object(llm.logger, "warning") as warn,
+    ):
+        result = asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}],
+                models=["gemini/a", "openai/b"],
+            )
+        )
+    assert result is None
+    assert mock.await_count == 2
+    assert warn.called
 
-    mock = AsyncMock(return_value=_fake_completion("from anthropic"))
-    # No `anthropic` package: ensure import is never attempted.
-    with patch.dict("sys.modules", {"anthropic": None}):
-        with patch("mcp_core.llm.acompletion", mock):
-            result = asyncio.run(llm.call_llm("hi"))
 
-    assert result == "from anthropic"
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"] == f"anthropic/{llm._DEFAULT_MODELS['anthropic']}"
-    assert call_kwargs["messages"] == [{"role": "user", "content": "hi"}]
-
-
-def test_call_llm_dispatches_xai(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XAI_API_KEY", "x-key")
-
-    mock = AsyncMock(return_value=_fake_completion("from xai"))
+def test_acomplete_response_format_forwarded_only_when_set() -> None:
+    mock = AsyncMock(return_value=_fake_completion("{}"))
     with patch("mcp_core.llm.acompletion", mock):
-        result = asyncio.run(llm.call_llm("hi"))
+        asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}],
+                models=["openai/gpt-test"],
+                response_format={"type": "json_object"},
+            )
+        )
+    assert mock.call_args.kwargs["response_format"] == {"type": "json_object"}
 
-    assert result == "from xai"
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"] == f"xai/{llm._DEFAULT_MODELS['xai']}"
+    mock2 = AsyncMock(return_value=_fake_completion("{}"))
+    with patch("mcp_core.llm.acompletion", mock2):
+        asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}], models=["openai/gpt-test"]
+            )
+        )
+    assert "response_format" not in mock2.call_args.kwargs
 
 
-def test_call_llm_passes_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
-    """LLM_API_BASE flows through to acompletion as api_base."""
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
-
+def test_acomplete_bare_gemini_model_prefixed() -> None:
     mock = AsyncMock(return_value=_fake_completion("ok"))
     with patch("mcp_core.llm.acompletion", mock):
-        asyncio.run(llm.call_llm("hi"))
+        asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}],
+                models=["gemini-3-flash-preview"],
+            )
+        )
+    assert mock.call_args.kwargs["model"] == "gemini/gemini-3-flash-preview"
 
+
+def test_acomplete_passes_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
+    mock = AsyncMock(return_value=_fake_completion("ok"))
+    with patch("mcp_core.llm.acompletion", mock):
+        asyncio.run(
+            llm.acomplete(
+                [{"role": "user", "content": "hi"}], models=["openai/gpt-test"]
+            )
+        )
     assert mock.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
 
-# ---------------------------------------------------------------------------
-# Overrides
-# ---------------------------------------------------------------------------
-
-
-def test_call_llm_explicit_provider_override_skips_detection(
+def test_acomplete_uses_settings_chain_when_models_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``provider="openai"`` must dispatch to OpenAI even when Gemini is detected."""
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-
-    mock = AsyncMock(return_value=_fake_completion("from openai"))
+    """acomplete(models=None) consumes the resolved settings.llm_chain()."""
+    monkeypatch.setattr(
+        "mnemo_mcp.config.settings.llm_models", "openai/gpt-from-settings"
+    )
+    mock = AsyncMock(return_value=_fake_completion("ok"))
     with patch("mcp_core.llm.acompletion", mock):
-        result = asyncio.run(llm.call_llm("hi", provider="openai"))
-
-    assert result == "from openai"
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"].startswith("openai/")
+        result = asyncio.run(llm.acomplete([{"role": "user", "content": "hi"}]))
+    assert result == "ok"
+    assert mock.call_args.kwargs["model"] == "openai/gpt-from-settings"
 
 
-def test_call_llm_uses_env_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("LLM_MODELS", "gemini=gemini-3-flash-from-env")
+# ---------------------------------------------------------------------------
+# call_llm — single-prompt wrapper
+# ---------------------------------------------------------------------------
 
+
+def test_call_llm_graceful_skip_no_provider() -> None:
+    """No LLM_MODELS + no provider key -> empty chain -> None."""
+    with patch.object(llm.logger, "warning") as warn:
+        result = asyncio.run(llm.call_llm("hello"))
+    assert result is None
+    assert warn.called
+
+
+def test_call_llm_wraps_prompt_in_user_message() -> None:
+    mock = AsyncMock(return_value=_fake_completion("answer"))
+    with patch("mcp_core.llm.acompletion", mock):
+        result = asyncio.run(
+            llm.call_llm(
+                "hi", models=["openai/gpt-test"], temperature=0.2, max_tokens=42
+            )
+        )
+    assert result == "answer"
+    assert mock.call_args.kwargs["messages"] == [{"role": "user", "content": "hi"}]
+    assert mock.call_args.kwargs["temperature"] == 0.2
+    assert mock.call_args.kwargs["max_tokens"] == 42
+
+
+def test_call_llm_uses_settings_chain(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "mnemo_mcp.config.settings.llm_models", "gemini/gemini-3-flash-from-settings"
+    )
     mock = AsyncMock(return_value=_fake_completion("ok"))
     with patch("mcp_core.llm.acompletion", mock):
         asyncio.run(llm.call_llm("hi"))
-
-    call_kwargs = mock.call_args.kwargs
-    assert call_kwargs["model"] == "gemini/gemini-3-flash-from-env"
+    assert mock.call_args.kwargs["model"] == "gemini/gemini-3-flash-from-settings"

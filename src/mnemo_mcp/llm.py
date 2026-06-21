@@ -1,150 +1,140 @@
-"""Multi-provider LLM dispatch layer (Phase 1 foundation).
+"""Chain-based LLM dispatch layer.
 
-Provides a single ``call_llm`` entry point that auto-detects the active
-provider from environment variables and dispatches via ``mcp_core.llm``
-(litellm passthrough). The priority order matches the spec
-(`2026-04-19-mnemo-v2-design.md` §4.2):
+Provides a single entry point that dispatches a chat completion over the
+configured LLM model chain (``settings.llm_chain()``) via ``mcp_core.llm``
+(litellm passthrough). The chain is an ordered list of ``provider/model``
+strings; the provider is derived from each model's prefix
+(``mcp_core.llm.providers``) and litellm routes accordingly. Models are tried
+in order so a transient failure on the primary falls back to the next entry.
 
-    1. Gemini (``GEMINI_API_KEY`` or ``GOOGLE_API_KEY``)
-    2. OpenAI (``OPENAI_API_KEY``)
-    3. Anthropic (``ANTHROPIC_API_KEY``)
-    4. xAI / Grok (``XAI_API_KEY``)
+If the chain is empty (``LLM_MODELS`` unset and no provider key configured for
+any default model), dispatch logs a warning and returns ``None`` so callers
+(compression, graph extraction, temporal extraction) can gracefully skip
+LLM-dependent enrichment.
 
-litellm calls each provider's API directly, so ``ANTHROPIC_API_KEY`` now
-works WITHOUT the ``anthropic`` package installed (no native SDK import).
-
-If no provider key is available, ``call_llm`` logs a warning and returns
-``None`` so callers (e.g. the upcoming ``capture`` action's optional fact
-extraction) can gracefully skip LLM-dependent enrichment.
-
-This module is intentionally a *dispatch layer only*. The actual
-fact-extraction prompting / parsing logic is deferred to Phase 2
-(compression). Existing graph-extraction logic continues to live in
-``graph.py`` and is not migrated here in this slice.
+litellm calls each provider's API directly, so ``ANTHROPIC_API_KEY`` works
+WITHOUT the ``anthropic`` package installed (no native SDK import).
 """
 
 from __future__ import annotations
 
 import os
-from typing import Final
 
 from loguru import logger
-
-# Provider priority is encoded once and consumed by both detection and
-# default-model lookup so they cannot drift apart.
-_PROVIDER_ENV_VARS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
-    ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
-    ("openai", ("OPENAI_API_KEY",)),
-    ("anthropic", ("ANTHROPIC_API_KEY",)),
-    ("xai", ("XAI_API_KEY",)),
-)
-
-# Sane per-provider defaults if ``LLM_MODELS`` env var is not set or does not
-# specify the active provider. Names follow the user's prior choices in the
-# repo (see CLAUDE.md "Default AI models" section); keep these exact unless
-# explicitly directed — see ~/.claude memory feedback_dont_change_model_names.
-_DEFAULT_MODELS: Final[dict[str, str]] = {
-    "gemini": "gemini-3-flash-preview",
-    "openai": "gpt-5.4-mini-2026-03-17",
-    "anthropic": "claude-haiku-4-5",
-    "xai": "grok-4-fast",
-}
+from mcp_core.llm.providers import provider_of_model
 
 
-def detect_provider() -> str | None:
-    """Return the highest-priority provider with a configured API key.
+def llm_chain() -> list[str]:
+    """Return the resolved, key-gated LLM model chain from settings.
 
-    Returns ``None`` when no provider key is found in the environment so
-    callers can short-circuit to a graceful skip path.
+    A thin accessor so callers depend on this module (not ``config``) for the
+    LLM chain, mirroring how ``settings.embedding_chain()`` /
+    ``settings.rerank_chain()`` are consumed by the embed / rerank backends.
     """
-    for provider, env_vars in _PROVIDER_ENV_VARS:
-        for env_var in env_vars:
-            if os.environ.get(env_var):
-                return provider
+    from mnemo_mcp.config import settings
+
+    return settings.llm_chain()
+
+
+def _normalize_model(model: str) -> str:
+    """Normalise a model string to litellm ``provider/model`` form.
+
+    A ``provider/model`` string passes through unchanged. A bare gemini model
+    name (e.g. ``gemini-3-flash-preview``) is prefixed with ``gemini/`` so
+    litellm routes it via ``GEMINI_API_KEY``; any other bare name is left as-is
+    (litellm treats a bare name as an OpenAI model per its convention).
+    """
+    model = model.strip()
+    if "/" in model:
+        return model
+    if "gemini" in model.lower():
+        return f"gemini/{model}"
+    return model
+
+
+def provider_for_model(model: str) -> str:
+    """Provider prefix for a chain model (via the mcp-core primitive)."""
+    return provider_of_model(_normalize_model(model))
+
+
+async def acomplete(
+    messages: list[dict],
+    *,
+    models: list[str] | None = None,
+    temperature: float = 0.0,
+    max_tokens: int = 500,
+    response_format: dict | None = None,
+) -> str | None:
+    """Dispatch a chat completion over the LLM chain with ordered fallback.
+
+    Args:
+        messages: OpenAI-shaped chat messages.
+        models: Explicit chain override. When ``None`` the resolved
+            ``settings.llm_chain()`` is used. The provider for each entry is
+            derived from its prefix; litellm routes via ``<PROVIDER>_API_KEY``.
+        temperature: Sampling temperature passed through to litellm.
+        max_tokens: Maximum response tokens to request.
+        response_format: Optional litellm ``response_format`` (e.g.
+            ``{"type": "json_object"}``); only forwarded when provided.
+
+    Returns:
+        The text content of the first model that responds, or ``None`` when the
+        chain is empty (no provider configured) or every model in the chain
+        fails.
+    """
+    chain = models if models is not None else llm_chain()
+    if not chain:
+        logger.warning(
+            "acomplete: no LLM model configured (LLM_MODELS empty and no "
+            "default-model provider key set); returning None for graceful skip"
+        )
+        return None
+
+    # Lazy import: litellm costs ~1-2s on first import.
+    from mcp_core.llm import acompletion
+
+    api_base = os.environ.get("LLM_API_BASE") or None
+    extra: dict = {"response_format": response_format} if response_format else {}
+
+    last_exc: Exception | None = None
+    for model in chain:
+        try:
+            resp = await acompletion(
+                model=_normalize_model(model),
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_base=api_base,
+                **extra,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as e:  # per-model runtime guard; fall through to next
+            last_exc = e
+            logger.warning(f"acomplete: model={model} failed: {e}; trying next")
+            continue
+
+    logger.warning(
+        f"acomplete: all {len(chain)} chain model(s) failed; last error: {last_exc}"
+    )
     return None
-
-
-def get_default_model(provider: str) -> str:
-    """Return the model name for ``provider``, honouring the ``LLM_MODELS`` env var.
-
-    ``LLM_MODELS`` accepts comma-separated ``provider=model`` or
-    ``provider/model`` pairs (matching the existing settings format), e.g.::
-
-        LLM_MODELS="gemini=gemini-3-flash,openai=gpt-5-mini"
-        LLM_MODELS="gemini/gemini-3-flash,openai/gpt-5-mini"
-
-    The first matching entry wins. If the env var is unset or contains no
-    entry for ``provider``, the per-provider sane default from
-    ``_DEFAULT_MODELS`` is returned.
-    """
-    raw = os.environ.get("LLM_MODELS", "").strip()
-    if raw:
-        for pair in raw.split(","):
-            pair = pair.strip()
-            if not pair:
-                continue
-            for sep in ("=", "/"):
-                if sep in pair:
-                    key, _, model = pair.partition(sep)
-                    if key.strip().lower() == provider:
-                        model = model.strip()
-                        if model:
-                            return model
-                    break
-
-    return _DEFAULT_MODELS.get(provider, "")
 
 
 async def call_llm(
     prompt: str,
-    provider: str | None = None,
-    model: str | None = None,
     *,
+    models: list[str] | None = None,
     temperature: float = 0.0,
     max_tokens: int = 500,
 ) -> str | None:
-    """Dispatch ``prompt`` to the configured LLM provider.
+    """Dispatch a single-turn ``prompt`` over the LLM chain.
 
-    Args:
-        prompt: User prompt text. Treated as a single-turn user message.
-        provider: Optional explicit provider override
-            (``"gemini"`` / ``"openai"`` / ``"anthropic"`` / ``"xai"``).
-            When ``None`` (the default), auto-detection runs.
-        model: Optional explicit model override. When ``None``, the result of
-            :func:`get_default_model` for the resolved provider is used.
-        temperature: Sampling temperature passed through to litellm.
-        max_tokens: Maximum response tokens to request from the provider.
-
-    Returns:
-        The text content of the LLM response, or ``None`` when no provider
-        could be resolved (caller is expected to gracefully skip the
-        LLM-dependent enrichment in that case).
+    Thin wrapper around :func:`acomplete` that wraps ``prompt`` in a single
+    user message. Returns ``None`` when no provider could be resolved (caller
+    is expected to gracefully skip the LLM-dependent enrichment).
     """
-    resolved_provider = provider or detect_provider()
-    if resolved_provider is None:
-        logger.warning(
-            "call_llm: no LLM provider API key found in environment "
-            "(GEMINI_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY / "
-            "ANTHROPIC_API_KEY / XAI_API_KEY); returning None for graceful skip"
-        )
-        return None
-
-    resolved_model = model or get_default_model(resolved_provider)
-
-    try:
-        # Lazy import: litellm costs ~1-2s on first import.
-        from mcp_core.llm import acompletion
-
-        response = await acompletion(
-            model=f"{resolved_provider}/{resolved_model}",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            api_base=os.environ.get("LLM_API_BASE") or None,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as e:  # pragma: no cover - per-provider runtime guard
-        logger.warning(
-            f"call_llm: provider={resolved_provider} model={resolved_model} failed: {e}"
-        )
-        return None
+    return await acomplete(
+        [{"role": "user", "content": prompt}],
+        models=models,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )

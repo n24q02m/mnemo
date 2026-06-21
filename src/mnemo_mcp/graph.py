@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 
 from loguru import logger
 
+from mnemo_mcp.llm import acomplete
+
 
 def _has_llm_provider() -> bool:
     """Check if any LLM provider API key is available."""
@@ -17,62 +19,6 @@ def _has_llm_provider() -> bool:
         or os.getenv("ANTHROPIC_API_KEY")
         or os.getenv("XAI_API_KEY")
     )
-
-
-def _resolve_llm_model(settings_obj) -> str:
-    """Resolve the LLM model to use from settings, in litellm ``provider/model`` form.
-
-    ``LLM_MODELS`` accepts ``provider=model`` (=-form) or ``provider/model``
-    (slash form). A bare =-form first entry (no slash) is normalised to slash
-    form so ``_litellm_model`` does not double-prefix it.
-    """
-    models = [m.strip() for m in settings_obj.llm_models.split(",") if m.strip()]
-    raw = models[0] if models else "gemini/gemini-3-flash-preview"
-    return raw.replace("=", "/", 1) if ("=" in raw and "/" not in raw) else raw
-
-
-def _litellm_model(model: str) -> str:
-    """Normalise a model string to litellm ``provider/model`` form.
-
-    ``_resolve_llm_model`` may yield ``provider/model`` (slash form) or a bare
-    name. litellm infers the provider from the prefix, so a bare gemini model
-    (e.g. ``gemini-3-flash-preview``) is prefixed with ``gemini/``; any other
-    bare name is left as-is for litellm to route via env keys.
-    """
-    if "/" in model:
-        return model
-    if "gemini" in model.lower():
-        return f"gemini/{model}"
-    return model
-
-
-async def _llm_completion(
-    model: str,
-    messages: list[dict],
-    temperature: float = 0,
-    max_tokens: int = 500,
-    response_format: dict | None = None,
-) -> str:
-    """Call LLM completion via mcp_core.llm (litellm passthrough).
-
-    litellm infers the provider from the ``provider/model`` prefix and returns
-    OpenAI-shaped responses (``resp.choices[0].message.content``).
-    Returns the response text content.
-    """
-    # Lazy import: litellm costs ~1-2s on first import.
-    from mcp_core.llm import acompletion
-
-    kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
-    if response_format:
-        kwargs["response_format"] = response_format
-
-    resp = await acompletion(
-        model=_litellm_model(model),
-        messages=messages,
-        api_base=os.environ.get("LLM_API_BASE") or None,
-        **kwargs,
-    )
-    return resp.choices[0].message.content or ""
 
 
 async def extract_entities(content: str) -> dict | None:
@@ -87,10 +33,7 @@ async def extract_entities(content: str) -> dict | None:
         return None
 
     try:
-        model = _resolve_llm_model(settings)
-
-        text = await _llm_completion(
-            model=model,
+        text = await acomplete(
             messages=[
                 {
                     "role": "user",
@@ -110,6 +53,8 @@ async def extract_entities(content: str) -> dict | None:
             temperature=0,
             max_tokens=500,
         )
+        if not text:
+            return None
 
         data = json.loads(text)
         if "entities" not in data:
@@ -160,10 +105,7 @@ async def score_importance(content: str) -> float:
         return 0.5
 
     try:
-        model = _resolve_llm_model(settings)
-
-        text = await _llm_completion(
-            model=model,
+        text = await acomplete(
             messages=[
                 {
                     "role": "user",
@@ -180,6 +122,8 @@ async def score_importance(content: str) -> float:
             temperature=0,
             max_tokens=10,
         )
+        if not text:
+            return 0.5
 
         score = float(text.strip())
         return max(0.0, min(1.0, score))

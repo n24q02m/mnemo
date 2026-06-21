@@ -1,10 +1,10 @@
-"""Tests for graph.py -- LLM completion routing and edge cases.
+"""Tests for graph.py -- entity extraction + graph SQL edge cases.
 
-Targets: _llm_completion (Gemini path with json_object, OpenAI path with
-response_format, xAI path), _resolve_llm_model, extract_entities entity
-validation (invalid types, long names), upsert_entities with empty list,
-link_memory_entities empty, link_memory_entities exception,
-find_related_memory_ids no_new_ids early break.
+LLM chain dispatch + model normalization moved to ``mnemo_mcp.llm`` (covered by
+test_llm_provider.py); graph.py now calls ``acomplete`` directly. This module
+covers: extract_entities entity validation (invalid types, long names, non-dict,
+non-string names), _has_llm_provider key detection, upsert_entities edge cases,
+link_memory_entities empty/exception, find_related_memory_ids traversal.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,119 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.graph import (
     _has_llm_provider,
-    _llm_completion,
-    _resolve_llm_model,
     extract_entities,
     find_related_memory_ids,
     link_memory_entities,
     upsert_entities,
 )
-
-# ---------------------------------------------------------------------------
-# _resolve_llm_model
-# ---------------------------------------------------------------------------
-
-
-class TestResolveLlmModel:
-    def test_first_model_from_csv(self):
-        mock_settings = MagicMock()
-        mock_settings.llm_models = "gemini/gemini-3-flash-preview,openai/gpt-5.4-mini"
-        assert _resolve_llm_model(mock_settings) == "gemini/gemini-3-flash-preview"
-
-    def test_single_model(self):
-        mock_settings = MagicMock()
-        mock_settings.llm_models = "openai/gpt-5.4-mini"
-        assert _resolve_llm_model(mock_settings) == "openai/gpt-5.4-mini"
-
-    def test_empty_models_fallback(self):
-        mock_settings = MagicMock()
-        mock_settings.llm_models = ""
-        assert _resolve_llm_model(mock_settings) == "gemini/gemini-3-flash-preview"
-
-
-# ---------------------------------------------------------------------------
-# _llm_completion
-# ---------------------------------------------------------------------------
-
-
-def _completion(content):
-    """Build a litellm-shaped completion response."""
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-    )
-
-
-class TestLlmCompletion:
-    async def test_slash_form_passthrough(self):
-        """A 'provider/model' string is passed to litellm unchanged."""
-        mock = AsyncMock(return_value=_completion('{"result": "test"}'))
-        with patch("mcp_core.llm.acompletion", mock):
-            result = await _llm_completion(
-                "gemini/gemini-3-flash-preview",
-                [{"role": "user", "content": "test prompt"}],
-                response_format={"type": "json_object"},
-            )
-        assert result == '{"result": "test"}'
-        kwargs = mock.call_args.kwargs
-        assert kwargs["model"] == "gemini/gemini-3-flash-preview"
-        assert kwargs["response_format"] == {"type": "json_object"}
-
-    async def test_gemini_bare_name_prefixed(self):
-        """A bare gemini model gets the 'gemini/' prefix for litellm."""
-        mock = AsyncMock(return_value=_completion("0.7"))
-        with patch("mcp_core.llm.acompletion", mock):
-            result = await _llm_completion(
-                "gemini-3-flash-preview",
-                [{"role": "user", "content": "score"}],
-            )
-        assert result == "0.7"
-        assert mock.call_args.kwargs["model"] == "gemini/gemini-3-flash-preview"
-
-    async def test_empty_content(self):
-        """Returns empty string when message.content is None."""
-        mock = AsyncMock(return_value=_completion(None))
-        with patch("mcp_core.llm.acompletion", mock):
-            result = await _llm_completion(
-                "gemini/gemini-3-flash-preview",
-                [{"role": "user", "content": "test"}],
-            )
-        assert result == ""
-
-    async def test_response_format_omitted_when_none(self):
-        """response_format is not forwarded when not provided."""
-        mock = AsyncMock(return_value=_completion('{"entities": []}'))
-        with patch("mcp_core.llm.acompletion", mock):
-            result = await _llm_completion(
-                "openai/gpt-5.4-mini",
-                [{"role": "user", "content": "test"}],
-            )
-        assert result == '{"entities": []}'
-        assert "response_format" not in mock.call_args.kwargs
-
-    async def test_non_gemini_bare_name_passthrough(self):
-        """A non-gemini bare model name is passed to litellm as-is."""
-        mock = AsyncMock(return_value=_completion("0.8"))
-        with patch("mcp_core.llm.acompletion", mock):
-            result = await _llm_completion(
-                "gpt-5.4-mini",
-                [{"role": "user", "content": "test"}],
-            )
-        assert result == "0.8"
-        assert mock.call_args.kwargs["model"] == "gpt-5.4-mini"
-
-    async def test_api_base_from_env(self, monkeypatch):
-        """LLM_API_BASE flows through to acompletion as api_base."""
-        monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
-        mock = AsyncMock(return_value=_completion("ok"))
-        with patch("mcp_core.llm.acompletion", mock):
-            await _llm_completion(
-                "gemini/gemini-3-flash-preview",
-                [{"role": "user", "content": "test"}],
-            )
-        assert mock.call_args.kwargs["api_base"] == "https://proxy.example/v1"
-
 
 # ---------------------------------------------------------------------------
 # _has_llm_provider
@@ -158,7 +50,7 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": ['
@@ -173,7 +65,6 @@ class TestExtractEntitiesValidation:
             ),
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
             assert result is not None
@@ -193,7 +84,7 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value=(
                     f'{{"entities": [{{"name": "{long_name}", "type": "concept"}}, '
@@ -202,7 +93,6 @@ class TestExtractEntitiesValidation:
             ),
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
             assert result is not None
@@ -215,7 +105,7 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": ["not_a_dict", {"name": "Valid", "type": "concept"}], "relations": []}'
@@ -223,7 +113,6 @@ class TestExtractEntitiesValidation:
             ),
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
             assert result is not None
@@ -235,7 +124,7 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph.acomplete",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": [{"name": 123, "type": "concept"}, '
@@ -244,7 +133,6 @@ class TestExtractEntitiesValidation:
             ),
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gemini/gemini-3-flash-preview"
 
             result = await extract_entities("test content")
             assert result is not None
