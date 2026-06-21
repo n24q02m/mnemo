@@ -14,8 +14,8 @@
       // image first: `docker pull ghcr.io/n24q02m/mnemo-mcp:beta && docker tag ... mnemo-mcp:beta
       // && wrangler containers push mnemo-mcp:beta`, then fill <YOUR_ACCOUNT_ID>.
       "image": "registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:beta",
-      "instance_type": "standard-1",
-      "max_instances": 100
+      "instance_type": "basic",
+      "max_instances": 10
     }
   ],
   "durable_objects": {
