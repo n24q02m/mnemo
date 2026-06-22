@@ -185,15 +185,14 @@ plugin root/
     recall-context/SKILL.md    (Phase 1, new)
     memory-commit/SKILL.md     (Phase 1, new)
   hooks/
-    hooks.json         -- declares SessionStart + PostToolUse
-    session-start.sh   (Phase 1, new)
-    post-tool-use.sh   (Phase 1, new; opt-in CAPTURE_AUTO_ENABLED)
+    hooks.json         -- declares SessionStart + PostToolUse (inline python -c commands; opt-in CAPTURE_AUTO_ENABLED for PostToolUse)
 ```
 
-Skills are model-invoked workflows; hooks are non-blocking shell scripts
-that emit hints into the session context. Neither hook makes MCP calls
-directly -- the agent decides whether to invoke `recall-context` /
-`memory-commit` based on the hint.
+Skills are model-invoked workflows; hooks are non-blocking `python -c`
+commands that emit hints into the session context. The commands are inlined
+in `hooks.json` (cross-platform; bare `.sh` paths opened Notepad on Windows).
+Neither hook makes MCP calls directly -- the agent decides whether to invoke
+`recall-context` / `memory-commit` based on the hint.
 
 ## Migration model (Alembic)
 

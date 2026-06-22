@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh"
+            "command": "python -c \"import os;cwd=os.environ.get('CLAUDE_PROJECT_DIR') or os.getcwd();print('[mnemo] Persistent memory available. Project: '+cwd+'. Invoke mnemo:recall-context (or memory(action=search)) to load prior decisions. On remember-this/ghi-nho/luu-lai, invoke mnemo:memory-commit.')\""
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.sh"
+            "command": "python -c \"import os,re,sys;ctx=os.environ.get('CLAUDE_TOOL_USE_CONTEXT','');sys.stdout.write('[mnemo] Decision-like file edited - if it reflects a deliberate preference/decision/fact, invoke mnemo:memory-commit.' if os.environ.get('CAPTURE_AUTO_ENABLED','false')==('true') and re.search('CLAUDE[.]md|AGENTS[.]md|ARCHITECTURE[.]md|docs/.*[.]md',ctx) else '')\""
           }
         ]
       }
