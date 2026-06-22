@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.21 (2026-06-22)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.18.0b19 (relay model-search catalog + OAuth refresh-TTL)
+  ([#847](https://github.com/n24q02m/mnemo-mcp/pull/847),
+  [`d4014ac`](https://github.com/n24q02m/mnemo-mcp/commit/d4014ac84f8e444d151fc78a288a7ba3f0ac95c9))
+
+
 ## v2.3.0-beta.20 (2026-06-22)
 
 ### Bug Fixes
