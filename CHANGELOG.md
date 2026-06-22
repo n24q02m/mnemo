@@ -2,6 +2,18 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.19 (2026-06-22)
+
+### Bug Fixes
+
+- Align README with current code (install, configuration, trust model)
+  ([#843](https://github.com/n24q02m/mnemo-mcp/pull/843),
+  [`9712a28`](https://github.com/n24q02m/mnemo-mcp/commit/9712a28629cf56a4dd89bd72bda5e25fdb30e44c))
+
+- Pin CF container max_instances to 3 ([#844](https://github.com/n24q02m/mnemo-mcp/pull/844),
+  [`b59237f`](https://github.com/n24q02m/mnemo-mcp/commit/b59237fd4d00727416c7ccccbf3339e4e77be858))
+
+
 ## v2.3.0-beta.18 (2026-06-21)
 
 ### Bug Fixes
