@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.20 (2026-06-22)
+
+### Bug Fixes
+
+- Port hooks to cross-platform python -c (bare .sh opened Notepad on Windows)
+  ([#846](https://github.com/n24q02m/mnemo-mcp/pull/846),
+  [`6737736`](https://github.com/n24q02m/mnemo-mcp/commit/6737736c64f429ab58e76d5211fb8c4bbf5a41fb))
+
+
 ## v2.3.0-beta.19 (2026-06-22)
 
 ### Bug Fixes
