@@ -12,8 +12,9 @@ def test_mcp_core_pin_includes_cf_backends():
     core = next(d for d in deps if d.startswith("n24q02m-mcp-core"))
     # 1.18.0b12 promoted the CF storage backends; 1.18.0b13 added mcp_core.chains
     # (resolve_backend); 1.18.0b14 added mcp_core.llm.key_rotation, so the embed/
-    # rerank dispatch rotates provider API keys on rate-limit. Pin the latter.
-    assert "1.18.0b14" in core, f"expected >=1.18.0b14 floor, got: {core}"
+    # rerank dispatch rotates provider API keys on rate-limit. 1.18.0b19 added the
+    # F2 relay model-search catalog + OAuth refresh-TTL fix. Pin the latter.
+    assert "1.18.0b19" in core, f"expected >=1.18.0b19 floor, got: {core}"
 
 
 def test_no_uv_path_source_for_mcp_core():
