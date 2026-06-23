@@ -1,0 +1,40 @@
+// wrangler.deploy.jsonc - GITIGNORED deploy-time copy with REAL resource IDs filled.
+// Source of truth is wrangler.jsonc (placeholders). Deploy with: --config wrangler.deploy.jsonc
+{
+  "name": "mnemo-mcp-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-14",
+  "workers_dev": false,
+  "containers": [
+    {
+      "name": "mnemo-mcp-worker",
+      "class_name": "MnemoContainer",
+      "image": "registry.cloudflare.com/53feac446e497b886f384c9f8a58132b/mnemo-mcp:b-eb59e87",
+      "instance_type": "standard-1",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "MNEMO", "class_name": "MnemoContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MnemoContainer"] }],
+  "kv_namespaces": [{ "binding": "KV", "id": "68c07a45143e4137ad0c7896bc4be896" }],
+  "d1_databases": [
+    { "binding": "D1", "database_name": "mnemo-memories", "database_id": "9463057b-da9a-4583-b825-41972dee27d3", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors" }],
+  "vars": {
+    "PUBLIC_URL": "https://mnemo.n24q02m.com",
+    "MCP_STORAGE_BACKEND": "cf-kv",
+    "MCP_KV_BASE_URL": "http://kv.internal",
+    "DOCS_DB_BACKEND": "cf-d1",
+    "MCP_D1_BASE_URL": "http://d1.internal",
+    "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
+    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors",
+    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
+    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+    "LLM_MODELS": "vertex_express/gemini-3.5-flash",
+    "EMBEDDING_DIMS": "768"
+  },
+  "observability": { "enabled": true }
+}
