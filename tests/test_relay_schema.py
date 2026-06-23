@@ -18,10 +18,11 @@ def test_no_hardcoded_priority_strings():
         assert ">" not in cap.get("priority", "")
 
 
-def test_suggested_models_carry_provider_prefix():
-    # Every suggested model except bare-openai must carry a "<provider>/" prefix
-    # so the widget derive-keys maps it to the correct key field.
-    for f in RELAY_SCHEMA["fields"]:
-        if f.get("type") == "model-chain":
-            for m in f["suggestedModels"]:
-                assert "/" in m, f"suggested model {m!r} lacks a provider prefix"
+def test_model_chain_fields_have_no_hardcoded_suggestions():
+    # model-chain dropdowns are fully catalog-driven (live Jina + normalized
+    # litellm from mcp-core); they must carry no hand-curated suggestion list.
+    by_key = {f["key"]: f for f in RELAY_SCHEMA["fields"]}
+    for key in ("EMBEDDING_MODELS", "RERANK_MODELS", "LLM_MODELS"):
+        assert not by_key[key].get("suggestedModels"), (
+            f"{key} must be catalog-driven, no hardcode"
+        )
