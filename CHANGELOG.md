@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v2.3.0-beta.22 (2026-06-23)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.18.0b20 (relay catalog Jina/normalize + keyword)
+  ([#851](https://github.com/n24q02m/mnemo-mcp/pull/851),
+  [`6082935`](https://github.com/n24q02m/mnemo-mcp/commit/6082935efbeacc629f03bba1459cc0c418d24a36))
+
+- Bump mcp-core to 1.18.0b20 for relay catalog + drop hardcoded suggestions
+  ([#851](https://github.com/n24q02m/mnemo-mcp/pull/851),
+  [`6082935`](https://github.com/n24q02m/mnemo-mcp/commit/6082935efbeacc629f03bba1459cc0c418d24a36))
+
+- Update mcp-core pin guard test to 1.18.0b20 floor
+  ([#851](https://github.com/n24q02m/mnemo-mcp/pull/851),
+  [`6082935`](https://github.com/n24q02m/mnemo-mcp/commit/6082935efbeacc629f03bba1459cc0c418d24a36))
+
+### Features
+
+- Drop hardcoded model suggestions; relay dropdown is now catalog-driven
+  ([#851](https://github.com/n24q02m/mnemo-mcp/pull/851),
+  [`6082935`](https://github.com/n24q02m/mnemo-mcp/commit/6082935efbeacc629f03bba1459cc0c418d24a36))
+
+
 ## v2.3.0-beta.21 (2026-06-22)
 
 ### Bug Fixes
