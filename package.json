@@ -1,0 +1,17 @@
+{
+  "name": "mnemo-mcp-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:worker": "vitest run tests/worker.test.ts",
+    "cf:dryrun": "wrangler deploy --dry-run --outdir .wrangler-dryrun",
+    "cf:deploy": "node scripts/cf_deploy.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@cloudflare/workers-types": "^4.20260621.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.103.0"
+  }
+}

@@ -1,0 +1,53 @@
+// wrangler.jsonc - mnemo-mcp Cloudflare Worker + Container + D1 + Vectorize + KV.
+// Resource IDs are placeholders created out-of-band (wrangler d1 create / kv namespace
+// create / vectorize create) and filled in at deploy time, not committed as live IDs.
+{
+  "name": "mnemo-mcp-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-14",
+  // Custom-domain-only: never expose a *.workers.dev subdomain (an extra public
+  // endpoint that bypasses the mnemo.n24q02m.com route + its auth front door).
+  "workers_dev": false,
+  "containers": [
+    {
+      "name": "mnemo-mcp-worker",
+      "class_name": "MnemoContainer",
+      // CF Containers pull only from the Cloudflare managed registry (an external
+      // ghcr.io ref fails with IMAGE_REGISTRY_NOT_CONFIGURED). Push the pre-built
+      // image first: `docker pull ghcr.io/n24q02m/mnemo-mcp:beta && docker tag ... mnemo-mcp:beta
+      // && wrangler containers push mnemo-mcp:beta`, then fill <YOUR_ACCOUNT_ID>.
+      "image": "registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:beta",
+      "instance_type": "basic",
+      "max_instances": 20
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "MNEMO", "class_name": "MnemoContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MnemoContainer"] }],
+  "kv_namespaces": [{ "binding": "KV", "id": "<mnemo-kv-namespace-id>" }],
+  "d1_databases": [
+    { "binding": "D1", "database_name": "mnemo-memories", "database_id": "<mnemo-d1-database-id>", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors" }],
+  // Non-secret container config (forwarded into the container by MnemoContainer.envVars).
+  // Secrets via `wrangler secret put`: CREDENTIAL_SECRET, JINA_AI_API_KEY,
+  // GOOGLE_VERTEX_EXPRESS_API_KEY, MCP_RELAY_PASSWORD, MCP_DCR_SERVER_SECRET.
+  // MCP_RELAY_PASSWORD (Gate A, password-grant login) lives in skret /oci-vm-prod/prod
+  // (infra-shared), NOT /mnemo-mcp/prod -- compose both namespaces at `wrangler secret put`.
+  "vars": {
+    "PUBLIC_URL": "https://mnemo.n24q02m.com",
+    "MCP_STORAGE_BACKEND": "cf-kv",
+    "MCP_KV_BASE_URL": "http://kv.internal",
+    "DOCS_DB_BACKEND": "cf-d1",
+    "MCP_D1_BASE_URL": "http://d1.internal",
+    "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
+    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors",
+    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
+    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+    "LLM_MODELS": "vertex_express/gemini-3.5-flash",
+    "EMBEDDING_DIMS": "768"
+  },
+  "routes": [{ "pattern": "mnemo.n24q02m.com", "custom_domain": true }],
+  "observability": { "enabled": true }
+}
