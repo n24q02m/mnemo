@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from loguru import logger
+from mcp_core.chains import resolve_backend
 from mcp_core.llm.providers import key_env_for_model
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
@@ -95,6 +96,13 @@ class Settings(BaseSettings):
     embedding_backend: str = (
         ""  # "cloud" | "local" | "" (auto: API_KEYS->cloud, else local)
     )
+
+    # Per-capability disable-local toggles (cross-cutting; see mcp_core.chains).
+    # Turn OFF the heavy local qwen3 ONNX fallback (~570MB) WITHOUT pinning a
+    # cloud model. Toggle on + no cloud chain => feature gracefully UNAVAILABLE
+    # (clear status), never silently forced to a provider. Independent per task.
+    disable_local_embed: bool = False  # env DISABLE_LOCAL_EMBED
+    disable_local_rerank: bool = False  # env DISABLE_LOCAL_RERANK
 
     # BYO (bring-your-own) LOCAL model override. When set, the local
     # embed/rerank backend loads this model id instead of the bundled
@@ -362,11 +370,13 @@ class Settings(BaseSettings):
         )
 
     def resolve_embedding_backend(self) -> str:
-        """Resolve embedding backend: 'local' or 'cloud'.
+        """Resolve embedding backend: 'cloud', 'local', or 'unavailable'.
 
-        Always returns a valid backend (never empty). Backend is inferred
-        from EMBEDDING_MODELS (non-empty chain -> cloud, empty -> local);
-        the deprecated EMBEDDING_BACKEND env var is honored for one release.
+        3-way resolution via the shared mcp-core primitive: 'cloud' (non-empty
+        EMBEDDING_MODELS chain), 'local' (empty chain + local leg enabled), or
+        'unavailable' (empty chain + DISABLE_LOCAL_EMBED set -> no local download
+        and no cloud, so embedding is gracefully unavailable, NOT forced). The
+        deprecated EMBEDDING_BACKEND env var is honored for one release.
         """
         if self.embedding_backend:
             logger.warning(
@@ -378,14 +388,17 @@ class Settings(BaseSettings):
                 if self.embedding_backend in ("cloud", "litellm")
                 else self.embedding_backend
             )
-        return "cloud" if self.embedding_chain() else "local"
+        return resolve_backend(
+            has_cloud_chain=bool(self.embedding_chain()),
+            local_enabled=not self.disable_local_embed,
+        ).value
 
     def resolve_rerank_backend(self) -> str:
-        """Resolve reranker backend: 'cloud', 'local', or '' (disabled).
+        """Resolve reranker backend: 'cloud', 'local', 'unavailable', or '' (disabled).
 
-        Disabled when rerank_enabled is False. Otherwise inferred from
-        RERANK_MODELS (non-empty chain -> cloud, empty -> local); the
-        deprecated RERANK_BACKEND env var is honored for one release.
+        '' when rerank_enabled is False. Otherwise 3-way via the shared mcp-core
+        primitive (keyed on RERANK_MODELS + DISABLE_LOCAL_RERANK); the deprecated
+        RERANK_BACKEND env var is honored for one release.
         """
         if not self.rerank_enabled:
             return ""
@@ -399,7 +412,10 @@ class Settings(BaseSettings):
                 if self.rerank_backend in ("cloud", "litellm")
                 else self.rerank_backend
             )
-        return "cloud" if self.rerank_chain() else "local"
+        return resolve_backend(
+            has_cloud_chain=bool(self.rerank_chain()),
+            local_enabled=not self.disable_local_rerank,
+        ).value
 
     def resolve_local_rerank_model(self) -> str:
         """Resolve local reranker model: GGUF if GPU + llama-cpp, else ONNX.

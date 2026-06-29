@@ -123,6 +123,12 @@ async def _init_embedding_backend(
     embedding_dims = settings.resolve_embedding_dims()
     embedding_backend_type = settings.resolve_embedding_backend()
 
+    if embedding_backend_type == "unavailable":
+        logger.info(
+            "Embedding: unavailable (DISABLE_LOCAL_EMBED set + no cloud model configured, FTS5 mode)"
+        )
+        return
+
     if cred_state == CredentialState.LOCAL or embedding_backend_type == "local":
         # Local-only path
         local_model = settings.resolve_local_embedding_model()
@@ -182,6 +188,12 @@ async def _init_reranker_backend(mode: str) -> None:
     backend_type = settings.resolve_rerank_backend()
     if not backend_type:
         logger.debug("Reranking disabled")
+        return
+
+    if backend_type == "unavailable":
+        logger.info(
+            "Reranker: unavailable (DISABLE_LOCAL_RERANK set + no cloud model configured)"
+        )
         return
 
     cred_state = get_state()

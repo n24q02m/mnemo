@@ -69,3 +69,11 @@ docs/superpowers/
 *.bak
 /*.patch
 /*.diff
+
+# Cloudflare deploy (real account/KV/D1/Vectorize IDs + tokens — NEVER commit)
+wrangler.deploy.jsonc
+.wrangler/
+.wrangler-dryrun/
+scripts/.mnemo_cf_token
+node_modules/
+package-lock.json
