@@ -12,6 +12,7 @@ Copy this file to each MCP server's tests/ directory unchanged.
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
@@ -44,7 +45,7 @@ def pytest_addoption(parser):
     )
 
 
-class StderrCapture:
+class StderrCapture(io.TextIOWrapper):
     """Capture subprocess stderr to a temp file for relay URL detection.
 
     On Windows, subprocess connects directly to a file descriptor,
