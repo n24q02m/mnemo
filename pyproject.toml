@@ -30,12 +30,12 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "qwen3-embed>=1.12.0b2",
+    "qwen3-embed>=1.12.0b3",
     # Zero-env-config credential relay + LLM/embed/rerank via litellm passthrough
     "n24q02m-mcp-core[llm]>=1.18.0b2,<2",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
-    "alembic>=1.18.4",
+    "alembic>=1.18.5",
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.13.0",
     # Phase 2: S3 / R2 / B2 / MinIO passport-sync backend
@@ -62,7 +62,7 @@ dev = [
     "pre-commit",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "syrupy>=5.3.2",
+    "syrupy>=5.3.4",
     # Phase 2: in-memory S3 fixture for sync backend tests
     "moto[s3]>=5.2.2",
     "bandit>=1.9.4",
