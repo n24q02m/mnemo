@@ -209,12 +209,13 @@ class TestConfigActions:
         assert "Did you mean 'sync'?" in result["suggestion"]
 
     async def test_config_unknown_action_no_match(self, ctx_with_db):
-        """Config with completely invalid action returns error without suggestion."""
+        """Config with completely invalid action returns error with default suggestion."""
         ctx, _ = ctx_with_db
         result = json.loads(await config(action="xyzxyzxyz", ctx=ctx))
         assert "error" in result
         assert "Unknown action" in result["error"]
-        assert "suggestion" not in result
+        assert "suggestion" in result
+        assert "Available actions are:" in result["suggestion"]
 
 
 # ---------------------------------------------------------------------------
@@ -233,11 +234,12 @@ class TestHelpTool:
         assert "Did you mean 'memory'?" in result["suggestion"]
 
     async def test_help_no_match(self):
-        """Completely invalid topic returns error without suggestion."""
+        """Completely invalid topic returns error with default suggestion."""
         result = json.loads(await help(topic="xyzxyz"))
         assert "error" in result
         assert "valid_topics" in result
-        assert "suggestion" not in result
+        assert "suggestion" in result
+        assert "Available topics are:" in result["suggestion"]
 
     async def test_help_setup_redirects_to_config(self):
         """'setup' topic is redirected to 'config'."""
