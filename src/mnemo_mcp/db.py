@@ -301,11 +301,14 @@ class MemoryDB:
         on the next pass. The dropped table is recreated immediately at the new
         dimension so subsequent inserts have a target.
         """
-        for table in ("memories_vec", "memory_entities_vec"):
-            try:
-                self._conn.execute(f"DROP TABLE IF EXISTS {table}")
-            except Exception as e:  # pragma: no cover - runtime guard
-                logger.warning(f"Failed to drop {table} during reindex: {e}")
+        try:
+            self._conn.execute("DROP TABLE IF EXISTS memories_vec")
+        except Exception as e:  # pragma: no cover - runtime guard
+            logger.warning(f"Failed to drop memories_vec during reindex: {e}")
+        try:
+            self._conn.execute("DROP TABLE IF EXISTS memory_entities_vec")
+        except Exception as e:  # pragma: no cover - runtime guard
+            logger.warning(f"Failed to drop memory_entities_vec during reindex: {e}")
         # Recreate memories_vec at the new dimension for immediate writes.
         self._ensure_vec_table(self._embedding_dims)
 
@@ -500,13 +503,15 @@ class MemoryDB:
             raise ValueError(f"embedding_dims must be between 1 and 8192, got {dims}")
 
         # Create table if not exists
-        self._conn.execute(f"""
+        self._conn.execute(
+            """
             CREATE VIRTUAL TABLE memories_vec
             USING vec0(
                 id TEXT PRIMARY KEY,
-                embedding float[{dims}]
+                embedding float[placeholder_dims]
             )
-        """)
+        """.replace("placeholder_dims", str(dims))
+        )
         logger.debug(f"Created memories_vec table with {dims} dims")
 
     @property
@@ -829,29 +834,33 @@ class MemoryDB:
         # 2. Semantic search (if embedding provided)
         if embedding and self._vec_enabled:
             try:
-                vec_sql = """
-                    SELECT v.id, v.distance
-                    FROM memories_vec v
-                    JOIN memories m ON v.id = m.id
-                    WHERE v.embedding MATCH ?
-                """
+                vec_fragments = ["WHERE v.embedding MATCH ?"]
                 vec_params: list = [_serialize_f32(embedding, self._embedding_dims)]
 
                 if category:
-                    vec_sql += " AND m.category = ?"
+                    vec_fragments.append("AND m.category = ?")
                     vec_params.append(category)
 
                 if tags:
-                    vec_sql += " AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+                    vec_fragments.append(
+                        "AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+                    )
                     vec_params.append(json.dumps(tags))
 
                 extra_sql, extra_params = self._build_filter_sql(**filter_kwargs)
                 if extra_sql:
-                    vec_sql += extra_sql
+                    vec_fragments.append(extra_sql)
                     vec_params.extend(extra_params)
 
-                vec_sql += " AND k = ? ORDER BY distance"
+                vec_fragments.append("AND k = ? ORDER BY distance")
                 vec_params.append(pool)
+
+                vec_sql = """
+                    SELECT v.id, v.distance
+                    FROM memories_vec v
+                    JOIN memories m ON v.id = m.id
+                    placeholder_fragments
+                """.replace("placeholder_fragments", " ".join(vec_fragments))
 
                 vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
 
@@ -919,23 +928,24 @@ class MemoryDB:
         ``WHERE m.... = ...`` clause and the matching positional params so
         FTS and vec can compose the same filter set without duplication.
         """
-        sql = ""
+        fragments = []
         params: list = []
         if context_type is not None:
-            sql += " AND m.context_type = ?"
+            fragments.append("AND m.context_type = ?")
             params.append(context_type)
         if since is not None:
-            sql += " AND m.updated_at >= ?"
+            fragments.append("AND m.updated_at >= ?")
             params.append(since)
         if until is not None:
-            sql += " AND m.updated_at <= ?"
+            fragments.append("AND m.updated_at <= ?")
             params.append(until)
         if min_importance > 0.0:
-            sql += " AND COALESCE(m.importance, 0.0) >= ?"
+            fragments.append("AND COALESCE(m.importance, 0.0) >= ?")
             params.append(float(min_importance))
         if not include_archived:
-            sql += " AND m.archived_at IS NULL"
-        return sql, params
+            fragments.append("AND m.archived_at IS NULL")
+
+        return " " + " ".join(fragments) if fragments else "", params
 
     def _search_fts(
         self,
@@ -964,13 +974,15 @@ class MemoryDB:
         # Bolt Performance Optimization:
         # Deferred join pattern. We only select m.id in the inner query instead of
         # m.* to avoid evaluating large columns for rows that will be filtered out by LIMIT.
-        filter_sql = ""
+        filter_fragments = []
         filter_params: list = []
         if category:
-            filter_sql += " AND m.category = ?"
+            filter_fragments.append("AND m.category = ?")
             filter_params.append(category)
         if tags:
-            filter_sql += " AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+            filter_fragments.append(
+                "AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
+            )
             filter_params.append(json.dumps(tags))
 
         extra_sql, extra_params = self._build_filter_sql(
@@ -981,8 +993,10 @@ class MemoryDB:
             include_archived=include_archived,
         )
         if extra_sql:
-            filter_sql += extra_sql
+            filter_fragments.append(extra_sql)
             filter_params.extend(extra_params)
+
+        filter_sql = " ".join(filter_fragments)
 
         # Bolt Performance Optimization:
         # Evaluate tiers sequentially in Python rather than combining them into a single
@@ -990,13 +1004,13 @@ class MemoryDB:
         # applying limits. Breaking early prevents expensive broad query execution (like OR).
         for fts_query in fts_queries:
             query_params = [fts_query] + filter_params + [limit * 3]
-            fts_sql = f"""
+            fts_sql = """
                 WITH best_tier AS (
                     SELECT m.id,
                            bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
                     FROM memories_fts f
                     JOIN memories m ON f.id = m.id
-                    WHERE memories_fts MATCH ? {filter_sql}
+                    WHERE memories_fts MATCH ? placeholder_filter_sql
                     ORDER BY bm25_score
                     LIMIT ?
                 )
@@ -1004,7 +1018,7 @@ class MemoryDB:
                 FROM best_tier b
                 JOIN memories m ON b.id = m.id
                 ORDER BY b.bm25_score
-            """
+            """.replace("placeholder_filter_sql", filter_sql)
 
             try:
                 rows = self._conn.execute(fts_sql, query_params).fetchall()
