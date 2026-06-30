@@ -9,6 +9,7 @@ MCP Interface:
 """
 
 import asyncio
+import difflib
 import json
 import os
 import sys
@@ -1595,8 +1596,6 @@ async def memory(
         case "history":
             return await _handle_history(ctx, entity_id=entity_id or memory_id)
         case _:
-            import difflib
-
             valid_actions = [
                 "add",
                 "archive_now",
@@ -1699,8 +1698,6 @@ async def config(
         case "import_passport":
             return await _handle_config_import_passport(ctx, key)
         case _:
-            import difflib
-
             valid_actions = [
                 "export_passport",
                 "import_passport",
@@ -1783,12 +1780,16 @@ async def _handle_config_set(key: str | None, value: str | None) -> str:
         "log_level",
     }
     if key not in valid_keys:
-        return _json(
-            {
-                "error": f"Invalid key: {key}",
-                "valid_keys": sorted(valid_keys),
-            }
-        )
+        closest = difflib.get_close_matches(key, list(valid_keys), n=1) if key else []
+        resp: dict[str, typing.Any] = {
+            "error": f"Invalid key: {key}",
+            "valid_keys": sorted(valid_keys),
+        }
+        if closest:
+            resp["suggestion"] = f"Did you mean '{closest[0]}'?"
+        else:
+            resp["suggestion"] = f"Available keys are: {', '.join(sorted(valid_keys))}."
+        return _json(resp)
 
     # Apply setting
     if key == "sync_enabled":
@@ -1807,12 +1808,22 @@ async def _handle_config_set(key: str | None, value: str | None) -> str:
             "CRITICAL",
         }
         if level not in valid_levels:
-            return _json(
-                {
-                    "error": f"Invalid log level: {value}",
-                    "valid_levels": sorted(valid_levels),
-                }
+            closest = (
+                difflib.get_close_matches(level, list(valid_levels), n=1)
+                if level
+                else []
             )
+            resp = {
+                "error": f"Invalid log level: {value}",
+                "valid_levels": sorted(valid_levels),
+            }
+            if closest:
+                resp["suggestion"] = f"Did you mean '{closest[0]}'?"
+            else:
+                resp["suggestion"] = (
+                    f"Available log levels are: {', '.join(sorted(valid_levels))}."
+                )
+            return _json(resp)
 
         settings.log_level = level
         logger.remove()
@@ -2247,8 +2258,6 @@ async def help(topic: str = "memory") -> str:
 
     filename = valid_topics.get(topic)
     if not filename:
-        import difflib
-
         closest = (
             difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
             if topic

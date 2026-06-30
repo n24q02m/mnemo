@@ -1,6 +1,6 @@
-## 2025-05-18 - Added context-aware `suggestion` to JSON error responses
-**Learning:** In a backend/CLI-focused MCP server, traditional frontend UX paradigms translate to Developer/Agent Experience (DX). When the server returns raw errors without guidance, consumers (like LLMs or developers debugging tools) struggle to recover. Standardizing on a top-level `suggestion` key in JSON error responses makes the API significantly more actionable and "intuitive".
-**Action:** When adding or refactoring error paths in server tool handlers (like `_handle_add`, `_handle_capture`, etc.), always ensure `_json({"error": ...})` includes a corresponding `"suggestion": "..."` field with concrete next steps.
-## 2024-06-25 - Backend Developer Experience (DX) requires graceful error handling
-**Learning:** In purely backend projects like MCP servers, missing inputs (e.g., None) passed to utility functions like `difflib.get_close_matches` can crash the tool and provide a poor Developer Experience (DX) with unhandled `TypeError`s.
-**Action:** Always guard against `NoneType` inputs for fuzzy matching and provide a fallback `suggestion` with concrete next steps when no matches are found, ensuring the API always guides the consumer.
+## YYYY-MM-DD - Initial Entry
+**Learning:** Found an opportunity to improve the `suggestion` for unknown topics in the `help` tool.
+**Action:** Always provide actionable fallbacks for missing or misspelled parameters.
+## 2024-05-18 - Improve configuration setting error reporting
+**Learning:** Returning a raw "Invalid key" or "Invalid log level" message forces users to look up documentation. A small fuzzy match with `difflib.get_close_matches` combined with a fallback list provides immediate, actionable feedback in the API response.
+**Action:** When returning validation errors for enumerated values (like settings keys or predefined constants), always try fuzzy matching to catch typos and include the full list of valid options as a fallback `suggestion`.

@@ -403,6 +403,22 @@ class TestConfigTool:
         )
         assert "error" in result
         assert "valid_keys" in result
+        assert "suggestion" in result
+        assert "Available keys are:" in result["suggestion"]
+
+    async def test_set_invalid_key_fuzzy(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await config(
+                action="set",
+                key="sync_enable",
+                value="x",
+                ctx=ctx,
+            )
+        )
+        assert "error" in result
+        assert "suggestion" in result
+        assert "Did you mean 'sync_enabled'?" in result["suggestion"]
 
     async def test_set_missing_params(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -722,6 +738,17 @@ class TestConfigSet:
         )
         assert "error" in result
         assert "valid_levels" in result
+        assert "suggestion" in result
+        assert "Available log levels are:" in result["suggestion"]
+
+    async def test_set_invalid_log_level_fuzzy(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = json.loads(
+            await config(action="set", key="log_level", value="DEBG", ctx=ctx)
+        )
+        assert "error" in result
+        assert "suggestion" in result
+        assert "Did you mean 'DEBUG'?" in result["suggestion"]
 
 
 class TestMain:
