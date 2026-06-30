@@ -219,6 +219,23 @@ async def _load_folder_id(folder_name: str) -> str | None:
 async def _save_folder_id(folder_name: str, folder_id: str) -> None:
     """Persist folder ID to disk."""
     path = settings.get_data_dir() / "sync_folder_ids.json"
+
+    def _write_secure(file_path: Path, content: str) -> None:
+        import os
+        import stat
+
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+        mode = stat.S_IRUSR | stat.S_IWUSR
+        fd = os.open(file_path, flags, mode)
+        try:
+            if os.name != "nt":
+                os.fchmod(fd, mode)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+
     async with _folder_id_disk_lock:
         data: dict[str, str] = {}
         try:
@@ -228,8 +245,7 @@ async def _save_folder_id(folder_name: str, folder_id: str) -> None:
         except (json.JSONDecodeError, OSError):
             pass
         data[folder_name] = folder_id
-        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(path.write_text, json.dumps(data), encoding="utf-8")
+        await asyncio.to_thread(_write_secure, path, json.dumps(data))
 
 
 async def _verify_folder_exists(token: dict, folder_id: str) -> bool:
