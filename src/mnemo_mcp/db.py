@@ -1850,20 +1850,22 @@ class MemoryDB:
             except Exception:
                 pass
 
+            batch = []
             for row in rows:
-                row_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
-                content = row["content"] if isinstance(row, sqlite3.Row) else row[1]
-                created_at = (
-                    row["created_at"] if isinstance(row, sqlite3.Row) else row[2]
-                )
+                is_row = isinstance(row, sqlite3.Row)
+                row_id = row["id"] if is_row else row[0]
+                content = row["content"] if is_row else row[1]
+                created_at = row["created_at"] if is_row else row[2]
                 digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
-                self._conn.execute(
-                    "UPDATE memories SET "
-                    "  commit_sha = COALESCE(commit_sha, ?), "
-                    "  valid_from = COALESCE(valid_from, ?) "
-                    "WHERE id = ?",
-                    (digest, created_at, row_id),
-                )
+                batch.append((digest, created_at, row_id))
+
+            self._conn.executemany(
+                "UPDATE memories SET "
+                "  commit_sha = COALESCE(commit_sha, ?), "
+                "  valid_from = COALESCE(valid_from, ?) "
+                "WHERE id = ?",
+                batch,
+            )
             self._conn.commit()
             logger.info(
                 f"Phase 3 backfill: commit_sha + valid_from for {len(rows)} legacy rows"
