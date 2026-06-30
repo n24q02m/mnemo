@@ -104,10 +104,12 @@ class S3Backend(SyncBackend):
                 return None
         key = _bundle_key(self._prefix, sequence)
         try:
-            resp = await asyncio.to_thread(
-                self._client.get_object, Bucket=self._bucket, Key=key
-            )
-            return resp["Body"].read()
+
+            def _get_and_read() -> bytes:
+                resp = self._client.get_object(Bucket=self._bucket, Key=key)
+                return resp["Body"].read()
+
+            return await asyncio.to_thread(_get_and_read)
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             if code in ("NoSuchKey", "404"):
