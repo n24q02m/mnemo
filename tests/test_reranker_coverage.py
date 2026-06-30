@@ -5,6 +5,7 @@ _strip_provider, CloudReranker litellm passthrough (Jina + Cohere routing),
 check_available auth/non-auth branches, Qwen3Reranker lazy load.
 """
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -148,30 +149,32 @@ class TestCheckAvailableReranker:
 
 
 class TestQwen3RerankerLazyLoad:
-    @patch("qwen3_embed.TextCrossEncoder")
-    def test_lazy_load(self, mock_ce):
+    def test_lazy_load(self):
         """Model is loaded lazily on first _get_model() call."""
+        mock_qwen = MagicMock()
         mock_model = MagicMock()
-        mock_ce.return_value = mock_model
+        mock_qwen.TextCrossEncoder.return_value = mock_model
 
-        reranker = Qwen3Reranker("test/model")
-        assert reranker._model is None
+        with patch.dict(sys.modules, {"qwen3_embed": mock_qwen}):
+            reranker = Qwen3Reranker("test/model")
+            assert reranker._model is None
 
-        result = reranker._get_model()
-        assert result == mock_model
-        mock_ce.assert_called_once_with(model_name="test/model")
+            result = reranker._get_model()
+            assert result == mock_model
+            mock_qwen.TextCrossEncoder.assert_called_once_with(model_name="test/model")
 
-    @patch("qwen3_embed.TextCrossEncoder")
-    def test_caches_model(self, mock_ce):
+    def test_caches_model(self):
         """Model is only loaded once (cached)."""
+        mock_qwen = MagicMock()
         mock_model = MagicMock()
-        mock_ce.return_value = mock_model
+        mock_qwen.TextCrossEncoder.return_value = mock_model
 
-        reranker = Qwen3Reranker()
-        reranker._get_model()
-        reranker._get_model()
+        with patch.dict(sys.modules, {"qwen3_embed": mock_qwen}):
+            reranker = Qwen3Reranker()
+            reranker._get_model()
+            reranker._get_model()
 
-        mock_ce.assert_called_once()
+            mock_qwen.TextCrossEncoder.assert_called_once()
 
     def test_check_available_empty_scores(self):
         """check_available returns False when rerank returns empty."""
