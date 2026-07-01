@@ -2155,6 +2155,7 @@ async def _handle_config_import_passport(
                 "error": "Passphrase mismatch or tampered bundle",
                 "detail": f"{type(e).__name__}: {e}",
                 "backend": target,
+                "suggestion": "Verify the passphrase matches the one used to export the passport bundle and that the bundle has not been modified.",
             }
         )
 
