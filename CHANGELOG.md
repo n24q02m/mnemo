@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.4.0-beta.3 (2026-07-01)
+
+### Bug Fixes
+
+- Add Vertex AI (Express) support to relay form and credential state
+  ([#914](https://github.com/n24q02m/mnemo-mcp/pull/914),
+  [`dc91652`](https://github.com/n24q02m/mnemo-mcp/commit/dc916526dc26dbfaef20a308a497bbc8e69f2010))
+
+- Bump mcp-core to 1.18.1b1 for the vertex relay dropdown fix
+  ([#915](https://github.com/n24q02m/mnemo-mcp/pull/915),
+  [`383a68d`](https://github.com/n24q02m/mnemo-mcp/commit/383a68de0c72e45538670af17184b2f8fc8c68b7))
+
+
 ## v2.3.0 (2026-07-01)
 
 ### Bug Fixes
