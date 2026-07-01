@@ -21,6 +21,7 @@ CLOUD_KEYS = [
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
     "COHERE_API_KEY",
+    "GOOGLE_VERTEX_EXPRESS_API_KEY",
 ]
 # All config keys that indicate a valid saved config
 _ALL_CONFIG_KEYS = [*CLOUD_KEYS, "GOOGLE_DRIVE_CLIENT_ID"]

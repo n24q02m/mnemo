@@ -25,3 +25,13 @@ def test_suggested_models_carry_provider_prefix():
         if f.get("type") == "model-chain":
             for m in f["suggestedModels"]:
                 assert "/" in m, f"suggested model {m!r} lacks a provider prefix"
+
+
+def test_vertex_express_key_field_present_and_derived():
+    # Selecting a vertex_express/gemini model must surface a credential box, so
+    # the schema declares GOOGLE_VERTEX_EXPRESS_API_KEY as a derived field. The
+    # credential-state layer also recognizes it (see test_credential_state).
+    by_key = {f["key"]: f for f in RELAY_SCHEMA["fields"]}
+    assert "GOOGLE_VERTEX_EXPRESS_API_KEY" in by_key
+    assert by_key["GOOGLE_VERTEX_EXPRESS_API_KEY"].get("derived") is True
+    assert "VERTEX_AI_API_KEY" not in by_key  # no dead-end field

@@ -42,6 +42,7 @@ CLOUD_KEYS = [
     "COHERE_API_KEY",
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
+    "GOOGLE_VERTEX_EXPRESS_API_KEY",
 ]
 
 # All config keys that indicate a valid saved config (includes GDrive)
