@@ -61,7 +61,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/mnemo-mcp/badge" alt="Mnemo MCP server" />
 </a>
 
-## Roadmap (current = Phase 1 / v1.x)
+## Roadmap (current = Phase 3 / v2.x)
 
 | Phase | Version | Status | Highlights |
 |---|---|---|---|
