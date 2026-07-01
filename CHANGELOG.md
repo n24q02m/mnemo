@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.3.0 (2026-07-01)
+
+### Bug Fixes
+
+- Correct roadmap header to current Phase 3 / v2.x
+  ([#910](https://github.com/n24q02m/mnemo-mcp/pull/910),
+  [`1bf57ee`](https://github.com/n24q02m/mnemo-mcp/commit/1bf57eec4def186a51567f82b944e31311de5294))
+
+### Performance Improvements
+
+- **db**: Optimize `delete` by removing redundant SELECT query
+  ([#911](https://github.com/n24q02m/mnemo-mcp/pull/911),
+  [`476df3d`](https://github.com/n24q02m/mnemo-mcp/commit/476df3db1316d943ce6010a367691dda61ecec06))
+
+
 ## v2.4.0-beta.2 (2026-07-01)
 
 ### Bug Fixes
