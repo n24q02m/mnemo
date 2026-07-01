@@ -8,6 +8,7 @@ surface stays modular and swappable.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -69,17 +70,16 @@ def entity_search(
         return []
 
     entity_ids = [e[0] if not hasattr(e, "keys") else e["id"] for e in entities]
-    placeholders = ",".join("?" * len(entity_ids))
 
     mem_sql = (
         "SELECT m.*, mel.entity_id FROM memories m "
         "JOIN memory_entity_links mel ON mel.memory_id = m.id "
-        f"WHERE mel.entity_id IN ({placeholders}) "
+        "WHERE mel.entity_id IN (SELECT value FROM json_each(?)) "
         "  AND m.archived_at IS NULL "
         "  AND (m.valid_to IS NULL) "
         "ORDER BY m.updated_at DESC LIMIT ?"
     )
-    rows = db._conn.execute(mem_sql, (*entity_ids, limit)).fetchall()
+    rows = db._conn.execute(mem_sql, (json.dumps(entity_ids), limit)).fetchall()
 
     # Map entity_id back to name for the response annotation.
     name_by_id = {
@@ -153,16 +153,16 @@ def entity_graph(
     if not node_ids:
         return {"nodes": [], "edges": [], "depth": depth, "anchor": entity_id}
 
-    placeholders = ",".join("?" * len(node_ids))
+    node_ids_json = json.dumps(node_ids)
     nodes = db._conn.execute(
-        f"SELECT id, name, entity_type FROM memory_entities WHERE id IN ({placeholders})",
-        node_ids,
+        "SELECT id, name, entity_type FROM memory_entities WHERE id IN (SELECT value FROM json_each(?))",
+        (node_ids_json,),
     ).fetchall()
     edges = db._conn.execute(
         "SELECT id, source_id, target_id, relation_type, memory_id, valid_from, valid_to "
-        f"FROM memory_edges WHERE source_id IN ({placeholders}) "
-        f"  AND target_id IN ({placeholders})",
-        (*node_ids, *node_ids),
+        "FROM memory_edges WHERE source_id IN (SELECT value FROM json_each(?)) "
+        "  AND target_id IN (SELECT value FROM json_each(?))",
+        (node_ids_json, node_ids_json),
     ).fetchall()
 
     return {
