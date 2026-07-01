@@ -1287,11 +1287,14 @@ class MemoryDB:
 
     def delete(self, memory_id: str) -> bool:
         """Delete a memory by ID. Returns True if found and deleted."""
-        existing = self.get(memory_id)
-        if not existing:
-            return False
+        # Bolt Performance Optimization:
+        # Avoided N+1 SELECT overhead by executing DELETE directly and checking rowcount.
+        # This completely bypasses Python's memory allocation for a row we intend to delete.
+        cursor = self._conn.cursor()
+        cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
-        self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        if cursor.rowcount == 0:
+            return False
 
         if self._vec_enabled:
             self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
