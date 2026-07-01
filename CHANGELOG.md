@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.4.0-beta.2 (2026-07-01)
+
+### Bug Fixes
+
+- Update python:3.13-slim-bookworm docker digest to fcbd8df
+  ([`38af6f3`](https://github.com/n24q02m/mnemo-mcp/commit/38af6f3125277584f501eefd631034901cc0e6eb))
+
+
 ## v2.3.0-beta.9 (2026-06-12)
 
 ### Bug Fixes
