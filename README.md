@@ -52,6 +52,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - [Tools](#tools)
 - [Security](#security)
 - [Build from Source](#build-from-source)
+- [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Trust Model](#trust-model)
 - [License](#license)
 
@@ -189,6 +190,51 @@ cd mnemo-mcp
 uv sync
 uv run mnemo-mcp
 ```
+
+## Deploy to Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/mnemo-mcp)
+
+Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectorize + KV).
+
+**Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
+
+1. `git clone https://github.com/n24q02m/mnemo-mcp && cd mnemo-mcp`
+2. `wrangler login`
+3. Provision the storage bindings mnemo uses -- the memories database, the embedding
+   index, and the encrypted credential store:
+   ```
+   wrangler d1 create mnemo-memories
+   wrangler vectorize create mnemo-memory-vectors --dimensions 768 --metric cosine
+   wrangler kv namespace create mnemo-kv
+   ```
+   Paste the returned D1 database ID and KV namespace ID into `wrangler.jsonc` (the
+   Vectorize index binds by name, so no ID is needed). The memories schema (tables +
+   FTS5 full-text) is created by the container on first boot -- there is no separate
+   migration step.
+4. Push the container image to your Cloudflare managed registry (CF Containers cannot
+   pull from external registries directly), then set `<YOUR_ACCOUNT_ID>` in `wrangler.jsonc`:
+   ```
+   docker pull ghcr.io/n24q02m/mnemo-mcp:beta
+   docker tag ghcr.io/n24q02m/mnemo-mcp:beta mnemo-mcp:beta
+   wrangler containers push mnemo-mcp:beta   # prints registry.cloudflare.com/<ACCOUNT_ID>/mnemo-mcp:beta
+   ```
+5. Set `<YOUR_PUBLIC_URL>` (e.g. `https://mnemo.example.com`) and `<YOUR_WORKER_DOMAIN>`
+   (e.g. `mnemo.example.com`) in `wrangler.jsonc`, then set the secrets:
+   ```
+   wrangler secret put CREDENTIAL_SECRET              # per-user vault key (encrypts the cf-kv credential store)
+   wrangler secret put MCP_RELAY_PASSWORD             # shared password gating the browser setup form
+   wrangler secret put MCP_DCR_SERVER_SECRET          # required once PUBLIC_URL is set (multi-user, per-JWT-sub)
+   wrangler secret put JINA_AI_API_KEY                # EMBEDDING_MODELS + RERANK_MODELS (cloud embed / rerank)
+   wrangler secret put GOOGLE_VERTEX_EXPRESS_API_KEY  # LLM_MODELS (graph extraction, importance, consolidation)
+   ```
+6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
+
+Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
+`DOCS_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text), and Vectorize (embeddings,
+cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS` /
+`RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads the local Qwen3 ONNX
+models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
 
 ## Trust Model
 

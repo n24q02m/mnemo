@@ -36,7 +36,7 @@
   // MCP_RELAY_PASSWORD (Gate A, password-grant login) lives in skret /oci-vm-prod/prod
   // (infra-shared), NOT /mnemo-mcp/prod -- compose both namespaces at `wrangler secret put`.
   "vars": {
-    "PUBLIC_URL": "https://mnemo.n24q02m.com",
+    "PUBLIC_URL": "<YOUR_PUBLIC_URL>",
     "MCP_STORAGE_BACKEND": "cf-kv",
     "MCP_KV_BASE_URL": "http://kv.internal",
     "DOCS_DB_BACKEND": "cf-d1",
@@ -48,6 +48,6 @@
     "LLM_MODELS": "vertex_express/gemini-3.5-flash",
     "EMBEDDING_DIMS": "768"
   },
-  "routes": [{ "pattern": "mnemo.n24q02m.com", "custom_domain": true }],
+  "routes": [{ "pattern": "<YOUR_WORKER_DOMAIN>", "custom_domain": true }],
   "observability": { "enabled": true }
 }
