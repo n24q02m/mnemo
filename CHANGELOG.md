@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.4.0 (2026-07-02)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.18.1 ([#922](https://github.com/n24q02m/mnemo-mcp/pull/922),
+  [`70ca5d7`](https://github.com/n24q02m/mnemo-mcp/commit/70ca5d714d24f9e33c5b4e79425efcca6f396f65))
+
+### Features
+
+- Document vertex_express provider option ([#920](https://github.com/n24q02m/mnemo-mcp/pull/920),
+  [`aed7f9a`](https://github.com/n24q02m/mnemo-mcp/commit/aed7f9a773bbaee7549281168cd928a92f9c3542))
+
+
 ## v2.4.0-beta.4 (2026-07-02)
 
 ### Features
