@@ -70,7 +70,7 @@ Khong co prefix (khac voi cac project khac):
 - `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (qwen3-embed).
 - `RERANK_MODELS` -- chain rerank, CSV `provider/model,...`; order = fallback. Rong = local ONNX cross-encoder.
 - `LLM_MODELS` -- chain LLM (graph extraction), CSV `provider/model,...`; order = fallback. Rong = tat feature LLM.
-- Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 6 provider servers goi y:
+- Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 7 provider servers goi y:
 
   | model prefix | key env var | get it at |
   |---|---|---|
@@ -80,6 +80,7 @@ Khong co prefix (khac voi cac project khac):
   | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
   | `xai/` | `XAI_API_KEY` | console.x.ai |
   | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
+  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
 - Custom endpoint (SSRF-guarded): `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
