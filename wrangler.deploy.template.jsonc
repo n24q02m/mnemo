@@ -1,0 +1,43 @@
+// wrangler.deploy.template.jsonc - COMMITTED placeholder template for CI CF deploy.
+// scripts/deploy_cf.py --from-template renders this into the gitignored
+// wrangler.deploy.jsonc by substituting the placeholder tokens below from the
+// environment (CI provides them from GitHub Actions secrets synced from skret).
+// Real account/KV/D1/Vectorize IDs never live in git; they are placeholders here.
+{
+  "name": "mnemo-mcp-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-14",
+  "workers_dev": false,
+  "containers": [
+    {
+      "name": "mnemo-mcp-worker",
+      "class_name": "MnemoContainer",
+      "image": "registry.cloudflare.com/${CLOUDFLARE_ACCOUNT_ID}/mnemo-mcp:${IMAGE_TAG}",
+      "instance_type": "standard-1",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "MNEMO", "class_name": "MnemoContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MnemoContainer"] }],
+  "kv_namespaces": [{ "binding": "KV", "id": "${CF_KV_ID}" }],
+  "d1_databases": [
+    { "binding": "D1", "database_name": "mnemo-memories", "database_id": "${CF_D1_ID}", "migrations_dir": "migrations" }
+  ],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "${CF_VECTORIZE_ID}" }],
+  "vars": {
+    "PUBLIC_URL": "${PUBLIC_URL}",
+    "MCP_STORAGE_BACKEND": "cf-kv",
+    "MCP_KV_BASE_URL": "http://kv.internal",
+    "DOCS_DB_BACKEND": "cf-d1",
+    "MCP_D1_BASE_URL": "http://d1.internal",
+    "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
+    "MCP_VECTORIZE_IDX": "${CF_VECTORIZE_ID}",
+    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
+    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+    "LLM_MODELS": "vertex_express/gemini-3.5-flash",
+    "EMBEDDING_DIMS": "768"
+  },
+  "observability": { "enabled": true }
+}
