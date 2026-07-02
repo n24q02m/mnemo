@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.4.0-beta.4 (2026-07-02)
+
+### Features
+
+- Deploy CF Worker+Container on release from cd.yml
+  ([#919](https://github.com/n24q02m/mnemo-mcp/pull/919),
+  [`f14147c`](https://github.com/n24q02m/mnemo-mcp/commit/f14147c7f5930b3bd1814df1312ebecf47347f2d))
+
+
 ## v2.4.0-beta.3 (2026-07-01)
 
 ### Bug Fixes
