@@ -1648,23 +1648,29 @@ class MemoryDB:
             limit = max(1, min(limit, 100))
         cursor = self._conn.cursor()
 
-        soft_rows = cursor.execute(
-            """SELECT id, content, category, tags, importance, archived_at
-               FROM memories
-               WHERE archived_at IS NOT NULL
-               ORDER BY archived_at DESC
-               LIMIT ?""",
-            (limit,),
-        ).fetchall()
-
-        legacy_rows = cursor.execute(
-            "SELECT id, content, category, tags, importance, archived_at "
-            "FROM archived_memories ORDER BY archived_at DESC LIMIT ?",
+        # Bolt Performance Optimization:
+        # Offload merging and pagination entirely to SQLite via UNION ALL.
+        # This completely bypasses the O(N log N) Python-side file-sort overhead
+        # and unnecessary memory allocation for rows that would be discarded.
+        rows = cursor.execute(
+            """
+            SELECT id, content, category, tags, importance, archived_at
+            FROM (
+                SELECT id, content, category, tags, importance, archived_at
+                FROM memories
+                WHERE archived_at IS NOT NULL
+                UNION ALL
+                SELECT id, content, category, tags, importance, archived_at
+                FROM archived_memories
+            )
+            ORDER BY archived_at DESC
+            LIMIT ?
+            """,
             (limit,),
         ).fetchall()
 
         merged = []
-        for r in list(soft_rows) + list(legacy_rows):
+        for r in rows:
             tags_val = r[3]
             merged.append(
                 {
@@ -1677,8 +1683,7 @@ class MemoryDB:
                 }
             )
 
-        merged.sort(key=lambda m: m["archived_at"] or "", reverse=True)
-        return merged[:limit]
+        return merged
 
     def check_duplicate(self, content: str, threshold: float = 0.9) -> dict | None:
         """Check if similar memory exists. Returns match info or None."""
