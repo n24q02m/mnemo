@@ -1617,7 +1617,9 @@ async def memory(
                 "update",
             ]
             closest = (
-                difflib.get_close_matches(action, valid_actions, n=1) if action else []
+                difflib.get_close_matches(str(action), valid_actions, n=1)
+                if action is not None
+                else []
             )
             resp: dict[str, typing.Any] = {
                 "error": f"Unknown action '{action}'.",
@@ -1716,7 +1718,9 @@ async def config(
                 "warmup",
             ]
             closest = (
-                difflib.get_close_matches(action, valid_actions, n=1) if action else []
+                difflib.get_close_matches(str(action), valid_actions, n=1)
+                if action is not None
+                else []
             )
             resp: dict[str, typing.Any] = {
                 "error": f"Unknown action '{action}'.",
@@ -1781,7 +1785,11 @@ async def _handle_config_set(key: str | None, value: str | None) -> str:
         "log_level",
     }
     if key not in valid_keys:
-        closest = difflib.get_close_matches(key, list(valid_keys), n=1) if key else []
+        closest = (
+            difflib.get_close_matches(str(key), list(valid_keys), n=1)
+            if key is not None
+            else []
+        )
         resp: dict[str, typing.Any] = {
             "error": f"Invalid key: {key}",
             "valid_keys": sorted(valid_keys),
@@ -1810,8 +1818,8 @@ async def _handle_config_set(key: str | None, value: str | None) -> str:
         }
         if level not in valid_levels:
             closest = (
-                difflib.get_close_matches(level, list(valid_levels), n=1)
-                if level
+                difflib.get_close_matches(str(level), list(valid_levels), n=1)
+                if level is not None
                 else []
             )
             resp = {
@@ -2261,8 +2269,8 @@ async def help(topic: str = "memory") -> str:
     filename = valid_topics.get(topic)
     if not filename:
         closest = (
-            difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
-            if topic
+            difflib.get_close_matches(str(topic), list(valid_topics.keys()), n=1)
+            if topic is not None
             else []
         )
         resp: dict[str, typing.Any] = {
