@@ -841,7 +841,8 @@ async def _handle_import(
 
     # Bolt Performance Optimization: Pass raw list/dict directly to database layer.
     # Avoids unnecessary JSON serialization and deserialization cycles for parsed inputs.
-    assert data is not None  # guarded above
+    if data is None:
+        raise ValueError("data is required")
     result = await asyncio.to_thread(db.import_jsonl, data, mode=mode)
     return _json(
         {
