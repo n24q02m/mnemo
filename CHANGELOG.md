@@ -2,6 +2,58 @@
 
 <!-- version list -->
 
+## v2.5.0-beta.1 (2026-07-05)
+
+### Bug Fixes
+
+- Guard difflib get_close_matches against non-string inputs
+  ([`8c8ee39`](https://github.com/n24q02m/mnemo-mcp/commit/8c8ee397c75534f4606af84bbbc853c220a5f1c6))
+
+- Merge archived memory queries via UNION ALL in list_archived
+  ([`254cb2a`](https://github.com/n24q02m/mnemo-mcp/commit/254cb2a2247cde3c91696d048ff52821ba7b84b6))
+
+- Replace assert with explicit ValueError in import handler
+  ([`355bdca`](https://github.com/n24q02m/mnemo-mcp/commit/355bdca1022a8980e62623d56d1fd3c0de7b3faa))
+
+- Use placeholders for PUBLIC_URL and routes in wrangler.jsonc (BYO-generic)
+  ([#923](https://github.com/n24q02m/mnemo-mcp/pull/923),
+  [`44b68c7`](https://github.com/n24q02m/mnemo-mcp/commit/44b68c770772892f3760a6581066c37ce5e1fbbb))
+
+- **deps**: Lock file maintenance
+  ([`80b6a6d`](https://github.com/n24q02m/mnemo-mcp/commit/80b6a6df97b6e7a078f8a2626cdf0f305dba715c))
+
+- **deps**: Update non-major dependencies ([#917](https://github.com/n24q02m/mnemo-mcp/pull/917),
+  [`f39cc38`](https://github.com/n24q02m/mnemo-mcp/commit/f39cc389f0b5e531e5ce1a5564ebecde3ed69cab))
+
+### Chores
+
+- **deps**: Update docker/build-push-action digest to 53b7df9
+  ([#916](https://github.com/n24q02m/mnemo-mcp/pull/916),
+  [`75dad3f`](https://github.com/n24q02m/mnemo-mcp/commit/75dad3f8b2dcfa03a5163fac3f70bbe386968bb5))
+
+- **deps**: Update docker/login-action digest to af1e73f
+  ([#925](https://github.com/n24q02m/mnemo-mcp/pull/925),
+  [`73cbebb`](https://github.com/n24q02m/mnemo-mcp/commit/73cbebbd312c481b726b8aa6df8ff4b45464f90c))
+
+- **deps**: Update docker/setup-buildx-action digest to bb05f3f
+  ([#926](https://github.com/n24q02m/mnemo-mcp/pull/926),
+  [`592656e`](https://github.com/n24q02m/mnemo-mcp/commit/592656e668bd72b313d01879524ea591dc28547b))
+
+### Features
+
+- Add cf_deploy.mjs to render base wrangler.jsonc placeholders for BYO deploy
+  ([#923](https://github.com/n24q02m/mnemo-mcp/pull/923),
+  [`44b68c7`](https://github.com/n24q02m/mnemo-mcp/commit/44b68c770772892f3760a6581066c37ce5e1fbbb))
+
+- Add Deploy to Cloudflare BYO section to README
+  ([#923](https://github.com/n24q02m/mnemo-mcp/pull/923),
+  [`44b68c7`](https://github.com/n24q02m/mnemo-mcp/commit/44b68c770772892f3760a6581066c37ce5e1fbbb))
+
+- Clarify Workers Paid plan requirement in Deploy to Cloudflare prerequisites
+  ([#923](https://github.com/n24q02m/mnemo-mcp/pull/923),
+  [`44b68c7`](https://github.com/n24q02m/mnemo-mcp/commit/44b68c770772892f3760a6581066c37ce5e1fbbb))
+
+
 ## v2.4.0 (2026-07-02)
 
 ### Bug Fixes
