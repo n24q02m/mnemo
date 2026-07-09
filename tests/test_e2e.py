@@ -62,10 +62,6 @@ def _build_server_env(
         # Blank out GDrive OAuth to prevent setup_sync from triggering real OAuth
         base_env["GOOGLE_DRIVE_CLIENT_ID"] = ""
         base_env["GOOGLE_DRIVE_CLIENT_SECRET"] = ""
-    else:
-        # Provide dummy values to allow GDrive setup to run since there are no hardcoded defaults anymore
-        base_env["GOOGLE_DRIVE_CLIENT_ID"] = "dummy_id"
-        base_env["GOOGLE_DRIVE_CLIENT_SECRET"] = "dummy_secret"
     if setup_mode == "relay":
         return {k: v for k, v in base_env.items() if k not in CREDENTIAL_ENV_VARS}
     return base_env
@@ -563,7 +559,7 @@ async def test_gdrive_oauth(request, tmp_path):
     """GDrive OAuth Device Code: call setup_sync, user authorizes via Google.
 
     Run with: uv run pytest tests/test_e2e.py -m e2e -k gdrive --setup=env -v -s
-    Uses dummy GOOGLE_DRIVE_CLIENT_ID from environment.
+    Uses hardcoded GOOGLE_DRIVE_CLIENT_ID from config defaults.
     """
     env = _build_server_env(tmp_path, "env", allow_gdrive=True)
     params = _build_server_params("env", env)
