@@ -20,3 +20,4 @@ jobs:
         with:
           model: ${{ secrets.OC_MODEL }}
           use_github_token: true
+          share: "false"
