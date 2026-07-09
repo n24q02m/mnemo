@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.5.1-beta.1 (2026-07-09)
+
+### Bug Fixes
+
+- Set MnemoContainer pingEndpoint to localhost/ so CF container health passes and it sleeps on idle
+  ([#942](https://github.com/n24q02m/mnemo-mcp/pull/942),
+  [`64b0843`](https://github.com/n24q02m/mnemo-mcp/commit/64b0843d9b8ddad8fa6025780c272e7492b52b96))
+
+
 ## v2.5.0 (2026-07-05)
 
 
