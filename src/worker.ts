@@ -199,6 +199,11 @@ async function extractUserId(_request: Request): Promise<string> {
 export class MnemoContainer extends Container<Env> {
   defaultPort = 8080
   sleepAfter = '5m'
+  // CF container readiness-probe override. Default 'ping' (URL http://ping/) does
+  // not resolve, so the health-check fetch throws and the container is marked
+  // unhealthy -> CF keeps it running 24/7 instead of sleeping on idle. 'localhost/'
+  // resolves to the container itself; the default route returns 200.
+  pingEndpoint = 'localhost/'
   // The container reaches cloud model APIs (Jina, Vertex) over the public
   // internet; kv/d1/vectorize.internal stay intercepted (see outboundByHost).
   enableInternet = true
