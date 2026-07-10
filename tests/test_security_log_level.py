@@ -77,6 +77,6 @@ async def test_log_level_valid_update(mock_dependencies):
                 result = await server.config(
                     action="set", key="log_level", value="DEBUG"
                 )
-                assert '"status": "updated"' in result
+                assert '"status":"updated"' in result
                 mock_logger.remove.assert_called_once()
                 mock_logger.add.assert_called_once()

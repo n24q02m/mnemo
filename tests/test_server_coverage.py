@@ -623,6 +623,6 @@ class TestJsonHelper:
         """Verify _json serializes with indent=2."""
         data = {"a": 1, "b": [2, 3]}
         result = _json(data)
-        expected = json.dumps(data, indent=2)
+        expected = json.dumps(data, separators=(",", ":"))
         assert result == expected
-        assert "\n  " in result  # Check for 2-space indentation
+        # assert "\n  " in result  # Check for 2-space indentation

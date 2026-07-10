@@ -367,8 +367,11 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
 
 
 def _json(obj: object) -> str:
-    """Serialize to readable JSON."""
-    return json.dumps(obj, indent=2)
+    """Serialize to dense JSON."""
+    # Bolt Performance Optimization:
+    # Removing indent=2 drastically reduces payload size for large lists
+    # of memories, reducing serialization time and network/token overhead.
+    return json.dumps(obj, separators=(",", ":"))
 
 
 async def _maybe_include_setup_hint(result: dict) -> dict:
