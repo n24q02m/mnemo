@@ -574,7 +574,10 @@ async def sync_full(db: MemoryDB) -> dict:
 
         except Exception as e:
             logger.error(f"Merge failed: {e}")
-            result["pull"] = {"error": str(e)}
+            result["pull"] = {
+                "error": str(e),
+                "suggestion": "Check remote database consistency and sync credentials.",
+            }
         finally:
             # Cleanup temp file and directory
             remote_db_path.unlink(missing_ok=True)

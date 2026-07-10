@@ -165,6 +165,7 @@ async def run_setup_sync() -> dict:
             "status": "error",
             "error": "GOOGLE_DRIVE_CLIENT_ID not configured. "
             "Create an OAuth client ID at console.cloud.google.com/apis/credentials",
+            "suggestion": "Set the GOOGLE_DRIVE_CLIENT_ID environment variable or create one in Google Cloud Console.",
         }
 
     success = await setup_google_auth()
@@ -172,6 +173,7 @@ async def run_setup_sync() -> dict:
         return {
             "status": "error",
             "error": "Google Drive authentication failed. Please try again.",
+            "suggestion": "Check your client credentials and verify network connectivity.",
         }
 
     token_path = get_token_path("google_drive")
