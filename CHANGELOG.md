@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.2 (2026-07-10)
+
+### Bug Fixes
+
+- Decline standing GET /mcp SSE stream at the edge
+  ([#952](https://github.com/n24q02m/mnemo-mcp/pull/952),
+  [`1f50cda`](https://github.com/n24q02m/mnemo-mcp/commit/1f50cdabf18b497c4a77e6c73309a8e404127076))
+
+- Fail the release when the computed version already exists on PyPI
+  ([#951](https://github.com/n24q02m/mnemo-mcp/pull/951),
+  [`7e79b0d`](https://github.com/n24q02m/mnemo-mcp/commit/7e79b0d32cf283cdee3de14ea9cebc6f2393eb08))
+
+
 ## v2.6.0-beta.1 (2026-07-10)
 
 ### Bug Fixes
