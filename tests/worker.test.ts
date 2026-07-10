@@ -156,3 +156,51 @@ describe('edge auth gate (/mcp)', () => {
     expect(fetchCalls.length).toBe(1)
   })
 })
+
+describe('standing GET /mcp SSE stream declined at the edge (idle-cost fix)', () => {
+  function envWithDoSpy() {
+    const fetchCalls: Request[] = []
+    return {
+      fetchCalls,
+      env: {
+        MNEMO: {
+          idFromName: (n: string) => ({ name: n }),
+          get: (_id: unknown) => ({
+            fetch: async (r: Request) => {
+              fetchCalls.push(r)
+              return new Response('routed', { status: 200 })
+            },
+          }),
+        },
+      },
+    }
+  }
+
+  it('GET /mcp with Authorization -> 405, Allow: POST, DELETE, stub never called', async () => {
+    const { fetchCalls, env } = envWithDoSpy()
+    const res = await worker.fetch(
+      new Request('https://mnemo.n24q02m.com/mcp', { method: 'GET', headers: { authorization: 'Bearer x' } }),
+      env as never,
+    )
+    expect(res.status).toBe(405)
+    expect(res.headers.get('Allow')).toBe('POST, DELETE')
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  it('GET /mcp/sub-path with Authorization -> 405, stub never called', async () => {
+    const { fetchCalls, env } = envWithDoSpy()
+    const res = await worker.fetch(
+      new Request('https://mnemo.n24q02m.com/mcp/sub', { method: 'GET', headers: { authorization: 'Bearer x' } }),
+      env as never,
+    )
+    expect(res.status).toBe(405)
+    expect(fetchCalls.length).toBe(0)
+  })
+
+  it('GET /mcp with no Authorization -> still 401 (bearer gate runs before the 405 decline)', async () => {
+    const { fetchCalls, env } = envWithDoSpy()
+    const res = await worker.fetch(new Request('https://mnemo.n24q02m.com/mcp', { method: 'GET' }), env as never)
+    expect(res.status).toBe(401)
+    expect(fetchCalls.length).toBe(0)
+  })
+})
