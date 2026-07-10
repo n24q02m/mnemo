@@ -2,6 +2,40 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.1 (2026-07-10)
+
+### Bug Fixes
+
+- Disable opencode session sharing on public repo
+  ([`816b822`](https://github.com/n24q02m/mnemo-mcp/commit/816b8222b24de311b80acb788653e16e46a1e263))
+
+- Pass GITHUB_TOKEN env to opencode github action
+  ([`ab7e6fd`](https://github.com/n24q02m/mnemo-mcp/commit/ab7e6fd6ba2f7c7bb8407df540dd81aa641ba548))
+
+- Reject unauthenticated /mcp at the Worker edge
+  ([#950](https://github.com/n24q02m/mnemo-mcp/pull/950),
+  [`2bf53cd`](https://github.com/n24q02m/mnemo-mcp/commit/2bf53cdf732dad08ed3188e358d0669200217b35))
+
+- Restore Google Desktop OAuth default for GDrive sync
+  ([#948](https://github.com/n24q02m/mnemo-mcp/pull/948),
+  [`372044a`](https://github.com/n24q02m/mnemo-mcp/commit/372044a3ab8c467223cc2492b68839fb7f5fde98))
+
+### Features
+
+- Add opencode github agent (responds to /oc on issues and PRs)
+  ([#943](https://github.com/n24q02m/mnemo-mcp/pull/943),
+  [`4fc61c1`](https://github.com/n24q02m/mnemo-mcp/commit/4fc61c122a5024c57b65b06a59070552b67cb371))
+
+- Add review-learnings store the automated reviewer must obey
+  ([`2b86a71`](https://github.com/n24q02m/mnemo-mcp/commit/2b86a71b0e6cf8ec070b2df0c68aa545df160bc9))
+
+- Auto-respond only to issues and PRs opened by outside people
+  ([`8869a74`](https://github.com/n24q02m/mnemo-mcp/commit/8869a74f594ffbf81deb633bdc078f863fab7eab))
+
+- Auto-respond to newly opened issues
+  ([`5816a3c`](https://github.com/n24q02m/mnemo-mcp/commit/5816a3cccef9c8807c20608b9625789d073c6a7a))
+
+
 ## v2.5.1-beta.1 (2026-07-09)
 
 ### Bug Fixes
