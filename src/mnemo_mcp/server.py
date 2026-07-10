@@ -980,15 +980,22 @@ async def _handle_capture(
     except ValueError as e:
         msg = str(e)
         if "context_type" in msg:
-            return _json(
-                {
-                    "error": msg,
-                    "valid_context_types": sorted(CONTEXT_TYPES),
-                    "suggestion": (
-                        f"Pick a context_type from {sorted(CONTEXT_TYPES)}."
-                    ),
-                }
+            closest = (
+                difflib.get_close_matches(str(context_type), list(CONTEXT_TYPES), n=1)
+                if context_type is not None
+                else []
             )
+            resp = {
+                "error": msg,
+                "valid_context_types": sorted(CONTEXT_TYPES),
+            }
+            if closest:
+                resp["suggestion"] = f"Did you mean '{closest[0]}'?"
+            else:
+                resp["suggestion"] = (
+                    f"Pick a context_type from {sorted(CONTEXT_TYPES)}."
+                )
+            return _json(resp)
         return _json(
             {"error": msg, "suggestion": "Check payload length and constraints."}
         )

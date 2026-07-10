@@ -10,3 +10,6 @@
 ## 2024-07-04 - Guarding difflib against non-string inputs
 **Learning:** `difflib.get_close_matches` throws an exception when the first argument is not iterable (e.g. integer or dict), crashing the MCP tool error handler. While `if action:` catches `None`, it doesn't protect against `0` or other non-string types.
 **Action:** Always wrap the first argument to `difflib.get_close_matches` with `str()` and use `is not None` when providing fuzzy matching suggestions for API inputs, to avoid unhandled TypeErrors.
+## $(date +%Y-%m-%d) - Extending fuzzy matching to domain inputs
+**Learning:** Returning a raw "Invalid context_type" without a fallback leaves developers guessing. Applying fuzzy matching to domain-specific enumerations (like context_type) improves DX immediately.
+**Action:** Always wrap the first argument to `difflib.get_close_matches` with `str()` and use `is not None` when providing fuzzy matching suggestions for API inputs, including domain-specific variables like context_type.

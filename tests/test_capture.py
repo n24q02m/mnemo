@@ -144,6 +144,16 @@ async def test_handle_capture_invalid_context_type_returns_error(mock_ctx):
     assert "conversation" in payload["valid_context_types"]
 
 
+async def test_handle_capture_invalid_context_type_fuzzy_matching(mock_ctx):
+    ctx, _db = mock_ctx
+    raw = await _handle_capture(ctx, text="something", context_type="prefernnce")
+    payload = json.loads(raw)
+
+    assert "error" in payload
+    assert "suggestion" in payload
+    assert "Did you mean 'preference'?" in payload["suggestion"]
+
+
 async def test_handle_capture_inserts_and_returns_id(mock_ctx):
     ctx, db = mock_ctx
     raw = await _handle_capture(
