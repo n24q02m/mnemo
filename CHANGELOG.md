@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.4 (2026-07-11)
+
+### Bug Fixes
+
+- Bump mcp-core floor to 1.19.0b4 ([#963](https://github.com/n24q02m/mnemo-mcp/pull/963),
+  [`7d7913f`](https://github.com/n24q02m/mnemo-mcp/commit/7d7913fbf39e74afff4768a035277251c47daf77))
+
+- Thread byo client pair explicitly to google auth flow
+  ([#963](https://github.com/n24q02m/mnemo-mcp/pull/963),
+  [`7d7913f`](https://github.com/n24q02m/mnemo-mcp/commit/7d7913fbf39e74afff4768a035277251c47daf77))
+
+### Features
+
+- Mount shared cli builder with auth and warmup subcommands
+  ([#963](https://github.com/n24q02m/mnemo-mcp/pull/963),
+  [`7d7913f`](https://github.com/n24q02m/mnemo-mcp/commit/7d7913fbf39e74afff4768a035277251c47daf77))
+
+
 ## v2.6.0-beta.3 (2026-07-11)
 
 ### Bug Fixes
