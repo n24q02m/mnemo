@@ -140,6 +140,11 @@ async def async_save_token(provider: str, token: dict) -> None:
     await asyncio.to_thread(save_token, provider, token)
 
 
+async def async_delete_token(provider: str) -> bool:
+    """Delete a stored token asynchronously. Returns True if deleted."""
+    return await asyncio.to_thread(delete_token, provider)
+
+
 def save_token_for_sub(sub: str, provider: str, token: dict) -> None:
     """Save OAuth token under the per-sub directory (multi-user remote).
 

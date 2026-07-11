@@ -59,7 +59,14 @@ class TestRefreshTokenException:
             "client_id": "client123",
         }
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        # client_id matches the mocked settings so this exercises the
+        # network-exception branch, not the client-mismatch guard.
+        with (
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+        ):
+            mock_settings.google_drive_client_id = "client123"
+            mock_settings.google_drive_client_secret = "secret123"
             mock_client = AsyncMock()
             mock_client.post.side_effect = Exception("Connection refused")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

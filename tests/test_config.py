@@ -41,6 +41,7 @@ def clean_env(monkeypatch):
         "SYNC_INTERVAL",
         "GOOGLE_DRIVE_CLIENT_ID",
         "GOOGLE_DRIVE_CLIENT_SECRET",
+        "USE_BUNDLED_GOOGLE_CLIENT",
         "DB_PATH",
         "MNEMO_DB_PATH",
         "LOG_LEVEL",
@@ -451,6 +452,28 @@ class TestGoogleDriveCredentials:
         s = Settings()
         assert s.google_drive_client_id == "123456.apps.googleusercontent.com"
         assert s.google_drive_client_secret == "test-secret"
+
+    def test_env_pair_beats_bundled(self, monkeypatch):
+        """A full BYO env pair overrides the bundled default."""
+        monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "my-id")
+        monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_SECRET", "my-secret")
+        s = Settings()
+        assert (s.google_drive_client_id, s.google_drive_client_secret) == (
+            "my-id",
+            "my-secret",
+        )
+
+    def test_env_half_pair_fails_loud(self, monkeypatch):
+        """Setting only one half of the BYO pair raises instead of silently falling back."""
+        monkeypatch.setenv("GOOGLE_DRIVE_CLIENT_ID", "only-id")
+        with pytest.raises(Exception, match="together"):
+            Settings()
+
+    def test_kill_switch_fails_loud_without_override(self, monkeypatch):
+        """USE_BUNDLED_GOOGLE_CLIENT=false with no BYO pair raises instead of using bundled."""
+        monkeypatch.setenv("USE_BUNDLED_GOOGLE_CLIENT", "false")
+        with pytest.raises(Exception, match="disables the bundled client"):
+            Settings()
 
 
 class TestSetupProviders:

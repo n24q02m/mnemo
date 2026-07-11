@@ -301,6 +301,31 @@ class TestAsyncTokenStore:
         saved = json.loads((token_dir / "async_drive_save.json").read_text())
         assert saved["access_token"] == "async_save"
 
+    @pytest.mark.asyncio
+    async def test_async_delete_removes_file(self, token_dir):
+        from mnemo_mcp.token_store import async_delete_token, async_save_token
+
+        token = {"access_token": "async_delete", "token_type": "Bearer"}
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = token_dir.parent
+            await async_save_token("async_drive_delete", token)
+            assert (token_dir / "async_drive_delete.json").exists()
+
+            deleted = await async_delete_token("async_drive_delete")
+
+        assert deleted is True
+        assert not (token_dir / "async_drive_delete.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_async_delete_missing_is_noop(self, token_dir):
+        from mnemo_mcp.token_store import async_delete_token
+
+        with patch("mnemo_mcp.token_store.settings") as m:
+            m.get_data_dir.return_value = token_dir.parent
+            deleted = await async_delete_token("async_drive_missing")
+
+        assert deleted is False
+
 
 class TestSubTokenStore:
     @pytest.fixture

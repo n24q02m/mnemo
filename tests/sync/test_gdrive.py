@@ -41,6 +41,20 @@ def fake_token():
 # --- Token management ---
 
 
+async def test_clear_token_deletes_file(tmp_path):
+    """_clear_token deletes the on-disk token via the real token_store."""
+    from mnemo_mcp.sync.gdrive import _clear_token, _load_token, _save_token
+
+    with patch("mnemo_mcp.token_store.settings") as mock_settings:
+        mock_settings.get_data_dir.return_value = tmp_path
+        await _save_token({"access_token": "to-clear"})
+        assert await _load_token() is not None
+
+        await _clear_token()
+
+        assert await _load_token() is None
+
+
 async def test_refresh_token_success():
     token = {"refresh_token": "ref", "client_id": "cid", "client_secret": "sec"}
     mock_resp = MagicMock()
@@ -60,8 +74,9 @@ async def test_refresh_token_success():
 
 
 async def test_refresh_token_missing_params():
-    # Trigger line 91
-    token = {"refresh_token": ""}
+    # Trigger line 91. client_id must match the mocked settings so the
+    # client-mismatch guard doesn't intercept before this branch.
+    token = {"refresh_token": "", "client_id": ""}
     with patch("mnemo_mcp.sync.gdrive.settings") as mock_settings:
         mock_settings.google_drive_client_id = ""
         new_token = await _refresh_token(token)
@@ -69,7 +84,9 @@ async def test_refresh_token_missing_params():
 
 
 async def test_refresh_token_failure():
-    token = {"refresh_token": "ref"}
+    # client_id matches the mocked settings so this exercises the
+    # HTTP-failure branch, not the client-mismatch guard.
+    token = {"refresh_token": "ref", "client_id": "cid"}
     mock_resp = MagicMock()
     mock_resp.status_code = 400
     mock_resp.text = "invalid grant"
@@ -85,7 +102,9 @@ async def test_refresh_token_failure():
 
 
 async def test_refresh_token_exception():
-    token = {"refresh_token": "ref"}
+    # client_id matches the mocked settings so this exercises the
+    # network-exception branch, not the client-mismatch guard.
+    token = {"refresh_token": "ref", "client_id": "cid"}
     with (
         patch("httpx.AsyncClient.post", side_effect=Exception("net error")),
         patch("mnemo_mcp.sync.gdrive.settings") as mock_settings,
