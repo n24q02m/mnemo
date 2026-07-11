@@ -2,6 +2,72 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.3 (2026-07-11)
+
+### Bug Fixes
+
+- Add fuzzy matching suggestion for invalid context_type
+  ([`1ec918a`](https://github.com/n24q02m/mnemo-mcp/commit/1ec918ab7a8cefdfb27d0a34d922c4521ab1257f))
+
+- Add suggestion fields to error responses
+  ([`cbf2f24`](https://github.com/n24q02m/mnemo-mcp/commit/cbf2f240b018e848b0cfe64bc83c1d793ecdf4d6))
+
+- Bump mcp-core floor to 1.19.0b2 ([#962](https://github.com/n24q02m/mnemo-mcp/pull/962),
+  [`42e6383`](https://github.com/n24q02m/mnemo-mcp/commit/42e63838a2eb524c576e763f1beed481fd775943))
+
+- Bump n24q02m-mcp-core, qwen3-embed to tracked versions
+  ([#956](https://github.com/n24q02m/mnemo-mcp/pull/956),
+  [`f82d2c2`](https://github.com/n24q02m/mnemo-mcp/commit/f82d2c2f7598795196b474d288dd6ed1de7d0e36))
+
+- Clear stored gdrive token when minted by different client
+  ([#962](https://github.com/n24q02m/mnemo-mcp/pull/962),
+  [`42e6383`](https://github.com/n24q02m/mnemo-mcp/commit/42e63838a2eb524c576e763f1beed481fd775943))
+
+- Document public-by-design identifiers for secret scanners
+  ([#953](https://github.com/n24q02m/mnemo-mcp/pull/953),
+  [`5768c7f`](https://github.com/n24q02m/mnemo-mcp/commit/5768c7fab41ffd1df79e6dc58f7edf937699b30f))
+
+- Enforce fix(deps) semantic commit prefix in renovate config
+  ([`9c7eae3`](https://github.com/n24q02m/mnemo-mcp/commit/9c7eae3bd7d046c7f13f2dd63f206fff713a7e30))
+
+- Make renovate automerge effective (isolated groups, digest+lockfile automerge, 7-day cooldown)
+  ([`9275181`](https://github.com/n24q02m/mnemo-mcp/commit/92751814eb6f1bb6475b56cba609c700e867896f))
+
+- Pin settings client id in refresh tests bypassed by mismatch guard
+  ([#962](https://github.com/n24q02m/mnemo-mcp/pull/962),
+  [`42e6383`](https://github.com/n24q02m/mnemo-mcp/commit/42e63838a2eb524c576e763f1beed481fd775943))
+
+- Use dense JSON serialization for MCP tool responses
+  ([`81249dc`](https://github.com/n24q02m/mnemo-mcp/commit/81249dce4ba96b5a2f4babe16b3a3cfff31d5faf))
+
+### Chores
+
+- **deps**: Lock file maintenance ([#938](https://github.com/n24q02m/mnemo-mcp/pull/938),
+  [`2d3d2b1`](https://github.com/n24q02m/mnemo-mcp/commit/2d3d2b1e176fb5a51b1e248402a4a527cb672a9e))
+
+- **deps**: Update actions/checkout action to v7
+  ([#959](https://github.com/n24q02m/mnemo-mcp/pull/959),
+  [`fe6ab6a`](https://github.com/n24q02m/mnemo-mcp/commit/fe6ab6a861385fd956692a248106302919a819ae))
+
+- **deps**: Update astral-sh/setup-uv action to v8.3.2
+  ([#958](https://github.com/n24q02m/mnemo-mcp/pull/958),
+  [`21d09c5`](https://github.com/n24q02m/mnemo-mcp/commit/21d09c541c91f8f46bf690b7645e5372930508aa))
+
+- **deps**: Update dependency @cloudflare/workers-types to v5
+  ([#937](https://github.com/n24q02m/mnemo-mcp/pull/937),
+  [`9836147`](https://github.com/n24q02m/mnemo-mcp/commit/983614713e62eb8defccf5881f81c37bd0ee2e80))
+
+### Features
+
+- Adopt bundled client BYO resolution chain for Google Drive
+  ([#962](https://github.com/n24q02m/mnemo-mcp/pull/962),
+  [`42e6383`](https://github.com/n24q02m/mnemo-mcp/commit/42e63838a2eb524c576e763f1beed481fd775943))
+
+- Resolve google client via bundled client BYO chain
+  ([#962](https://github.com/n24q02m/mnemo-mcp/pull/962),
+  [`42e6383`](https://github.com/n24q02m/mnemo-mcp/commit/42e63838a2eb524c576e763f1beed481fd775943))
+
+
 ## v2.6.0-beta.2 (2026-07-10)
 
 ### Bug Fixes
