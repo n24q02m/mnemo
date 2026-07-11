@@ -92,6 +92,63 @@ class TestSetupGoogleAuthFull:
             result = await setup_google_auth()
         assert result is False
 
+    async def test_byo_client_pair_overrides_frozen_settings_singleton(self):
+        """client_id/client_secret args must override settings, not be dropped.
+
+        mnemo_mcp.config.settings is a module-level singleton resolved once
+        at import time -- a BYO client pair can never reach it via
+        os.environ after that point. This guards the actual fix: the
+        override has to win at every point client_id/client_secret are
+        used (outgoing device-code request, outgoing token request, saved
+        token payload).
+        """
+        device_response = MagicMock()
+        device_response.status_code = 200
+        device_response.json.return_value = {
+            "device_code": "dev123",
+            "user_code": "ABC-DEF",
+            "verification_url": "https://google.com/device",
+            "interval": 0,
+            "expires_in": 5,
+        }
+        token_response = MagicMock()
+        token_response.status_code = 200
+        token_response.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
+        with (
+            patch("mnemo_mcp.sync.settings") as mock_settings,
+            patch("httpx.AsyncClient") as mock_client_cls,
+            patch("mnemo_mcp.sync._save_token") as mock_save,
+            patch("mnemo_mcp.sync.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            # Settings singleton still holds the bundled defaults -- the BYO
+            # pair below must win over these, not be silently ignored.
+            mock_settings.google_drive_client_id = "bundled-id"
+            mock_settings.google_drive_client_secret = "bundled-secret"
+
+            mock_client = AsyncMock()
+            mock_client.post.side_effect = [device_response, token_response]
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await setup_google_auth(
+                client_id="byo-id", client_secret="byo-secret"
+            )
+
+        assert result is True
+        device_call, token_call = mock_client.post.await_args_list
+        assert device_call.kwargs["data"]["client_id"] == "byo-id"
+        assert token_call.kwargs["data"]["client_id"] == "byo-id"
+        assert token_call.kwargs["data"]["client_secret"] == "byo-secret"
+        saved_token = mock_save.call_args.args[0]
+        assert saved_token["client_id"] == "byo-id"
+
     async def test_success_flow_via_relay(self):
         """Full success flow: device code request, relay message, token poll success."""
         device_response = MagicMock()

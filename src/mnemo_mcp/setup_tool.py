@@ -151,16 +151,26 @@ async def run_warmup() -> dict:
     }
 
 
-async def run_setup_sync() -> dict:
+async def run_setup_sync(
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> dict:
     """Authenticate Google Drive via Device Code OAuth flow.
+
+    ``client_id``/``client_secret`` optionally override the upstream OAuth
+    client identity for this call (BYO client, e.g. from the CLI's ``auth
+    google --client-id/--client-secret`` flags) without mutating the
+    ``mnemo_mcp.config.settings`` singleton -- both default to ``None``,
+    which falls back to ``settings.google_drive_client_id/secret`` exactly
+    as before.
 
     Returns a structured dict with setup results.
     """
     from mnemo_mcp.sync import setup_google_auth
     from mnemo_mcp.token_store import get_token_path
 
-    client_id = settings.google_drive_client_id
-    if not client_id:
+    effective_id = client_id or settings.google_drive_client_id
+    if not effective_id:
         return {
             "status": "error",
             "error": "GOOGLE_DRIVE_CLIENT_ID not configured. "
@@ -168,7 +178,7 @@ async def run_setup_sync() -> dict:
             "suggestion": "Set the GOOGLE_DRIVE_CLIENT_ID environment variable or create one in Google Cloud Console.",
         }
 
-    success = await setup_google_auth()
+    success = await setup_google_auth(client_id=client_id, client_secret=client_secret)
     if not success:
         return {
             "status": "error",
@@ -183,6 +193,6 @@ async def run_setup_sync() -> dict:
         "token_path": str(token_path),
         "next_steps": {
             "SYNC_ENABLED": "true",
-            "GOOGLE_DRIVE_CLIENT_ID": client_id,
+            "GOOGLE_DRIVE_CLIENT_ID": effective_id,
         },
     }
