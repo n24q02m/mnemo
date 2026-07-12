@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.5 (2026-07-12)
+
+### Bug Fixes
+
+- Never open a real browser during tests ([#966](https://github.com/n24q02m/mnemo-mcp/pull/966),
+  [`1e66e28`](https://github.com/n24q02m/mnemo-mcp/commit/1e66e28de5c07a46e5eddeb232828508f7c5e4df))
+
+### Features
+
+- Return structured content from domain tools
+  ([#966](https://github.com/n24q02m/mnemo-mcp/pull/966),
+  [`1e66e28`](https://github.com/n24q02m/mnemo-mcp/commit/1e66e28de5c07a46e5eddeb232828508f7c5e4df))
+
+
 ## v2.6.0-beta.4 (2026-07-11)
 
 ### Bug Fixes
