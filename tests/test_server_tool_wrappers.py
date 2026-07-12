@@ -46,42 +46,42 @@ class TestToolWrappers:
     async def test_add_memory_wrapper(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _call(add_memory, content="hello", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["status"] == "saved"
 
     async def test_search_memory_wrapper(self, tmp_db: MemoryDB):
         tmp_db.add("Find me")
         ctx = _make_ctx(tmp_db)
         result = await _call(search_memory, query="Find", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "results" in data
 
     async def test_list_memories_wrapper(self, tmp_db: MemoryDB):
         tmp_db.add("listed")
         ctx = _make_ctx(tmp_db)
         result = await _call(list_memories, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "results" in data
 
     async def test_update_memory_wrapper(self, tmp_db: MemoryDB):
         mid = tmp_db.add("original")
         ctx = _make_ctx(tmp_db)
         result = await _call(update_memory, memory_id=mid, content="updated", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["status"] == "updated"
 
     async def test_delete_memory_wrapper(self, tmp_db: MemoryDB):
         mid = tmp_db.add("to delete")
         ctx = _make_ctx(tmp_db)
         result = await _call(delete_memory, memory_id=mid, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["status"] == "deleted"
 
     async def test_export_memories_wrapper(self, tmp_db: MemoryDB):
         tmp_db.add("export me")
         ctx = _make_ctx(tmp_db)
         result = await _call(export_memories, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["count"] == 1
 
     async def test_import_memories_wrapper(self, tmp_db: MemoryDB):
@@ -98,13 +98,13 @@ class TestToolWrappers:
             }
         )
         result = await _call(import_memories, data=payload, mode="merge", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["imported"] == 1
 
     async def test_memory_stats_wrapper(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _call(memory_stats, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "total_memories" in data
 
     async def test_restore_memory_wrapper(self, tmp_db: MemoryDB):
@@ -116,13 +116,13 @@ class TestToolWrappers:
         tmp_db._conn.commit()
         ctx = _make_ctx(tmp_db)
         result = await _call(restore_memory, memory_id=mid, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["status"] == "restored"
 
     async def test_archived_memories_wrapper(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _call(archived_memories, ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "results" in data
 
     async def test_consolidate_memories_wrapper_no_llm(
@@ -141,5 +141,5 @@ class TestToolWrappers:
         monkeypatch.setattr(settings, "api_keys", None)
         ctx = _make_ctx(tmp_db)
         result = await _call(consolidate_memories, category="testcat", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "error" in data

@@ -134,33 +134,27 @@ class TestConfigSync:
         with patch(
             "mnemo_mcp.sync.sync_full", new_callable=AsyncMock, return_value=mock_result
         ):
-            result = json.loads(await config(action="sync", ctx=ctx))
+            result = await config(action="sync", ctx=ctx)
             assert result["status"] == "ok"
 
     async def test_config_set_sync_interval(self, ctx_with_db):
         """Config set sync_interval updates the setting."""
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="sync_interval", value="120", ctx=ctx)
-        )
+        result = await config(action="set", key="sync_interval", value="120", ctx=ctx)
         assert result["status"] == "updated"
         assert result["key"] == "sync_interval"
 
     async def test_config_set_log_level(self, ctx_with_db):
         """Config set log_level updates logger configuration."""
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
-        )
+        result = await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
         assert result["status"] == "updated"
         assert result["key"] == "log_level"
 
     async def test_config_set_invalid_log_level(self, ctx_with_db):
         """Config set with invalid log level returns error."""
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="log_level", value="INVALID", ctx=ctx)
-        )
+        result = await config(action="set", key="log_level", value="INVALID", ctx=ctx)
         assert "error" in result
         assert "valid_levels" in result
 
@@ -374,13 +368,13 @@ class TestMemoryLimitClamping:
         """Limit below 1 is clamped to 1."""
         ctx, db = ctx_with_db
         db.add("test")
-        result = json.loads(await memory(action="list", limit=0, ctx=ctx))
+        result = await memory(action="list", limit=0, ctx=ctx)
         assert result["count"] <= 1
 
     async def test_limit_clamped_to_max(self, ctx_with_db):
         """Limit above 100 is clamped to 100."""
         ctx, db = ctx_with_db
-        result = json.loads(await memory(action="list", limit=1000, ctx=ctx))
+        result = await memory(action="list", limit=1000, ctx=ctx)
         # Should not crash, limit is clamped
         assert isinstance(result["results"], list)
 

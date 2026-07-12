@@ -58,8 +58,8 @@ async def test_log_level_invalid_rejection(mock_dependencies):
                 result = await server.config(
                     action="set", key="log_level", value="INVALID_LEVEL"
                 )
-                assert '"error":' in result
-                assert "Invalid log level" in result
+                assert "error" in result
+                assert "Invalid log level" in result["error"]
                 mock_logger.remove.assert_not_called()
                 mock_logger.add.assert_not_called()
 
@@ -77,6 +77,6 @@ async def test_log_level_valid_update(mock_dependencies):
                 result = await server.config(
                     action="set", key="log_level", value="DEBUG"
                 )
-                assert '"status":"updated"' in result
+                assert result["status"] == "updated"
                 mock_logger.remove.assert_called_once()
                 mock_logger.add.assert_called_once()

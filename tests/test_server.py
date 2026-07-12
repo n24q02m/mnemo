@@ -54,21 +54,19 @@ def ctx_with_db(tmp_path: Path) -> Generator[tuple[MagicMock, MemoryDB]]:
 class TestMemoryAdd:
     async def test_add(self, ctx_with_db):
         ctx, db = ctx_with_db
-        result = json.loads(await memory(action="add", content="test memory", ctx=ctx))
+        result = await memory(action="add", content="test memory", ctx=ctx)
         assert result["status"] == "saved"
         assert result["id"]
         assert result["semantic"] is False
 
     async def test_add_with_category(self, ctx_with_db):
         ctx, db = ctx_with_db
-        result = json.loads(
-            await memory(
-                action="add",
-                content="test",
-                category="work",
-                tags=["urgent"],
-                ctx=ctx,
-            )
+        result = await memory(
+            action="add",
+            content="test",
+            category="work",
+            tags=["urgent"],
+            ctx=ctx,
         )
         assert result["category"] == "work"
         mem = db.get(result["id"])
@@ -77,18 +75,16 @@ class TestMemoryAdd:
 
     async def test_add_no_content(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="add", ctx=ctx))
+        result = await memory(action="add", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
     async def test_add_exceeds_content_length(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await memory(
-                action="add",
-                content="x" * (MAX_CONTENT_LENGTH + 1),
-                ctx=ctx,
-            )
+        result = await memory(
+            action="add",
+            content="x" * (MAX_CONTENT_LENGTH + 1),
+            ctx=ctx,
         )
         assert "error" in result
         assert "exceeds limit" in result["error"]
@@ -98,7 +94,7 @@ class TestMemorySearch:
     async def test_search(self, ctx_with_db):
         ctx, db = ctx_with_db
         db.add("Python is great for AI and machine learning")
-        result = json.loads(await memory(action="search", query="Python AI", ctx=ctx))
+        result = await memory(action="search", query="Python AI", ctx=ctx)
         assert result["count"] > 0
         assert result["semantic"] is False
         # Tags should be parsed list, not JSON string
@@ -109,7 +105,7 @@ class TestMemorySearch:
 
     async def test_search_no_query(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="search", ctx=ctx))
+        result = await memory(action="search", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
@@ -117,13 +113,11 @@ class TestMemorySearch:
         ctx, db = ctx_with_db
         db.add("Python tip", category="tech", tags=["python"])
         db.add("Python recipe", category="food", tags=["cooking"])
-        result = json.loads(
-            await memory(
-                action="search",
-                query="Python",
-                category="tech",
-                ctx=ctx,
-            )
+        result = await memory(
+            action="search",
+            query="Python",
+            category="tech",
+            ctx=ctx,
         )
         assert all(r["category"] == "tech" for r in result["results"])
 
@@ -133,7 +127,7 @@ class TestMemoryList:
         ctx, db = ctx_with_db
         db.add("mem1", tags=["a", "b"])
         db.add("mem2")
-        result = json.loads(await memory(action="list", ctx=ctx))
+        result = await memory(action="list", ctx=ctx)
         assert result["count"] == 2
         # Tags should be parsed lists
         for r in result["results"]:
@@ -143,7 +137,7 @@ class TestMemoryList:
         ctx, db = ctx_with_db
         db.add("a", category="x")
         db.add("b", category="y")
-        result = json.loads(await memory(action="list", category="x", ctx=ctx))
+        result = await memory(action="list", category="x", ctx=ctx)
         assert result["count"] == 1
 
 
@@ -151,13 +145,11 @@ class TestMemoryUpdate:
     async def test_update(self, ctx_with_db):
         ctx, db = ctx_with_db
         mid = db.add("original")
-        result = json.loads(
-            await memory(
-                action="update",
-                memory_id=mid,
-                content="updated",
-                ctx=ctx,
-            )
+        result = await memory(
+            action="update",
+            memory_id=mid,
+            content="updated",
+            ctx=ctx,
         )
         assert result["status"] == "updated"
         mem = db.get(mid)
@@ -166,32 +158,28 @@ class TestMemoryUpdate:
 
     async def test_update_no_id(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="update", content="x", ctx=ctx))
+        result = await memory(action="update", content="x", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
     async def test_update_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await memory(
-                action="update",
-                memory_id="fake123",
-                content="x",
-                ctx=ctx,
-            )
+        result = await memory(
+            action="update",
+            memory_id="fake123",
+            content="x",
+            ctx=ctx,
         )
         assert "error" in result
 
     async def test_update_exceeds_content_length(self, ctx_with_db):
         ctx, db = ctx_with_db
         mid = db.add("original")
-        result = json.loads(
-            await memory(
-                action="update",
-                memory_id=mid,
-                content="x" * (MAX_CONTENT_LENGTH + 1),
-                ctx=ctx,
-            )
+        result = await memory(
+            action="update",
+            memory_id=mid,
+            content="x" * (MAX_CONTENT_LENGTH + 1),
+            ctx=ctx,
         )
         assert "error" in result
         assert "exceeds limit" in result["error"]
@@ -205,24 +193,22 @@ class TestMemoryDelete:
     async def test_delete(self, ctx_with_db):
         ctx, db = ctx_with_db
         mid = db.add("to delete")
-        result = json.loads(await memory(action="delete", memory_id=mid, ctx=ctx))
+        result = await memory(action="delete", memory_id=mid, ctx=ctx)
         assert result["status"] == "deleted"
         assert db.get(mid) is None
 
     async def test_delete_no_id(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="delete", ctx=ctx))
+        result = await memory(action="delete", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
     async def test_delete_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await memory(
-                action="delete",
-                memory_id="fake123",
-                ctx=ctx,
-            )
+        result = await memory(
+            action="delete",
+            memory_id="fake123",
+            ctx=ctx,
         )
         assert "error" in result
 
@@ -232,20 +218,20 @@ class TestMemoryExportImport:
         ctx, db = ctx_with_db
         db.add("mem1")
         db.add("mem2")
-        result = json.loads(await memory(action="export", ctx=ctx))
+        result = await memory(action="export", ctx=ctx)
         assert result["format"] == "jsonl"
         assert result["count"] == 2
 
     async def test_import(self, ctx_with_db):
         ctx, _ = ctx_with_db
         data = json.dumps({"id": "imp1", "content": "imported"})
-        result = json.loads(await memory(action="import", data=data, ctx=ctx))
+        result = await memory(action="import", data=data, ctx=ctx)
         assert result["status"] == "imported"
         assert result["imported"] == 1
 
     async def test_import_no_data(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="import", ctx=ctx))
+        result = await memory(action="import", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
@@ -254,14 +240,14 @@ class TestMemoryStats:
     async def test_stats(self, ctx_with_db):
         ctx, db = ctx_with_db
         db.add("test")
-        result = json.loads(await memory(action="stats", ctx=ctx))
+        result = await memory(action="stats", ctx=ctx)
         assert result["total_memories"] == 1
         assert "embedding_model" in result
         assert "sync_enabled" in result
 
     async def test_stats_empty(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="stats", ctx=ctx))
+        result = await memory(action="stats", ctx=ctx)
         assert result["total_memories"] == 0
 
 
@@ -280,7 +266,7 @@ class TestMemoryRestore:
         assert archived is not None
         assert archived["archived_at"] is not None
 
-        result = json.loads(await memory(action="restore", memory_id=mid, ctx=ctx))
+        result = await memory(action="restore", memory_id=mid, ctx=ctx)
         assert result["status"] == "restored"
         restored = db.get(mid)
         assert restored is not None
@@ -288,22 +274,20 @@ class TestMemoryRestore:
 
     async def test_restore_no_id(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="restore", ctx=ctx))
+        result = await memory(action="restore", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
     async def test_restore_nonexistent(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await memory(action="restore", memory_id="fake123", ctx=ctx)
-        )
+        result = await memory(action="restore", memory_id="fake123", ctx=ctx)
         assert "error" in result
 
 
 class TestMemoryArchived:
     async def test_archived_empty(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="archived", ctx=ctx))
+        result = await memory(action="archived", ctx=ctx)
         assert result["count"] == 0
         assert result["results"] == []
 
@@ -317,7 +301,7 @@ class TestMemoryArchived:
         db._conn.commit()
         db.archive_old_memories(days=90, importance_threshold=0.3)
 
-        result = json.loads(await memory(action="archived", ctx=ctx))
+        result = await memory(action="archived", ctx=ctx)
         assert result["count"] == 1
         assert result["results"][0]["id"] == mid
 
@@ -333,7 +317,7 @@ class TestMemoryConsolidate:
             patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
         ):
             mock_settings.resolve_provider_mode.return_value = "local"
-            result = json.loads(await _handle_consolidate(ctx, "tech"))
+            result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "LLM" in result["error"]
 
@@ -341,7 +325,7 @@ class TestMemoryConsolidate:
         ctx, _ = ctx_with_db
         with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            result = json.loads(await memory(action="consolidate", ctx=ctx))
+            result = await memory(action="consolidate", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
@@ -349,7 +333,7 @@ class TestMemoryConsolidate:
 class TestMemoryUnknownAction:
     async def test_unknown_action(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await memory(action="invalid", ctx=ctx))
+        result = await memory(action="invalid", ctx=ctx)
         assert "error" in result
         assert "valid_actions" in result
         assert "add" in result["valid_actions"]
@@ -360,7 +344,7 @@ class TestMemoryUnknownAction:
 class TestConfigTool:
     async def test_status(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="status", ctx=ctx))
+        result = await config(action="status", ctx=ctx)
         assert "database" in result
         assert "embedding" in result
         assert "sync" in result
@@ -368,38 +352,32 @@ class TestConfigTool:
 
     async def test_set_sync_folder_rejected(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(
-                action="set",
-                key="sync_folder",
-                value="new-folder",
-                ctx=ctx,
-            )
+        result = await config(
+            action="set",
+            key="sync_folder",
+            value="new-folder",
+            ctx=ctx,
         )
         assert "error" in result
         assert "valid_keys" in result
 
     async def test_set_sync_enabled(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(
-                action="set",
-                key="sync_enabled",
-                value="true",
-                ctx=ctx,
-            )
+        result = await config(
+            action="set",
+            key="sync_enabled",
+            value="true",
+            ctx=ctx,
         )
         assert result["status"] == "updated"
 
     async def test_set_invalid_key(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(
-                action="set",
-                key="invalid_key",
-                value="x",
-                ctx=ctx,
-            )
+        result = await config(
+            action="set",
+            key="invalid_key",
+            value="x",
+            ctx=ctx,
         )
         assert "error" in result
         assert "valid_keys" in result
@@ -408,13 +386,11 @@ class TestConfigTool:
 
     async def test_set_invalid_key_fuzzy(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(
-                action="set",
-                key="sync_enable",
-                value="x",
-                ctx=ctx,
-            )
+        result = await config(
+            action="set",
+            key="sync_enable",
+            value="x",
+            ctx=ctx,
         )
         assert "error" in result
         assert "suggestion" in result
@@ -422,13 +398,13 @@ class TestConfigTool:
 
     async def test_set_missing_params(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="set", ctx=ctx))
+        result = await config(action="set", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
 
     async def test_unknown_action(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="invalid", ctx=ctx))
+        result = await config(action="invalid", ctx=ctx)
         assert "error" in result
         assert "valid_actions" in result
         assert "suggestion" in result
@@ -437,7 +413,7 @@ class TestConfigTool:
     async def test_models_action_removed(self, ctx_with_db):
         """The 'models' catalog-listing action no longer exists."""
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="models", ctx=ctx))
+        result = await config(action="models", ctx=ctx)
         assert "Unknown action 'models'" in result["error"]
         assert "models" not in result["valid_actions"]
 
@@ -467,14 +443,14 @@ class TestHelpTool:
 
 class TestNoneActionHandling:
     async def test_memory_none_action(self):
-        result = json.loads(await memory(action=None))
+        result = await memory(action=None)
         assert "error" in result
         assert "Unknown action 'None'" in result["error"]
         assert "suggestion" in result
         assert "Available actions are:" in result["suggestion"]
 
     async def test_config_none_action(self):
-        result = json.loads(await config(action=None))
+        result = await config(action=None)
         assert "error" in result
         assert "Unknown action 'None'" in result["error"]
         assert "suggestion" in result
@@ -493,9 +469,7 @@ class TestDedupWarning:
             "check_duplicate",
             return_value={"similar": True, "match_id": "abc", "score": 0.85},
         ):
-            result = json.loads(
-                await _handle_add(ctx, "Python is excellent for ML", None, None)
-            )
+            result = await _handle_add(ctx, "Python is excellent for ML", None, None)
         assert result["status"] == "saved"
         assert "dedup_warning" in result
 
@@ -507,7 +481,7 @@ class TestDedupWarning:
             "check_duplicate",
             return_value={"duplicate": True, "match_id": "abc", "score": 0.99},
         ):
-            result = json.loads(await _handle_add(ctx, "exact duplicate", None, None))
+            result = await _handle_add(ctx, "exact duplicate", None, None)
         assert result["status"] == "saved"
         assert "dedup_warning" in result
 
@@ -515,7 +489,7 @@ class TestDedupWarning:
         """Cover lines 338-339: dedup exception is non-blocking."""
         ctx, db = ctx_with_db
         with patch.object(db, "check_duplicate", side_effect=RuntimeError("boom")):
-            result = json.loads(await _handle_add(ctx, "test content", None, None))
+            result = await _handle_add(ctx, "test content", None, None)
         assert result["status"] == "saved"
 
 
@@ -524,7 +498,7 @@ class TestHandleAddErrors:
         """Cover lines 352-354: unexpected exception in db.add."""
         ctx, db = ctx_with_db
         with patch.object(db, "add", side_effect=RuntimeError("unexpected")):
-            result = json.loads(await _handle_add(ctx, "test", None, None))
+            result = await _handle_add(ctx, "test", None, None)
         assert "error" in result
         assert "Internal error" in result["error"]
 
@@ -535,8 +509,8 @@ class TestHandleUpdateErrors:
         ctx, db = ctx_with_db
         mid = db.add("original")
         with patch.object(db, "update", side_effect=RuntimeError("unexpected")):
-            result = json.loads(
-                await _handle_update(ctx, mid, "new content", None, None, None, None)
+            result = await _handle_update(
+                ctx, mid, "new content", None, None, None, None
             )
         assert "error" in result
         assert "Internal error" in result["error"]
@@ -614,7 +588,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker = MagicMock()
         mock_reranker.rerank.return_value = [(1, 0.95), (0, 0.85), (2, 0.70)]
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
-            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
+            result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is True
         assert result["results"][0]["rerank_score"] == 0.95
 
@@ -626,7 +600,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker = MagicMock()
         mock_reranker.rerank.side_effect = RuntimeError("rerank failed")
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
-            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
+            result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is False
 
     async def test_search_with_graph_boost(self, ctx_with_db):
@@ -635,7 +609,7 @@ class TestSearchRerankerAndGraph:
         db.add("Python for AI")
         mid2 = db.add("Python for web development")
         with patch("mnemo_mcp.graph.find_related_memory_ids", return_value=[mid2]):
-            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
+            result = await _handle_search(ctx, "Python", None, None, 5)
         # At least one result should have graph_related
         related = [r for r in result["results"] if r.get("graph_related")]
         assert len(related) >= 1
@@ -648,7 +622,7 @@ class TestSearchRerankerAndGraph:
             "mnemo_mcp.graph.find_related_memory_ids",
             side_effect=RuntimeError("graph error"),
         ):
-            result = json.loads(await _handle_search(ctx, "Python", None, None, 5))
+            result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["count"] > 0
 
 
@@ -658,7 +632,7 @@ class TestConsolidate:
         ctx, db = ctx_with_db
         with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            result = json.loads(await _handle_consolidate(ctx, None))
+            result = await _handle_consolidate(ctx, None)
         assert "error" in result
         assert "category is required" in result["error"]
         assert "suggestion" in result
@@ -669,7 +643,7 @@ class TestConsolidate:
         db.add("only one", category="tech")
         with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
-            result = json.loads(await _handle_consolidate(ctx, "tech"))
+            result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "at least 2" in result["error"]
 
@@ -689,7 +663,7 @@ class TestConsolidate:
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o,gemini-flash"
-            result = json.loads(await _handle_consolidate(ctx, "tech"))
+            result = await _handle_consolidate(ctx, "tech")
 
         assert result["status"] == "consolidated"
         assert result["category"] == "tech"
@@ -711,7 +685,7 @@ class TestConsolidate:
         ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             mock_settings.llm_models = "gpt-4o"
-            result = json.loads(await _handle_consolidate(ctx, "tech"))
+            result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "Consolidation failed" in result["error"]
 
@@ -719,23 +693,17 @@ class TestConsolidate:
 class TestConfigSet:
     async def test_set_sync_interval(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="sync_interval", value="600", ctx=ctx)
-        )
+        result = await config(action="set", key="sync_interval", value="600", ctx=ctx)
         assert result["status"] == "updated"
 
     async def test_set_log_level(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
-        )
+        result = await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
         assert result["status"] == "updated"
 
     async def test_set_invalid_log_level(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="log_level", value="INVALID", ctx=ctx)
-        )
+        result = await config(action="set", key="log_level", value="INVALID", ctx=ctx)
         assert "error" in result
         assert "valid_levels" in result
         assert "suggestion" in result
@@ -743,9 +711,7 @@ class TestConfigSet:
 
     async def test_set_invalid_log_level_fuzzy(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        result = json.loads(
-            await config(action="set", key="log_level", value="DEBG", ctx=ctx)
-        )
+        result = await config(action="set", key="log_level", value="DEBG", ctx=ctx)
         assert "error" in result
         assert "suggestion" in result
         assert "Did you mean 'DEBUG'?" in result["suggestion"]
@@ -876,37 +842,33 @@ class TestSpecializedTools:
         ctx, db = ctx_with_db
 
         # 1. Add
-        add_res = json.loads(
-            await add_memory(content="tool testing", category="test", ctx=ctx)
-        )
+        add_res = await add_memory(content="tool testing", category="test", ctx=ctx)
         assert add_res["status"] == "saved"
         mid = add_res["id"]
 
         # 2. Search
-        search_res = json.loads(await search_memory(query="tool testing", ctx=ctx))
+        search_res = await search_memory(query="tool testing", ctx=ctx)
         assert search_res["count"] >= 1
         assert search_res["results"][0]["id"] == mid
 
         # 3. List
-        list_res = json.loads(await list_memories(category="test", ctx=ctx))
+        list_res = await list_memories(category="test", ctx=ctx)
         assert any(r["id"] == mid for r in list_res["results"])
 
         # 4. Update
-        update_res = json.loads(
-            await update_memory(memory_id=mid, content="updated tool", ctx=ctx)
-        )
+        update_res = await update_memory(memory_id=mid, content="updated tool", ctx=ctx)
         assert update_res["status"] == "updated"
         assert db.get(mid)["content"] == "updated tool"
 
         # 5. Delete
-        delete_res = json.loads(await delete_memory(memory_id=mid, ctx=ctx))
+        delete_res = await delete_memory(memory_id=mid, ctx=ctx)
         assert delete_res["status"] == "deleted"
         assert db.get(mid) is None
 
     async def test_update_memory_error(self, ctx_with_db):
         ctx, _ = ctx_with_db
         # Missing memory_id handled by _handle_update
-        res = json.loads(await update_memory(memory_id="", content="fails", ctx=ctx))
+        res = await update_memory(memory_id="", content="fails", ctx=ctx)
         assert "error" in res
         assert "memory_id is required" in res["error"]
 
@@ -914,7 +876,7 @@ class TestSpecializedTools:
         ctx, db = ctx_with_db
 
         # Add a memory
-        add_res = json.loads(await add_memory(content="to be archived", ctx=ctx))
+        add_res = await add_memory(content="to be archived", ctx=ctx)
         mid = add_res["id"]
 
         # Soft archive it manually in DB since delete_memory does hard delete
@@ -925,11 +887,11 @@ class TestSpecializedTools:
         db._conn.commit()
 
         # 6. Archived list
-        archived_res = json.loads(await archived_memories(ctx=ctx))
+        archived_res = await archived_memories(ctx=ctx)
         assert any(r["id"] == mid for r in archived_res["results"])
 
         # 7. Restore
-        restore_res = json.loads(await restore_memory(memory_id=mid, ctx=ctx))
+        restore_res = await restore_memory(memory_id=mid, ctx=ctx)
         assert restore_res["status"] == "restored"
 
         # Check it is no longer archived
@@ -937,16 +899,16 @@ class TestSpecializedTools:
         assert mem["archived_at"] is None
 
         # 8. Stats
-        stats_res = json.loads(await memory_stats(ctx=ctx))
+        stats_res = await memory_stats(ctx=ctx)
         assert "total_memories" in stats_res
 
         # 9. Export
-        export_payload = json.loads(await export_memories(ctx=ctx))
+        export_payload = await export_memories(ctx=ctx)
         assert mid in export_payload["data"]
 
         # 10. Import
-        import_res = json.loads(
-            await import_memories(data=export_payload["data"], mode="replace", ctx=ctx)
+        import_res = await import_memories(
+            data=export_payload["data"], mode="replace", ctx=ctx
         )
         assert import_res["status"] == "imported"
         assert import_res["imported"] >= 1

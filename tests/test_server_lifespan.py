@@ -184,7 +184,7 @@ class TestConfigActions:
             new_callable=AsyncMock,
             return_value={"status": "ok", "warmup": True},
         ):
-            result = json.loads(await config(action="warmup", ctx=ctx))
+            result = await config(action="warmup", ctx=ctx)
             assert result["status"] == "ok"
 
     async def test_config_setup_sync(self, ctx_with_db):
@@ -195,13 +195,13 @@ class TestConfigActions:
             new_callable=AsyncMock,
             return_value={"status": "ok", "sync": "configured"},
         ):
-            result = json.loads(await config(action="setup_sync", ctx=ctx))
+            result = await config(action="setup_sync", ctx=ctx)
             assert result["status"] == "ok"
 
     async def test_config_unknown_action(self, ctx_with_db):
         """Config with unknown action returns error with suggestion."""
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="syncc", ctx=ctx))
+        result = await config(action="syncc", ctx=ctx)
         assert "error" in result
         assert "Unknown action" in result["error"]
         assert "valid_actions" in result
@@ -211,7 +211,7 @@ class TestConfigActions:
     async def test_config_unknown_action_no_match(self, ctx_with_db):
         """Config with completely invalid action returns error with default suggestion."""
         ctx, _ = ctx_with_db
-        result = json.loads(await config(action="xyzxyzxyz", ctx=ctx))
+        result = await config(action="xyzxyzxyz", ctx=ctx)
         assert "error" in result
         assert "Unknown action" in result["error"]
         assert "suggestion" in result

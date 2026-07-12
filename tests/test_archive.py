@@ -225,7 +225,6 @@ async def test_capture_does_not_unset_archived_at(tmp_db: MemoryDB):
 
 
 async def test_handle_archive_now_runs_archive_by_score(mock_ctx):
-    import json
 
     from mnemo_mcp.server import _handle_archive_now
 
@@ -235,7 +234,7 @@ async def test_handle_archive_now_runs_archive_by_score(mock_ctx):
     _set_age(db, mid, days_old=200)
 
     raw = await _handle_archive_now(ctx)
-    payload = json.loads(raw)
+    payload = raw
 
     assert payload["status"] == "archived"
     assert payload["count"] >= 1
@@ -243,7 +242,6 @@ async def test_handle_archive_now_runs_archive_by_score(mock_ctx):
 
 
 async def test_archive_now_via_memory_dispatcher(mock_ctx):
-    import json
 
     from mnemo_mcp.server import memory
 
@@ -253,7 +251,7 @@ async def test_archive_now_via_memory_dispatcher(mock_ctx):
     _set_age(db, mid, days_old=300)
 
     raw = await memory(action="archive_now", ctx=ctx)
-    payload = json.loads(raw)
+    payload = raw
 
     assert payload["status"] == "archived"
     assert payload["count"] >= 1
@@ -267,7 +265,6 @@ async def test_archive_now_via_memory_dispatcher(mock_ctx):
 
 async def test_capture_triggers_archive_at_interval(mock_ctx, monkeypatch):
     """ARCHIVE_TRIGGER_EVERY=1 -> every capture schedules an archive sweep."""
-    import json
 
     from mnemo_mcp.server import _CAPTURE_COUNTER, memory
 
@@ -282,7 +279,7 @@ async def test_capture_triggers_archive_at_interval(mock_ctx, monkeypatch):
     raw = await memory(
         action="capture", text="brand new note", context_type="fact", ctx=ctx
     )
-    payload = json.loads(raw)
+    payload = raw
     assert payload["status"] == "captured"
 
     # Background task may need a tick to land; await any scheduled tasks.

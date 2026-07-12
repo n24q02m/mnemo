@@ -188,3 +188,17 @@ class TestSaveCredentialsSingleUserWithGDrive:
 
         assert result is None
         cleanup.assert_called_once()
+
+
+def test_conftest_blocks_real_browser_launch():
+    """The autouse fixture must neutralise try_open_browser for the whole suite.
+
+    Regression guard: the GDrive device-code path used to open a real tab in the
+    developer's browser on every unmocked test run.
+    """
+    import os
+
+    import mcp_core
+
+    assert os.environ.get("MCP_NO_BROWSER") == "1"
+    assert mcp_core.try_open_browser("https://example.com/device") is False

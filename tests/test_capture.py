@@ -128,7 +128,7 @@ async def test_capture_passes_category_tags_source(tmp_db: MemoryDB):
 async def test_handle_capture_missing_text_returns_error(mock_ctx):
     ctx, _db = mock_ctx
     raw = await _handle_capture(ctx, text=None, context_type="fact")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "text" in payload["error"]
@@ -137,7 +137,7 @@ async def test_handle_capture_missing_text_returns_error(mock_ctx):
 async def test_handle_capture_invalid_context_type_returns_error(mock_ctx):
     ctx, _db = mock_ctx
     raw = await _handle_capture(ctx, text="something", context_type="not-real")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "valid_context_types" in payload
@@ -147,7 +147,7 @@ async def test_handle_capture_invalid_context_type_returns_error(mock_ctx):
 async def test_handle_capture_invalid_context_type_fuzzy_matching(mock_ctx):
     ctx, _db = mock_ctx
     raw = await _handle_capture(ctx, text="something", context_type="prefernnce")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "suggestion" in payload
@@ -162,7 +162,7 @@ async def test_handle_capture_inserts_and_returns_id(mock_ctx):
         context_type="decision",
         category="architecture",
     )
-    payload = json.loads(raw)
+    payload = raw
 
     assert payload["status"] == "captured"
     assert payload["context_type"] == "decision"
@@ -177,8 +177,8 @@ async def test_handle_capture_dedup_returns_status_deduplicated(mock_ctx):
     ctx, _db = mock_ctx
 
     text = "All API errors return JSON with code, message, and request_id"
-    first = json.loads(await _handle_capture(ctx, text=text, context_type="decision"))
-    second = json.loads(await _handle_capture(ctx, text=text, context_type="decision"))
+    first = await _handle_capture(ctx, text=text, context_type="decision")
+    second = await _handle_capture(ctx, text=text, context_type="decision")
 
     assert first["status"] == "captured"
     assert second["status"] == "deduplicated"
@@ -229,7 +229,7 @@ async def test_handle_capture_oversized_text_returns_error(mock_ctx):
     huge = "x" * (MAX_CONTENT_LENGTH + 10)
 
     raw = await _handle_capture(ctx, text=huge, context_type="fact")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "valid_context_types" not in payload
@@ -248,7 +248,7 @@ async def test_handle_capture_unexpected_exception_returns_internal_error(
 
     ctx, _db = mock_ctx
     raw = await _handle_capture(ctx, text="anything", context_type="fact")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "Internal error" in payload["error"]

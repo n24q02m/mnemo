@@ -14,7 +14,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -87,7 +86,7 @@ async def test_sync_now_returns_error_without_passphrase(
 ) -> None:
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_sync_now(ctx, backend="s3")
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "SYNC_PASSPHRASE" in payload["error"]
 
@@ -115,7 +114,7 @@ async def test_sync_now_delta_push_end_to_end(
 
         ctx = _make_ctx(isolated_db)
         raw = await _handle_config_sync_now(ctx, backend="s3")
-        payload = json.loads(raw)
+        payload = raw
 
     assert payload["backend"] == "s3"
     assert payload["mode"] == "delta"
@@ -129,7 +128,7 @@ async def test_sync_now_unknown_backend(
     monkeypatch.setenv("SYNC_PASSPHRASE", "test-pass")
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_sync_now(ctx, backend="nonexistent")
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "nonexistent" in payload["error"]
 
@@ -158,7 +157,7 @@ async def test_export_passport_writes_file(
 
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_export_passport(ctx)
-    payload = json.loads(raw)
+    payload = raw
 
     assert payload["status"] == "exported"
     assert payload["size"] > 0
@@ -172,7 +171,7 @@ async def test_export_passport_requires_passphrase(
 ) -> None:
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_export_passport(ctx)
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "SYNC_PASSPHRASE" in payload["error"]
 
@@ -187,7 +186,7 @@ async def test_import_passport_requires_passphrase(
 ) -> None:
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_import_passport(ctx, source="s3")
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "SYNC_PASSPHRASE" in payload["error"]
 
@@ -210,7 +209,7 @@ async def test_import_passport_no_bundle_returns_status(
 
         ctx = _make_ctx(isolated_db)
         raw = await _handle_config_import_passport(ctx, source="s3")
-        payload = json.loads(raw)
+        payload = raw
 
     assert payload["status"] == "no_passport"
     assert payload["backend"] == "s3"
@@ -250,7 +249,7 @@ async def test_import_passport_round_trip(
 
         ctx = _make_ctx(isolated_db)
         raw = await _handle_config_import_passport(ctx, source="s3")
-        payload = json.loads(raw)
+        payload = raw
 
     assert payload["status"] == "imported"
     assert payload["inserted"] == 1
@@ -283,7 +282,7 @@ async def test_memory_compress_rewrites_existing_row(
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
         raw = await _handle_memory_compress(ctx, memory_id="a")
 
-    payload = json.loads(raw)
+    payload = raw
     assert payload["status"] == "compressed"
     assert payload["compression_provider"] == "gemini"
 
@@ -308,7 +307,7 @@ async def test_memory_compress_no_provider_returns_skipped(
 
     ctx = _make_ctx(isolated_db)
     raw = await _handle_memory_compress(ctx, memory_id="a")
-    payload = json.loads(raw)
+    payload = raw
     assert payload["status"] == "skipped"
 
 
@@ -325,7 +324,7 @@ async def test_memory_compress_already_compressed_noops(
 
     ctx = _make_ctx(isolated_db)
     raw = await _handle_memory_compress(ctx, memory_id="a")
-    payload = json.loads(raw)
+    payload = raw
     assert payload["status"] == "already_compressed"
     assert payload["compression_provider"] == "gemini"
 
@@ -333,7 +332,7 @@ async def test_memory_compress_already_compressed_noops(
 async def test_memory_compress_missing_id_errors(isolated_db: MemoryDB) -> None:
     ctx = _make_ctx(isolated_db)
     raw = await _handle_memory_compress(ctx, memory_id=None)
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "memory_id" in payload["error"]
 
@@ -341,7 +340,7 @@ async def test_memory_compress_missing_id_errors(isolated_db: MemoryDB) -> None:
 async def test_memory_compress_unknown_id_errors(isolated_db: MemoryDB) -> None:
     ctx = _make_ctx(isolated_db)
     raw = await _handle_memory_compress(ctx, memory_id="nonexistent")
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "not found" in payload["error"]
 
@@ -361,7 +360,7 @@ async def test_sync_now_propagates_unexpected_error(
         ctx = _make_ctx(isolated_db)
         raw = await _handle_config_sync_now(ctx, backend="gdrive")
 
-    payload = json.loads(raw)
+    payload = raw
     assert "error" in payload
     assert "sync_now failed" in payload["error"]
 
@@ -398,7 +397,7 @@ async def test_import_passport_decryption_failure(
 
         ctx = _make_ctx(isolated_db)
         raw = await _handle_config_import_passport(ctx, source="s3")
-        payload = json.loads(raw)
+        payload = raw
 
     assert "error" in payload
     assert "Passphrase mismatch" in payload["error"]
@@ -431,7 +430,7 @@ async def test_import_passport_pull_exception(
 
     ctx = _make_ctx(isolated_db)
     raw = await _handle_config_import_passport(ctx, source="s3")
-    payload = json.loads(raw)
+    payload = raw
 
     assert "error" in payload
     assert "backend pull failed" in payload["error"]

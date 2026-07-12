@@ -3,7 +3,6 @@ history dispatch + memory() routing."""
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock
 
 from mnemo_mcp.db import MemoryDB
@@ -46,7 +45,7 @@ class TestEntitySearchHandler:
     async def test_missing_name_returns_error(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _handle_entity_search(ctx, name=None, entity_type=None)
-        data = json.loads(result)
+        data = result
         assert "error" in data
         assert "name" in data["error"].lower()
 
@@ -54,7 +53,7 @@ class TestEntitySearchHandler:
         _seed_kg(tmp_db, "FastAPI is fast", [{"name": "FastAPI", "type": "tool"}])
         ctx = _make_ctx(tmp_db)
         result = await _handle_entity_search(ctx, name="FastAPI", entity_type=None)
-        data = json.loads(result)
+        data = result
         assert data["count"] == 1
         assert data["matched_name"] == "FastAPI"
 
@@ -63,7 +62,7 @@ class TestEntityGraphHandler:
     async def test_missing_anchor_returns_error(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _handle_entity_graph(ctx, entity_id=None, name=None)
-        data = json.loads(result)
+        data = result
         assert "error" in data
 
     async def test_returns_subgraph_for_known_anchor(self, tmp_db: MemoryDB):
@@ -80,7 +79,7 @@ class TestEntityGraphHandler:
         )
         ctx = _make_ctx(tmp_db)
         result = await _handle_entity_graph(ctx, entity_id=None, name="Alice")
-        data = json.loads(result)
+        data = result
         assert data["nodes"]
         assert data["edges"]
 
@@ -89,7 +88,7 @@ class TestHistoryHandler:
     async def test_missing_entity_id_returns_error(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _handle_history(ctx, entity_id=None)
-        data = json.loads(result)
+        data = result
         assert "error" in data
 
     async def test_returns_timeline(self, tmp_db: MemoryDB):
@@ -98,7 +97,7 @@ class TestHistoryHandler:
         eid = ents["Z"]
         ctx = _make_ctx(tmp_db)
         result = await _handle_history(ctx, entity_id=eid)
-        data = json.loads(result)
+        data = result
         assert data["entity_id"] == eid
         assert data["count"] == 2
 
@@ -108,14 +107,14 @@ class TestMemoryDispatchKGActions:
         _seed_kg(tmp_db, "About Python", [{"name": "Python", "type": "tool"}])
         ctx = _make_ctx(tmp_db)
         result = await memory(action="entity_search", name="Python", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert data["count"] == 1
 
     async def test_dispatch_entity_graph(self, tmp_db: MemoryDB):
         _seed_kg(tmp_db, "About Python", [{"name": "Python", "type": "tool"}])
         ctx = _make_ctx(tmp_db)
         result = await memory(action="entity_graph", name="Python", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "nodes" in data
         assert "edges" in data
 
@@ -123,13 +122,13 @@ class TestMemoryDispatchKGActions:
         _, ents = _seed_kg(tmp_db, "h1", [{"name": "EntH", "type": "concept"}])
         ctx = _make_ctx(tmp_db)
         result = await memory(action="history", entity_id=ents["EntH"], ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "timeline" in data
 
     async def test_unknown_action_lists_kg_actions(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await memory(action="bogus_action_xyz", ctx=ctx)
-        data = json.loads(result)
+        data = result
         assert "valid_actions" in data
         assert "entity_search" in data["valid_actions"]
         assert "entity_graph" in data["valid_actions"]

@@ -9,7 +9,6 @@ load + env, and always includes providers_configured in the response.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import patch
 
@@ -23,7 +22,7 @@ def _call_config_setup_status_sync() -> dict[str, Any]:
     from mnemo_mcp.server import _handle_config_setup_status
 
     raw = asyncio.run(_handle_config_setup_status())
-    return json.loads(raw)
+    return raw
 
 
 class TestSetupStatusLiveDerivedState:
