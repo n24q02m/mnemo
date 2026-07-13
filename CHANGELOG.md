@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v2.6.0-beta.6 (2026-07-13)
+
+### Bug Fixes
+
+- Correct mention gate expression (balanced parens + precedence)
+  ([#970](https://github.com/n24q02m/mnemo-mcp/pull/970),
+  [`11b35aa`](https://github.com/n24q02m/mnemo-mcp/commit/11b35aae7440bb85b9145535f3da143a548c235c))
+
+- Gate oc mention job on comment author write access
+  ([#970](https://github.com/n24q02m/mnemo-mcp/pull/970),
+  [`11b35aa`](https://github.com/n24q02m/mnemo-mcp/commit/11b35aae7440bb85b9145535f3da143a548c235c))
+
+- Run opencode bot on hosted runners ([#969](https://github.com/n24q02m/mnemo-mcp/pull/969),
+  [`744d430`](https://github.com/n24q02m/mnemo-mcp/commit/744d4309569e096a670ed4e7334a0e6462e6732d))
+
+- Wire the dead as_of parameter to the point-in-time query
+  ([#971](https://github.com/n24q02m/mnemo-mcp/pull/971),
+  [`71c8131`](https://github.com/n24q02m/mnemo-mcp/commit/71c81313d7057af48d6a39d5b7356b21907b3444))
+
+- **deps**: Lock file maintenance ([#968](https://github.com/n24q02m/mnemo-mcp/pull/968),
+  [`a3e7607`](https://github.com/n24q02m/mnemo-mcp/commit/a3e76076735179e1e2c1fc883d1eb87cbacf9a13))
+
+
 ## v2.6.0-beta.5 (2026-07-12)
 
 ### Bug Fixes
