@@ -141,6 +141,37 @@ class TestMemoryList:
         assert result["count"] == 1
 
 
+class TestMemoryAsOf:
+    async def test_as_of_action_returns_point_in_time_view(self, ctx_with_db):
+        ctx, db = ctx_with_db
+        old_id = db.add("old fact, later superseded")
+        db._conn.execute(
+            "UPDATE memories SET valid_from = '2026-01-01T00:00:00', "
+            "valid_to = '2026-02-01T00:00:00' WHERE id = ?",
+            (old_id,),
+        )
+        db._conn.commit()
+        # Unrelated memory with no temporal backfill: created_at is "now",
+        # well outside the 2026-01-01..2026-02-01 window, so it must not
+        # leak into the historical as_of query below.
+        db.add("unrelated current fact")
+
+        result = await memory(
+            action="as_of", as_of="2026-01-15T00:00:00", limit=10, ctx=ctx
+        )
+        assert [m["id"] for m in result["memories"]] == [old_id]
+        assert result["count"] == 1
+        assert result["as_of"] == "2026-01-15T00:00:00"
+
+    async def test_as_of_param_with_other_action_errors_not_ignores(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = await memory(
+            action="search", query="x", as_of="2026-01-01T00:00:00", ctx=ctx
+        )
+        assert "error" in result
+        assert "as_of" in result["error"]
+
+
 class TestMemoryUpdate:
     async def test_update(self, ctx_with_db):
         ctx, db = ctx_with_db

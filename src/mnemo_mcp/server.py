@@ -1081,6 +1081,29 @@ async def _handle_entity_graph(
     return result
 
 
+async def _handle_as_of(
+    ctx: Context | None,
+    as_of: str | None,
+    limit: int = 5,
+) -> dict[str, typing.Any]:
+    """``memory(action="as_of")`` -- point-in-time view of memories valid at
+    ``as_of`` (ISO timestamp). Delegates to ``temporal.queries.memories_as_of``.
+    """
+    db, _, _ = _get_ctx(ctx)
+
+    if isinstance(limit, int):
+        limit = max(1, min(limit, 100))
+
+    from mnemo_mcp.temporal.queries import memories_as_of
+
+    rows = await asyncio.to_thread(memories_as_of, db, as_of, limit)
+    return {
+        "memories": [_format_memory(m) for m in rows],
+        "count": len(rows),
+        "as_of": as_of,
+    }
+
+
 async def _handle_history(
     ctx: Context | None,
     entity_id: str | None,
@@ -1476,11 +1499,24 @@ async def memory(
     - restore: Restore archived memory (memory_id required)
     - archived: List archived memories (limit optional)
     - consolidate: LLM summarize similar memories (category required)
+    - as_of: Point-in-time view of memories valid at a given ISO timestamp
+      (as_of required, limit optional). Only combinable with action='as_of';
+      passing as_of with any other action is an error, not a silent no-op.
     """
     # Clamp limit to reasonable bounds to prevent DoS
 
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
+
+    if as_of is not None and action != "as_of":
+        return {
+            "error": (
+                f"as_of is only supported with action='as_of' (got action={action!r}). "
+                "Point-in-time filtering for search/list is not implemented; "
+                "refusing to silently return current-state results."
+            ),
+            "suggestion": "Use action='as_of' with the as_of parameter, or drop as_of for current-state results.",
+        }
 
     match action:
         case "add":
@@ -1515,6 +1551,8 @@ async def memory(
             )
         case "list":
             return await _handle_list(ctx, category, limit)
+        case "as_of":
+            return await _handle_as_of(ctx, as_of, limit)
         case "update":
             return await _handle_update(
                 ctx, memory_id, content, category, tags, source, importance
@@ -1557,6 +1595,7 @@ async def memory(
                 "add",
                 "archive_now",
                 "archived",
+                "as_of",
                 "capture",
                 "compress",
                 "consolidate",
