@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.6.0 (2026-07-14)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#974](https://github.com/n24q02m/mnemo-mcp/pull/974),
+  [`0811117`](https://github.com/n24q02m/mnemo-mcp/commit/0811117b84c0351e98619540750de1164af28bab))
+
+### Features
+
+- Add smithery.yaml for stdio deployment ([#975](https://github.com/n24q02m/mnemo-mcp/pull/975),
+  [`14df3e5`](https://github.com/n24q02m/mnemo-mcp/commit/14df3e58f29e62602083de42131b0a256a899514))
+
+
 ## v2.6.0-beta.6 (2026-07-13)
 
 ### Bug Fixes
