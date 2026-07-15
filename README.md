@@ -49,9 +49,12 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - [Features](#features)
 - [Status](#status)
 - [Documentation](#documentation)
+- [Smithery](#smithery)
 - [Tools](#tools)
 - [Security](#security)
 - [Build from Source](#build-from-source)
+- [CLI](#cli)
+- [Hosted endpoint](#hosted-endpoint)
 - [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Trust Model](#trust-model)
 - [License](#license)
@@ -139,6 +142,10 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.co
 > Install MCP server `mnemo-mcp` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/mnemo-mcp/setup-with-agent.md
 
+## Smithery
+
+mnemo-mcp is packaged for [Smithery](https://smithery.ai/) -- install or run it straight from the registry. It starts over stdio via `uvx mnemo-mcp` with no configuration required to launch; credentials are configured at runtime through the server's own config flow (see [Documentation](#documentation)). The published start command lives in [`smithery.yaml`](smithery.yaml).
+
 ## Tools
 
 15 MCP tools, 17 memory actions. The memory surface is exposed both as 11 specialized single-purpose tools and a legacy `memory` dispatcher (same actions), plus `config`, `help`, and `config__open_relay`:
@@ -190,6 +197,39 @@ cd mnemo-mcp
 uv sync
 uv run mnemo-mcp
 ```
+
+## CLI
+
+The `mnemo-mcp` console script both starts the server and exposes a few one-shot operator subcommands. A bare invocation (or any `--`-prefixed flag) starts the server; a leading subcommand runs an action and exits.
+
+```bash
+mnemo-mcp                       # start the stdio server (default transport)
+mnemo-mcp --http                # start the Streamable HTTP server
+                                # (also via MCP_TRANSPORT=http or TRANSPORT_MODE=http)
+
+mnemo-mcp auth google           # authorize Google Drive sync via OAuth
+mnemo-mcp auth google --client-id <ID> --client-secret <SECRET>   # bring-your-own OAuth client
+mnemo-mcp warmup                # pre-download the bundled local embedding + rerank model
+
+mnemo-mcp config status         # report whether stored config exists
+mnemo-mcp config delete --yes   # delete the stored (encrypted) config
+mnemo-mcp relay status          # show the active browser-setup relay session
+mnemo-mcp relay open            # open the relay setup form in a browser
+mnemo-mcp relay reset           # clear relay session state
+mnemo-mcp doctor                # environment diagnostics (Python, backend, store, mode)
+```
+
+| Subcommand | Purpose |
+|:-----------|:--------|
+| `auth <provider>` | Authorize a sync credential provider (currently `google`); `--client-id` / `--client-secret` supply a bring-your-own OAuth client |
+| `warmup` | Pre-download the bundled local Qwen3 ONNX embedding + rerank model so first use works offline |
+| `config status` \| `config delete [--yes]` | Inspect or remove the stored encrypted configuration |
+| `relay status` \| `relay open` \| `relay reset` | Inspect, open, or clear the zero-config browser setup session |
+| `doctor` | Report Python version, credential backend, store dir, config, relay session, and storage mode |
+
+## Hosted endpoint
+
+A ready-to-use shared instance is hosted at **`https://mnemo.n24q02m.com/mcp`** -- Streamable HTTP transport, OAuth-gated. Point any MCP client that supports remote HTTP + OAuth at that URL and authenticate on first connect; each authenticated user gets an isolated per-user credential store (see [Trust Model](#trust-model)). To run your own instance instead, see [Deploy to Cloudflare](#deploy-to-cloudflare).
 
 ## Deploy to Cloudflare
 
