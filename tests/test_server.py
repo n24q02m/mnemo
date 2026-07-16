@@ -183,7 +183,12 @@ class TestMemoryUpdate:
             ctx=ctx,
         )
         assert result["status"] == "updated"
-        mem = db.get(mid)
+        # Bitemporal supersession (mem_003): update returns a NEW id; the
+        # old id is superseded and no longer resolves via get().
+        new_id = result["id"]
+        assert new_id != mid
+        assert db.get(mid) is None
+        mem = db.get(new_id)
         assert mem is not None
         assert mem["content"] == "updated"
 
@@ -886,15 +891,17 @@ class TestSpecializedTools:
         list_res = await list_memories(category="test", ctx=ctx)
         assert any(r["id"] == mid for r in list_res["results"])
 
-        # 4. Update
+        # 4. Update (bitemporal supersession, mem_003: returns a NEW id;
+        # the old id is superseded and no longer resolves)
         update_res = await update_memory(memory_id=mid, content="updated tool", ctx=ctx)
         assert update_res["status"] == "updated"
-        assert db.get(mid)["content"] == "updated tool"
+        new_id = update_res["id"]
+        assert db.get(new_id)["content"] == "updated tool"
 
-        # 5. Delete
-        delete_res = await delete_memory(memory_id=mid, ctx=ctx)
+        # 5. Delete (must target the current id, not the superseded one)
+        delete_res = await delete_memory(memory_id=new_id, ctx=ctx)
         assert delete_res["status"] == "deleted"
-        assert db.get(mid) is None
+        assert db.get(new_id) is None
 
     async def test_update_memory_error(self, ctx_with_db):
         ctx, _ = ctx_with_db

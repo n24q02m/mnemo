@@ -55,10 +55,10 @@ class TestAddWithForcedVec:
 class TestUpdateWithForcedVec:
     def test_update_embedding_replaces_vec_row(self, _forced_vec_db):
         mid = _forced_vec_db.add("hello", embedding=[0.1, 0.2, 0.3])
-        ok = _forced_vec_db.update(mid, embedding=[0.9, 0.8, 0.7])
-        assert ok is True
+        new_id = _forced_vec_db.update(mid, embedding=[0.9, 0.8, 0.7])
+        assert new_id is not None
         row = _forced_vec_db._conn.execute(
-            "SELECT COUNT(*) AS c FROM memories_vec WHERE id = ?", (mid,)
+            "SELECT COUNT(*) AS c FROM memories_vec WHERE id = ?", (new_id,)
         ).fetchone()
         assert row["c"] == 1
 

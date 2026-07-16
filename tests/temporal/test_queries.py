@@ -3,6 +3,8 @@ history / as_of bitemporal lookups."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.graph import (
     create_relations,
@@ -15,6 +17,11 @@ from mnemo_mcp.temporal.queries import (
     history_for_entity,
     memories_as_of,
 )
+
+
+def _now_iso() -> str:
+    """Current UTC timestamp in ISO format (mirrors mnemo_mcp.db._now_iso)."""
+    return datetime.now(UTC).isoformat()
 
 
 def _seed_kg(db: MemoryDB, content: str, entities, relations=None):
@@ -174,3 +181,29 @@ class TestMemoriesAsOf:
         result = memories_as_of(tmp_db, as_of="2026-03-01T00:00:00")
         ids = {m["id"] for m in result}
         assert mid not in ids
+
+
+class TestUpdateSupersession:
+    def test_update_supersedes_old_row(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("v1", category="fact")
+        t_between = _now_iso()
+        new_id = tmp_db.update(mid, content="v2")
+
+        assert new_id is not None
+        assert new_id != mid
+
+        # Historical query (as_of before the update) still sees v1.
+        historical = memories_as_of(tmp_db, as_of=t_between, limit=10)
+        assert [r["content"] for r in historical] == ["v1"]
+
+        # Current query (as_of=None) sees only v2, under the new id.
+        current = memories_as_of(tmp_db, as_of=None, limit=10)
+        assert [r["content"] for r in current] == ["v2"]
+        assert current[0]["id"] == new_id
+
+        # The old row is closed and points forward to the new one.
+        old_row = tmp_db._conn.execute(
+            "SELECT valid_to, superseded_by FROM memories WHERE id = ?", (mid,)
+        ).fetchone()
+        assert old_row["valid_to"] is not None
+        assert old_row["superseded_by"] == new_id

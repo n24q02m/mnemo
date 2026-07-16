@@ -740,7 +740,7 @@ async def _handle_update(
         embedding = await _embed(content, embedding_model, embedding_dims)
 
     try:
-        ok = await asyncio.to_thread(
+        new_id = await asyncio.to_thread(
             db.update,
             memory_id=memory_id,
             content=content,
@@ -761,11 +761,13 @@ async def _handle_update(
             "error": "Internal error while updating memory",
             "suggestion": "Check server logs for tracebacks or verify database connection.",
         }
-    if ok:
-        # Background: re-extract entities if content changed
+    if new_id:
+        # Background: re-extract entities if content changed. Bitemporal
+        # supersession (mem_003) means memory_id no longer resolves after
+        # this update -- enrichment must target the new row.
         if content:
-            asyncio.create_task(_enrich_memory(db, memory_id, content))
-        return {"status": "updated", "id": memory_id}
+            asyncio.create_task(_enrich_memory(db, new_id, content))
+        return {"status": "updated", "id": new_id}
     return {
         "error": f"Memory {memory_id} not found",
         "suggestion": "Verify the memory_id using action='search' or action='list'.",

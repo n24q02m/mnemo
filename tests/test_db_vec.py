@@ -55,10 +55,10 @@ class TestUpdateWithVectors:
         mid = tmp_db_vec.add("test", embedding=emb1)
 
         emb2 = [0.0, 1.0, 0.0]
-        tmp_db_vec.update(mid, embedding=emb2)
+        new_id = tmp_db_vec.update(mid, embedding=emb2)
 
         row = tmp_db_vec._conn.execute(
-            "SELECT embedding FROM memories_vec WHERE id = ?", (mid,)
+            "SELECT embedding FROM memories_vec WHERE id = ?", (new_id,)
         ).fetchone()
         assert row is not None
         assert row["embedding"] == _serialize_f32(emb2)
@@ -68,15 +68,15 @@ class TestUpdateWithVectors:
         mid = tmp_db_vec.add("test", embedding=emb)
 
         # Update content only, no embedding
-        tmp_db_vec.update(mid, content="updated content")
+        new_id = tmp_db_vec.update(mid, content="updated content")
 
         row = tmp_db_vec._conn.execute(
-            "SELECT embedding FROM memories_vec WHERE id = ?", (mid,)
+            "SELECT embedding FROM memories_vec WHERE id = ?", (new_id,)
         ).fetchone()
         assert row is not None
         assert row["embedding"] == _serialize_f32(emb)
 
-        mem = tmp_db_vec.get(mid)
+        mem = tmp_db_vec.get(new_id)
         assert mem["content"] == "updated content"
 
     def test_update_embedding_only(self, tmp_db_vec):
@@ -84,15 +84,15 @@ class TestUpdateWithVectors:
         mid = tmp_db_vec.add("test", embedding=emb1)
 
         emb2 = [0.0, 0.0, 1.0]
-        tmp_db_vec.update(mid, embedding=emb2)
+        new_id = tmp_db_vec.update(mid, embedding=emb2)
 
         row = tmp_db_vec._conn.execute(
-            "SELECT embedding FROM memories_vec WHERE id = ?", (mid,)
+            "SELECT embedding FROM memories_vec WHERE id = ?", (new_id,)
         ).fetchone()
         assert row is not None
         assert row["embedding"] == _serialize_f32(emb2)
 
-        mem = tmp_db_vec.get(mid)
+        mem = tmp_db_vec.get(new_id)
         assert mem["content"] == "test"
 
     def test_delete_removes_embedding(self, tmp_db_vec):
@@ -112,10 +112,10 @@ class TestUpdateWithVectors:
         mid = tmp_db_vec.add("test", embedding=emb)
 
         # Empty list is falsy, so it should behave like None
-        tmp_db_vec.update(mid, embedding=[])
+        new_id = tmp_db_vec.update(mid, embedding=[])
 
         row = tmp_db_vec._conn.execute(
-            "SELECT embedding FROM memories_vec WHERE id = ?", (mid,)
+            "SELECT embedding FROM memories_vec WHERE id = ?", (new_id,)
         ).fetchone()
         assert row is not None
         assert row["embedding"] == _serialize_f32(emb)

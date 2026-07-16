@@ -96,24 +96,33 @@ class TestGet:
 
 
 class TestUpdate:
+    """update() now supersedes: it returns the NEW row's id (not a bool),
+    and the old id no longer resolves via get() (bitemporal supersession,
+    mem_003 -- see mnemo_mcp.db.MemoryDB.update docstring)."""
+
     def test_content(self, tmp_db: MemoryDB):
         mid = tmp_db.add("original")
-        assert tmp_db.update(mid, content="updated") is True
-        mem = tmp_db.get(mid)
+        new_id = tmp_db.update(mid, content="updated")
+        assert new_id is not None
+        assert new_id != mid
+        assert tmp_db.get(mid) is None
+        mem = tmp_db.get(new_id)
         assert mem is not None
         assert mem["content"] == "updated"
 
     def test_category(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test", category="old")
-        tmp_db.update(mid, category="new")
-        mem = tmp_db.get(mid)
+        new_id = tmp_db.update(mid, category="new")
+        assert new_id is not None
+        mem = tmp_db.get(new_id)
         assert mem is not None
         assert mem["category"] == "new"
 
     def test_tags(self, tmp_db: MemoryDB):
         mid = tmp_db.add("test", tags=["a"])
-        tmp_db.update(mid, tags=["b", "c"])
-        mem = tmp_db.get(mid)
+        new_id = tmp_db.update(mid, tags=["b", "c"])
+        assert new_id is not None
+        mem = tmp_db.get(new_id)
         assert mem is not None
         assert json.loads(mem["tags"]) == ["b", "c"]
 
@@ -123,19 +132,21 @@ class TestUpdate:
         assert mem is not None
         old_ts = mem["updated_at"]
         time.sleep(0.01)
-        tmp_db.update(mid, content="changed")
-        mem = tmp_db.get(mid)
+        new_id = tmp_db.update(mid, content="changed")
+        assert new_id is not None
+        mem = tmp_db.get(new_id)
         assert mem is not None
         assert mem["updated_at"] >= old_ts
 
-    def test_nonexistent_returns_false(self, tmp_db: MemoryDB):
-        assert tmp_db.update("nonexistent", content="x") is False
+    def test_nonexistent_returns_none(self, tmp_db: MemoryDB):
+        assert tmp_db.update("nonexistent", content="x") is None
 
     def test_partial_update_preserves_fields(self, tmp_db: MemoryDB):
         """Updating category should not change content or tags."""
         mid = tmp_db.add("content", category="old", tags=["tag1"])
-        tmp_db.update(mid, category="new")
-        mem = tmp_db.get(mid)
+        new_id = tmp_db.update(mid, category="new")
+        assert new_id is not None
+        mem = tmp_db.get(new_id)
         assert mem is not None
         assert mem["content"] == "content"
         assert mem["category"] == "new"
@@ -550,14 +561,14 @@ class TestContentLengthValidation:
 
     def test_update_at_limit_ok(self, tmp_db: MemoryDB):
         mid = tmp_db.add("short")
-        ok = tmp_db.update(mid, content="x" * MAX_CONTENT_LENGTH)
-        assert ok is True
+        new_id = tmp_db.update(mid, content="x" * MAX_CONTENT_LENGTH)
+        assert new_id is not None
 
     def test_update_none_content_skips_validation(self, tmp_db: MemoryDB):
         """Updating category only should not trigger content validation."""
         mid = tmp_db.add("test")
-        ok = tmp_db.update(mid, category="new_cat")
-        assert ok is True
+        new_id = tmp_db.update(mid, category="new_cat")
+        assert new_id is not None
 
     def test_import_rejects_oversized(self, tmp_db: MemoryDB):
         """Import should skip oversized content and count as rejected."""

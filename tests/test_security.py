@@ -38,16 +38,18 @@ def test_update_security(tmp_db: MemoryDB):
     # much harder to exploit.
 
     # Normal update works
-    assert tmp_db.update(mid, content="new content") is True
-    mem = tmp_db.get(mid)
+    new_id = tmp_db.update(mid, content="new content")
+    assert new_id is not None
+    mem = tmp_db.get(new_id)
     assert mem is not None
     assert mem["content"] == "new content"
 
     # Try to inject something into a parameter (though it'\''s already safe due to placeholders)
     # This is more of a sanity check.
     malicious_content = "content', category='pwned"
-    tmp_db.update(mid, content=malicious_content)
-    mem = tmp_db.get(mid)
+    newer_id = tmp_db.update(new_id, content=malicious_content)
+    assert newer_id is not None
+    mem = tmp_db.get(newer_id)
     assert mem is not None
     assert mem["content"] == malicious_content
     assert mem["category"] == "cat"  # Category remains unchanged
@@ -60,8 +62,9 @@ def test_update_security_extended(tmp_db: MemoryDB):
     )
 
     # Verify we can update new fields
-    tmp_db.update(mid, source="new source", importance=0.8)
-    mem = tmp_db.get(mid)
+    new_id = tmp_db.update(mid, source="new source", importance=0.8)
+    assert new_id is not None
+    mem = tmp_db.get(new_id)
     assert mem is not None
     assert mem["source"] == "new source"
     assert mem["importance"] == 0.8
@@ -72,8 +75,9 @@ def test_update_security_extended(tmp_db: MemoryDB):
     # it is treated as a value, not a column name.
 
     malicious_val = "ignored' --"
-    tmp_db.update(mid, category=malicious_val)
-    mem = tmp_db.get(mid)
+    newer_id = tmp_db.update(new_id, category=malicious_val)
+    assert newer_id is not None
+    mem = tmp_db.get(newer_id)
     assert mem is not None
     assert mem["category"] == malicious_val
     assert mem["content"] == "original content"

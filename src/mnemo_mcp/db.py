@@ -927,8 +927,12 @@ class MemoryDB:
         (mem_001 schema additions). Returns SQL fragment to append to a
         ``WHERE m.... = ...`` clause and the matching positional params so
         FTS and vec can compose the same filter set without duplication.
+
+        Bitemporal (mem_003): always excludes superseded/soft-deleted rows
+        (``valid_to IS NOT NULL``) -- neither FTS nor vec search should ever
+        surface a historical version, regardless of ``include_archived``.
         """
-        fragments = []
+        fragments = ["AND m.valid_to IS NULL"]
         params: list = []
         if context_type is not None:
             fragments.append("AND m.context_type = ?")
@@ -1172,6 +1176,10 @@ class MemoryDB:
         Phase 1 archive policy: by default exclude soft-archived rows
         (``archived_at IS NOT NULL``). Pass ``include_archived=True`` to see
         them — symmetric with :meth:`search` semantics.
+
+        Bitemporal (mem_003): always excludes superseded/soft-deleted rows
+        (``valid_to IS NOT NULL``), independent of ``include_archived`` --
+        archival and supersession are orthogonal states.
         """
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
@@ -1180,25 +1188,30 @@ class MemoryDB:
             if include_archived:
                 sql = (
                     "SELECT * FROM memories "
-                    "WHERE category = ? "
+                    "WHERE category = ? AND valid_to IS NULL "
                     "ORDER BY updated_at DESC "
                     "LIMIT ? OFFSET ?"
                 )
             else:
                 sql = (
                     "SELECT * FROM memories "
-                    "WHERE category = ? AND archived_at IS NULL "
+                    "WHERE category = ? AND archived_at IS NULL AND valid_to IS NULL "
                     "ORDER BY updated_at DESC "
                     "LIMIT ? OFFSET ?"
                 )
             rows = self._conn.execute(sql, (category, limit, offset)).fetchall()
         else:
             if include_archived:
-                sql = "SELECT * FROM memories ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+                sql = (
+                    "SELECT * FROM memories "
+                    "WHERE valid_to IS NULL "
+                    "ORDER BY updated_at DESC "
+                    "LIMIT ? OFFSET ?"
+                )
             else:
                 sql = (
                     "SELECT * FROM memories "
-                    "WHERE archived_at IS NULL "
+                    "WHERE archived_at IS NULL AND valid_to IS NULL "
                     "ORDER BY updated_at DESC "
                     "LIMIT ? OFFSET ?"
                 )
@@ -1207,9 +1220,14 @@ class MemoryDB:
         return [dict(r) for r in rows]
 
     def get(self, memory_id: str) -> dict | None:
-        """Get a single memory by ID."""
+        """Get a single memory by ID.
+
+        Bitemporal (mem_003): only returns the row when it is still current
+        (``valid_to IS NULL``). A superseded/soft-deleted id returns None --
+        callers must switch to the id returned by :meth:`update`.
+        """
         row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (memory_id,)
+            "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL", (memory_id,)
         ).fetchone()
         return dict(row) if row else None
 
@@ -1222,8 +1240,22 @@ class MemoryDB:
         source: str | None = None,
         importance: float | None = None,
         embedding: list[float] | None = None,
-    ) -> bool:
-        """Update an existing memory. Returns True if found and updated.
+    ) -> str | None:
+        """Update an existing memory by superseding it with a new version.
+
+        Bitemporal supersession (spec §6, mem_003): the old row is closed
+        (``valid_to=now``, ``superseded_by=<new id>``) and a new row is
+        inserted carrying forward every field not explicitly overridden here
+        (plus fresh ``created_at``/``updated_at``/``last_accessed`` and a
+        reset ``access_count``). This makes ``update`` id-changing: callers
+        must switch to the returned id for subsequent get/search/delete
+        calls -- the old id no longer resolves via :meth:`get`/:meth:`search`
+        /:meth:`list_memories` (see call-site filters), only via
+        ``temporal.queries.memories_as_of`` for historical ``as_of`` lookups.
+
+        Returns:
+            The new memory's id, or ``None`` if ``memory_id`` was not found
+            (already deleted or already superseded).
 
         Raises:
             ValueError: If content exceeds MAX_CONTENT_LENGTH.
@@ -1233,65 +1265,91 @@ class MemoryDB:
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
 
-        now = _now_iso()
+        old_row = self._conn.execute(
+            "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL", (memory_id,)
+        ).fetchone()
+        if old_row is None:
+            return None
 
-        # Use static parameterized query with CASE WHEN for safe partial updates.
-        # This prevents SQL injection and ensures only specified fields are changed.
-        cursor = self._conn.execute(
-            """
-            UPDATE memories SET
-                content = CASE WHEN :content_provided THEN :content ELSE content END,
-                category = CASE WHEN :category_provided THEN :category ELSE category END,
-                tags = CASE WHEN :tags_provided THEN :tags ELSE tags END,
-                source = CASE WHEN :source_provided THEN :source ELSE source END,
-                importance = CASE WHEN :importance_provided THEN :importance ELSE importance END,
-                updated_at = :now
-            WHERE id = :id
-            """,
-            {
-                "id": memory_id,
-                "now": now,
-                "content": content,
-                "content_provided": content is not None,
-                "category": category,
-                "category_provided": category is not None,
-                # Bolt Performance Optimization:
-                # Prevent expensive json.dumps calls for the default empty list.
-                "tags": ("[]" if not tags else json.dumps(tags))
-                if tags is not None
-                else None,
-                "tags_provided": tags is not None,
-                "source": source,
-                "source_provided": source is not None,
-                "importance": max(0.0, min(1.0, importance))
-                if importance is not None
-                else None,
-                "importance_provided": importance is not None,
-            },
+        now = _now_iso()
+        new_id = uuid.uuid4().hex
+
+        new_row = dict(old_row)
+        new_row["id"] = new_id
+        new_row["created_at"] = now
+        new_row["updated_at"] = now
+        new_row["last_accessed"] = now
+        new_row["access_count"] = 0
+        new_row["valid_from"] = now
+        new_row["valid_to"] = None
+        new_row["superseded_by"] = None
+        if "commit_sha" in new_row:
+            new_row["commit_sha"] = None
+
+        if content is not None:
+            new_row["content"] = content
+        if category is not None:
+            new_row["category"] = category
+        if tags is not None:
+            # Bolt Performance Optimization:
+            # Prevent expensive json.dumps calls for the default empty list.
+            new_row["tags"] = "[]" if not tags else json.dumps(tags)
+        if source is not None:
+            new_row["source"] = source
+        if importance is not None:
+            new_row["importance"] = max(0.0, min(1.0, importance))
+
+        columns = list(new_row.keys())
+        column_list = ", ".join(columns)
+        placeholders = ", ".join("?" for _ in columns)
+
+        self._conn.execute(
+            "UPDATE memories SET valid_to = ?, superseded_by = ? WHERE id = ?",
+            (now, new_id, memory_id),
+        )
+        self._conn.execute(
+            f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
+            [new_row[c] for c in columns],
         )
 
-        if cursor.rowcount == 0:
-            return False
-
-        # Update embedding if provided
-        if embedding and self._vec_enabled:
+        # Embedding: an explicit value replaces; otherwise carry the old
+        # vector forward under the new id so semantic search keeps working
+        # for metadata-only edits (content-only re-embedding is the
+        # caller's responsibility, e.g. server._handle_update).
+        if self._vec_enabled:
+            old_vec = self._conn.execute(
+                "SELECT embedding FROM memories_vec WHERE id = ?", (memory_id,)
+            ).fetchone()
             self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
-            self._conn.execute(
-                "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
-            )
+            if embedding:
+                self._conn.execute(
+                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                    (new_id, _serialize_f32(embedding, self._embedding_dims)),
+                )
+            elif old_vec is not None:
+                self._conn.execute(
+                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                    (new_id, old_vec["embedding"]),
+                )
 
         self._conn.commit()
-        logger.info(f"[AUDIT] update id={memory_id}")
-        return True
+        logger.info(f"[AUDIT] update id={memory_id} -> new_id={new_id}")
+        return new_id
 
     def delete(self, memory_id: str) -> bool:
-        """Delete a memory by ID. Returns True if found and deleted."""
-        # Bolt Performance Optimization:
-        # Avoided N+1 SELECT overhead by executing DELETE directly and checking rowcount.
-        # This completely bypasses Python's memory allocation for a row we intend to delete.
-        cursor = self._conn.cursor()
-        cursor.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        """Delete a memory by ID. Returns True if found and deleted.
+
+        Bitemporal (mem_003): soft-closes the row (``valid_to=now``) instead
+        of physically removing it, so it drops out of get/search/list (same
+        observable behaviour as a hard delete) while remaining available to
+        ``temporal.queries.memories_as_of`` for historical ``as_of`` lookups
+        and to ``history_for_entity`` for audit trails. ``superseded_by``
+        stays NULL -- deletion has no forward pointer, unlike ``update``.
+        """
+        cursor = self._conn.execute(
+            "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL",
+            (_now_iso(), memory_id),
+        )
 
         if cursor.rowcount == 0:
             return False
@@ -1304,15 +1362,23 @@ class MemoryDB:
         return True
 
     def stats(self) -> dict:
-        """Get database statistics."""
-        total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        """Get database statistics.
+
+        Bitemporal (mem_003): counts/aggregates only current rows
+        (``valid_to IS NULL``) -- superseded/soft-deleted history is not
+        double-counted into totals or category breakdowns.
+        """
+        total = self._conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE valid_to IS NULL"
+        ).fetchone()[0]
 
         categories = self._conn.execute(
-            "SELECT category, COUNT(*) as cnt FROM memories GROUP BY category ORDER BY cnt DESC"
+            "SELECT category, COUNT(*) as cnt FROM memories "
+            "WHERE valid_to IS NULL GROUP BY category ORDER BY cnt DESC"
         ).fetchall()
 
         last_updated = self._conn.execute(
-            "SELECT MAX(updated_at) FROM memories"
+            "SELECT MAX(updated_at) FROM memories WHERE valid_to IS NULL"
         ).fetchone()[0]
 
         return {
