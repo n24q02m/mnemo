@@ -2,6 +2,44 @@
 
 <!-- version list -->
 
+## v2.7.0-beta.1 (2026-07-16)
+
+### Bug Fixes
+
+- Bitemporal supersession + as_of guard for mnemo memories
+  ([#984](https://github.com/n24q02m/mnemo-mcp/pull/984),
+  [`a842487`](https://github.com/n24q02m/mnemo-mcp/commit/a84248744add20a8fd75d1ed491e4aa84a30c3c8))
+
+- Bump mcp-core floor to 1.19.0 stable ([#985](https://github.com/n24q02m/mnemo-mcp/pull/985),
+  [`42e422f`](https://github.com/n24q02m/mnemo-mcp/commit/42e422f66f0aa6b4123744727b086db0990492c8))
+
+- Default LLM_MODELS to OpenRouter MiniMax M3 via CF AI Gateway
+  ([#986](https://github.com/n24q02m/mnemo-mcp/pull/986),
+  [`5130982`](https://github.com/n24q02m/mnemo-mcp/commit/5130982706893fc252cd33e80f41f7c176853800))
+
+- Forward CF AI Gateway litellm envs into container
+  ([#986](https://github.com/n24q02m/mnemo-mcp/pull/986),
+  [`5130982`](https://github.com/n24q02m/mnemo-mcp/commit/5130982706893fc252cd33e80f41f7c176853800))
+
+- Mark memory composite deprecated in live help doc
+  ([#987](https://github.com/n24q02m/mnemo-mcp/pull/987),
+  [`d68061c`](https://github.com/n24q02m/mnemo-mcp/commit/d68061c80e92947929abf933559f51009bd6f299))
+
+- Sync self-host wrangler.jsonc LLM_MODELS example with deploy template
+  ([#986](https://github.com/n24q02m/mnemo-mcp/pull/986),
+  [`5130982`](https://github.com/n24q02m/mnemo-mcp/commit/5130982706893fc252cd33e80f41f7c176853800))
+
+### Features
+
+- Deprecate legacy memory composite tool in favor of granular tools
+  ([#987](https://github.com/n24q02m/mnemo-mcp/pull/987),
+  [`d68061c`](https://github.com/n24q02m/mnemo-mcp/commit/d68061c80e92947929abf933559f51009bd6f299))
+
+- Document CLI, smithery, and self-host endpoint in README
+  ([#981](https://github.com/n24q02m/mnemo-mcp/pull/981),
+  [`2be8a59`](https://github.com/n24q02m/mnemo-mcp/commit/2be8a5951314a162ac83140ddcd1094ee6905a11))
+
+
 ## v2.6.0 (2026-07-14)
 
 ### Bug Fixes
