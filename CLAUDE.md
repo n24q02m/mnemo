@@ -1,7 +1,7 @@
 # CLAUDE.md - mnemo-mcp
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
-Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher + config + help + config__open_relay.
+Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher (DEPRECATED -- use the granular tools instead) + config + help + config__open_relay.
 2-mode embedding: cloud chain (`EMBEDDING_MODELS`) > Local (Qwen3 ONNX khi chain rong). Per-task model chains (`EMBEDDING_MODELS`/`RERANK_MODELS`/`LLM_MODELS`, order = litellm fallback). LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]).
 
 ## Commands

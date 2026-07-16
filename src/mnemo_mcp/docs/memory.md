@@ -1,5 +1,8 @@
 # Memory Tool - Full Documentation
 
+> **[DEPRECATED — use the granular tools (add_memory, search_memory, ...) instead; this composite tool will be removed in a future release]**
+> This composite `memory` dispatcher is kept for backward compatibility only. Prefer the specialized single-purpose tools -- `add_memory`, `search_memory`, `list_memories`, `update_memory`, `delete_memory`, `export_memories`, `import_memories`, `memory_stats`, `restore_memory`, `archived_memories`, `consolidate_memories` -- which map 1:1 to the actions documented below. Actions with no granular equivalent yet (`capture`, `archive_now`, `as_of`, `compress`, `entity_search`, `entity_graph`, `history`) remain available only through this tool for now.
+
 ## Overview
 
 The `memory` tool manages persistent AI memories with hybrid search (text + semantic).

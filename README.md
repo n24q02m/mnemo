@@ -148,12 +148,12 @@ mnemo-mcp is packaged for [Smithery](https://smithery.ai/) -- install or run it 
 
 ## Tools
 
-15 MCP tools, 17 memory actions. The memory surface is exposed both as 11 specialized single-purpose tools and a legacy `memory` dispatcher (same actions), plus `config`, `help`, and `config__open_relay`:
+15 MCP tools, 17 memory actions. The memory surface is exposed both as 11 specialized single-purpose tools and a deprecated legacy `memory` dispatcher (same actions), plus `config`, `help`, and `config__open_relay`:
 
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
 | `add_memory`, `search_memory`, `list_memories`, `update_memory`, `delete_memory`, `export_memories`, `import_memories`, `memory_stats`, `restore_memory`, `archived_memories`, `consolidate_memories` | (one action each) | Specialized single-purpose memory tools -- the recommended surface |
-| `memory` (legacy dispatcher) | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history) |
+| `memory` (legacy dispatcher, **DEPRECATED** -- use the granular tools above instead; will be removed in a future release) | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history) |
 | `config` | `status`, `sync`, `set`, `warmup`, `setup_sync`, `setup_status`, `setup_start`, `setup_skip`, `setup_reset`, `setup_complete`, `setup_relay`, `sync_now`, `export_passport`, `import_passport` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider, manage HTTP setup form lifecycle, passport export/import |
 | `help` | `topic="memory"` or `topic="config"` | Full documentation for any tool |
 | `config__open_relay` | (HTTP relay mode) | Open the zero-config relay setup form (registered via mcp-core) |

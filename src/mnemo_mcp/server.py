@@ -392,6 +392,44 @@ async def _maybe_include_setup_hint(result: dict) -> dict:
     return result
 
 
+# W6.4: `memory` deprecation -- map each composite-tool action to its
+# granular single-purpose tool replacement, where one exists. Actions with
+# no entry (capture/archive_now/as_of/compress/entity_search/entity_graph/
+# history) are Phase 3 / typed-capture features not yet split out; callers
+# keep using the composite tool for those until a granular equivalent ships.
+_GRANULAR_TOOL_FOR_ACTION: dict[str, str] = {
+    "add": "add_memory",
+    "search": "search_memory",
+    "list": "list_memories",
+    "update": "update_memory",
+    "delete": "delete_memory",
+    "export": "export_memories",
+    "import": "import_memories",
+    "stats": "memory_stats",
+    "restore": "restore_memory",
+    "archived": "archived_memories",
+    "consolidate": "consolidate_memories",
+}
+
+
+def _deprecation_notice(action: str | None) -> dict[str, str | None]:
+    """Build the `_deprecation` field attached to every `memory()` response."""
+    granular_tool = _GRANULAR_TOOL_FOR_ACTION.get(action or "")
+    if granular_tool:
+        message = (
+            "The 'memory' composite tool is deprecated and will be removed "
+            f"in a future release. Use '{granular_tool}' instead of "
+            f"action={action!r}."
+        )
+    else:
+        message = (
+            "The 'memory' composite tool is deprecated and will be removed "
+            f"in a future release. No granular tool exists yet for "
+            f"action={action!r}."
+        )
+    return {"message": message, "use_instead": granular_tool}
+
+
 def _format_memory(mem: dict) -> dict:
     """Format a raw memory dict for tool output.
 
@@ -1430,6 +1468,8 @@ async def consolidate_memories(
 
 @mcp.tool(
     description=(
+        "[DEPRECATED — use the granular tools (add_memory, search_memory, ...) "
+        "instead; this composite tool will be removed in a future release]\n\n"
         "Legacy dispatcher for backward compatibility. Use specialized tools (add_memory, search_memory, etc.) instead.\n\nPersistent memory store. Actions: add|search|list|update|delete|export|import|stats|restore|archived|consolidate.\n"
         "\n"
         "ACTION GUIDE — when to use each:\n"
@@ -1511,7 +1551,7 @@ async def memory(
         limit = max(1, min(limit, 100))
 
     if as_of is not None and action != "as_of":
-        return {
+        result: dict[str, typing.Any] = {
             "error": (
                 f"as_of is only supported with action='as_of' (got action={action!r}). "
                 "Point-in-time filtering for search/list is not implemented; "
@@ -1519,12 +1559,14 @@ async def memory(
             ),
             "suggestion": "Use action='as_of' with the as_of parameter, or drop as_of for current-state results.",
         }
+        result["_deprecation"] = _deprecation_notice(action)
+        return result
 
     match action:
         case "add":
-            return await _handle_add(ctx, content, category, tags)
+            result = await _handle_add(ctx, content, category, tags)
         case "capture":
-            return await _handle_capture(
+            result = await _handle_capture(
                 ctx,
                 text or content,
                 context_type=context_type,
@@ -1539,7 +1581,7 @@ async def memory(
             # the capture branch above; here we treat it as a search filter
             # only when caller did not leave it at the conversation default.
             ctype_filter = context_type if context_type != "conversation" else None
-            return await _handle_search(
+            result = await _handle_search(
                 ctx,
                 query,
                 category,
@@ -1552,38 +1594,38 @@ async def memory(
                 include_archived=include_archived,
             )
         case "list":
-            return await _handle_list(ctx, category, limit)
+            result = await _handle_list(ctx, category, limit)
         case "as_of":
-            return await _handle_as_of(ctx, as_of, limit)
+            result = await _handle_as_of(ctx, as_of, limit)
         case "update":
-            return await _handle_update(
+            result = await _handle_update(
                 ctx, memory_id, content, category, tags, source, importance
             )
         case "delete":
-            return await _handle_delete(ctx, memory_id)
+            result = await _handle_delete(ctx, memory_id)
         case "export":
-            return await _handle_export(ctx)
+            result = await _handle_export(ctx)
         case "import":
-            return await _handle_import(ctx, data, mode)
+            result = await _handle_import(ctx, data, mode)
         case "stats":
-            return await _handle_stats(ctx)
+            result = await _handle_stats(ctx)
         case "restore":
-            return await _handle_restore(ctx, memory_id)
+            result = await _handle_restore(ctx, memory_id)
         case "archived":
-            return await _handle_archived(ctx, limit)
+            result = await _handle_archived(ctx, limit)
         case "archive_now":
-            return await _handle_archive_now(ctx)
+            result = await _handle_archive_now(ctx)
         case "consolidate":
-            return await _handle_consolidate(ctx, category)
+            result = await _handle_consolidate(ctx, category)
         case "compress":
-            return await _handle_memory_compress(ctx, memory_id)
+            result = await _handle_memory_compress(ctx, memory_id)
         case "entity_search":
             ent_type = context_type if context_type != "conversation" else None
-            return await _handle_entity_search(
+            result = await _handle_entity_search(
                 ctx, name=name or query, entity_type=ent_type, limit=limit
             )
         case "entity_graph":
-            return await _handle_entity_graph(
+            result = await _handle_entity_graph(
                 ctx,
                 entity_id=entity_id,
                 name=name or query,
@@ -1591,7 +1633,7 @@ async def memory(
                 limit=limit,
             )
         case "history":
-            return await _handle_history(ctx, entity_id=entity_id or memory_id)
+            result = await _handle_history(ctx, entity_id=entity_id or memory_id)
         case _:
             valid_actions = [
                 "add",
@@ -1629,7 +1671,10 @@ async def memory(
                 resp["suggestion"] = (
                     f"Available actions are: {', '.join(valid_actions)}."
                 )
-            return resp
+            result = resp
+
+    result["_deprecation"] = _deprecation_notice(action)
+    return result
 
 
 @mcp.tool(
