@@ -450,8 +450,24 @@ async def _download_file(token: dict, file_id: str, dest_path: Path) -> bool:
     )
 
     if response.status_code == 200:
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(dest_path.write_bytes, response.content)
+
+        def _write_secure_bytes(file_path: Path, content: bytes) -> None:
+            import os
+            import stat
+
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
+            mode = stat.S_IRUSR | stat.S_IWUSR
+            fd = os.open(file_path, flags, mode)
+            try:
+                if os.name != "nt":
+                    os.fchmod(fd, mode)
+            except OSError:
+                pass
+            with os.fdopen(fd, "wb") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write_secure_bytes, dest_path, response.content)
         return True
 
     logger.error(f"Download failed ({response.status_code}): {response.text[:100]}")
