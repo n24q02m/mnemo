@@ -222,19 +222,22 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
         upsert_data,
     )
 
-    # Fetch all IDs in bulk. Batch to stay under SQLITE_MAX_VARIABLE_NUMBER.
-    BATCH_SIZE = 400
-    for i in range(0, len(unique_keys), BATCH_SIZE):
-        batch = unique_keys[i : i + BATCH_SIZE]
-        placeholders = ", ".join(["(?, ?)"] * len(batch))
-        params = [val for key in batch for val in key]
-        rows = conn.execute(
-            "SELECT name, entity_type, id FROM memory_entities "
-            f"WHERE (name, entity_type) IN (VALUES {placeholders})",
-            params,
-        ).fetchall()
-        for r_name, r_type, r_id in rows:
-            unique_ents[(r_name, r_type)] = r_id
+    # Bolt Performance Optimization:
+    # Use SQLite's json_each with json_extract for multi-column IN clauses.
+    # This eliminates the need for Python-side string interpolation and looping
+    # to batch parameters due to SQLITE_MAX_VARIABLE_NUMBER limits.
+    json_payload = json.dumps(unique_keys)
+    rows = conn.execute(
+        "SELECT name, entity_type, id FROM memory_entities "
+        "WHERE (name, entity_type) IN ("
+        "  SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') "
+        "  FROM json_each(?)"
+        ")",
+        (json_payload,),
+    ).fetchall()
+
+    for r_name, r_type, r_id in rows:
+        unique_ents[(r_name, r_type)] = r_id
 
     return [unique_ents[key] for key in ordered_ents]
 
