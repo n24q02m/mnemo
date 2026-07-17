@@ -468,3 +468,51 @@ class TestResetState:
             reset_state()
 
         assert get_state() == CredentialState.AWAITING_SETUP
+
+
+# ---------------------------------------------------------------------------
+# Per-sub custom endpoint (api_base) -- relay/gateway routing
+# ---------------------------------------------------------------------------
+
+
+class TestApiBaseCloudKeys:
+    def test_cloud_keys_includes_api_base(self):
+        # api_base env vars ride the same per-sub rails as provider keys:
+        # membership in CLOUD_KEYS makes credentials_for_current_request()
+        # keep them through the os.environ filter (stdio/single-user) and the
+        # per-sub config apply loop.
+        assert "EMBEDDING_API_BASE" in CLOUD_KEYS
+        assert "RERANK_API_BASE" in CLOUD_KEYS
+        assert "LLM_API_BASE" in CLOUD_KEYS
+
+    def test_per_sub_api_base_survives_filter(self, monkeypatch):
+        from mnemo_mcp.credential_state import credentials_for_current_request
+
+        monkeypatch.setenv("EMBEDDING_API_BASE", "https://gw-a.example/cohere/v2/embed")
+        assert (
+            credentials_for_current_request()["EMBEDDING_API_BASE"]
+            == "https://gw-a.example/cohere/v2/embed"
+        )
+
+
+class TestApiBaseSSRF:
+    async def test_embedder_loopback_api_base_blocked_in_multi_user(self, monkeypatch):
+        # Multi-user (PUBLIC_URL set): a per-sub custom endpoint pointing at
+        # loopback/private is rejected by the mcp-core SSRF vet before any
+        # network call. mnemo reads os.getenv(EMBEDDING_API_BASE) and passes it
+        # to mcp_core.llm.aembedding, which vets via _prep_api_base -- no local
+        # wrap needed.
+        import pytest
+        from mcp_core.http import SSRFBlockedError
+
+        from mnemo_mcp.embedder import CloudEmbeddingBackend
+
+        monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example.com")
+        monkeypatch.setenv("EMBEDDING_API_BASE", "http://127.0.0.1:11434")
+        # Stub the lazy litellm accessor so the test exercises the real vet in
+        # dispatch._prep_api_base without the multi-second litellm cold import.
+        # The vet runs before the (mocked) network leg, so the block still fires.
+        monkeypatch.setattr("mcp_core.llm.dispatch._get_litellm", MagicMock())
+        backend = CloudEmbeddingBackend("cohere/embed-multilingual-v3.0")
+        with pytest.raises(SSRFBlockedError):
+            await backend._call_provider(["hello"])
