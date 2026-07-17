@@ -49,6 +49,15 @@ class TestEntitySearchHandler:
         assert "error" in data
         assert "name" in data["error"].lower()
 
+    async def test_invalid_entity_type_returns_fuzzy_suggestion(self, tmp_db: MemoryDB):
+        ctx = _make_ctx(tmp_db)
+        result = await _handle_entity_search(ctx, name="Python", entity_type="tooool")
+        data = result
+        assert "error" in data
+        assert "Invalid entity_type 'tooool'" in data["error"]
+        assert "tool" in data["suggestion"]
+        assert "valid_entity_types" in data
+
     async def test_returns_results(self, tmp_db: MemoryDB):
         _seed_kg(tmp_db, "FastAPI is fast", [{"name": "FastAPI", "type": "tool"}])
         ctx = _make_ctx(tmp_db)

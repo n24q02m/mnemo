@@ -858,6 +858,19 @@ async def _handle_import(
             "suggestion": "Provide the 'data' parameter containing the JSONL data or a list of JSON objects to import.",
         }
 
+    _VALID_MODES = ["merge", "replace"]
+    if mode is not None and mode not in _VALID_MODES:
+        closest = difflib.get_close_matches(str(mode), _VALID_MODES, n=1)
+        resp = {
+            "error": f"Invalid mode '{mode}'.",
+            "valid_modes": _VALID_MODES,
+        }
+        if closest:
+            resp["suggestion"] = f"Did you mean '{closest[0]}'?"
+        else:
+            resp["suggestion"] = f"Pick a mode from {_VALID_MODES}."
+        return resp
+
     # Bolt Performance Optimization: Pass raw list/dict directly to database layer.
     # Avoids unnecessary JSON serialization and deserialization cycles for parsed inputs.
     if data is None:
@@ -1086,6 +1099,28 @@ async def _handle_entity_search(
                 "org/location/event)."
             ),
         }
+
+    _VALID_ENTITY_TYPES = [
+        "person",
+        "project",
+        "tool",
+        "concept",
+        "org",
+        "location",
+        "event",
+    ]
+    if entity_type is not None and entity_type not in _VALID_ENTITY_TYPES:
+        closest = difflib.get_close_matches(str(entity_type), _VALID_ENTITY_TYPES, n=1)
+        resp = {
+            "error": f"Invalid entity_type '{entity_type}'.",
+            "valid_entity_types": _VALID_ENTITY_TYPES,
+        }
+        if closest:
+            resp["suggestion"] = f"Did you mean '{closest[0]}'?"
+        else:
+            resp["suggestion"] = f"Pick an entity_type from {_VALID_ENTITY_TYPES}."
+        return resp
+
     from mnemo_mcp.temporal.queries import entity_search
 
     rows = await asyncio.to_thread(

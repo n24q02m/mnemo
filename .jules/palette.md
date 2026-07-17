@@ -13,3 +13,6 @@
 ## $(date +%Y-%m-%d) - Extending fuzzy matching to domain inputs
 **Learning:** Returning a raw "Invalid context_type" without a fallback leaves developers guessing. Applying fuzzy matching to domain-specific enumerations (like context_type) improves DX immediately.
 **Action:** Always wrap the first argument to `difflib.get_close_matches` with `str()` and use `is not None` when providing fuzzy matching suggestions for API inputs, including domain-specific variables like context_type.
+## 2026-05-18 - [DX] Fuzzy matching for enumerated inputs
+**Learning:** Developers and LLMs often provide slightly incorrect or typo'd strings for enumerated inputs like filter categories (`entity_type`) or configuration modes (`mode` for import). Failing silently, returning 0 results, or defaulting to an internal fallback without warning leads to a poor developer experience (DX) and confusion.
+**Action:** When validating enumerated API parameters, use `difflib.get_close_matches` to identify potential typos and return a structured JSON error response that includes the closest fuzzy match as a `suggestion`. This allows the caller to easily identify their mistake and quickly self-correct.

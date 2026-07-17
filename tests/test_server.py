@@ -271,6 +271,15 @@ class TestMemoryExportImport:
         assert "error" in result
         assert "suggestion" in result
 
+    async def test_import_invalid_mode_returns_fuzzy_suggestion(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        data = json.dumps({"id": "imp1", "content": "imported"})
+        result = await memory(action="import", data=data, mode="marge", ctx=ctx)
+        assert "error" in result
+        assert "Invalid mode 'marge'" in result["error"]
+        assert "merge" in result["suggestion"]
+        assert "valid_modes" in result
+
 
 class TestMemoryStats:
     async def test_stats(self, ctx_with_db):
