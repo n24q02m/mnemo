@@ -209,6 +209,7 @@ mnemo-mcp --http                # start the Streamable HTTP server
 
 mnemo-mcp auth google           # authorize Google Drive sync via OAuth
 mnemo-mcp auth google --client-id <ID> --client-secret <SECRET>   # bring-your-own OAuth client
+mnemo-mcp logout                # clear the local Google Drive sync token
 mnemo-mcp warmup                # pre-download the bundled local embedding + rerank model
 
 mnemo-mcp config status         # report whether stored config exists

@@ -2056,8 +2056,16 @@ async def _handle_config_setup_complete(
 
 
 async def _handle_config_setup_relay() -> dict[str, typing.Any]:
-    # Backward compat alias for setup_start.
-    return await _handle_config_setup_start(key="force")
+    """Deprecated alias for setup_start (removed in a future release)."""
+    result = await _handle_config_setup_start(key="force")
+    result["_deprecation"] = {
+        "message": (
+            "setup_relay is deprecated and will be removed in a future "
+            "release. Use setup_start instead."
+        ),
+        "use_instead": "setup_start",
+    }
+    return result
 
 
 # ---------------------------------------------------------------------------

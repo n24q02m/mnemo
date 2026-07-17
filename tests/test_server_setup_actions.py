@@ -229,6 +229,15 @@ class TestSetupRelay:
         assert result["status"] == "stdio_unsupported"
         assert "--http" in result["message"]
 
+    async def test_relay_alias_carries_deprecation_notice(self, ctx_with_db):
+        """setup_relay is deprecated in favor of setup_start (kept 1 cycle)."""
+        ctx, _ = ctx_with_db
+
+        result = await config(action="setup_relay", ctx=ctx)
+
+        assert result["_deprecation"]["use_instead"] == "setup_start"
+        assert "setup_start" in result["_deprecation"]["message"]
+
 
 # ---------------------------------------------------------------------------
 # _maybe_include_setup_hint

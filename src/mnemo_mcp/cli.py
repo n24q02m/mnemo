@@ -67,6 +67,18 @@ def _handle_auth(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "authenticated" else 1
 
 
+def _handle_logout(args: argparse.Namespace) -> int:
+    from mnemo_mcp.token_store import delete_token, load_token
+
+    if load_token("google_drive") is None:
+        print("Nothing to log out (no saved Google Drive token).")
+        return 0
+
+    delete_token("google_drive")
+    print("Logged out. Google Drive sync token cleared.")
+    return 0
+
+
 def _handle_warmup(args: argparse.Namespace) -> int:
     from mnemo_mcp.setup_tool import run_warmup
 
@@ -79,6 +91,7 @@ def _extras() -> dict:
     return {
         "auth": (_configure_auth, _handle_auth),
         "warmup": _handle_warmup,
+        "logout": _handle_logout,
     }
 
 

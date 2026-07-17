@@ -169,9 +169,11 @@ backend if needed. Returns the updated `state` value.
 
 **Parameters:** None (uses request `ctx`)
 
-### `setup_relay` - Backward-compatible alias for `setup_start`
+### `setup_relay` - DEPRECATED, use `setup_start` instead
 
-Equivalent to `setup_start(key="force")`. Kept for older clients.
+Equivalent to `setup_start(key="force")`. Kept for one release cycle for
+older clients; the response carries a `_deprecation` field pointing at
+`setup_start`. Will be removed in a future release.
 
 **Parameters:** None
 

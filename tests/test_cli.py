@@ -112,6 +112,40 @@ class TestAuthSubcommand:
         assert rc == 1
 
 
+class TestLogoutSubcommand:
+    """`mnemo-mcp logout` -- clears the local Google Drive sync token."""
+
+    def test_clears_saved_token(self, capsys):
+        from mnemo_mcp import cli
+
+        with (
+            patch.object(sys, "argv", ["mnemo-mcp", "logout"]),
+            patch(
+                "mnemo_mcp.token_store.load_token", return_value={"refresh_token": "x"}
+            ),
+            patch("mnemo_mcp.token_store.delete_token") as mock_delete,
+        ):
+            rc = cli.main()
+
+        mock_delete.assert_called_once_with("google_drive")
+        assert rc == 0
+        assert "cleared" in capsys.readouterr().out.lower()
+
+    def test_nothing_to_clear(self, capsys):
+        from mnemo_mcp import cli
+
+        with (
+            patch.object(sys, "argv", ["mnemo-mcp", "logout"]),
+            patch("mnemo_mcp.token_store.load_token", return_value=None),
+            patch("mnemo_mcp.token_store.delete_token") as mock_delete,
+        ):
+            rc = cli.main()
+
+        mock_delete.assert_not_called()
+        assert rc == 0
+        assert "nothing to log out" in capsys.readouterr().out.lower()
+
+
 class TestUnknownSubcommand:
     """build_cli's own unrecognized-subcommand handling -- rc 2, no server start."""
 
