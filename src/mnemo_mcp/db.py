@@ -1657,17 +1657,16 @@ class MemoryDB:
         cursor = self._conn.cursor()
         now = _now_iso()
 
+        # Bolt Performance Optimization:
+        # Avoided N+1 SELECT overhead by executing UPDATE directly and checking rowcount.
+        # This completely bypasses Python's memory allocation for the SELECT result.
         # New path: row exists in memories and is soft-archived.
-        row = cursor.execute(
-            "SELECT id FROM memories WHERE id = ? AND archived_at IS NOT NULL",
-            (memory_id,),
-        ).fetchone()
-        if row is not None:
-            cursor.execute(
-                "UPDATE memories SET archived_at = NULL, last_accessed = ? "
-                "WHERE id = ?",
-                (now, memory_id),
-            )
+        cursor.execute(
+            "UPDATE memories SET archived_at = NULL, last_accessed = ? "
+            "WHERE id = ? AND archived_at IS NOT NULL",
+            (now, memory_id),
+        )
+        if cursor.rowcount > 0:
             self._conn.commit()
             logger.info(f"[AUDIT] restore id={memory_id} mode=soft")
             return True
