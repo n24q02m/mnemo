@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.7.0-beta.3 (2026-07-18)
+
+### Bug Fixes
+
+- Recover from unsupported embedding dimension instead of silent semantic degrade
+  ([#996](https://github.com/n24q02m/mnemo-mcp/pull/996),
+  [`4a4c8e7`](https://github.com/n24q02m/mnemo-mcp/commit/4a4c8e77a314506aaa1cd34f583f6d80100406c6))
+
+
 ## v2.7.0-beta.2 (2026-07-18)
 
 ### Bug Fixes
