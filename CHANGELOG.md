@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v2.7.0-beta.2 (2026-07-18)
+
+### Bug Fixes
+
+- Add fuzzy matching validation for enumerated inputs
+  ([`3b4975c`](https://github.com/n24q02m/mnemo-mcp/commit/3b4975ceebd87207975bdf709174441395eab629))
+
+- Add orphan-tag integrity guard to release CI
+  ([#988](https://github.com/n24q02m/mnemo-mcp/pull/988),
+  [`47c7f8d`](https://github.com/n24q02m/mnemo-mcp/commit/47c7f8d08c8deb95aaeecaaf96b9b0247eb28cbc))
+
+- Adopt better-semantic-release for built-in release guards
+  ([`3e1327c`](https://github.com/n24q02m/mnemo-mcp/commit/3e1327c7c182ee7d77c9e75e6c8491fc3cf8df19))
+
+- Bump mcp-core to 1.20.0b2 for plugin-name and CLI fixes
+  ([#993](https://github.com/n24q02m/mnemo-mcp/pull/993),
+  [`8167d4f`](https://github.com/n24q02m/mnemo-mcp/commit/8167d4f7bb8f0f59be685fd5f2c1c9bbacdef88e))
+
+- Deprecate setup_relay alias, add logout CLI subcommand
+  ([#992](https://github.com/n24q02m/mnemo-mcp/pull/992),
+  [`1a0242f`](https://github.com/n24q02m/mnemo-mcp/commit/1a0242fbfe07885700b4e19459dc98e9b72a5031))
+
+- Optimize knowledge graph upsert with json_each
+  ([`bac8a9a`](https://github.com/n24q02m/mnemo-mcp/commit/bac8a9ac33e40bc734767a887df7d79fae1cc21a))
+
+- Pin rangeStrategy on delayed packageRules to fix renovate artifacts failure
+  ([#989](https://github.com/n24q02m/mnemo-mcp/pull/989),
+  [`eb539ca`](https://github.com/n24q02m/mnemo-mcp/commit/eb539ca9f59a93637fda9902d5154e4e4a80607d))
+
+- Restrict exported credential file permissions to 0600
+  ([`87480e7`](https://github.com/n24q02m/mnemo-mcp/commit/87480e7f35fe69c9ee1d8b0fad6064a2d8488d2c))
+
+### Features
+
+- Add PR-title conventional-commit gate + no-bump release warning
+  ([#991](https://github.com/n24q02m/mnemo-mcp/pull/991),
+  [`d0bfd7f`](https://github.com/n24q02m/mnemo-mcp/commit/d0bfd7ff59c2f91ca2679302331d5b7e66fe9dba))
+
+- Per-sub custom endpoint (api_base) in relay for gateway routing
+  ([#994](https://github.com/n24q02m/mnemo-mcp/pull/994),
+  [`7fa71ff`](https://github.com/n24q02m/mnemo-mcp/commit/7fa71ff9f3dbcbea2d05c861341c9bc261e76a70))
+
+
 ## v2.7.0-beta.1 (2026-07-16)
 
 ### Bug Fixes
