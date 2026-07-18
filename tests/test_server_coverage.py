@@ -57,14 +57,31 @@ class TestEmbed:
             result = await _embed("test text", "some-model", 768)
             assert result is None
 
-    async def test_embed_exception_returns_none(self):
-        """Returns None when embedding raises an exception."""
+    async def test_embed_transient_exception_returns_none(self):
+        """A transient embedding error degrades this call to None (FTS5-only)."""
+        from litellm.exceptions import RateLimitError
+
         mock_backend = MagicMock()
-        mock_backend.embed_single = AsyncMock(side_effect=Exception("API error"))
+        mock_backend.embed_single = AsyncMock(
+            side_effect=RateLimitError(
+                message="rate limit exceeded", llm_provider="cohere", model="m"
+            )
+        )
 
         with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
             result = await _embed("test text", "some-model", 768)
             assert result is None
+
+    async def test_embed_permanent_exception_raises(self):
+        """A permanent embedding error is surfaced loudly, not swallowed to None."""
+        mock_backend = MagicMock()
+        mock_backend.embed_single = AsyncMock(
+            side_effect=Exception("model does not exist")
+        )
+
+        with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
+            with pytest.raises(Exception, match="does not exist"):
+                await _embed("test text", "some-model", 768)
 
     async def test_embed_with_qwen3_query(self):
         """Uses query_embed for Qwen3 backend with is_query=True."""

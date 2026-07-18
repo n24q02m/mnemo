@@ -54,9 +54,46 @@ _RETRYABLE_PATTERNS = (
 )
 
 
+# Patterns marking a PERMANENT client-side error (invalid request, unsupported
+# capability, auth). litellm frequently re-wraps these as APIConnectionError --
+# whose class name contains "connection" and whose status_code is a hardcoded
+# 500 -- so classification MUST look at the message semantics, not the exception
+# class or status code. Retrying a permanent error re-sends the same doomed
+# request and (worse) would block capability fallbacks such as dropping an
+# unsupported `dimensions` argument.
+_PERMANENT_PATTERNS = (
+    "not a valid",
+    "not support",
+    "unsupported",
+    "invalid request",
+    "invalid_request",
+    "invalid api key",
+    "output_dimension",
+    "unauthorized",
+    "forbidden",
+    "authentication",
+    "no such model",
+    "model not found",
+    "does not exist",
+    "401",
+    "403",
+    "404",
+    "422",
+)
+
+
 def _is_retryable(exc: Exception) -> bool:
-    """Check if an exception is transient and worth retrying."""
+    """Return True only for TRANSIENT errors worth retrying.
+
+    Classifies on error semantics, NOT the exception class name or a synthetic
+    status_code: litellm wraps a provider's permanent 4xx (e.g. a 422 "invalid
+    output_dimension") as ``APIConnectionError`` whose repr contains "connection"
+    and whose ``status_code`` is a hardcoded 500 -- matching either would wrongly
+    retry a request that can never succeed and skip the dimensions fallback.
+    """
     msg = str(exc).lower()
+    if any(p in msg for p in _PERMANENT_PATTERNS):
+        return False
     return any(p in msg for p in _RETRYABLE_PATTERNS)
 
 
@@ -274,16 +311,16 @@ class CloudEmbeddingBackend:
                     embeddings = [e[:dimensions] for e in embeddings]
                 return embeddings
             except Exception as e:
-                # If the provider rejects `dimensions`, retry without it
-                # and truncate locally instead.
-                if (
-                    use_dimensions
-                    and not _is_retryable(e)
-                    and _is_unsupported_param(e, "dimensions")
-                ):
-                    logger.debug(
-                        f"Provider does not support dimensions param, "
-                        f"will truncate locally: {e}"
+                # A dimensions rejection is PERMANENT -- retrying with the same
+                # dims can never succeed. Recover (drop `dimensions`, truncate
+                # locally) BEFORE the retryability check: litellm may wrap the
+                # provider's 422 as an APIConnectionError, so retry
+                # classification must not gate this capability fallback.
+                if use_dimensions and _is_unsupported_param(e, "dimensions"):
+                    logger.warning(
+                        f"Provider {self.model} rejected dimensions="
+                        f"{use_dimensions}; retrying without it and truncating "
+                        f"locally: {e}"
                     )
                     use_dimensions = None
                     continue

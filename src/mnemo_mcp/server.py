@@ -481,8 +481,25 @@ async def _embed(
             return await backend.embed_single_query(text, dims)
         return await backend.embed_single(text, dims)
     except Exception as e:
-        logger.debug(f"Embedding failed: {e}")
-        return None
+        from mnemo_mcp.embedder import _is_retryable
+
+        if _is_retryable(e):
+            # Transient (rate-limit / network; the backend already exhausted
+            # its retries). Degrade THIS call to FTS5 -- the next may succeed.
+            logger.warning(
+                f"Embedding transiently unavailable ({model}); "
+                f"degrading to FTS5 for this call: {e}"
+            )
+            return None
+        # Permanent config/capability error (bad key, unknown model, dims the
+        # backend could not work around): every embed will fail. Surface it
+        # loudly instead of silently returning None and hiding a broken
+        # semantic search behind a FTS5 fallback.
+        logger.error(
+            f"Embedding permanently failing ({model}): {e}. "
+            "Check EMBEDDING_MODELS / EMBEDDING_DIMS / API key."
+        )
+        raise
 
 
 async def _handle_add(

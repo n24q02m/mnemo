@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from litellm.exceptions import APIConnectionError, RateLimitError
 
 from mnemo_mcp.embedder import Qwen3EmbedBackend
 from mnemo_mcp.server import _embed
@@ -51,11 +52,34 @@ async def test_embed_with_qwen3_backend_doc():
 
 
 @pytest.mark.asyncio
-async def test_embed_backend_exception():
-    """Test _embed handles backend exceptions gracefully."""
+async def test_embed_transient_error_degrades_to_none():
+    """A transient backend error (rate-limit/network) degrades this call to FTS5.
+
+    The next call may succeed, so returning None (FTS5-only for this call) is the
+    correct graceful degradation.
+    """
     mock_backend = AsyncMock()
-    mock_backend.embed_single.side_effect = Exception("Embed error")
+    mock_backend.embed_single.side_effect = RateLimitError(
+        message="rate limit exceeded", llm_provider="cohere", model="embed-v4.0"
+    )
 
     with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
         result = await _embed("text", "model", 768)
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_embed_permanent_error_raises_loudly():
+    """A permanent backend error (bad key, unusable model/dims) must NOT be
+    silently swallowed into None -- every embed would fail, so surface it loudly.
+    """
+    mock_backend = AsyncMock()
+    mock_backend.embed_single.side_effect = APIConnectionError(
+        message="AuthenticationError - invalid api key",
+        llm_provider="cohere",
+        model="embed-v4.0",
+    )
+
+    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
+        with pytest.raises(APIConnectionError):
+            await _embed("text", "model", 768)
