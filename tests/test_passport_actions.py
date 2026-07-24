@@ -362,7 +362,7 @@ async def test_sync_now_propagates_unexpected_error(
 
     payload = raw
     assert "error" in payload
-    assert "sync_now failed" in payload["error"]
+    assert "sync_now failed: internal error" in payload["error"]
 
 
 async def test_import_passport_decryption_failure(
@@ -433,4 +433,4 @@ async def test_import_passport_pull_exception(
     payload = raw
 
     assert "error" in payload
-    assert "backend pull failed" in payload["error"]
+    assert "backend pull failed: internal error" in payload["error"]

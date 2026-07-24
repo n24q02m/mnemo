@@ -732,7 +732,7 @@ class TestConsolidate:
             mock_settings.llm_models = "gpt-4o"
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
-        assert "Consolidation failed" in result["error"]
+        assert "Consolidation failed: internal error" in result["error"]
 
 
 class TestConfigSet:
