@@ -281,6 +281,37 @@ def test_mem_002_sync_state_helpers_round_trip(isolated_db_path: Path) -> None:
         db.close()
 
 
+def test_mem_002_upsert_sync_state_updates_in_place(isolated_db_path: Path) -> None:
+    """A partial upsert updates the existing row rather than replacing it.
+
+    ``INSERT OR REPLACE`` deletes the conflicting row and inserts a new one,
+    which allocates a fresh rowid. ``ON CONFLICT DO UPDATE`` edits in place.
+    Row identity is the observable difference, and it is what makes a partial
+    update safe to interleave with another one.
+    """
+    db = MemoryDB(isolated_db_path, embedding_dims=0)
+    try:
+        db.upsert_sync_state("s3", last_sync_at=1.0, upload_cursor=1)
+        first = db._conn.execute(
+            "SELECT rowid FROM sync_state WHERE backend = ?", ("s3",)
+        ).fetchone()[0]
+
+        db.upsert_sync_state("s3", upload_cursor=2)
+        second = db._conn.execute(
+            "SELECT rowid FROM sync_state WHERE backend = ?", ("s3",)
+        ).fetchone()[0]
+
+        assert second == first
+        assert db.get_sync_state("s3") == {
+            "backend": "s3",
+            "last_sync_at": 1.0,
+            "last_commit_sha": None,
+            "upload_cursor": 2,
+        }
+    finally:
+        db.close()
+
+
 def test_mem_002_add_with_context_type_compression_columns(
     isolated_db_path: Path,
 ) -> None:

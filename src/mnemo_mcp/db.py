@@ -728,36 +728,28 @@ class MemoryDB:
         last_commit_sha: str | None = None,
         upload_cursor: int | None = None,
     ) -> None:
-        """Insert-or-replace the sync_state row for ``backend``.
+        """Insert-or-update the sync_state row for ``backend``.
 
         Any field left as ``None`` is preserved from the existing row when one
         exists (so a partial update of just the upload cursor does not wipe
         the timestamp). When no row exists the unspecified fields are stored
         as NULL.
+
+        The merge happens inside the statement rather than in Python. The
+        connection is opened with ``check_same_thread=False`` and the sync
+        pipeline calls this via ``asyncio.to_thread`` (see
+        ``mnemo_mcp.sync.delta``), so a read-then-write pair would let two
+        partial updates to different columns interleave and lose one of them.
         """
-        existing = self.get_sync_state(backend) or {}
-        merged = {
-            "backend": backend,
-            "last_sync_at": last_sync_at
-            if last_sync_at is not None
-            else existing.get("last_sync_at"),
-            "last_commit_sha": last_commit_sha
-            if last_commit_sha is not None
-            else existing.get("last_commit_sha"),
-            "upload_cursor": upload_cursor
-            if upload_cursor is not None
-            else existing.get("upload_cursor"),
-        }
         self._conn.execute(
-            "INSERT OR REPLACE INTO sync_state "
+            "INSERT INTO sync_state "
             "(backend, last_sync_at, last_commit_sha, upload_cursor) "
-            "VALUES (?, ?, ?, ?)",
-            (
-                merged["backend"],
-                merged["last_sync_at"],
-                merged["last_commit_sha"],
-                merged["upload_cursor"],
-            ),
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(backend) DO UPDATE SET "
+            "last_sync_at = COALESCE(excluded.last_sync_at, last_sync_at), "
+            "last_commit_sha = COALESCE(excluded.last_commit_sha, last_commit_sha), "
+            "upload_cursor = COALESCE(excluded.upload_cursor, upload_cursor)",
+            (backend, last_sync_at, last_commit_sha, upload_cursor),
         )
         self._conn.commit()
 
