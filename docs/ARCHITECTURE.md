@@ -184,6 +184,7 @@ plugin root/
     session-handoff/SKILL.md   (pre-existing)
     recall-context/SKILL.md    (Phase 1, new)
     memory-commit/SKILL.md     (Phase 1, new)
+    temporal-query/SKILL.md    (Phase 3, new)
   hooks/
     hooks.json         -- declares SessionStart + PostToolUse
     session-start.sh   (Phase 1, new)

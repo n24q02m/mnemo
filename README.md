@@ -166,6 +166,7 @@ Plugin trinity (Claude Code marketplace install):
 | `mnemo:memory-commit` skill | "remember this" / "save this" / "ghi nho" / "luu lai" | Typed manual capture with `context_type` decision tree |
 | `mnemo:knowledge-audit` skill | periodic / "audit memory" | Find duplicates, contradictions, stale entries; consolidate |
 | `mnemo:session-handoff` skill | end of session | Capture decisions / preferences / corrections / conventions / open questions |
+| `mnemo:temporal-query` skill | "as of" / "back in" / "history of" / "what did I think then" | Point-in-time snapshots via `action="as_of"` and version-chain tracing via `superseded_by` |
 | SessionStart hook | every session init | Non-blocking nudge to invoke `recall-context` |
 | PostToolUse hook (opt-in) | `CAPTURE_AUTO_ENABLED=true` | Hint `memory-commit` after Write/Edit of CLAUDE.md / AGENTS.md / ARCHITECTURE.md / docs/*.md |
 
