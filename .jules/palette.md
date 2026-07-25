@@ -21,3 +21,13 @@
 **Learning:** `mnemo-mcp` ships a Python MCP server and a Cloudflare Worker. It has no frontend, no templates and no user-facing UI, so the Palette remit does not apply to it in the usual sense. This was concluded twice in one week and each conclusion was filed as a pull request containing an empty commit (#1003, #1007), which cost two review cycles and produced no change.
 
 **Action:** The reviewable surface here is the text the tools themselves return: the `error`, `suggestion` and `note` strings in `src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/`. Those are what a caller actually reads, and the entries above are all improvements to exactly that surface. Direct Palette work there. A conclusion that there is nothing to change belongs in this file as an entry; it does not need a pull request to be recorded.
+
+## Rejected
+
+### 2026-07-25 - Empty-commit pull requests that announce a skip (#1003, #1007)
+Both PRs changed no files (`+0/-0`) and existed only to state that this repo has no frontend. The conclusion was right; the delivery was not. An empty PR consumes a review cycle, runs the full check matrix, and leaves a branch behind to prune, all to communicate one sentence that belongs in this file. #1003 additionally used a `chore:` prefix, which this repo does not accept, and carried four commits restating the same empty change.
+
+Record a skip as an entry here. Do not open a PR to report that no change is needed.
+
+### 2026-07-25 - Reframing backend work as UX to satisfy the remit
+Noted because #1007 flagged the temptation itself: when no UI exists, editing API internals and labelling the result a UX improvement is worse than skipping. The honest surface is the response text a caller reads, described in the entry above. If that surface has nothing wrong with it, the correct outcome is no change.
