@@ -12,13 +12,34 @@ permissions:
 jobs:
   governance:
     name: Bot PR Rate Limit & Duplicate Check
-    runs-on: ubuntu-latest
-    # Only govern branches pushed to this repository. A pull request from a
-    # fork is an outside contribution: its branch name is not ours to read as
-    # a bot signature, and closing it on that heuristic would be wrong. The
-    # token is read-only for fork pull_request runs anyway, so the close and
-    # label calls below could not succeed.
+    # Govern only branches pushed to this repository. This repo is public, so
+    # it receives pull requests from forks; the Aiora original this was ported
+    # from is private and never saw one.
+    #
+    # Product reason: a fork pull request is an outside contribution. Its
+    # branch name is not ours to read as a bot signature, and closing someone
+    # else's first contribution because our own bots spent the day's rate
+    # limit is the wrong outcome.
+    #
+    # Technical reason: on the `pull_request` trigger a fork gets a read-only
+    # GITHUB_TOKEN, and the `permissions:` block above cannot raise it -- that
+    # is a ceiling, not a grant. Of the four writing `gh` calls below, the two
+    # `--add-label` ones end in `|| true`, but `gh pr close` and
+    # `gh pr comment` do not, so under `set -e` they would fail the job.
+    #
+    # Kept at job level, not inside the script: an in-script guard is only
+    # correct while it stays the first statement, and an ordering assumption
+    # is the very bug being fixed here. A later edit adding a `gh` call above
+    # it would silently reintroduce this. A job condition cannot be stepped
+    # over, and it skips without starting a runner.
+    #
+    # Compares `full_name` rather than testing `head.repo.fork`, because
+    # `fork` describes the source repo: were this repository itself ever made
+    # a fork, `head.repo.fork` would be true for our own branches too and
+    # governance would switch off permanently while the workflow still
+    # reported green.
     if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
