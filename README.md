@@ -58,7 +58,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - [Security](#security)
 - [Build from Source](#build-from-source)
 - [CLI](#cli)
-- [Hosted endpoint](#hosted-endpoint)
+- [Remote (HTTP mode)](#remote-http-mode)
 - [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Trust Model](#trust-model)
 - [License](#license)
@@ -233,9 +233,9 @@ mnemo-mcp doctor                # environment diagnostics (Python, backend, stor
 | `relay status` \| `relay open` \| `relay reset` | Inspect, open, or clear the zero-config browser setup session |
 | `doctor` | Report Python version, credential backend, store dir, config, relay session, and storage mode |
 
-## Hosted endpoint
+## Remote (HTTP mode)
 
-A ready-to-use shared instance is hosted at **`https://mnemo.n24q02m.com/mcp`** -- Streamable HTTP transport, OAuth-gated. Point any MCP client that supports remote HTTP + OAuth at that URL and authenticate on first connect; each authenticated user gets an isolated per-user credential store (see [Trust Model](#trust-model)). To run your own instance instead, see [Deploy to Cloudflare](#deploy-to-cloudflare).
+Deployed over HTTP, mnemo speaks Streamable HTTP transport and is OAuth-gated. Point any MCP client that supports remote HTTP + OAuth at `https://<your-host>/mcp` and authenticate on first connect; each authenticated user gets an isolated per-user credential store (see [Trust Model](#trust-model)). To stand up an instance, see [Deploy to Cloudflare](#deploy-to-cloudflare).
 
 ## Deploy to Cloudflare
 
