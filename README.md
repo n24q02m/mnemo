@@ -283,8 +283,8 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
 6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
 
 Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
-`DOCS_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text -- the variable name is
-shared with the other Cloudflare workers in this stack and is not specific to docs), and Vectorize (embeddings,
+`MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
+keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
 cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS` /
 `RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads the local Qwen3 ONNX
 models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).

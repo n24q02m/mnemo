@@ -35,7 +35,7 @@ export interface Env {
   // forwarded into the container process via MnemoContainer.envVars.
   MCP_STORAGE_BACKEND: string
   MCP_KV_BASE_URL: string
-  DOCS_DB_BACKEND: string
+  MEMORY_DB_BACKEND: string
   MCP_D1_BASE_URL: string
   MCP_VECTORIZE_BASE_URL: string
   MCP_VECTORIZE_IDX: string
@@ -59,7 +59,7 @@ export interface Env {
 // browser form (Gate A) is gated by it -- dropping it would open the relay form
 // to anyone. CREDENTIAL_SECRET + MCP_DCR_SERVER_SECRET enable per-sub multi-user.
 const CONTAINER_ENV_KEYS = [
-  'MCP_STORAGE_BACKEND', 'MCP_KV_BASE_URL', 'DOCS_DB_BACKEND',
+  'MCP_STORAGE_BACKEND', 'MCP_KV_BASE_URL', 'MEMORY_DB_BACKEND',
   'MCP_D1_BASE_URL', 'MCP_VECTORIZE_BASE_URL', 'MCP_VECTORIZE_IDX',
   'EMBEDDING_MODELS', 'RERANK_MODELS', 'LLM_MODELS',
   'EMBEDDING_DIMS', 'RECENCY_HALF_LIFE_DAYS',
@@ -249,7 +249,7 @@ export class MnemoContainer extends Container<Env> {
   // internet; kv/d1/vectorize.internal stay intercepted (see outboundByHost).
   enableInternet = true
   // Forward Worker config (vars) + secrets into the container process. Without
-  // this the Python server defaults to MCP_STORAGE_BACKEND=local / DOCS_DB_BACKEND=sqlite
+  // this the Python server defaults to MCP_STORAGE_BACKEND=local / MEMORY_DB_BACKEND=sqlite
   // on the ephemeral container FS and downloads local ONNX models.
   envVars = pickContainerEnv(this.env)
 }

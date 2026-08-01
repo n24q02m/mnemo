@@ -25,6 +25,7 @@ from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.db_cf import open_memory_db
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
 # to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
@@ -271,7 +272,10 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         embedding_model_identity = settings.embedding_primary() or ""
 
     db_path = settings.get_db_path()
-    db = MemoryDB(
+    # MEMORY_DB_BACKEND picks the store: the default SQLite file at db_path, or
+    # the Cloudflare D1 database when the Worker sets cf-d1. This is the only
+    # place that choice is made.
+    db = open_memory_db(
         db_path,
         embedding_dims=embedding_dims,
         recency_half_life_days=settings.recency_half_life_days,

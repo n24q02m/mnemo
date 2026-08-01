@@ -25,7 +25,10 @@ def mock_settings():
 
 @pytest.fixture
 def mock_db():
-    with patch("mnemo_mcp.server.MemoryDB") as m:
+    # lifespan builds the store through open_memory_db, which picks SQLite or
+    # Cloudflare D1 from MEMORY_DB_BACKEND; that factory is the construction
+    # site to intercept.
+    with patch("mnemo_mcp.server.open_memory_db") as m:
         db_instance = MagicMock()
         db_instance.stats.return_value = {"total_memories": 10, "vec_enabled": True}
         db_instance.vec_enabled = True
