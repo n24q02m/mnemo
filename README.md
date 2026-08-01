@@ -255,9 +255,15 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
    wrangler kv namespace create mnemo-kv
    ```
    Paste the returned D1 database ID and KV namespace ID into `wrangler.jsonc` (the
-   Vectorize index binds by name, so no ID is needed). The memories schema (tables +
-   FTS5 full-text) is created by the container on first boot -- there is no separate
-   migration step.
+   Vectorize index binds by name, so no ID is needed), then create the memories schema
+   (tables, indexes, and the FTS5 full-text index) in the database you just made:
+   ```
+   wrangler d1 migrations apply mnemo-memories --remote
+   ```
+   The SQL lives in `migrations/0001_init.sql`, and the D1 binding in `wrangler.jsonc`
+   points at that folder via `migrations_dir: "migrations"`. Full-text search uses FTS5,
+   which D1 ships; vector similarity is served by Vectorize rather than by an in-database
+   extension, because D1 cannot load one.
 4. Push the container image to your Cloudflare managed registry (CF Containers cannot
    pull from external registries directly), then set `<YOUR_ACCOUNT_ID>` in `wrangler.jsonc`:
    ```
@@ -277,7 +283,8 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
 6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
 
 Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
-`DOCS_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text), and Vectorize (embeddings,
+`DOCS_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text -- the variable name is
+shared with the other Cloudflare workers in this stack and is not specific to docs), and Vectorize (embeddings,
 cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS` /
 `RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads the local Qwen3 ONNX
 models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
