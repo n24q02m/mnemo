@@ -38,10 +38,6 @@ temp/
 dist/
 build/
 
-# AI Agent
-.jules/
-JULES.md
-
 # Code review knowledge graph
 .code-review-graph/
 
@@ -50,7 +46,6 @@ JULES.md
 docs/superpowers/
 
 # AI traces (public repo hygiene)
-.Jules/
 .superpower/
 
 # Alembic / SQLite migration artifacts
