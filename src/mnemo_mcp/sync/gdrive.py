@@ -604,10 +604,10 @@ async def sync_full(db: MemoryDB) -> dict:
             if import_result.get("imported", 0) > 0:
                 logger.info(f"Merged {import_result['imported']} memories from remote")
 
-        except Exception as e:
-            logger.error(f"Merge failed: {e}")
+        except Exception:
+            logger.exception("Merge failed")
             result["pull"] = {
-                "error": str(e),
+                "error": "Merge failed: internal error",
                 "suggestion": "Check remote database consistency and sync credentials.",
             }
         finally:

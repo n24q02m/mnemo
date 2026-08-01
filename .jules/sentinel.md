@@ -15,3 +15,8 @@ The finding was valid and shipped in #1005 (commit 080be86c). Two further PRs pr
 
 ### 2026-07-25 - Framing this class of finding as "stack trace exposure"
 These handlers return a JSON dict and never returned a traceback, so a catch-all added to suppress one would be guarding against something that cannot happen while swallowing errors that can. The real exposure was the interpolated `str(e)`, which for `httpx` and `botocore` failures can carry endpoint URLs, bucket names and local paths. State the leak precisely; it determines whether the fix is narrowing a message or restructuring the handler.
+
+### 2026-08-01 - Prevent Information Disclosure in Google Drive Sync Error Responses
+**Vulnerability:** Similar to other sync and consolidation endpoints, `str(e)` was exposed in the JSON response of `src/mnemo_mcp/sync/gdrive.py`'s `pull` method when merging databases.
+**Learning:** Exception details can leak sensitive information about the file system, network, or internal logic. The pattern of replacing `except Exception as e:` logging `error` to catching `Exception` and logging `exception` (and returning a generic "internal error" message) should be uniformly applied anywhere an API returns a JSON error.
+**Prevention:** Always return generic error strings like "Merge failed: internal error" rather than the dynamically generated exception string, and rely on `logger.exception` to log the full stack trace server-side without an explicit `as e` binding.
