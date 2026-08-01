@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic_settings.sources import EnvSettingsSource
 
 from mnemo_mcp.config import (
     Settings,
@@ -13,56 +14,121 @@ from mnemo_mcp.config import (
     _has_gguf_support,
     _resolve_local_model,
 )
+from mnemo_mcp.credential_state import CLOUD_KEYS
+
+
+def _settings_env_names() -> set[str]:
+    """Every env var name that ``Settings`` itself reads.
+
+    Derived from the model instead of hand-listed. ``EnvSettingsSource`` is the
+    very resolver pydantic-settings runs at load time, so it already accounts
+    for ``env_prefix`` (empty in this repo), ``case_sensitive`` and any
+    ``validation_alias``/``alias`` on a field -- e.g. ``db_path`` expands to
+    both ``DB_PATH`` and ``MNEMO_DB_PATH``. Adding or renaming a settings field
+    therefore updates this set automatically.
+
+    This replaces a hand-written list that had silently drifted behind the
+    code: it still cleared the deprecated singular ``EMBEDDING_MODEL`` /
+    ``RERANK_MODEL`` / ``*_BACKEND`` vars while missing the plural
+    ``EMBEDDING_MODELS`` / ``RERANK_MODELS`` / ``LLM_MODELS`` chains that
+    replaced them, so any developer shell exporting a chain var turned five
+    tests in this file red regardless of what the commit changed.
+    """
+    source = EnvSettingsSource(Settings)
+    return {
+        # (field_key, env_name, value_is_complex) -- index 1 is the resolved
+        # env name *including* env_prefix; index 0 omits the prefix.
+        env_name.upper()
+        for field_name, field in Settings.model_fields.items()
+        for _, env_name, _ in source._extract_field_info(field, field_name)
+    }
+
+
+# Env vars that steer these tests but are NOT declared as ``Settings`` fields,
+# so they cannot be derived from the model and must be named by hand:
+#   * ``CLOUD_KEYS`` -- provider API keys plus the per-task ``EMBEDDING_API_BASE``
+#     / ``RERANK_API_BASE`` / ``LLM_API_BASE`` endpoints. mnemo and litellm read
+#     these straight from ``os.environ`` (see ``embedder.py``, ``reranker.py``,
+#     ``graph.py``); ``Settings`` only observes them indirectly, through
+#     ``_key_available`` chain filtering. Imported from ``credential_state``
+#     rather than retyped so the two lists cannot diverge.
+#   * The two alias keys ``resolve_provider_mode`` probes that ``CLOUD_KEYS``
+#     does not carry.
+#   * Toggles read by mcp-core / qwen3-embed during field-default resolution.
+_EXTRA_ENV_NAMES = {
+    *CLOUD_KEYS,
+    # config.resolve_provider_mode() / Settings._ENV_ALIASES probe these.
+    "GOOGLE_API_KEY",
+    "CO_API_KEY",
+    # mcp_core.auth.resolve_bundled_client() reads this while resolving the
+    # google_drive_client_* field defaults.
+    "USE_BUNDLED_GOOGLE_CLIENT",
+    "MCP_RELAY_URL",
+    "QWEN3_EMBED_CACHE_PATH",
+}
+# litellm's per-provider endpoint override lives beside each provider key
+# (JINA_AI_API_KEY -> JINA_AI_API_BASE). Real developer shells do export these
+# (a gateway URL), so derive the siblings instead of listing them one by one.
+_EXTRA_ENV_NAMES |= {
+    f"{key.removesuffix('_API_KEY')}_API_BASE"
+    for key in _EXTRA_ENV_NAMES
+    if key.endswith("_API_KEY")
+}
+
+
+def _clean_env_names() -> set[str]:
+    """Full set of env vars the ``clean_env`` fixture unsets."""
+    return _settings_env_names() | _EXTRA_ENV_NAMES
 
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     """Ensure environment isolation for configuration tests.
 
-    Clears all provider API keys and Mnemo-specific configuration variables.
+    Clears every env var ``Settings`` declares (derived from the model, see
+    :func:`_settings_env_names`) plus the provider keys and endpoint overrides
+    that are read directly from ``os.environ``.
     """
-    vars_to_clear = {
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "OPENAI_API_KEY",
-        "COHERE_API_KEY",
-        "CO_API_KEY",
-        "XAI_API_KEY",
-        "API_KEYS",
-        "EMBEDDING_MODEL",
-        "EMBEDDING_DIMS",
-        "EMBEDDING_BACKEND",
-        "RERANK_ENABLED",
-        "RERANK_BACKEND",
-        "RERANK_MODEL",
-        "SYNC_ENABLED",
-        "SYNC_FOLDER",
-        "SYNC_INTERVAL",
-        "GOOGLE_DRIVE_CLIENT_ID",
-        "GOOGLE_DRIVE_CLIENT_SECRET",
-        "USE_BUNDLED_GOOGLE_CLIENT",
-        "DB_PATH",
-        "MNEMO_DB_PATH",
-        "LOG_LEVEL",
-        "MCP_RELAY_URL",
-        "QWEN3_EMBED_CACHE_PATH",
-        "COMPRESSION_ENABLED",
-        "COMPRESSION_PROVIDER",
-        "COMPRESSION_MODEL",
-        "LOCAL_EMBEDDING_MODEL",
-        "LOCAL_RERANK_MODEL",
-        "LOCAL_EMBEDDING_POOLING",
-        "LOCAL_EMBEDDING_DIM",
-        "LOCAL_EMBEDDING_NORMALIZE",
-        "LOCAL_EMBEDDING_MODEL_FILE",
-    }
+    vars_to_clear = _clean_env_names()
     # Thoroughly clear any variant of these keys in os.environ
     for k in list(os.environ.keys()):
         if k.upper() in vars_to_clear:
             monkeypatch.delenv(k, raising=False)
     for v in vars_to_clear:
         monkeypatch.delenv(v, raising=False)
+
+
+class TestCleanEnvCoverage:
+    """Guards against the clear-list drifting behind ``Settings`` again."""
+
+    def test_current_chain_vars_are_derived(self):
+        """The plural chain vars the old hand-written list had missed."""
+        derived = _settings_env_names()
+        for name in ("EMBEDDING_MODELS", "RERANK_MODELS", "LLM_MODELS"):
+            assert name in derived, name
+
+    def test_validation_alias_choices_are_expanded(self):
+        """``db_path`` declares AliasChoices -- both names must be covered."""
+        derived = _settings_env_names()
+        assert {"DB_PATH", "MNEMO_DB_PATH"} <= derived
+
+    def test_deprecated_singular_vars_still_covered(self):
+        """The deprecated shims are still fields, so they stay in the set."""
+        derived = _settings_env_names()
+        assert {"EMBEDDING_MODEL", "RERANK_MODEL", "EMBEDDING_BACKEND"} <= derived
+
+    def test_endpoint_overrides_are_cleared(self):
+        """``*_API_BASE`` is read via os.getenv, never declared on Settings."""
+        names = _clean_env_names()
+        assert {"EMBEDDING_API_BASE", "RERANK_API_BASE", "LLM_API_BASE"} <= names
+        # litellm per-provider endpoint siblings.
+        assert {"JINA_AI_API_BASE", "GEMINI_API_BASE"} <= names
+
+    def test_every_settings_field_is_represented(self):
+        """No field may be silently absent from the clear-list."""
+        names = _clean_env_names()
+        missing = [f for f in Settings.model_fields if f.upper() not in names]
+        assert missing == []
 
 
 # Test Setup
