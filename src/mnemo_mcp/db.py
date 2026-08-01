@@ -31,6 +31,26 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
 _STRUCT_CACHE: dict[int, struct.Struct] = {}
 
+# ``MemoryDB.update`` supersedes a row with a single ``UPDATE ... RETURNING *``
+# so the read and the write cannot be split by a competing writer. RETURNING
+# landed in SQLite 3.35.0 (https://sqlite.org/lang_returning.html). A Python
+# linked against an older library fails at the first update() call with a
+# syntax error rather than at install time, so check once at open.
+MIN_SQLITE_VERSION = (3, 35, 0)
+
+
+def _check_sqlite_version() -> None:
+    """Raise when the linked SQLite predates ``UPDATE ... RETURNING``."""
+    if sqlite3.sqlite_version_info >= MIN_SQLITE_VERSION:
+        return
+    required = ".".join(str(part) for part in MIN_SQLITE_VERSION)
+    raise RuntimeError(
+        f"mnemo-mcp needs SQLite >= {required} for UPDATE ... RETURNING, but "
+        f"this Python is linked against SQLite {sqlite3.sqlite_version}. "
+        "Upgrade the SQLite library this Python build uses, or install a "
+        "Python distribution that bundles a newer one."
+    )
+
 
 def _serialize_f32(vec: list[float], target_dims: int = 0) -> bytes:
     """Serialize float list to bytes for sqlite-vec.
@@ -124,7 +144,10 @@ class MemoryDB:
         Raises:
             EmbeddingModelMismatch: When the stored embedding identity differs
                 from the requested one and ``reindex_on_model_change`` is False.
+            RuntimeError: When the linked SQLite is older than
+                :data:`MIN_SQLITE_VERSION`.
         """
+        _check_sqlite_version()
         self._db_path = db_path
         if type(embedding_dims) is not int:
             raise ValueError(
@@ -1257,74 +1280,98 @@ class MemoryDB:
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
 
-        old_row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL", (memory_id,)
-        ).fetchone()
-        if old_row is None:
-            return None
-
         now = _now_iso()
         new_id = uuid.uuid4().hex
 
-        new_row = dict(old_row)
-        new_row["id"] = new_id
-        new_row["created_at"] = now
-        new_row["updated_at"] = now
-        new_row["last_accessed"] = now
-        new_row["access_count"] = 0
-        new_row["valid_from"] = now
-        new_row["valid_to"] = None
-        new_row["superseded_by"] = None
-        if "commit_sha" in new_row:
-            new_row["commit_sha"] = None
-
-        if content is not None:
-            new_row["content"] = content
-        if category is not None:
-            new_row["category"] = category
-        if tags is not None:
-            # Bolt Performance Optimization:
-            # Prevent expensive json.dumps calls for the default empty list.
-            new_row["tags"] = "[]" if not tags else json.dumps(tags)
-        if source is not None:
-            new_row["source"] = source
-        if importance is not None:
-            new_row["importance"] = max(0.0, min(1.0, importance))
-
-        columns = list(new_row.keys())
-        column_list = ", ".join(columns)
-        placeholders = ", ".join("?" for _ in columns)
-
-        self._conn.execute(
-            "UPDATE memories SET valid_to = ?, superseded_by = ? WHERE id = ?",
-            (now, new_id, memory_id),
-        )
-        self._conn.execute(
-            f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
-            [new_row[c] for c in columns],
-        )
-
-        # Embedding: an explicit value replaces; otherwise carry the old
-        # vector forward under the new id so semantic search keeps working
-        # for metadata-only edits (content-only re-embedding is the
-        # caller's responsibility, e.g. server._handle_update).
-        if self._vec_enabled:
-            old_vec = self._conn.execute(
-                "SELECT embedding FROM memories_vec WHERE id = ?", (memory_id,)
+        # Supersession is several writes on a connection opened in legacy
+        # autocommit-by-statement mode, so every exit path has to close the
+        # transaction the first write opens -- otherwise a half-applied
+        # supersession stays pending and the next unrelated commit() makes it
+        # durable, leaving the predecessor closed against a successor row that
+        # was never written.
+        try:
+            # Close the predecessor and read it back in ONE statement. Split
+            # into SELECT-then-UPDATE, a competing writer can supersede the
+            # same row in between, which leaves two live rows and a broken
+            # supersession chain; the ``valid_to IS NULL`` guard is what makes
+            # the loser of that race fall through to the not-found branch.
+            old_row = self._conn.execute(
+                "UPDATE memories SET valid_to = ?, superseded_by = ? "
+                "WHERE id = ? AND valid_to IS NULL RETURNING *",
+                (now, new_id, memory_id),
             ).fetchone()
-            self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
-            if embedding:
-                self._conn.execute(
-                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                    (new_id, _serialize_f32(embedding, self._embedding_dims)),
-                )
-            elif old_vec is not None:
-                self._conn.execute(
-                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                    (new_id, old_vec["embedding"]),
-                )
+            if old_row is None:
+                # pysqlite opens a write transaction for an UPDATE even when it
+                # matches zero rows. Returning without closing it would hold
+                # the database locked against every other writer for as long as
+                # this connection lives.
+                self._conn.rollback()
+                return None
 
-        self._conn.commit()
+            # RETURNING yields the row AFTER the update was applied, so the
+            # two columns it just wrote have to be reset for the successor.
+            new_row = dict(old_row)
+            new_row["id"] = new_id
+            new_row["created_at"] = now
+            new_row["updated_at"] = now
+            new_row["last_accessed"] = now
+            new_row["access_count"] = 0
+            new_row["valid_from"] = now
+            new_row["valid_to"] = None
+            new_row["superseded_by"] = None
+            if "commit_sha" in new_row:
+                new_row["commit_sha"] = None
+
+            if content is not None:
+                new_row["content"] = content
+            if category is not None:
+                new_row["category"] = category
+            if tags is not None:
+                # Bolt Performance Optimization:
+                # Prevent expensive json.dumps calls for the default empty list.
+                new_row["tags"] = "[]" if not tags else json.dumps(tags)
+            if source is not None:
+                new_row["source"] = source
+            if importance is not None:
+                new_row["importance"] = max(0.0, min(1.0, importance))
+
+            columns = list(new_row.keys())
+            column_list = ", ".join(columns)
+            placeholders = ", ".join("?" for _ in columns)
+
+            self._conn.execute(
+                f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
+                [new_row[c] for c in columns],
+            )
+
+            # Embedding: an explicit value replaces; otherwise carry the old
+            # vector forward under the new id so semantic search keeps working
+            # for metadata-only edits (content-only re-embedding is the
+            # caller's responsibility, e.g. server._handle_update).
+            if self._vec_enabled:
+                # memories_vec is a virtual table; it does not support RETURNING.
+                old_vec = self._conn.execute(
+                    "SELECT embedding FROM memories_vec WHERE id = ?", (memory_id,)
+                ).fetchone()
+                self._conn.execute(
+                    "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
+                )
+                if embedding:
+                    self._conn.execute(
+                        "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                        (new_id, _serialize_f32(embedding, self._embedding_dims)),
+                    )
+                elif old_vec is not None:
+                    self._conn.execute(
+                        "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                        (new_id, old_vec["embedding"]),
+                    )
+
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+
         logger.info(f"[AUDIT] update id={memory_id} -> new_id={new_id}")
         return new_id
 
