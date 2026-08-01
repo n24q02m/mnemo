@@ -9,7 +9,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 [![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
 [![Docker](https://img.shields.io/docker/v/n24q02m/mnemo-mcp?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/mnemo-mcp)
-[![License: MIT](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
 [![SafeSkill 91/100](https://img.shields.io/badge/SafeSkill-91%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/n24q02m-mnemo-mcp)
 
 <!-- Badge Row 2: Tech -->
@@ -312,4 +312,4 @@ are simply no longer addressed.
 
 ## License
 
-MIT -- See [LICENSE](LICENSE).
+Apache-2.0 -- See [LICENSE](LICENSE).
