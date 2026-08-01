@@ -39,6 +39,15 @@ dependencies = [
     # this server actually saves credentials under, so `mnemo-mcp
     # config status` always reported "not configured".
     "n24q02m-mcp-core[llm]>=1.21.0,<2",
+    # Transitive pin: fastmcp reaches us only through mcp-core, which requires
+    # it unbounded -- so nothing in this repo constrained it and Renovate's
+    # lockFileMaintenance (`uv lock --upgrade`, automerge on) locked the
+    # 4.0.0b1 beta in #1022. fastmcp 4 reshapes the ToolAnnotations model:
+    # `readOnlyHint`/`destructiveHint` are no longer fields, so Pydantic
+    # silently discards them and all 14 annotated tools in server.py lose
+    # their hints. Cap at <4 until mcp-core itself moves to fastmcp 4 and
+    # this repo's annotations are ported.
+    "fastmcp>=3.4.4,<4",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.20.0",
     "alembic>=1.18.5",
