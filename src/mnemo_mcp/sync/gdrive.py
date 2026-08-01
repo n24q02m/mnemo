@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -479,11 +480,56 @@ async def _download_file(token: dict, file_id: str, dest_path: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _checkpoint_wal(db_path: Path) -> bool:
+    """Fold the ``-wal`` side file back into ``db_path`` before it is read.
+
+    In WAL mode SQLite keeps freshly committed pages in ``<db>-wal`` until a
+    checkpoint runs, so ``db_path`` on its own is a page-allocated shell with
+    an empty ``sqlite_master``. Drive stores the single ``.db`` object and
+    nothing else, hence the checkpoint has to happen before the upload.
+
+    ``TRUNCATE`` is the level that makes the file self-contained: it writes
+    every frame back *and* resets the WAL to zero bytes. ``PASSIVE`` gives up
+    silently when a reader is around, and ``FULL`` leaves the frames in the
+    WAL after copying them, so neither guarantees the state we need on disk.
+
+    ``TRUNCATE`` waits for readers to let go, and auto-sync runs while the
+    server holds its own connection to the same file, so the busy timeout is
+    set explicitly to match ``MemoryDB`` (``db.py``) instead of relying on
+    the sqlite3 driver default -- without it a reader that happens to be
+    mid-query would abort the push.
+
+    Returns ``True`` when the whole WAL was folded in, ``False`` when it was
+    not -- in which case the file is not safe to upload.
+    """
+    if not db_path.exists():
+        logger.error(f"Cannot checkpoint {db_path}: database file does not exist")
+        return False
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("PRAGMA busy_timeout = 5000")
+        busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if busy:
+            logger.error(
+                f"WAL checkpoint of {db_path.name} was blocked (busy); "
+                "recent writes are still in the -wal file"
+            )
+            return False
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"WAL checkpoint of {db_path.name} failed: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 async def sync_push(db_path: Path, folder_name: str) -> bool:
     """Push local database to Google Drive folder.
 
-    Uploads the SQLite database file to Google Drive.
-    Updates existing file or creates new one.
+    Checkpoints the WAL so the uploaded file is self-contained, then uploads
+    the SQLite database file to Google Drive. Updates existing file or
+    creates new one.
     """
     token = await _get_valid_token()
     if not token:
@@ -495,6 +541,12 @@ async def sync_push(db_path: Path, folder_name: str) -> bool:
     folder_id = await _find_or_create_folder(token, folder_name)
     if not folder_id:
         logger.error("Failed to find/create sync folder")
+        return False
+
+    # Never upload a database whose WAL has not been folded in: the remote
+    # copy would be a shell with no tables, silently replacing a good backup.
+    if not await asyncio.to_thread(_checkpoint_wal, db_path):
+        logger.error("Push aborted: local DB is not in a state safe to upload")
         return False
 
     existing = await _find_file_in_folder(token, folder_id, db_path.name)

@@ -1,5 +1,6 @@
 """Tests for mnemo_mcp.sync -- Google Drive sync operations."""
 
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -338,7 +339,12 @@ class TestSyncPush:
 
     async def test_success(self, tmp_path):
         db_path = tmp_path / "test.db"
-        db_path.write_bytes(b"data")
+        # A real SQLite file: sync_push now checkpoints the WAL before the
+        # upload, which means it refuses anything that is not a database.
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE memories (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
         token = {"access_token": "valid"}
 
         with (
