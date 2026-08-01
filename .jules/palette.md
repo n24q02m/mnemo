@@ -31,3 +31,16 @@ Record a skip as an entry here. Do not open a PR to report that no change is nee
 
 ### 2026-07-25 - Reframing backend work as UX to satisfy the remit
 Noted because #1007 flagged the temptation itself: when no UI exists, editing API internals and labelling the result a UX improvement is worse than skipping. The honest surface is the response text a caller reads, described in the entry above. If that surface has nothing wrong with it, the correct outcome is no change.
+
+### 2026-08-01 - A third empty pull request announcing the same skip (#1032)
+
+`+0/-0` across two commits, titled `chore: no frontend ui available for ux
+enhancement`. This is the same conclusion as #1003 and #1007, recorded in the
+entry above on 2026-07-25, delivered the same way that entry asked it not to be,
+and with the same `chore:` prefix this repository rejects.
+
+The entry above exists so this does not need a pull request. It says what the
+reviewable surface here is -- the `error`, `suggestion` and `note` strings in
+`src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/` -- and
+that a decision to change nothing belongs in this file as an entry. Read this
+file before opening anything against this repository.
