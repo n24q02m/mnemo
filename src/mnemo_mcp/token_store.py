@@ -95,27 +95,28 @@ def save_token(provider: str, token: dict) -> None:
     path = get_token_path(provider)
     token_json = json.dumps(token, indent=2)
 
-    if os.name != "nt":
-        try:
-            # Prevent TOCTOU vulnerability by setting permissions on creation
-            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-            mode = stat.S_IRUSR | stat.S_IWUSR  # 0600
-            fd = os.open(path, flags, mode)
-            try:
-                # Ensure existing files also get their permissions restricted
-                os.fchmod(fd, mode)
-            except OSError:
-                pass
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(token_json)
-        except OSError:
-            path.write_text(token_json, encoding="utf-8")
-            try:
-                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-            except OSError:
-                pass
-    else:
-        path.write_text(token_json, encoding="utf-8")
+    # Prevent TOCTOU vulnerability by setting permissions on creation
+    flags = os.O_CREAT | os.O_WRONLY
+    mode = stat.S_IRUSR | stat.S_IWUSR  # 0600
+    fd = os.open(path, flags, mode)
+    try:
+        if os.name != "nt":
+            # O_CREAT applies `mode` only to a file this call creates; an
+            # existing token file keeps whatever permissions it already had,
+            # so narrow it explicitly. Letting the failure propagate is the
+            # point -- swallowing it would write the token into a file we
+            # know we cannot restrict, which is the exposure this function
+            # exists to prevent. Callers surface it (credential_state's
+            # device-code poller reports "save_token failed" to the browser).
+            os.fchmod(fd, mode)
+        # Truncate only after the permission check passes, so a failure
+        # above leaves the previous token intact instead of destroying it.
+        os.ftruncate(fd, 0)
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token_json)
 
     logger.info(f"Token saved: {path}")
 
@@ -163,25 +164,20 @@ def save_token_for_sub(sub: str, provider: str, token: dict) -> None:
     path = get_token_path_for_sub(sub, provider)
     token_json = json.dumps(token, indent=2)
 
-    if os.name != "nt":
-        try:
-            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-            mode = stat.S_IRUSR | stat.S_IWUSR
-            fd = os.open(path, flags, mode)
-            try:
-                os.fchmod(fd, mode)
-            except OSError:
-                pass
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(token_json)
-        except OSError:
-            path.write_text(token_json, encoding="utf-8")
-            try:
-                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-            except OSError:
-                pass
-    else:
-        path.write_text(token_json, encoding="utf-8")
+    # Same open -> restrict -> truncate -> write order as :func:`save_token`;
+    # see the comment there for why a chmod failure must not be swallowed.
+    flags = os.O_CREAT | os.O_WRONLY
+    mode = stat.S_IRUSR | stat.S_IWUSR
+    fd = os.open(path, flags, mode)
+    try:
+        if os.name != "nt":
+            os.fchmod(fd, mode)
+        os.ftruncate(fd, 0)
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(token_json)
 
     logger.info(f"Token saved (sub={sub}): {path}")
 

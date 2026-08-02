@@ -16,6 +16,11 @@
 **Learning:** A dependency can withdraw a security control without breaking the build. Because Pydantic drops unknown keyword arguments, a removed field degrades into a warning rather than an error: the annotations still constructed, the server still started, and only `ty` remarked on it. Any dependency that renders a safety signal -- tool annotations, auth scopes, permission flags -- needs a version bound in this repo even when nothing here imports it directly. A transitive path plus automerge is enough to change that surface without a human reading the diff.
 **Prevention:** Bound these dependencies explicitly in `pyproject.toml`, and check the bound against the resolver instead of trusting it: run `uv lock --upgrade --prerelease=allow` with and without the constraint and compare. Do not repeat the claim that `<4` fails to exclude prereleases -- PEP 440's exclusive ordered comparison does skip prereleases of the same release, and `>=3.4.4,<4` was measured holding `4.0.0b1` out even under `--prerelease=allow`. The gap here was an absent constraint, not a weak one; state which of the two you are fixing.
 
+## 2026-08-02 - TOCTOU Vulnerability in Token Persistence
+**Vulnerability:** Insecure file permission fallback using write_text created a window where sensitive OAuth tokens were readable by other users before chmod was applied.
+**Learning:** Relying on write_text as a fallback when os.open with O_CREAT | O_WRONLY | O_TRUNC fails defeats the purpose of secure file creation and introduces TOCTOU risks on POSIX systems.
+**Prevention:** Avoid path.write_text() for sensitive files. Use os.open with secure flags and os.fchmod, and let failures bubble up rather than falling back to insecure defaults.
+
 ## Rejected
 
 ### 2026-07-25 - Duplicate submissions of the error-leakage fix (#999, #1002)

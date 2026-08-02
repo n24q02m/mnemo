@@ -73,19 +73,24 @@ class TestTokenStoreCoverage:
             result = load_token_for_sub("sub123", "test_provider")
         assert result is None
 
-    def test_save_token_for_sub_chmod_errors_swallowed(self, mock_settings, tmp_path):
+    def test_save_token_for_sub_dir_chmod_error_swallowed(
+        self, mock_settings, tmp_path
+    ):
         if os.name == "nt":
             pytest.skip("POSIX-only chmod path")
 
-        # Dir chmod error
+        # The directory mode is defence in depth -- the file's own 0600 still
+        # protects the token, so failing to tighten the directory is tolerated.
         with patch.object(Path, "chmod", side_effect=OSError("chmod denied")):
             save_token_for_sub("sub1", "test", {"access_token": "abc"})
 
-        # fchmod error
-        with patch("os.fchmod", side_effect=OSError("fchmod failed")):
-            save_token_for_sub("sub2", "test", {"access_token": "abc"})
+    def test_save_token_for_sub_fchmod_error_propagates(self, mock_settings, tmp_path):
+        if os.name == "nt":
+            pytest.skip("POSIX-only chmod path")
 
-        # Fallback Path.chmod error
-        with patch("os.open", side_effect=OSError("open failed")):
-            with patch.object(Path, "chmod", side_effect=OSError("final chmod failed")):
-                save_token_for_sub("sub3", "test", {"access_token": "abc"})
+        # The file mode is what keeps the token private: not tolerated.
+        with (
+            patch("os.fchmod", side_effect=OSError("fchmod failed")),
+            pytest.raises(OSError, match="fchmod failed"),
+        ):
+            save_token_for_sub("sub2", "test", {"access_token": "abc"})
