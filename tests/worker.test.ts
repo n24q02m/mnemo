@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import worker, { OUTBOUND_BY_HOST } from '../src/worker'
+import worker, { CONTAINER_ENV_KEYS, OUTBOUND_BY_HOST } from '../src/worker'
+// tsconfig.json's `types` deliberately lists only `@cloudflare/workers-types`
+// (no `@types/node`) so src/worker.ts type-checks against the workerd runtime,
+// not Node globals -- adding `@types/node` would blur that boundary for the
+// whole program (TS ambient types are program-wide, not file-scoped). This
+// file runs under plain Node via vitest and only needs one function from it.
+// @ts-expect-error -- no `@types/node`; see comment above
+import { readFileSync } from 'node:fs'
 
 function fakeEnv() {
   const kv = new Map<string, string>()
@@ -202,5 +209,89 @@ describe('standing GET /mcp SSE stream declined at the edge (idle-cost fix)', ()
     const res = await worker.fetch(new Request('https://mnemo.n24q02m.com/mcp', { method: 'GET' }), env as never)
     expect(res.status).toBe(401)
     expect(fetchCalls.length).toBe(0)
+  })
+})
+
+// Minimal JSONC -> JSON: strips `//` line comments and `/* */` block comments
+// while respecting string literals, so values like "http://kv.internal" survive
+// intact. wrangler*.jsonc files are read for real here (not hardcoded) so this
+// test actually catches drift instead of restating CONTAINER_ENV_KEYS.
+function stripJsonComments(src: string): string {
+  let out = ''
+  let inString = false
+  let inLineComment = false
+  let inBlockComment = false
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    const next = src[i + 1]
+    if (inLineComment) {
+      if (c === '\n') {
+        inLineComment = false
+        out += c
+      }
+      continue
+    }
+    if (inBlockComment) {
+      if (c === '*' && next === '/') {
+        inBlockComment = false
+        i++
+      }
+      continue
+    }
+    if (inString) {
+      out += c
+      if (c === '\\') {
+        out += next
+        i++
+        continue
+      }
+      if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      out += c
+      continue
+    }
+    if (c === '/' && next === '/') {
+      inLineComment = true
+      i++
+      continue
+    }
+    if (c === '/' && next === '*') {
+      inBlockComment = true
+      i++
+      continue
+    }
+    out += c
+  }
+  return out
+}
+
+// Path is relative to the repo root, which is the cwd `vitest` runs from
+// (package.json's `test:worker` script and the CI step both invoke it from
+// the repo root, never from `tests/`).
+function readWranglerVarKeys(repoRootRelPath: string): string[] {
+  const parsed = JSON.parse(stripJsonComments(readFileSync(repoRootRelPath, 'utf8'))) as { vars?: Record<string, unknown> }
+  return Object.keys(parsed.vars ?? {})
+}
+
+// A key declared in wrangler `vars` but missing from CONTAINER_ENV_KEYS is
+// silently dropped by pickContainerEnv -- the container just runs with whatever
+// default core-py falls back to, with no error anywhere. This reads all three
+// wrangler*.jsonc files for real (never hardcodes their `vars`) so it actually
+// fails when someone adds a wrangler var without wiring it into the Worker.
+describe('CONTAINER_ENV_KEYS covers every wrangler `vars` key', () => {
+  const wranglerFiles = ['wrangler.jsonc', 'wrangler.deploy.jsonc', 'wrangler.deploy.template.jsonc']
+
+  it('every `vars` key in each wrangler*.jsonc is forwarded by CONTAINER_ENV_KEYS', () => {
+    const forwarded = new Set<string>(CONTAINER_ENV_KEYS)
+    const missing: string[] = []
+    for (const file of wranglerFiles) {
+      for (const key of readWranglerVarKeys(file)) {
+        if (!forwarded.has(key)) missing.push(`${file}: ${key}`)
+      }
+    }
+    expect(missing).toEqual([])
   })
 })

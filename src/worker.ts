@@ -55,10 +55,20 @@ export interface Env {
 
 // Keys forwarded from the Worker env (wrangler vars + secrets) into the container
 // process. Unset/empty values are dropped so an unused optional secret never
-// injects a blank. MCP_RELAY_PASSWORD MUST stay here: the container's OAuth-AS
-// browser form (Gate A) is gated by it -- dropping it would open the relay form
-// to anyone. CREDENTIAL_SECRET + MCP_DCR_SERVER_SECRET enable per-sub multi-user.
-const CONTAINER_ENV_KEYS = [
+// injects a blank. Every key declared in any wrangler*.jsonc `vars` block MUST
+// be listed here too -- otherwise its value is silently dropped and the
+// container falls back to a default with no error. tests/worker.test.ts asserts
+// this coverage against all three wrangler files (wrangler.jsonc,
+// wrangler.deploy.jsonc, wrangler.deploy.template.jsonc), so it fails loudly
+// instead. The other 10 keys below are NOT declared as `vars` anywhere and are
+// loaded with `wrangler secret put`: RECENCY_HALF_LIFE_DAYS, CREDENTIAL_SECRET,
+// JINA_AI_API_KEY, GEMINI_API_KEY, GOOGLE_VERTEX_EXPRESS_API_KEY,
+// MCP_RELAY_PASSWORD, MCP_DCR_SERVER_SECRET, OPENROUTER_API_BASE,
+// OPENROUTER_API_KEY, JINA_AI_API_BASE. MCP_RELAY_PASSWORD MUST stay here: the
+// container's OAuth-AS browser form (Gate A) is gated by it -- dropping it would
+// open the relay form to anyone. CREDENTIAL_SECRET + MCP_DCR_SERVER_SECRET
+// enable per-sub multi-user.
+export const CONTAINER_ENV_KEYS = [
   'MCP_STORAGE_BACKEND', 'MCP_KV_BASE_URL', 'MEMORY_DB_BACKEND',
   'MCP_D1_BASE_URL', 'MCP_VECTORIZE_BASE_URL', 'MCP_VECTORIZE_IDX',
   'EMBEDDING_MODELS', 'RERANK_MODELS', 'LLM_MODELS',
