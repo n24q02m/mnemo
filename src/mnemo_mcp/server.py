@@ -1840,7 +1840,11 @@ async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
     s = await asyncio.to_thread(db.stats)
     return {
         "database": {
-            "path": str(settings.get_db_path()),
+            # The store that answered, not the SQLite path config would use:
+            # under MEMORY_DB_BACKEND=cf-d1 the counts below come from D1 and
+            # settings.get_db_path() names a container file holding none of
+            # them. Same source as memory_stats, so the two cannot disagree.
+            "path": s["db_path"],
             "total_memories": s["total_memories"],
             "categories": s["categories"],
             "vec_enabled": s["vec_enabled"],

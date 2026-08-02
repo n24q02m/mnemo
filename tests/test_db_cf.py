@@ -41,6 +41,7 @@ import re
 import sqlite3
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -98,8 +99,15 @@ def d1_conn(tmp_path) -> sqlite3.Connection:
     behaves: every statement is committed on its own and there is no
     client-side transaction to roll back. sqlite-vec is never loaded, matching
     D1's inability to load extensions.
+
+    ``check_same_thread=False`` because the real D1 is reached over HTTP and so
+    is thread-agnostic: server handlers call the store through
+    ``asyncio.to_thread``, and pysqlite's default thread check would fail the
+    double where the wire would not.
     """
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     return conn
 
@@ -746,6 +754,57 @@ class TestBackendSelection:
             assert db._recency_half_life == 3.0
         finally:
             db.close()
+
+
+class TestStatusNamesTheStoreItRead:
+    """``config(action="status")`` must name the store it actually queried.
+
+    It used to print ``settings.get_db_path()`` -- the SQLite path -- whatever
+    ``MEMORY_DB_BACKEND`` selected, so a D1-backed deployment reported a file
+    inside its container while serving memories that live in D1. The field is a
+    diagnostic, so a backend-blind value sends the next investigation to the
+    wrong store.
+    """
+
+    @staticmethod
+    def _ctx(db):
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "db": db,
+            "embedding_model": None,
+            "embedding_dims": 0,
+        }
+        return ctx
+
+    async def test_sqlite_status_names_the_sqlite_file(self, sqlite_db, tmp_path):
+        from mnemo_mcp.server import _handle_config_status
+
+        status = await _handle_config_status(self._ctx(sqlite_db))
+        assert status["database"]["path"] == str(tmp_path / "memories.db")
+
+    async def test_cf_d1_status_names_d1_not_a_sqlite_file(self, cf_db):
+        from mnemo_mcp.config import settings
+        from mnemo_mcp.server import _handle_config_status
+
+        status = await _handle_config_status(self._ctx(cf_db))
+        assert status["database"]["path"] == "cf-d1:http://d1.internal"
+        # The regression this pins: the SQLite path from settings, which a D1
+        # deployment never opens.
+        assert status["database"]["path"] != str(settings.get_db_path())
+
+    async def test_status_and_memory_stats_cannot_disagree(self, either_db):
+        """The invariant the bug broke: one container, one answer.
+
+        ``memory_stats`` and ``config status`` read the same store in the same
+        process, so they may not name two different ones.
+        """
+        from mnemo_mcp.server import _handle_config_status, _handle_stats
+
+        ctx = self._ctx(either_db)
+        status = await _handle_config_status(ctx)
+        stats = await _handle_stats(ctx)
+        assert status["database"]["path"] == stats["db_path"]
+        assert status["database"]["total_memories"] == stats["total_memories"]
 
 
 def test_docs_db_backend_is_gone_from_the_repo():

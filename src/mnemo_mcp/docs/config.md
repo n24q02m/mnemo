@@ -27,7 +27,8 @@ Returns database stats, embedding model info, and sync status.
 **Parameters:** None
 
 **Returns:**
-- `db_path`: Path to SQLite database
+- `path`: The store the counts were read from -- the SQLite file, or
+  `cf-d1:<base-url>` when `MEMORY_DB_BACKEND=cf-d1`
 - `total_memories`: Total memory count
 - `categories`: Memory count by category
 - `embedding`: Model name, dimensions, availability
