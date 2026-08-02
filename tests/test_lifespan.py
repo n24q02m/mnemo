@@ -1,11 +1,24 @@
 """Tests for server lifespan management."""
 
 import asyncio
+import pathlib
+import sqlite3
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from loguru import logger
+
+# The Cloudflare doubles live with the suites that pin them against
+# ``src/worker.ts``; importing them here keeps one description of the Worker.
+from test_db_cf import FakeD1Worker
+from test_db_cf_vectors import FakeVectorizeWorker
 
 from mnemo_mcp.server import lifespan
+
+_MIGRATION = (
+    pathlib.Path(__file__).resolve().parent.parent / "migrations" / "0001_init.sql"
+)
 
 
 @pytest.fixture
@@ -30,7 +43,13 @@ def mock_db():
     # site to intercept.
     with patch("mnemo_mcp.server.open_memory_db") as m:
         db_instance = MagicMock()
-        db_instance.stats.return_value = {"total_memories": 10, "vec_enabled": True}
+        # db_path is part of what stats() always returns, on both backends; the
+        # startup banner reads it, so a stub without it describes no real store.
+        db_instance.stats.return_value = {
+            "total_memories": 10,
+            "vec_enabled": True,
+            "db_path": "test.db",
+        }
         db_instance.vec_enabled = True
         m.return_value = db_instance
         yield m
@@ -193,3 +212,116 @@ async def test_lifespan_all_backends_fail(
 
     # Should still init DB
     mock_db.return_value.stats.assert_called()
+
+
+@pytest.fixture
+def startup_logs() -> Generator[list[str]]:
+    """Collect loguru messages; loguru does not route through pytest's caplog."""
+    messages: list[str] = []
+    sink_id = logger.add(
+        lambda message: messages.append(message.record["message"]),
+        level="INFO",
+        format="{message}",
+    )
+    yield messages
+    logger.remove(sink_id)
+
+
+@pytest.fixture
+def real_store_settings(mock_settings):
+    """``mock_settings`` with the values ``open_memory_db`` really consumes.
+
+    The other tests here never build a store, so the MagicMock defaults are
+    enough for them; a real one divides by ``recency_half_life_days`` and
+    stamps ``embedding_primary()`` into the store, neither of which survives
+    being a MagicMock.
+    """
+    mock_settings.recency_half_life_days = 7.0
+    mock_settings.reindex_on_model_change = False
+    mock_settings.embedding_primary.return_value = "test-model"
+    return mock_settings
+
+
+def _banner(messages: list[str]) -> str:
+    return next(m for m in messages if m.startswith("Database: "))
+
+
+class TestStartupLogNamesTheStoreItRead:
+    """The startup banner must name the store its memory count came from.
+
+    It printed ``settings.get_db_path()`` next to counts read from whichever
+    backend ``MEMORY_DB_BACKEND`` selected, so a D1 deployment announced a
+    SQLite file inside its container. This is the first line anyone reads when
+    asking "where is my data", which is the worst place to be wrong.
+
+    Both tests let ``open_memory_db`` run for real -- a mocked ``stats()`` would
+    only prove the log prints whatever the mock was told to say.
+    """
+
+    @pytest.fixture
+    def cf_d1_store(self, tmp_path, monkeypatch) -> Generator[None]:
+        """Point ``MEMORY_DB_BACKEND=cf-d1`` at the in-process D1 double."""
+        from mcp_core.storage.d1 import D1Backend
+        from mcp_core.storage.vectorize import VectorizeBackend
+
+        conn = sqlite3.connect(
+            tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+        )
+        conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
+        monkeypatch.setenv("MEMORY_DB_BACKEND", "cf-d1")
+        monkeypatch.setattr(
+            "mnemo_mcp.db_cf.d1_backend_from_env",
+            lambda: D1Backend(base_url="http://d1.internal", http=FakeD1Worker(conn)),
+        )
+        monkeypatch.setattr(
+            "mnemo_mcp.db_cf._vectorize_from_env",
+            lambda: VectorizeBackend(
+                base_url="http://vectorize.internal",
+                idx="mnemo-test",
+                http=FakeVectorizeWorker(),
+            ),
+        )
+        yield
+        conn.close()
+
+    async def test_cf_d1_startup_log_does_not_name_the_sqlite_file(
+        self,
+        real_store_settings,
+        cf_d1_store,
+        mock_embedder,
+        mock_sync,
+        startup_logs,
+    ):
+        # The path the Cloudflare container is configured with and never opens.
+        sqlite_path = pathlib.Path("/data/memories.db")
+        real_store_settings.get_db_path.return_value = sqlite_path
+
+        async with lifespan(MagicMock()):
+            pass
+
+        banner = _banner(startup_logs)
+        assert "cf-d1:http://d1.internal" in banner
+        assert str(sqlite_path) not in banner
+
+    async def test_sqlite_startup_log_names_the_sqlite_file(
+        self,
+        real_store_settings,
+        tmp_path,
+        monkeypatch,
+        mock_embedder,
+        mock_sync,
+        startup_logs,
+    ):
+        """The other half of the guard: SQLite must still name its file.
+
+        Reading the store's own answer has to stay honest in both directions --
+        a fix that only ever printed the D1 URL would pass the test above.
+        """
+        monkeypatch.delenv("MEMORY_DB_BACKEND", raising=False)
+        sqlite_path = tmp_path / "memories.db"
+        real_store_settings.get_db_path.return_value = sqlite_path
+
+        async with lifespan(MagicMock()):
+            pass
+
+        assert str(sqlite_path) in _banner(startup_logs)

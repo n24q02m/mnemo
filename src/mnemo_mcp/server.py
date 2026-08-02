@@ -283,8 +283,11 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         reindex_on_model_change=settings.reindex_on_model_change,
     )
     stats = db.stats()
+    # The store that answered, not the SQLite path the config asked for: the
+    # count beside it comes from whatever open_memory_db selected, so under
+    # cf-d1 db_path names a container file holding none of these memories.
     logger.info(
-        f"Database: {db_path} ({stats['total_memories']} memories, "
+        f"Database: {stats['db_path']} ({stats['total_memories']} memories, "
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
 
