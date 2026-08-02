@@ -2,6 +2,229 @@
 
 <!-- version list -->
 
+## v2.8.0-beta.1 (2026-08-02)
+
+### Bug Fixes
+
+- Add the initial D1 schema migration for the memories database
+  ([#1039](https://github.com/n24q02m/mnemo-mcp/pull/1039),
+  [`cb188da`](https://github.com/n24q02m/mnemo-mcp/commit/cb188daf333b7a1121cd35a186e1049a8e238c11))
+
+- Align fork guard with the standard form ([#1017](https://github.com/n24q02m/mnemo-mcp/pull/1017),
+  [`450b741`](https://github.com/n24q02m/mnemo-mcp/commit/450b741bb536ff43d4132ce05382b385b18f9dc4))
+
+- Assert the guard message by prefix instead of substring
+  ([#1050](https://github.com/n24q02m/mnemo-mcp/pull/1050),
+  [`208a18e`](https://github.com/n24q02m/mnemo-mcp/commit/208a18e4884d5ab22b45b2f14f7a41efff58f90f))
+
+- Block outbound network in tests and bound the embedding availability probe
+  ([#1050](https://github.com/n24q02m/mnemo-mcp/pull/1050),
+  [`208a18e`](https://github.com/n24q02m/mnemo-mcp/commit/208a18e4884d5ab22b45b2f14f7a41efff58f90f))
+
+- Bump mcp-core floor to 1.21.0 stable ([#1013](https://github.com/n24q02m/mnemo-mcp/pull/1013),
+  [`e3cdb66`](https://github.com/n24q02m/mnemo-mcp/commit/e3cdb66608404e51f44562bb3d0ad59daeed05bb))
+
+- Checkpoint the sqlite wal before uploading the db to google drive
+  ([#1037](https://github.com/n24q02m/mnemo-mcp/pull/1037),
+  [`f107f0a`](https://github.com/n24q02m/mnemo-mcp/commit/f107f0a49d89f17bafdd8075d5ec0fb90ade7ef4))
+
+- Clarify hybrid retrieval uses Vectorize on Cloudflare, not just sqlite-vec
+  ([#1051](https://github.com/n24q02m/mnemo-mcp/pull/1051),
+  [`8088107`](https://github.com/n24q02m/mnemo-mcp/commit/8088107df42a101f08e5b8a8ebcd43adce80bf2f))
+
+- Derive test_config clean_env list from Settings, not a hand-written list
+  ([#1041](https://github.com/n24q02m/mnemo-mcp/pull/1041),
+  [`2c52789`](https://github.com/n24q02m/mnemo-mcp/commit/2c5278969c8ee02be53c5d586ba8229ddf5ba120))
+
+- Describe the HTTP mode instead of advertising a personal instance
+  ([`739ae12`](https://github.com/n24q02m/mnemo-mcp/commit/739ae12d3449f589cab04d511f2190f26d4fdbc1))
+
+- Drop code_quality from the main ruleset ([#1016](https://github.com/n24q02m/mnemo-mcp/pull/1016),
+  [`eaab23b`](https://github.com/n24q02m/mnemo-mcp/commit/eaab23b168aae05877e88339adca276ab76a9411))
+
+- Drop rangeStrategy from update-type package rules
+  ([#1009](https://github.com/n24q02m/mnemo-mcp/pull/1009),
+  [`a1188c6`](https://github.com/n24q02m/mnemo-mcp/commit/a1188c6151220f7eef0c601abce476fce72ee4fd))
+
+- Drop the AI Agent header now that it labels nothing
+  ([#1040](https://github.com/n24q02m/mnemo-mcp/pull/1040),
+  [`c430a15`](https://github.com/n24q02m/mnemo-mcp/commit/c430a15281b6ffcb5b80b5f19f6a73b84711eeaa))
+
+- Let the wal checkpoint wait out a transient reader
+  ([#1037](https://github.com/n24q02m/mnemo-mcp/pull/1037),
+  [`f107f0a`](https://github.com/n24q02m/mnemo-mcp/commit/f107f0a49d89f17bafdd8075d5ec0fb90ade7ef4))
+
+- Make memory supersession atomic and close its transaction on every exit
+  ([#1038](https://github.com/n24q02m/mnemo-mcp/pull/1038),
+  [`495bb4a`](https://github.com/n24q02m/mnemo-mcp/commit/495bb4a263c44cd438bd8467344ba99dcb914e51))
+
+- Merge partial sync_state upserts inside a single statement
+  ([#1011](https://github.com/n24q02m/mnemo-mcp/pull/1011),
+  [`754708e`](https://github.com/n24q02m/mnemo-mcp/commit/754708e393d85a7a027d6a78157e3010d7375e80))
+
+- Move merged gdrive entry out of the Rejected section in sentinel ledger
+  ([`49596f8`](https://github.com/n24q02m/mnemo-mcp/commit/49596f81374c27ef43fe074a0f1c911484691dd8))
+
+- Move this repo to Apache-2.0, preserving the MIT terms it received
+  ([#1035](https://github.com/n24q02m/mnemo-mcp/pull/1035),
+  [`de482bc`](https://github.com/n24q02m/mnemo-mcp/commit/de482bc7c03d686b598395dcf62fafaf8c2eb76b))
+
+- Pin fastmcp below 4 so lock maintenance cannot pull a beta
+  ([#1036](https://github.com/n24q02m/mnemo-mcp/pull/1036),
+  [`ce81282`](https://github.com/n24q02m/mnemo-mcp/commit/ce81282361da19219760417e9411edb623838126))
+
+- Pin GitHub Action references to commit SHAs
+  ([#1001](https://github.com/n24q02m/mnemo-mcp/pull/1001),
+  [`d6a3451`](https://github.com/n24q02m/mnemo-mcp/commit/d6a3451f02488cdf4e49d6092b411a318d196135))
+
+- Prevent information disclosure in API error responses
+  ([#1005](https://github.com/n24q02m/mnemo-mcp/pull/1005),
+  [`080be86`](https://github.com/n24q02m/mnemo-mcp/commit/080be86c9973660ca69ac460e8c2ae4c9502c54b))
+
+- Prevent information disclosure in API error responses and resolve unused variable warnings
+  ([#1005](https://github.com/n24q02m/mnemo-mcp/pull/1005),
+  [`080be86`](https://github.com/n24q02m/mnemo-mcp/commit/080be86c9973660ca69ac460e8c2ae4c9502c54b))
+
+- Propagate token chmod failures instead of writing the token anyway
+  ([#1048](https://github.com/n24q02m/mnemo-mcp/pull/1048),
+  [`640f512`](https://github.com/n24q02m/mnemo-mcp/commit/640f51257351fc072837de57c5bf9996b2ecfe9a))
+
+- Record rejected palette submissions in the palette ledger
+  ([#1014](https://github.com/n24q02m/mnemo-mcp/pull/1014),
+  [`9b0b568`](https://github.com/n24q02m/mnemo-mcp/commit/9b0b568805ba9ea017234b19051a0442d41bcf01))
+
+- Record the fastmcp beta near-miss in the sentinel ledger
+  ([#1036](https://github.com/n24q02m/mnemo-mcp/pull/1036),
+  [`ce81282`](https://github.com/n24q02m/mnemo-mcp/commit/ce81282361da19219760417e9411edb623838126))
+
+- Record the update supersession decision in the bolt ledger
+  ([#1038](https://github.com/n24q02m/mnemo-mcp/pull/1038),
+  [`495bb4a`](https://github.com/n24q02m/mnemo-mcp/commit/495bb4a263c44cd438bd8467344ba99dcb914e51))
+
+- Record why the third empty UX pull request was closed
+  ([`148e218`](https://github.com/n24q02m/mnemo-mcp/commit/148e218484d61227fe9c9fb8a3137842897b8bb6))
+
+- Remove insecure write_text fallback for OAuth tokens
+  ([#1048](https://github.com/n24q02m/mnemo-mcp/pull/1048),
+  [`640f512`](https://github.com/n24q02m/mnemo-mcp/commit/640f51257351fc072837de57c5bf9996b2ecfe9a))
+
+- Remove redundant orphan-tag shell guard (better-semantic-release @v1 has a built-in one)
+  ([#998](https://github.com/n24q02m/mnemo-mcp/pull/998),
+  [`bf0882f`](https://github.com/n24q02m/mnemo-mcp/commit/bf0882f254ae11a58f1d8bc24409c6bf79aaef15))
+
+- Serialize all 19 memories columns from one shared list
+  ([#1049](https://github.com/n24q02m/mnemo-mcp/pull/1049),
+  [`274836e`](https://github.com/n24q02m/mnemo-mcp/commit/274836e50f0581ec9b7cb46e04d4db65d0254e47))
+
+- Skip the SQLite half of the vector parity suite without sqlite-vec
+  ([#1044](https://github.com/n24q02m/mnemo-mcp/pull/1044),
+  [`c733fe7`](https://github.com/n24q02m/mnemo-mcp/commit/c733fe7633c18ea22c2c5906fcbb9ef4e34880c1))
+
+- State per-action archival filtering precisely in temporal-query
+  ([#1018](https://github.com/n24q02m/mnemo-mcp/pull/1018),
+  [`4a49d84`](https://github.com/n24q02m/mnemo-mcp/commit/4a49d84c5cd9fac569d59dc92f3dba6395a7557f))
+
+- Stop .gitignore from silently dropping new .jules bot ledgers
+  ([#1040](https://github.com/n24q02m/mnemo-mcp/pull/1040),
+  [`c430a15`](https://github.com/n24q02m/mnemo-mcp/commit/c430a15281b6ffcb5b80b5f19f6a73b84711eeaa))
+
+- Stop leaking exception text from the gdrive merge handler
+  ([`8179b2b`](https://github.com/n24q02m/mnemo-mcp/commit/8179b2bae1ebad32ec39f9b11ba5a0866b84b5cd))
+
+- Test CONTAINER_ENV_KEYS covers every wrangler vars key
+  ([#1043](https://github.com/n24q02m/mnemo-mcp/pull/1043),
+  [`c48aae8`](https://github.com/n24q02m/mnemo-mcp/commit/c48aae8e5bc447351d72856de4502eec53a5595b))
+
+- Use atomic conditional update in restore_memory
+  ([`2c36d68`](https://github.com/n24q02m/mnemo-mcp/commit/2c36d6887bf6cd883b275be8d2abad1752e0c6c7))
+
+- **deps**: Lock file maintenance ([#1054](https://github.com/n24q02m/mnemo-mcp/pull/1054),
+  [`3f6c4d9`](https://github.com/n24q02m/mnemo-mcp/commit/3f6c4d933700d557a4d958ad116de60862350713))
+
+- **deps**: Lock file maintenance ([#1047](https://github.com/n24q02m/mnemo-mcp/pull/1047),
+  [`dc2583a`](https://github.com/n24q02m/mnemo-mcp/commit/dc2583ab83b66bfcd06cfa146f4e5a8dc98a4fde))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260719.1
+  ([#1028](https://github.com/n24q02m/mnemo-mcp/pull/1028),
+  [`dde4077`](https://github.com/n24q02m/mnemo-mcp/commit/dde4077b1e9f3ad99202040220ac6c644fa006d1))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260726.1
+  ([#1053](https://github.com/n24q02m/mnemo-mcp/pull/1053),
+  [`882db06`](https://github.com/n24q02m/mnemo-mcp/commit/882db06aa0cc47f9006fef1bda2d8f809c0446a0))
+
+- **deps**: Update actions/setup-node action to v7
+  ([#979](https://github.com/n24q02m/mnemo-mcp/pull/979),
+  [`d26019f`](https://github.com/n24q02m/mnemo-mcp/commit/d26019fad85ecaa282dc737ddbc6ec9bc75237df))
+
+- **deps**: Update actions/setup-python action to v7
+  ([#1020](https://github.com/n24q02m/mnemo-mcp/pull/1020),
+  [`5c7b824`](https://github.com/n24q02m/mnemo-mcp/commit/5c7b8249e43f86f9b0c8b3826afbda042928312e))
+
+- **deps**: Update astral-sh/setup-uv action to v9
+  ([#1021](https://github.com/n24q02m/mnemo-mcp/pull/1021),
+  [`807b981`](https://github.com/n24q02m/mnemo-mcp/commit/807b981c7bfaf8ac0ccf23291a597a839a2b0922))
+
+- **deps**: Update docker/login-action action to v4.6.0
+  ([#1031](https://github.com/n24q02m/mnemo-mcp/pull/1031),
+  [`9ad551e`](https://github.com/n24q02m/mnemo-mcp/commit/9ad551ec75dcf074d1651cd52b10d1162b585264))
+
+- **deps**: Update minor dependencies ([#1010](https://github.com/n24q02m/mnemo-mcp/pull/1010),
+  [`377a9a0`](https://github.com/n24q02m/mnemo-mcp/commit/377a9a022db246ed4f2d6548ed5cbb6239d3e326))
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.2.3
+  ([#1045](https://github.com/n24q02m/mnemo-mcp/pull/1045),
+  [`b0b31e6`](https://github.com/n24q02m/mnemo-mcp/commit/b0b31e60cea97a5e8ed8ae5fd6f542118436e948))
+
+- **deps**: Update non-major dev dependencies
+  ([#1034](https://github.com/n24q02m/mnemo-mcp/pull/1034),
+  [`afbcee4`](https://github.com/n24q02m/mnemo-mcp/commit/afbcee40e30faeaf7db5aacf6fe5b8f938e2c9b6))
+
+- **deps**: Update non-major dev dependencies
+  ([#1030](https://github.com/n24q02m/mnemo-mcp/pull/1030),
+  [`d1c9c58`](https://github.com/n24q02m/mnemo-mcp/commit/d1c9c58278c81bf1f2784debb4784dda9d7335e6))
+
+- **deps**: Update non-major dev dependencies
+  ([#1019](https://github.com/n24q02m/mnemo-mcp/pull/1019),
+  [`ffe6d4a`](https://github.com/n24q02m/mnemo-mcp/commit/ffe6d4a69f1e1533df85db04b2a3afc8ea0bcdbb))
+
+- **deps**: Update patch dependencies ([#1027](https://github.com/n24q02m/mnemo-mcp/pull/1027),
+  [`4da028c`](https://github.com/n24q02m/mnemo-mcp/commit/4da028c13d8f36f5c64b3a99535e08de80a90ea0))
+
+- **deps**: Update patch dependencies ([#973](https://github.com/n24q02m/mnemo-mcp/pull/973),
+  [`296480d`](https://github.com/n24q02m/mnemo-mcp/commit/296480dc3ffb725c8dd10f1830c17d89419a69b3))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 9d7f287
+  ([#978](https://github.com/n24q02m/mnemo-mcp/pull/978),
+  [`f6cfa31`](https://github.com/n24q02m/mnemo-mcp/commit/f6cfa31360fa9df75a6e6df8806e16bdd4611d50))
+
+- **deps**: Update typescript to v7 ([#967](https://github.com/n24q02m/mnemo-mcp/pull/967),
+  [`35a3699`](https://github.com/n24q02m/mnemo-mcp/commit/35a3699aa2aec6d6d8f959510fd9ff8a396b473a))
+
+### Features
+
+- Add bot PR governance workflow ([#1015](https://github.com/n24q02m/mnemo-mcp/pull/1015),
+  [`861770c`](https://github.com/n24q02m/mnemo-mcp/commit/861770c92e0ffb44e7b97a660acd04cca7c721c6))
+
+- Add cloudflare d1 memory backend selected by MEMORY_DB_BACKEND
+  ([#1042](https://github.com/n24q02m/mnemo-mcp/pull/1042),
+  [`2be3051`](https://github.com/n24q02m/mnemo-mcp/commit/2be30512402b7154d71f01ce3b1b648b7137a7d3))
+
+- Derive a stable subject from the workspace username
+  ([#1006](https://github.com/n24q02m/mnemo-mcp/pull/1006),
+  [`20d452a`](https://github.com/n24q02m/mnemo-mcp/commit/20d452ade02f7b4554ac7d36ce8206b30426e0f1))
+
+- Sync cross-promo section ([#1025](https://github.com/n24q02m/mnemo-mcp/pull/1025),
+  [`4b6beff`](https://github.com/n24q02m/mnemo-mcp/commit/4b6beff29cc8b1a60e7c86e2733b4d9f34cf2912))
+
+- Temporal-query skill for point-in-time and version-chain lookups
+  ([#1018](https://github.com/n24q02m/mnemo-mcp/pull/1018),
+  [`4a49d84`](https://github.com/n24q02m/mnemo-mcp/commit/4a49d84c5cd9fac569d59dc92f3dba6395a7557f))
+
+- Wire Cloudflare Vectorize into the D1 memory backend
+  ([#1044](https://github.com/n24q02m/mnemo-mcp/pull/1044),
+  [`c733fe7`](https://github.com/n24q02m/mnemo-mcp/commit/c733fe7633c18ea22c2c5906fcbb9ef4e34880c1))
+
+
 ## v2.7.0 (2026-07-18)
 
 
