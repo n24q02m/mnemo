@@ -107,7 +107,13 @@ from loguru import logger
 from mcp_core.storage.d1 import D1Backend, d1_backend_from_env
 from mcp_core.storage.vectorize import VectorizeBackend, vectorize_backend_from_env
 
-from mnemo_mcp.db import MAX_CONTENT_LENGTH, MAX_TAGS_FILTER, MemoryDB, _now_iso
+from mnemo_mcp.db import (
+    MAX_CONTENT_LENGTH,
+    MAX_TAGS_FILTER,
+    MEMORY_COLUMNS,
+    MemoryDB,
+    _now_iso,
+)
 
 # Cloudflare D1 rejects a query carrying more than this many bound parameters.
 # https://developers.cloudflare.com/d1/platform/limits/
@@ -153,20 +159,18 @@ REQUIRED_TABLES = (
 )
 
 # Columns written by the bulk-import path, in the order `_process_import_batch`
-# emits them. Kept as a constant so the generated multi-row INSERT never
-# interpolates anything caller-controlled.
-_IMPORT_COLUMNS = (
-    "id",
-    "content",
-    "category",
-    "tags",
-    "source",
-    "created_at",
-    "updated_at",
-    "access_count",
-    "last_accessed",
-    "importance",
-)
+# emits them -- which is `MEMORY_COLUMNS`, the one list every serializer shares.
+# This used to be a hand-written copy that had fallen nine columns behind the
+# table; re-exporting the constant keeps the D1 INSERT and the SQLite one
+# writing the same row, and still interpolates nothing caller-controlled.
+_IMPORT_COLUMNS = MEMORY_COLUMNS
+
+# Rows per multi-row INSERT, sized so one statement stays inside D1's cap of 100
+# bound parameters. This divides rather than assumes: at the current 19 columns
+# it yields 5 rows (95 params). It cannot reach 0 -- that would need more than
+# `D1_MAX_BOUND_PARAMS` columns in `memories`, i.e. a table 100+ columns wide,
+# at which point a single row could not be inserted in one statement at all.
+# `tests/test_column_fidelity.py` asserts both the floor and the cap.
 _IMPORT_ROWS_PER_STATEMENT = D1_MAX_BOUND_PARAMS // len(_IMPORT_COLUMNS)
 
 _NO_VECTOR_INDEX = (

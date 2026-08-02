@@ -16,8 +16,11 @@ row we compare ``remote.updated_at`` against ``local.updated_at``:
 
 * ``local >= remote`` -> keep local; record an audit row in
   ``sync_overrides`` so the user can inspect divergence.
-* ``local < remote`` -> upsert the remote row (compressed text + raw +
-  context_type + importance + archived_at all preserved).
+* ``local < remote`` -> upsert the remote row, every column of it: the
+  upsert writes ``db.MEMORY_COLUMNS``, so compressed text + raw +
+  context_type + importance + archived_at and the bitemporal columns
+  (``commit_sha`` / ``valid_from`` / ``valid_to`` / ``superseded_by``) all
+  survive the hop.
 * ``local missing`` -> insert the remote row.
 
 The orchestrator never blocks on conflict; LWW is automatic per row so
@@ -33,6 +36,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from mnemo_mcp.db import MEMORY_COLUMNS
 from mnemo_mcp.sync.bundle import decode_bundle, encode_bundle
 
 if TYPE_CHECKING:
@@ -175,23 +179,15 @@ async def build_full_bundle(db: MemoryDB, passphrase: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-_INSERT_COLS = (
-    "id",
-    "content",
-    "category",
-    "tags",
-    "source",
-    "created_at",
-    "updated_at",
-    "access_count",
-    "last_accessed",
-    "importance",
-    "context_type",
-    "archived_at",
-    "text_raw",
-    "compressed",
-    "compression_provider",
-)
+# The bundle's SELECT is `SELECT *`, so a remote row arrives with every column;
+# this is the list the upsert writes back. It used to be a hand-written copy
+# that stopped at `compression_provider`, dropping the four bitemporal columns
+# `mem_003_temporal` added. That mattered more than it looks: every read path
+# starts from `AND m.valid_to IS NULL` (`db.py::_build_filter_sql`), so a
+# superseded row that arrived without its `valid_to` came back to life on the
+# receiving machine. Sharing `MEMORY_COLUMNS` keeps sync, export/import and the
+# schema on one list.
+_INSERT_COLS = MEMORY_COLUMNS
 
 
 def _ensure_overrides_table(db: MemoryDB) -> None:

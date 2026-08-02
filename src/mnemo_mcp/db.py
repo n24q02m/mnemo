@@ -31,6 +31,84 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
 _STRUCT_CACHE: dict[int, struct.Struct] = {}
 
+# ---------------------------------------------------------------------------
+# The `memories` column set -- one list, shared by every path that serializes a
+# row.
+#
+# Before this existed there were three hand-written lists of different lengths
+# (export 9, import 10, sync/delta 15) against a 19-column table, so
+# `export_memories` -> `import_memories` silently dropped ten columns and still
+# reported success. The lists are gone; these constants replace all of them.
+#
+# Order and membership must equal `PRAGMA table_info(memories)` on a store built
+# by `_init_schema` + the Alembic lineage. That is asserted by
+# `tests/test_column_fidelity.py`, which fails when a migration adds a column
+# without updating this tuple -- the drift that caused the original defect.
+# `tests/test_d1_migrations.py` separately pins `migrations/0001_init.sql`
+# against the same lineage, so the D1 backend inherits the guarantee.
+#
+# Kept explicit rather than introspected from the open connection. Introspection
+# would make the serialized column set a property of whichever database happens
+# to be open: a store still missing a column would export without it and import
+# clean into a store that has it, which is the same silent data loss one layer
+# down. An explicit tuple gives the schema a second opinion to disagree with,
+# which is what makes a drift test possible at all. It also keeps
+# `_IMPORT_ROWS_PER_STATEMENT` in `db_cf` a module constant instead of coupling
+# D1 statement sizing to connection state, and avoids asking D1 -- which serves
+# a fixed SQLite subset -- for `PRAGMA table_info` at runtime.
+MEMORY_COLUMNS: tuple[str, ...] = (
+    "id",
+    "content",
+    "category",
+    "tags",
+    "source",
+    "created_at",
+    "updated_at",
+    "access_count",
+    "last_accessed",
+    "importance",
+    "context_type",
+    "archived_at",
+    "text_raw",
+    "compressed",
+    "compression_provider",
+    "commit_sha",
+    "valid_from",
+    "valid_to",
+    "superseded_by",
+)
+
+# What the importer writes when a JSONL record omits a column. Mirrors the
+# schema's own DEFAULT clauses so an import is indistinguishable from an insert
+# that never mentioned the column. `id`, `content` and `tags` are handled
+# separately (generated / validated / re-encoded), and the three timestamps
+# default to "now", which is not a constant.
+_IMPORT_TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "last_accessed"})
+_IMPORT_DERIVED_COLUMNS = frozenset({"id", "content", "tags"})
+_IMPORT_DEFAULTS: dict[str, object] = {
+    "category": "general",
+    "source": None,
+    "access_count": 0,
+    "importance": 0.5,
+    "context_type": "conversation",
+    "archived_at": None,
+    "text_raw": None,
+    "compressed": 0,
+    "compression_provider": None,
+    "commit_sha": None,
+    "valid_from": None,
+    "valid_to": None,
+    "superseded_by": None,
+}
+
+# `tags` holds a JSON array as TEXT. Emitting it through `json()` makes the
+# exported record carry a real array instead of a quoted string, which is the
+# shape the importer and every existing consumer expect.
+_EXPORT_JSON_OBJECT_ARGS = ", ".join(
+    f"'{column}', json({column})" if column == "tags" else f"'{column}', {column}"
+    for column in MEMORY_COLUMNS
+)
+
 # ``MemoryDB.update`` supersedes a row with a single ``UPDATE ... RETURNING *``
 # so the read and the write cannot be split by a competing writer. RETURNING
 # landed in SQLite 3.35.0 (https://sqlite.org/lang_returning.html). A Python
@@ -1436,18 +1514,12 @@ class MemoryDB:
         """
         # Bolt Performance Optimization: Offload JSON construction to SQLite.
         # Avoids O(N) Python dict creations and json.dumps calls, resulting in ~78% faster exports.
-        query = """
-            SELECT json_object(
-                'id', id,
-                'content', content,
-                'category', category,
-                'tags', json(tags),
-                'source', source,
-                'created_at', created_at,
-                'updated_at', updated_at,
-                'access_count', access_count,
-                'last_accessed', last_accessed
-            ) as json_data
+        #
+        # The argument list is generated from MEMORY_COLUMNS so the export cannot
+        # fall behind the schema; it is built once at import time from our own
+        # identifiers and never sees caller input.
+        query = f"""
+            SELECT json_object({_EXPORT_JSON_OBJECT_ARGS}) as json_data
             FROM memories
             ORDER BY created_at
         """
@@ -1516,21 +1588,16 @@ class MemoryDB:
                     else (json.dumps(tags) if isinstance(tags, list) else tags)
                 )
 
-                importance = mem.get("importance", 0.5)
-                to_insert.append(
-                    (
-                        memory_id,
-                        content,
-                        mem.get("category", "general"),
-                        tags_json,
-                        mem.get("source"),
-                        mem.get("created_at", now),
-                        mem.get("updated_at", now),
-                        mem.get("access_count", 0),
-                        mem.get("last_accessed", now),
-                        importance,
-                    )
-                )
+                derived = {"id": memory_id, "content": content, "tags": tags_json}
+                row = []
+                for column in MEMORY_COLUMNS:
+                    if column in _IMPORT_DERIVED_COLUMNS:
+                        row.append(derived[column])
+                    elif column in _IMPORT_TIMESTAMP_COLUMNS:
+                        row.append(mem.get(column, now))
+                    else:
+                        row.append(mem.get(column, _IMPORT_DEFAULTS[column]))
+                to_insert.append(tuple(row))
             except Exception:
                 rejected += 1
                 continue
@@ -1543,12 +1610,13 @@ class MemoryDB:
         if not to_insert:
             return 0, 0
         cursor = self._conn.cursor()
-        sql = """INSERT OR {} INTO memories
-                 (id, content, category, tags, source,
-                  created_at, updated_at, access_count, last_accessed, importance)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        # Column list and placeholders come from MEMORY_COLUMNS, never from the
+        # imported records, so the statement carries no caller-controlled text.
+        columns = ", ".join(MEMORY_COLUMNS)
+        placeholders = ", ".join("?" for _ in MEMORY_COLUMNS)
         op = "REPLACE" if mode == "replace" else "IGNORE"
-        cursor.executemany(sql.format(op), to_insert)
+        sql = f"INSERT OR {op} INTO memories ({columns}) VALUES ({placeholders})"
+        cursor.executemany(sql, to_insert)
         imported = cursor.rowcount
         skipped = len(to_insert) - imported if mode != "replace" else 0
         return imported, skipped
