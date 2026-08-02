@@ -79,7 +79,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Features
 
-- **Hybrid retrieval** -- FTS5 + sqlite-vec, fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> local qwen3-reranker) with temporal decay and importance boost
+- **Hybrid retrieval** -- FTS5 + vector search (sqlite-vec locally, Vectorize on Cloudflare), fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> local qwen3-reranker) with temporal decay and importance boost
 - **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a configurable LLM chain (`LLM_MODELS`, order = litellm fallback)
 - **Knowledge graph** -- Automatic entity extraction and relation tracking; top results boosted by graph proximity
 - **Importance scoring + archive policy** -- LLM-scored 0.0-1.0 importance; soft-archive when `recency_factor * (1 - importance) > 1.0`; restore action available
@@ -98,7 +98,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 | Feature | mnemo-mcp | Mem0 | Letta | OpenMemory |
 |---|---|---|---|---|
-| Hybrid retrieval (FTS + vec) | yes (FTS5 + sqlite-vec + RRF) | yes | partial | yes |
+| Hybrid retrieval (FTS + vec) | yes (FTS5 + RRF; sqlite-vec local / Vectorize on Cloudflare) | yes | partial | yes |
 | Cross-encoder rerank chain | yes (qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
 | Temporal decay scoring | yes (exp half-life) | no | no | no |
 | Importance boost in rank | yes (LLM 0.0-1.0) | no | no | no |
