@@ -44,6 +44,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+# The Vectorize double lives next to the fidelity test that pins it against
+# `src/worker.ts`. Imported here so the two suites cannot describe two different
+# Workers.
+from test_db_cf_vectors import FakeVectorizeWorker
+
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.db_cf import (
     D1_MAX_BOUND_PARAMS,
@@ -104,11 +109,35 @@ def fake_worker(d1_conn: sqlite3.Connection) -> FakeD1Worker:
     return FakeD1Worker(d1_conn)
 
 
-def _cf_db(worker: FakeD1Worker, **kwargs) -> MemoryDBCfBackend:
-    from mcp_core.storage.d1 import D1Backend
+@pytest.fixture
+def fake_vectorize() -> FakeVectorizeWorker:
+    return FakeVectorizeWorker()
 
+
+def _cf_db(
+    worker: FakeD1Worker,
+    vectorize: FakeVectorizeWorker | None = None,
+    **kwargs,
+) -> MemoryDBCfBackend:
+    """Open a D1-backed store. Text-only unless a Vectorize double is passed.
+
+    Vectors are the subject of ``tests/test_db_cf_vectors.py``; here an index is
+    attached only where ``embedding_dims > 0`` makes one mandatory.
+    """
+    from mcp_core.storage.d1 import D1Backend
+    from mcp_core.storage.vectorize import VectorizeBackend
+
+    vectors = (
+        None
+        if vectorize is None
+        else VectorizeBackend(
+            base_url="http://vectorize.internal", idx="mnemo-test", http=vectorize
+        )
+    )
     return MemoryDBCfBackend(
-        D1Backend(base_url="http://d1.internal", http=worker), **kwargs
+        D1Backend(base_url="http://d1.internal", http=worker),
+        vectors=vectors,
+        **kwargs,
     )
 
 
@@ -527,41 +556,36 @@ class TestBackendParity:
 
 
 class TestVectorPathIsLoud:
-    """Task 3 has no vector path. It must say so, never return an empty list."""
+    """A text-only store must refuse a vector, never quietly discard it.
+
+    ``cf_db`` is opened with ``embedding_dims=0``, which declares the store
+    text-only: no Vectorize index is attached and there is nowhere for a vector
+    to go, since D1 has no ``memories_vec``. The wired path -- what happens once
+    an index *is* attached -- is ``tests/test_db_cf_vectors.py``.
+    """
 
     def test_add_with_embedding_raises(self, cf_db):
-        with pytest.raises(NotImplementedError, match="Task 4"):
+        with pytest.raises(NotImplementedError, match="embedding_dims=0"):
             cf_db.add("with a vector", embedding=[0.1] * 768)
 
     def test_add_with_context_type_with_embedding_raises(self, cf_db):
-        with pytest.raises(NotImplementedError, match="Task 4"):
+        with pytest.raises(NotImplementedError, match="embedding_dims=0"):
             cf_db.add_with_context_type("with a vector", embedding=[0.1] * 768)
 
     def test_search_with_embedding_raises(self, cf_db):
         _seed(cf_db)
-        with pytest.raises(NotImplementedError, match="Task 4"):
+        with pytest.raises(NotImplementedError, match="embedding_dims=0"):
             cf_db.search("anything", embedding=[0.1] * 768)
 
     def test_update_with_embedding_raises(self, cf_db):
         ids = _seed(cf_db)
-        with pytest.raises(NotImplementedError, match="Task 4"):
+        with pytest.raises(NotImplementedError, match="embedding_dims=0"):
             cf_db.update(ids["python"], embedding=[0.1] * 768)
 
     def test_search_without_embedding_still_works(self, cf_db):
         """Rejecting vectors must not break the FTS-only path."""
         _seed(cf_db)
         assert cf_db.search("Python")
-
-    def test_reindex_on_model_change_raises_instead_of_pretending(self, fake_worker):
-        db = _cf_db(fake_worker, embedding_dims=768, embedding_model="model-a")
-        db.close()
-        with pytest.raises(NotImplementedError, match="Task 4"):
-            _cf_db(
-                fake_worker,
-                embedding_dims=768,
-                embedding_model="model-b",
-                reindex_on_model_change=True,
-            )
 
 
 class TestUnavailableSurface:
@@ -648,14 +672,25 @@ class TestFailLoud:
         with pytest.raises(RuntimeError, match="closed"):
             cf_db.list_memories()
 
-    def test_embedding_identity_mismatch_raises(self, fake_worker):
-        db = _cf_db(fake_worker, embedding_dims=768, embedding_model="model-a")
+    def test_embedding_identity_mismatch_raises(self, fake_worker, fake_vectorize):
+        db = _cf_db(
+            fake_worker, fake_vectorize, embedding_dims=768, embedding_model="model-a"
+        )
         db.close()
         with pytest.raises(EmbeddingModelMismatch):
-            _cf_db(fake_worker, embedding_dims=768, embedding_model="model-b")
+            _cf_db(
+                fake_worker,
+                fake_vectorize,
+                embedding_dims=768,
+                embedding_model="model-b",
+            )
 
-    def test_embedding_identity_is_stamped_on_a_fresh_store(self, fake_worker):
-        db = _cf_db(fake_worker, embedding_dims=768, embedding_model="model-a")
+    def test_embedding_identity_is_stamped_on_a_fresh_store(
+        self, fake_worker, fake_vectorize
+    ):
+        db = _cf_db(
+            fake_worker, fake_vectorize, embedding_dims=768, embedding_model="model-a"
+        )
         assert db.get_store_meta("embedding_dims") == "768"
         assert db.get_store_meta("embedding_model") == "model-a"
 

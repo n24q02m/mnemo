@@ -1,4 +1,4 @@
-"""Cloudflare D1 backend for the Mnemo memory store (S2 Task 3).
+"""Cloudflare D1 + Vectorize backend for the Mnemo memory store (S2 Tasks 3-4).
 
 ``MemoryDBCfBackend`` presents the same surface as :class:`mnemo_mcp.db.MemoryDB`
 but reads and writes a Cloudflare D1 database over the Worker outbound handler
@@ -6,12 +6,59 @@ but reads and writes a Cloudflare D1 database over the Worker outbound handler
 happens in exactly one place -- :func:`open_memory_db`, driven by the
 ``MEMORY_DB_BACKEND`` env var -- and the default stays SQLite.
 
-Scope of this task: **D1 + FTS5 only.** Vector search on D1 is served by
-Cloudflare Vectorize (``migrations/0001_init.sql`` deliberately has no
-``memories_vec``: D1 cannot load the ``sqlite-vec`` extension), and that wiring
-is Task 4. Until then every vector-carrying entry point raises
-:class:`NotImplementedError` naming what is missing. Nothing on this backend
-returns an empty list, a zero count, or a success flag for work it did not do.
+Storage split: rows and the FTS5 index live in D1; dense vectors live in a
+Cloudflare Vectorize index reached through ``src/worker.ts``'s
+``vectorizeOutbound``. ``migrations/0001_init.sql`` deliberately has no
+``memories_vec`` -- D1 cannot load the ``sqlite-vec`` extension -- so there is no
+in-database vector table to fall back on. When the store is opened with
+``embedding_dims=0`` no Vectorize index is attached, ``vec_enabled`` is ``False``,
+and an entry point handed an embedding raises rather than dropping it.
+
+Vector design notes
+-------------------
+
+*The 50-candidate ceiling is announced, not absorbed.* Cloudflare Vectorize caps
+``topK`` at 50, and ``mcp_core.storage.vectorize.VectorizeBackend.query`` applies
+that cap with a bare ``top_k = min(top_k, 50)`` -- no exception, no warning, no
+signal of any kind. ``MemoryDB.search`` asks for ``max(limit * 10, 50)``
+candidates, so every search with ``limit > 5`` would quietly fuse a full-width
+FTS ranking against a 50-deep vector ranking and call the result "top N".
+:meth:`MemoryDBCfBackend._vector_candidates` therefore compares the two numbers
+itself, logs a WARNING naming both, and records the shortfall on
+:attr:`MemoryDBCfBackend.last_vector_cap` so a caller can see it without reading
+logs. The cap is not raised anywhere -- it cannot be -- but it is never silent.
+
+*Read-after-write on the vector arm is eventually consistent, and says so.* D1 is
+strongly consistent, so a row is FTS-searchable the instant ``add`` returns.
+Vectorize is not: an upsert becomes queryable seconds later. The obvious
+mitigation, ``VectorizeBackend.wait_until_indexed()``, does NOT work here and is
+deliberately not called: it polls ``GET {base}``, and ``vectorizeOutbound`` answers
+*every* GET with ``{ready: true}`` unconditionally (``src/worker.ts``). It reports
+that the outbound handler is wired, never that a particular mutation landed, so
+calling it after an upsert would manufacture exactly the false "indexed" signal
+this repo has already paid for once. A per-mutation wait needs a Worker route
+that does not exist yet. Until then the behaviour is: a just-added memory is
+immediately findable by text and joins the semantic ranking once Vectorize
+indexes it. That is written down here, asserted in
+``tests/test_db_cf_vectors.py``, and never papered over with a retry loop.
+
+*Superseded rows cannot resurface, by construction.* ``delete`` only sets
+``valid_to`` and ``update`` opens a new id while closing the old one, neither of
+which Vectorize knows about. Two independent mechanisms cover it. Write side:
+both methods delete the closed id's vector via ``POST /deleteByIds``. Read side --
+the authoritative one -- every id Vectorize returns is re-fetched from D1 through
+the same ``_build_filter_sql`` tail the FTS arm uses, whose first fragment is
+``AND m.valid_to IS NULL``; an id that does not survive that query is dropped
+from the fusion. The read-side filter holds even if a write-side delete failed or
+has not propagated, which is why it is the one the correctness claim rests on.
+
+*Vector loss is loud, and only where it is unavoidable.* A metadata-only
+``update`` (no new content, so no new embedding) carries the old vector forward on
+SQLite. That is impossible here: Vectorize has no read-by-id, ``VectorizeBackend``
+exposes no getter, and ``vectorizeOutbound`` routes no such path, so the vector
+cannot be copied to the successor id. The successor is left unvectorised and a
+WARNING names the id and the reason, rather than leaving a caller to discover the
+gap through degraded recall.
 
 Design notes
 ------------
@@ -54,16 +101,47 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from loguru import logger
 from mcp_core.storage.d1 import D1Backend, d1_backend_from_env
+from mcp_core.storage.vectorize import VectorizeBackend, vectorize_backend_from_env
 
-from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB, _now_iso
+from mnemo_mcp.db import MAX_CONTENT_LENGTH, MAX_TAGS_FILTER, MemoryDB, _now_iso
 
 # Cloudflare D1 rejects a query carrying more than this many bound parameters.
 # https://developers.cloudflare.com/d1/platform/limits/
 D1_MAX_BOUND_PARAMS = 100
+
+# Cloudflare Vectorize refuses to return more than this many matches from one
+# query. `VectorizeBackend.query` already clamps to it -- with a bare
+# `top_k = min(top_k, 50)` that raises nothing and logs nothing -- so the number
+# is restated here to be compared against the requested pool before the call.
+# https://developers.cloudflare.com/vectorize/platform/limits/
+VECTORIZE_MAX_TOP_K = 50
+
+# Ids per `POST /deleteByIds` request. A client-side bound to keep a reindex of a
+# large store from building one enormous request body; Cloudflare documents no
+# hard id count for this endpoint, so this mirrors no platform cap and can be
+# raised freely.
+VECTORIZE_DELETE_CHUNK = 500
+
+
+class VectorCandidateCap(NamedTuple):
+    """How much of a requested vector candidate pool Vectorize actually served.
+
+    Recorded on :attr:`MemoryDBCfBackend.last_vector_cap` after every search that
+    ran the vector arm, so "the fused list is top-N over a truncated vector
+    ranking" is observable in-process and not only in the log stream.
+    """
+
+    requested: int
+    served: int
+
+    @property
+    def truncated(self) -> bool:
+        return self.served < self.requested
+
 
 # Tables `MemoryDBCfBackend` reads or writes. wrangler owns schema creation via
 # `migrations/0001_init.sql`; this backend only asserts the migration ran.
@@ -91,11 +169,12 @@ _IMPORT_COLUMNS = (
 )
 _IMPORT_ROWS_PER_STATEMENT = D1_MAX_BOUND_PARAMS // len(_IMPORT_COLUMNS)
 
-_VECTOR_TASK = (
-    "Vector search on the D1 backend is served by Cloudflare Vectorize, which "
-    "is wired up in S2 Task 4. This backend (Task 3) is D1 + FTS5 only: "
-    "migrations/0001_init.sql has no memories_vec table because D1 cannot load "
-    "the sqlite-vec extension."
+_NO_VECTOR_INDEX = (
+    "This store was opened with embedding_dims=0, so no Cloudflare Vectorize "
+    "index is attached and there is nowhere for the vector to go. D1 itself "
+    "cannot hold it: migrations/0001_init.sql has no memories_vec table because "
+    "D1 cannot load the sqlite-vec extension. Open the store with the embedding "
+    "dimension of the active model (and MCP_VECTORIZE_IDX set) to enable vectors."
 )
 
 
@@ -200,26 +279,81 @@ class _D1Connection:
         ) from exc
 
 
-def _reject_embedding(method):
-    """Wrap ``method`` so passing an ``embedding`` raises instead of dropping it.
+def _vectorize_from_env() -> VectorizeBackend:
+    """Build the Vectorize client, turning a missing index name into an answer.
 
-    ``MemoryDB.add`` / ``add_with_context_type`` guard their vector INSERT with
-    ``if embedding and self._vec_enabled``, and ``MemoryDB.search`` guards its
-    vector branch the same way. Borrowed as-is with ``_vec_enabled=False`` they
-    would accept a vector, write nothing, and report success -- so the caller is
-    told, loudly, that the vector went nowhere.
+    ``vectorize_backend_from_env`` reads ``MCP_VECTORIZE_IDX`` with ``[]`` and so
+    fails with a bare ``KeyError('MCP_VECTORIZE_IDX')`` several frames from
+    anything that explains it.
+    """
+    try:
+        return vectorize_backend_from_env()
+    except KeyError as exc:
+        raise RuntimeError(
+            "MCP_VECTORIZE_IDX is not set, so the D1 backend has no Cloudflare "
+            "Vectorize index to store or query embeddings in. Set it (and "
+            "MCP_VECTORIZE_BASE_URL if the Worker is not at the default "
+            "http://vectorize.internal), or open the store with EMBEDDING_DIMS=0 "
+            "to declare it text-only. Starting without either would leave "
+            "semantic search missing with nothing to say so."
+        ) from exc
+
+
+def _vectorize_delete_by_ids(vectors: VectorizeBackend, ids: list[str]) -> None:
+    """``POST {base}/deleteByIds`` -- the route ``VectorizeBackend`` omits.
+
+    ``src/worker.ts``'s ``vectorizeOutbound`` serves ``/deleteByIds`` and calls
+    ``env.VECTORIZE.deleteByIds``, but ``mcp_core.storage.vectorize`` (1.21.0)
+    ships only ``upsert``, ``query`` and ``wait_until_indexed``. This reuses the
+    backend's own transport and auth headers rather than opening a second HTTP
+    client, so the injected ``http=`` seam the tests rely on keeps covering every
+    request the store makes -- including this one.
+    """
+    if not ids:
+        return
+    for i in range(0, len(ids), VECTORIZE_DELETE_CHUNK):
+        chunk = ids[i : i + VECTORIZE_DELETE_CHUNK]
+        body = json.dumps({"ids": chunk}).encode()
+        status, _ = vectors._http.request(
+            "POST", f"{vectors.base_url}/deleteByIds", body, vectors._headers()
+        )
+        if status != 200:
+            raise RuntimeError(
+                f"Vectorize deleteByIds failed: HTTP {status} for {len(chunk)} id(s) "
+                f"starting at {chunk[0]!r}. The vectors are still queryable."
+            )
+
+
+def _vector_write(method):
+    """Wrap an ``add``-shaped ``MemoryDB`` method to write D1 first, then Vectorize.
+
+    The borrowed body would run ``INSERT INTO memories_vec`` against a table this
+    database does not have, so the embedding is withheld from it and sent to
+    Vectorize afterwards, keyed by the id the body just allocated. D1 is written
+    first on purpose: a row with no vector degrades to text-only recall and is
+    repaired by a reindex, whereas a vector whose row was never written is an
+    orphan that nothing points at.
+
+    With no Vectorize index attached, an embedding raises instead of being
+    dropped -- ``if embedding and self._vec_enabled`` in the borrowed body would
+    otherwise accept the vector, store nothing, and report success.
     """
     signature = inspect.signature(method)
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
         bound = signature.bind(self, *args, **kwargs)
-        if bound.arguments.get("embedding") is not None:
-            raise NotImplementedError(
-                f"MemoryDBCfBackend.{method.__name__}() was given an embedding, "
-                f"which it cannot store or query. {_VECTOR_TASK}"
-            )
-        return method(self, *args, **kwargs)
+        bound.apply_defaults()
+        embedding = bound.arguments.get("embedding")
+        if embedding:
+            self._require_vectors(method.__name__)
+        # Withheld unconditionally: the borrowed body has no reachable vector
+        # target on D1 under any setting.
+        bound.arguments["embedding"] = None
+        memory_id = method(*bound.args, **bound.kwargs)
+        if embedding:
+            self._upsert_vector(memory_id, embedding)
+        return memory_id
 
     return wrapper
 
@@ -248,20 +382,19 @@ class MemoryDBCfBackend:
     export_jsonl = MemoryDB.export_jsonl
     list_archived = MemoryDB.list_archived
     check_duplicate = MemoryDB.check_duplicate
-    _clear_for_import = MemoryDB._clear_for_import
     _parse_import_data = MemoryDB._parse_import_data
     _process_import_batch = MemoryDB._process_import_batch
 
-    # Vector-carrying entry points: same bodies, but a vector argument raises
-    # rather than being silently discarded.
-    add = _reject_embedding(MemoryDB.add)
-    add_with_context_type = _reject_embedding(MemoryDB.add_with_context_type)
-    _search = _reject_embedding(MemoryDB.search)
+    # Vector-carrying write paths: same bodies, but the embedding is routed to
+    # Vectorize instead of to a `memories_vec` table that does not exist here.
+    add = _vector_write(MemoryDB.add)
+    add_with_context_type = _vector_write(MemoryDB.add_with_context_type)
 
     def __init__(
         self,
         backend: D1Backend | None = None,
         *,
+        vectors: VectorizeBackend | None = None,
         embedding_dims: int = 0,
         recency_half_life_days: float = 7.0,
         embedding_model: str = "",
@@ -270,21 +403,29 @@ class MemoryDBCfBackend:
         """Open the D1-backed store.
 
         Args:
-            backend: Wire client. Defaults to
+            backend: D1 wire client. Defaults to
                 :func:`mcp_core.storage.d1.d1_backend_from_env`, which reads
                 ``MCP_D1_BASE_URL`` (default ``http://d1.internal``) and
                 ``MCP_D1_TOKEN``.
-            embedding_dims: Recorded in ``store_meta`` for the identity guard.
-                No vectors are stored by this backend (see :data:`_VECTOR_TASK`).
+            vectors: Vectorize wire client. Defaults to
+                :func:`mcp_core.storage.vectorize.vectorize_backend_from_env`,
+                which reads ``MCP_VECTORIZE_BASE_URL`` (default
+                ``http://vectorize.internal``) and requires ``MCP_VECTORIZE_IDX``.
+                Only consulted when ``embedding_dims > 0``.
+            embedding_dims: Vector width, recorded in ``store_meta`` for the
+                identity guard. ``0`` declares the store text-only: no Vectorize
+                index is attached and an embedding passed anywhere raises.
             recency_half_life_days: Half-life in days for recency decay.
             embedding_model: Active embedding-model identity string.
-            reindex_on_model_change: Accepted for signature parity; a mismatch
-                raises rather than dropping vectors, because dropping them is
-                the Vectorize path.
+            reindex_on_model_change: When set, an embedding-identity mismatch
+                deletes every stored vector and re-stamps, instead of raising.
 
         Raises:
+            ValueError: On an out-of-range ``embedding_dims``, or when
+                ``vectors`` is supplied for a store declared text-only.
             RuntimeError: When the D1 database has not had
-                ``migrations/0001_init.sql`` applied.
+                ``migrations/0001_init.sql`` applied, or when vectors are
+                requested without ``MCP_VECTORIZE_IDX``.
             EmbeddingModelMismatch: Same contract as :class:`MemoryDB`.
         """
         if type(embedding_dims) is not int:
@@ -295,6 +436,12 @@ class MemoryDBCfBackend:
             raise ValueError(
                 f"embedding_dims must be between 0 and 10000, got {embedding_dims}"
             )
+        if vectors is not None and embedding_dims <= 0:
+            raise ValueError(
+                "vectors= was supplied with embedding_dims=0. That combination "
+                "would attach a Vectorize index the store then refuses to write "
+                "to, so it is rejected rather than quietly ignored."
+            )
 
         self._backend = backend if backend is not None else d1_backend_from_env()
         self._conn = _D1Connection(self._backend)
@@ -303,7 +450,16 @@ class MemoryDBCfBackend:
         self._embedding_model = embedding_model
         self._reindex_on_model_change = reindex_on_model_change
         self._recency_half_life = float(recency_half_life_days)
-        self._vec_enabled = False
+
+        if embedding_dims > 0:
+            self._vectors = vectors if vectors is not None else _vectorize_from_env()
+        else:
+            self._vectors = None
+        self._vec_enabled = self._vectors is not None
+
+        #: Width of the last vector candidate pool asked for vs. served. ``None``
+        #: until a search runs the vector arm. See :class:`VectorCandidateCap`.
+        self.last_vector_cap: VectorCandidateCap | None = None
 
         self._require_schema()
         self._guard_embedding_identity()
@@ -334,15 +490,112 @@ class MemoryDBCfBackend:
 
     @property
     def vec_enabled(self) -> bool:
-        """Always ``False`` on this backend."""
-        return False
+        """Whether a Cloudflare Vectorize index is attached to this store."""
+        return self._vectors is not None
+
+    # -- Vectors -----------------------------------------------------------
+
+    def _require_vectors(self, what: str) -> VectorizeBackend:
+        if self._vectors is None:
+            raise NotImplementedError(
+                f"MemoryDBCfBackend.{what}() was given an embedding, which it "
+                f"cannot store or query. {_NO_VECTOR_INDEX}"
+            )
+        return self._vectors
+
+    def _fit_dims(self, embedding: list[float]) -> list[float]:
+        """Truncate or zero-pad to ``embedding_dims``, exactly as SQLite does.
+
+        ``db._serialize_f32`` reshapes every vector to the store's width before
+        writing it, so a caller that hands over a differently-sized vector gets
+        the same result on both backends rather than an error on one of them.
+        """
+        vec = [float(x) for x in embedding]
+        dims = self._embedding_dims
+        if dims > 0:
+            if len(vec) > dims:
+                vec = vec[:dims]
+            elif len(vec) < dims:
+                vec = vec + [0.0] * (dims - len(vec))
+        return vec
+
+    def _upsert_vector(self, memory_id: str, embedding: list[float]) -> None:
+        """Write one vector, keyed by the memory id it belongs to."""
+        vectors = self._require_vectors("_upsert_vector")
+        vectors.upsert([{"id": memory_id, "values": self._fit_dims(embedding)}])
+
+    def _discard_vectors(self, ids: list[str], context: str) -> None:
+        """Delete vectors whose rows are gone, without failing the row change.
+
+        The D1 write that closed those rows has already committed and is the
+        state search reads: ``_vector_candidates`` re-checks every Vectorize hit
+        against ``valid_to IS NULL``, so a vector that outlives its row cannot
+        surface in results. Raising here would report a delete or update that
+        did take effect as failed, and a caller retrying it would then be told
+        the row was already closed. So the row change stands and the orphan is
+        logged at ERROR with its id -- it wastes index space until the next
+        reindex, which is a cleanup job, not a correctness one.
+        """
+        if self._vectors is None or not ids:
+            return
+        try:
+            _vectorize_delete_by_ids(self._vectors, ids)
+        except Exception as exc:
+            logger.error(
+                "[AUDIT] {} closed row(s) {} in D1 but could not delete their "
+                "vectors ({}). The rows are gone from search either way -- every "
+                "Vectorize hit is re-checked against D1 -- but the vectors are "
+                "orphaned in the index until the next reindex.",
+                context,
+                ", ".join(ids),
+                exc,
+            )
 
     def _drop_vectors_for_reindex(self) -> None:
-        """Reached from the borrowed embedding-identity guard on a mismatch."""
-        raise NotImplementedError(
-            "REINDEX_ON_MODEL_CHANGE cannot be honoured by MemoryDBCfBackend: "
-            f"there are no stored vectors here to drop. {_VECTOR_TASK}"
+        """Delete every stored vector so the embed pipeline rebuilds them.
+
+        Reached from the borrowed identity guard when the embedding model or
+        width changed and ``REINDEX_ON_MODEL_CHANGE`` is set. Vectorize has no
+        "delete everything" call, so the ids are read out of D1 -- the store's
+        own list of what it ever embedded -- and deleted in batches.
+
+        Failure propagates, unlike :meth:`_discard_vectors`. The guard calls this
+        *before* ``_stamp_embedding_identity``, so raising leaves the old stamp in
+        place and the next boot retries; swallowing the error would re-stamp the
+        new model over an index still holding the old model's vectors, and mixed
+        vector spaces at the same width degrade search silently -- the exact
+        failure the identity guard exists to prevent.
+        """
+        vectors = self._vectors
+        if vectors is None:
+            raise NotImplementedError(
+                "REINDEX_ON_MODEL_CHANGE cannot be honoured: no Vectorize index "
+                f"is attached to this store. {_NO_VECTOR_INDEX}"
+            )
+        rows = self._backend.fetchall("SELECT id FROM memories", [])
+        ids = [r["id"] for r in rows]
+        _vectorize_delete_by_ids(vectors, ids)
+        logger.warning(
+            "[AUDIT] reindex dropped {} vector(s) from the Vectorize index; they "
+            "rebuild on the next embed pass.",
+            len(ids),
         )
+
+    def _clear_for_import(self, mode: str) -> None:
+        """Clear memories for a replace-mode import, vectors included.
+
+        Overrides the borrowed body, which would run ``DELETE FROM memories_vec``
+        against a table this database does not have. Vectors go first: if the
+        Vectorize delete fails the D1 rows are still present, so the ids needed
+        to retry are still readable. The reverse order would strand every vector
+        with no list of what to delete.
+        """
+        if mode != "replace":
+            return
+        if self._vectors is not None:
+            rows = self._backend.fetchall("SELECT id FROM memories", [])
+            _vectorize_delete_by_ids(self._vectors, [r["id"] for r in rows])
+        self._backend.execute("DELETE FROM memories", [])
 
     # -- Search ------------------------------------------------------------
 
@@ -355,9 +608,183 @@ class MemoryDBCfBackend:
         self._conn.raise_if_error("FTS5 search")
         return results
 
-    @functools.wraps(MemoryDB.search)
-    def search(self, *args, **kwargs) -> list[dict]:
-        return self._search(*args, **kwargs)
+    def _vector_candidates(
+        self,
+        embedding: list[float],
+        pool: int,
+        category: str | None,
+        tags: list[str] | None,
+        filter_kwargs: dict,
+    ) -> dict[str, dict]:
+        """Rank ids by Vectorize similarity, then re-authorise each against D1.
+
+        Two things happen here that have no counterpart in the SQLite path.
+
+        First, the candidate pool is capped. ``MemoryDB.search`` asks for
+        ``max(limit * 10, 50)`` candidates but Vectorize returns at most
+        :data:`VECTORIZE_MAX_TOP_K`, and ``VectorizeBackend.query`` applies that
+        cap without a word. The two numbers are compared here so the shortfall
+        reaches a log line and :attr:`last_vector_cap` instead of disappearing:
+        above ``limit=5`` the fused ranking is top-N over a 50-deep vector arm,
+        which is a weaker claim than the SQLite path makes and must not read as
+        the same one.
+
+        Second, every returned id is re-fetched from D1 under the caller's
+        filters -- whose ``_build_filter_sql`` tail always begins ``AND
+        m.valid_to IS NULL``. That is what keeps a superseded or soft-deleted row
+        out of the results even when its vector is still in the index, and it is
+        also why no metadata filter is sent to Vectorize: filtering there would
+        need metadata indexes declared at index-creation time in wrangler, and
+        would still not be authoritative about supersession, which only D1 knows.
+        The cost is real and one-directional -- a narrow ``category`` filter can
+        leave few of the 50 candidates standing -- so it is stated here rather
+        than presented as a filtered top-50.
+
+        Transport errors propagate. ``MemoryDB.search`` wraps its vector branch
+        in ``except Exception: logger.debug(...)``, which against a network
+        backend would turn a Vectorize outage into a search that silently
+        returns FTS-only results and looks healthy.
+        """
+        vectors = self._require_vectors("search")
+        top_k = min(pool, VECTORIZE_MAX_TOP_K)
+        self.last_vector_cap = VectorCandidateCap(requested=pool, served=top_k)
+        if top_k < pool:
+            logger.warning(
+                "Vector search asked for {} candidates but Cloudflare Vectorize "
+                "returns at most {}; the fused ranking below is top-N over a "
+                "{}-deep vector arm against a {}-deep FTS arm, not over the whole "
+                "store. Lower `limit` (pool = max(limit * 10, 50)) or pass an "
+                "explicit `candidate_pool` <= {} to make the two arms match.",
+                pool,
+                VECTORIZE_MAX_TOP_K,
+                top_k,
+                pool,
+                VECTORIZE_MAX_TOP_K,
+            )
+
+        matches = vectors.query(self._fit_dims(embedding), top_k)
+        scores: dict[str, float] = {}
+        for match in matches:
+            mid = match.get("id")
+            if mid is None:
+                continue
+            # Vectorize returns a similarity score, where sqlite-vec returns a
+            # distance that db.py converts with ``1.0 - distance``. Both land in
+            # [0, 1] and only the ordering feeds RRF.
+            scores[mid] = max(0.0, min(1.0, float(match.get("score", 0.0))))
+        if not scores:
+            return {}
+
+        fragments = ["WHERE m.id IN (SELECT value FROM json_each(?))"]
+        params: list = [json.dumps(list(scores))]
+        if category:
+            fragments.append("AND m.category = ?")
+            params.append(category)
+        if tags:
+            fragments.append(
+                "AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS "
+                "(SELECT 1 FROM json_each(m.tags) WHERE value IN "
+                "(SELECT value FROM json_each(?)))"
+            )
+            params.append(json.dumps(tags))
+        extra_sql, extra_params = self._build_filter_sql(**filter_kwargs)
+        if extra_sql:
+            fragments.append(extra_sql)
+            params.extend(extra_params)
+
+        rows = self._backend.fetchall(
+            "SELECT m.* FROM memories m " + " ".join(fragments), params
+        )
+        # Re-keyed by Vectorize's ranking, not by whatever order D1 returned the
+        # rows in. `_compute_hybrid_scores` derives both arms' ranks with a
+        # stable sort, so insertion order is what settles a tie between equal
+        # scores. Preserving the vector ranking here makes that tie-break
+        # meaningful instead of arbitrary.
+        #
+        # Note this is one place the two backends can legitimately disagree:
+        # `MemoryDB.search` re-reads its vector matches with a `WHERE id IN
+        # (...)` query, which yields rows in table order rather than by
+        # distance, so exactly-tied fused scores can come out ordered
+        # differently there. Only the tie-break differs -- any pair whose scores
+        # actually differ ranks the same on both -- and the fix belongs in
+        # `db.py`, where changing it would move SQLite's output.
+        by_id = {row["id"]: row for row in rows}
+        return {
+            mid: {**dict(by_id[mid]), "vec_score": score}
+            for mid, score in scores.items()
+            if mid in by_id
+        }
+
+    def search(
+        self,
+        query: str,
+        embedding: list[float] | None = None,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 5,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
+        candidate_pool: int | None = None,
+    ) -> list[dict]:
+        """Hybrid FTS5 + Vectorize search. See :meth:`MemoryDB.search`.
+
+        Same shape as the SQLite path and the same fusion: the candidate pool,
+        the tiered FTS query, ``_compute_hybrid_scores`` (RRF at k=60, then
+        recency/frequency/importance) and the access-stat update are all the
+        borrowed ones, so the two backends cannot drift on ranking. Only the
+        source of the vector ranking differs -- ``memories_vec`` there, a
+        Vectorize index here -- and what that costs is set out in
+        :meth:`_vector_candidates`.
+        """
+        if tags and len(tags) > MAX_TAGS_FILTER:
+            raise ValueError(
+                f"Maximum of {MAX_TAGS_FILTER} tags allowed in search filter"
+            )
+
+        if isinstance(limit, int):
+            limit = max(1, min(limit, 100))
+
+        filter_kwargs = {
+            "context_type": context_type,
+            "since": since,
+            "until": until,
+            "min_importance": min_importance,
+            "include_archived": include_archived,
+        }
+
+        pool = candidate_pool if candidate_pool is not None else max(limit * 10, 50)
+        results = self._search_fts(query, category, tags, pool, **filter_kwargs)
+
+        # No `and self._vectors is not None` guard: without an index the
+        # embedding must raise (inside `_vector_candidates`), not be dropped into
+        # an FTS-only search the caller would read as a hybrid one.
+        if embedding:
+            for mid, row in self._vector_candidates(
+                embedding, pool, category, tags, filter_kwargs
+            ).items():
+                if mid in results:
+                    results[mid]["vec_score"] = row["vec_score"]
+                else:
+                    results[mid] = {**row, "fts_score": 0.0}
+
+        if not results:
+            return []
+
+        scored = self._compute_hybrid_scores(results)
+        effective_top = limit if candidate_pool is None else min(pool, len(scored))
+        top = scored[:effective_top]
+        self._update_access_stats(top)
+
+        for m in top:
+            m.pop("fts_score", None)
+            m.pop("vec_score", None)
+            m.pop("bm25_score", None)
+
+        return top
 
     # -- Writes that need a rows-changed count or a rollback ---------------
 
@@ -380,12 +807,20 @@ class MemoryDBCfBackend:
         by a compensating write and the failure is re-raised. Should the
         compensation itself fail, the row id is logged at ERROR -- the one case
         that needs a human -- rather than being reported as a successful update.
+
+        Vectors follow the id: the predecessor's vector is deleted and, when an
+        ``embedding`` is supplied, the successor's is written. Without one the
+        successor is left unvectorised and a WARNING says so. SQLite carries the
+        old vector forward in that case; this backend cannot, because nothing can
+        read a vector back out of Vectorize -- ``VectorizeBackend`` exposes no
+        getter and ``src/worker.ts``'s ``vectorizeOutbound`` routes no get-by-id --
+        and a successor that silently lost its vector would show up only as recall
+        that quietly got worse. Re-embedding restores it; note that
+        ``server._handle_update`` already re-embeds whenever ``content`` changes,
+        so this affects metadata-only edits.
         """
         if embedding is not None:
-            raise NotImplementedError(
-                "MemoryDBCfBackend.update() was given an embedding, which it "
-                f"cannot store. {_VECTOR_TASK}"
-            )
+            self._require_vectors("update")
         if content is not None and len(content) > MAX_CONTENT_LENGTH:
             raise ValueError(
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
@@ -452,11 +887,25 @@ class MemoryDBCfBackend:
                 )
             raise
 
+        if self._vectors is not None:
+            self._discard_vectors([memory_id], f"update id={memory_id}")
+            if embedding:
+                self._upsert_vector(new_id, embedding)
+            else:
+                logger.warning(
+                    "[AUDIT] update id={} -> new_id={} carried no embedding, so "
+                    "the successor has no vector and is reachable by text search "
+                    "only until it is re-embedded. Vectorize cannot be read back, "
+                    "so the predecessor's vector could not be copied forward.",
+                    memory_id,
+                    new_id,
+                )
+
         logger.info(f"[AUDIT] update id={memory_id} -> new_id={new_id}")
         return new_id
 
     def delete(self, memory_id: str) -> bool:
-        """Soft-close a memory. See :meth:`MemoryDB.delete`."""
+        """Soft-close a memory and drop its vector. See :meth:`MemoryDB.delete`."""
         rows = self._backend.fetchall(
             "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL "
             "RETURNING id",
@@ -464,6 +913,7 @@ class MemoryDBCfBackend:
         )
         if not rows:
             return False
+        self._discard_vectors([memory_id], f"delete id={memory_id}")
         logger.info(f"[AUDIT] delete id={memory_id}")
         return True
 
