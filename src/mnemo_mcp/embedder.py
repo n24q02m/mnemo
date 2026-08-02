@@ -31,6 +31,18 @@ from loguru import logger
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0  # seconds, doubles each retry
 
+# Wall-clock bound on the availability probe (``check_available``).
+# ``config(action="setup_complete")`` awaits that probe before it returns, so
+# without a bound a slow or blackholed provider makes the user's tool call hang
+# for as long as the provider takes. CI run 30755522961 lost its windows-latest
+# job to exactly that: the probe stalled reading response headers for longer
+# than the 30s pytest-timeout. litellm's own default is 600s, which is not a
+# bound anyone waits through interactively -- a probe only has to answer
+# "reachable?", so it gets a short one.
+# This bounds one attempt, not the whole probe: some provider SDKs retry
+# underneath litellm and start the clock again for each try.
+PROBE_TIMEOUT = 10.0  # seconds
+
 
 # Bolt Performance Optimization: Use module-level constant tuple to avoid
 # redundant list allocations during frequent calls, resulting in ~15% faster execution.
@@ -274,8 +286,12 @@ class CloudEmbeddingBackend:
         """Sync cloud path for ``check_available`` (sync mirror).
 
         Keep in sync with :meth:`_call_provider`: same model/api_base/api_key
-        resolution + ``_build_kwargs`` + ``_parse_embeddings``; only the
-        sync ``embedding`` vs async ``aembedding`` call differs.
+        resolution + ``_build_kwargs`` + ``_parse_embeddings``; only the sync
+        ``embedding`` vs async ``aembedding`` call and the ``timeout`` differ.
+        The timeout is deliberately one-sided: this path only ever serves the
+        availability probe, which must answer within ``PROBE_TIMEOUT``, while
+        :meth:`_call_provider` carries real batches whose legitimate duration
+        scales with the payload.
         """
         from mcp_core.llm import embedding
 
@@ -284,6 +300,7 @@ class CloudEmbeddingBackend:
             input=texts,
             api_base=self.api_base or os.getenv("EMBEDDING_API_BASE") or None,
             api_key=self.api_key or None,
+            timeout=PROBE_TIMEOUT,
             **self._build_kwargs(dimensions),
         )
         return _parse_embeddings(response)

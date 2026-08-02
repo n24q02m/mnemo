@@ -566,10 +566,21 @@ class TestEnrichMemory:
         """Cover lines 384-386: importance scoring error is non-blocking."""
         ctx, db = ctx_with_db
         mid = db.add("test memory")
-        with patch(
-            "mnemo_mcp.graph.score_importance",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("api error"),
+        with (
+            patch(
+                "mnemo_mcp.graph.score_importance",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("api error"),
+            ),
+            # The importance failure is swallowed and _enrich_memory carries on
+            # into extraction, so that leg needs a stand-in too -- unpatched it
+            # issues a live LLM request, exactly as the sibling tests below
+            # already assume.
+            patch(
+                "mnemo_mcp.graph.extract_entities",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             # Should not raise
             await _enrich_memory(db, mid, "test memory")

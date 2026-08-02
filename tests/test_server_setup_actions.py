@@ -152,9 +152,19 @@ class TestSetupReset:
 
 
 class TestSetupComplete:
-    async def test_refreshes_state(self, ctx_with_db):
+    @patch("mnemo_mcp.embedder.init_backend")
+    async def test_refreshes_state(self, mock_init, ctx_with_db):
         """setup_complete re-resolves credential state."""
         ctx, _ = ctx_with_db
+
+        # A CONFIGURED state sends setup_complete through
+        # _init_embedding_backend, so init_backend has to be patched here for
+        # the same reason it is in test_reinits_embedding_when_configured
+        # below: unpatched, check_available issues a live HTTPS request to the
+        # first model of _DEFAULT_EMBEDDING_CHAIN.
+        mock_backend = MagicMock()
+        mock_backend.check_available.return_value = 768
+        mock_init.return_value = mock_backend
 
         with patch(
             "mnemo_mcp.credential_state.resolve_credential_state",

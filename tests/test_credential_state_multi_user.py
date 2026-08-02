@@ -8,6 +8,7 @@ counts toward the default coverage gate.
 from __future__ import annotations
 
 import hashlib
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -110,6 +111,11 @@ def test_save_credentials_multi_user_triggers_gdrive_per_sub(tmp_path, monkeypat
         return _FakeResponse()
 
     monkeypatch.setattr("httpx.post", _fake_post)
+    # Only the device-code request goes through httpx.post. On a 200 the flow
+    # also spawns a daemon thread that polls Google's token endpoint over its
+    # own AsyncClient, which outlives this test and reaches the real internet;
+    # stub the thread the way the single-user tests already do.
+    monkeypatch.setattr("threading.Thread", MagicMock())
 
     from mnemo_mcp.credential_state import save_credentials
 

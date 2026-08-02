@@ -209,7 +209,13 @@ class TestApiKeys:
 
     def test_multiple_keys(self):
         s = Settings(api_keys="GOOGLE_API_KEY:key1,OPENAI_API_KEY:key2")
-        result = s.setup_api_keys()
+        # patch.dict for the same reason as the neighbours: setup_api_keys
+        # exports into the real os.environ, and a GOOGLE_API_KEY left behind
+        # here aliases to GEMINI_API_KEY, so every later test whose subject
+        # skips when no LLM provider is configured instead resolves one and
+        # calls the provider for real.
+        with patch.dict(os.environ):
+            result = s.setup_api_keys()
         assert len(result) == 2
         assert "GOOGLE_API_KEY" in result
         assert "OPENAI_API_KEY" in result
@@ -233,14 +239,16 @@ class TestApiKeys:
 
     def test_whitespace_handling(self):
         s = Settings(api_keys="  GOOGLE_API_KEY : key1 , OPENAI_API_KEY : key2  ")
-        result = s.setup_api_keys()
+        with patch.dict(os.environ):
+            result = s.setup_api_keys()
         assert "GOOGLE_API_KEY" in result
         assert result["GOOGLE_API_KEY"] == ["key1"]
 
     def test_colon_in_key_value(self):
         """API keys can contain colons (e.g., base64-encoded keys)."""
         s = Settings(api_keys="GOOGLE_API_KEY:abc:def:ghi")
-        result = s.setup_api_keys()
+        with patch.dict(os.environ):
+            result = s.setup_api_keys()
         assert result["GOOGLE_API_KEY"] == ["abc:def:ghi"]
 
     def test_alias_google_to_gemini(self):

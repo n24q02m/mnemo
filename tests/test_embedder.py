@@ -5,11 +5,16 @@ patch ``mcp_core.llm.aembedding``; ``check_available`` (sync) patches the sync
 mirror ``mcp_core.llm.embedding``.
 """
 
+import socket
+import threading
+import time
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from mnemo_mcp import embedder
 from mnemo_mcp.embedder import (
     CloudEmbeddingBackend,
     LiteLLMBackend,
@@ -18,6 +23,38 @@ from mnemo_mcp.embedder import (
     get_backend,
     init_backend,
 )
+
+
+@contextmanager
+def _stalled_endpoint():
+    """Serve a loopback address that accepts connections and never replies.
+
+    This is the shape of provider outage the availability probe has to survive:
+    the TCP handshake succeeds, so nothing fails fast, and the client then waits
+    on response headers that never arrive.
+    """
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(8)
+    accepted: list[socket.socket] = []
+
+    def _accept_and_ignore() -> None:
+        while True:
+            try:
+                conn, _ = listener.accept()
+            except OSError:
+                return
+            accepted.append(conn)
+
+    thread = threading.Thread(target=_accept_and_ignore, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{listener.getsockname()[1]}"
+    finally:
+        listener.close()
+        for conn in accepted:
+            conn.close()
+        thread.join(timeout=5)
 
 
 def _resp(*vectors):
@@ -110,6 +147,50 @@ class TestCloudEmbeddingBackend:
         with patch("mcp_core.llm.embedding", mock):
             backend = CloudEmbeddingBackend(api_key="key")
             assert backend.check_available() == 0
+
+    def test_check_available_passes_probe_timeout(self):
+        """The probe hands litellm an explicit bound instead of its 600s default."""
+        mock = MagicMock(return_value=_resp([0.1, 0.2]))
+        with patch("mcp_core.llm.embedding", mock):
+            backend = CloudEmbeddingBackend(api_key="key")
+            assert backend.check_available() == 2
+        assert mock.call_args.kwargs["timeout"] == embedder.PROBE_TIMEOUT
+
+    def test_check_available_gives_up_on_a_stalled_provider(self, monkeypatch):
+        """The probe returns instead of hanging when the provider never answers.
+
+        Regression cover for the hang in CI run 30755522961: check_available
+        called litellm with no timeout, so a provider that accepted the socket
+        and then went quiet held the caller -- and, through
+        config(action="setup_complete"), the user's tool call -- open
+        indefinitely. The server here is the minimal reproduction of that: it
+        completes the TCP handshake and sends nothing back, ever.
+        """
+        # vet_api_base only permits a loopback api_base outside multi-user mode.
+        monkeypatch.delenv("PUBLIC_URL", raising=False)
+        monkeypatch.setattr(embedder, "PROBE_TIMEOUT", 1.0)
+
+        # litellm's first import in a process costs ~10s and would otherwise be
+        # charged to the measurement below.
+        import litellm  # noqa: F401
+
+        with _stalled_endpoint() as api_base:
+            backend = CloudEmbeddingBackend(
+                model="openai/text-embedding-3-small",
+                api_base=api_base,
+                api_key="key",
+            )
+            started = time.monotonic()
+            dims = backend.check_available()
+            elapsed = time.monotonic() - started
+
+        assert dims == 0
+        # Generous next to the 1.0s bound because the provider SDK retries the
+        # attempt, and each retry gets its own timeout -- see the note on
+        # PROBE_TIMEOUT. The point being pinned is the order of magnitude:
+        # without any timeout the call sits on litellm's 600s default, which
+        # the 30s pytest-timeout turns into the same red job this fix is for.
+        assert elapsed < 10, f"probe ran for {elapsed:.1f}s"
 
     def test_litellm_backward_compat_alias(self):
         """LiteLLMBackend is an alias for CloudEmbeddingBackend."""

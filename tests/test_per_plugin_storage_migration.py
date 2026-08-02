@@ -20,6 +20,8 @@ invisible to the other -- silently breaking 6 unrelated tests in
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 
 def test_loads_from_new_path(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -50,7 +52,12 @@ def test_save_writes_to_new_path(tmp_path, monkeypatch):
     # Simulate calling save_credentials from the local OAuth form
     import mnemo_mcp.credential_state as cs
 
-    cs.save_credentials({"GEMINI_API_KEY": "saved-key"}, {})
+    # save_credentials also kicks off the GDrive Device Code flow, which POSTs
+    # to oauth2.googleapis.com whenever GOOGLE_DRIVE_CLIENT_ID/SECRET happen to
+    # be set in the environment. This test is about the storage path, so the
+    # flow is stubbed to keep it off the network and identical on every machine.
+    with patch.object(cs, "_trigger_gdrive_flow", return_value=None):
+        cs.save_credentials({"GEMINI_API_KEY": "saved-key"}, {})
 
     from mcp_core.storage.per_plugin_store import PerPluginStore
 
