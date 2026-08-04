@@ -214,29 +214,56 @@ def upsert_entities(conn, entities: list[dict]) -> list[str]:
 
     # Use UPSERT (INSERT ... ON CONFLICT) for bulk write in one pass.
     # This eliminates N+1 SELECTs and conditional INSERT/UPDATE overhead.
-    upsert_data = [(str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys]
-    conn.executemany(
-        "INSERT INTO memory_entities (id, name, entity_type, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
-        upsert_data,
-    )
+    sub = getattr(conn, "sub", None)
+    if sub is None:
+        upsert_data = [
+            (str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys
+        ]
+        conn.executemany(
+            "INSERT INTO memory_entities (id, name, entity_type, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(name, entity_type) DO UPDATE SET updated_at = excluded.updated_at",
+            upsert_data,
+        )
+    else:
+        upsert_data = [
+            (sub, str(uuid.uuid4()), key[0], key[1], now, now) for key in unique_keys
+        ]
+        conn.executemany(
+            "INSERT INTO memory_entities "
+            "(sub, id, name, entity_type, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(sub, name, entity_type) "
+            "DO UPDATE SET updated_at = excluded.updated_at",
+            upsert_data,
+        )
 
     # Bolt Performance Optimization:
     # Use SQLite's json_each with json_extract for multi-column IN clauses.
     # This eliminates the need for Python-side string interpolation and looping
     # to batch parameters due to SQLITE_MAX_VARIABLE_NUMBER limits.
     json_payload = json.dumps(unique_keys)
-    rows = conn.execute(
-        "SELECT name, entity_type, id FROM memory_entities "
-        "WHERE (name, entity_type) IN ("
-        "  SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') "
-        "  FROM json_each(?)"
-        ")",
-        (json_payload,),
-    ).fetchall()
+    if sub is None:
+        rows = conn.execute(
+            "SELECT name, entity_type, id FROM memory_entities "
+            "WHERE (name, entity_type) IN ("
+            "  SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') "
+            "  FROM json_each(?)"
+            ")",
+            (json_payload,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT name, entity_type, id FROM memory_entities "
+            "WHERE sub = ? AND (name, entity_type) IN ("
+            "  SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') "
+            "  FROM json_each(?)"
+            ")",
+            (sub, json_payload),
+        ).fetchall()
 
-    for r_name, r_type, r_id in rows:
+    for row in rows:
+        r_name, r_type, r_id = row[0], row[1], row[2]
         unique_ents[(r_name, r_type)] = r_id
 
     return [unique_ents[key] for key in ordered_ents]
@@ -247,6 +274,7 @@ def create_relations(
 ) -> None:
     """Create relations between entities."""
     now = datetime.now(UTC).isoformat()
+    sub = getattr(conn, "sub", None)
     seen = set()
     to_insert = []
 
@@ -279,12 +307,21 @@ def create_relations(
         # backed by the `idx_memory_edges_unique` database index.
         # This reduces SQLite virtual machine overhead, providing up to ~4x speedup
         # for bulk graph relationship generation.
-        conn.executemany(
-            "INSERT OR IGNORE INTO memory_edges "
-            "(id, source_id, target_id, relation_type, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            to_insert,
-        )
+        if sub is None:
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_edges "
+                "(id, source_id, target_id, relation_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                to_insert,
+            )
+        else:
+            conn.executemany(
+                "INSERT INTO memory_edges "
+                "(sub, id, source_id, target_id, relation_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(sub, source_id, target_id, relation_type) DO NOTHING",
+                [(sub, *row) for row in to_insert],
+            )
 
 
 def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
@@ -298,11 +335,20 @@ def link_memory_entities(conn, memory_id: str, entity_ids: list[str]) -> None:
         # This reduces round-trips and improves bulk insert performance by ~60-65%
         # for batches of 100+ entities compared to individual execute calls.
         params = [(memory_id, eid) for eid in entity_ids]
-        conn.executemany(
-            "INSERT OR IGNORE INTO memory_entity_links (memory_id, entity_id) "
-            "VALUES (?, ?)",
-            params,
-        )
+        sub = getattr(conn, "sub", None)
+        if sub is None:
+            conn.executemany(
+                "INSERT OR IGNORE INTO memory_entity_links (memory_id, entity_id) "
+                "VALUES (?, ?)",
+                params,
+            )
+        else:
+            conn.executemany(
+                "INSERT INTO memory_entity_links (sub, memory_id, entity_id) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(sub, memory_id, entity_id) DO NOTHING",
+                [(sub, *row) for row in params],
+            )
     except Exception as e:
         logger.debug(f"Failed to link memory entities: {e}")
 
@@ -313,7 +359,9 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
     Uses a recursive CTE to traverse the knowledge graph in a single query,
     eliminating N+1 loop overhead and reducing database round-trips to O(1).
     """
-    query = """
+    sub = getattr(conn, "sub", None)
+    if sub is None:
+        query = """
         WITH RECURSIVE traverse(entity_id, depth) AS (
             -- Seed with initial entities linked to the memory
             SELECT entity_id, 1 FROM memory_entity_links WHERE memory_id = ?
@@ -338,7 +386,32 @@ def find_related_memory_ids(conn, memory_id: str, max_depth: int = 2) -> list[st
         SELECT DISTINCT memory_id
         FROM memory_entity_links
         WHERE memory_id != ? AND entity_id IN (SELECT entity_id FROM traverse)
-    """
-    rows = conn.execute(query, (memory_id, max_depth, max_depth, memory_id)).fetchall()
+        """
+        params = (memory_id, max_depth, max_depth, memory_id)
+    else:
+        query = """
+        WITH RECURSIVE traverse(entity_id, depth) AS (
+            SELECT entity_id, 1
+            FROM memory_entity_links
+            WHERE sub = ? AND memory_id = ?
+            UNION
+            SELECT r.target_id, t.depth + 1
+            FROM memory_edges r
+            JOIN traverse t ON r.source_id = t.entity_id
+            WHERE r.sub = ? AND t.depth < ?
+            UNION
+            SELECT r.source_id, t.depth + 1
+            FROM memory_edges r
+            JOIN traverse t ON r.target_id = t.entity_id
+            WHERE r.sub = ? AND t.depth < ?
+        )
+        SELECT DISTINCT memory_id
+        FROM memory_entity_links
+        WHERE sub = ?
+          AND memory_id != ?
+          AND entity_id IN (SELECT entity_id FROM traverse)
+        """
+        params = (sub, memory_id, sub, max_depth, sub, max_depth, sub, memory_id)
+    rows = conn.execute(query, params).fetchall()
 
     return [r[0] for r in rows]

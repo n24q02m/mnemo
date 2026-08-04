@@ -38,6 +38,43 @@ def generate_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
+async def _get_authorize_form(
+    http: httpx.AsyncClient, params: dict[str, str]
+) -> httpx.Response:
+    """Open the credential form, including the deployed relay-login gate."""
+    resp = await http.get(
+        f"{BASE_URL}/authorize", params=params, follow_redirects=False
+    )
+    print(f"[1] GET /authorize -> {resp.status_code}")
+
+    if resp.status_code == 302:
+        login_location = resp.headers.get("location")
+        assert login_location, "Relay login redirect is missing Location"
+        login_url = resp.url.join(login_location)
+        relay_password = os.environ.get("MCP_RELAY_PASSWORD") or os.environ.get(
+            "RELAY_PW"
+        )
+        assert relay_password, (
+            "GET /authorize redirected to /login; set MCP_RELAY_PASSWORD or RELAY_PW"
+        )
+        next_url = login_url.params.get("next", "/authorize")
+        resp = await http.post(
+            login_url,
+            data={"password": relay_password, "next": next_url},
+            follow_redirects=False,
+        )
+        print(f"[1] POST /login -> {resp.status_code}")
+        assert resp.status_code == 302, resp.text[:300]
+
+        next_location = resp.headers.get("location")
+        assert next_location, "Relay login response is missing next Location"
+        resp = await http.get(resp.url.join(next_location), follow_redirects=False)
+        print(f"[1] GET credential form -> {resp.status_code}")
+
+    assert resp.status_code == 200, resp.text[:300]
+    return resp
+
+
 async def obtain_jwt() -> str:
     verifier, challenge = generate_pkce()
     state = secrets.token_urlsafe(16)
@@ -45,9 +82,9 @@ async def obtain_jwt() -> str:
     client_id = "e2e-test"
 
     async with httpx.AsyncClient(timeout=60) as http:
-        resp = await http.get(
-            f"{BASE_URL}/authorize",
-            params={
+        resp = await _get_authorize_form(
+            http,
+            {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
                 "state": state,
@@ -55,8 +92,6 @@ async def obtain_jwt() -> str:
                 "code_challenge_method": "S256",
             },
         )
-        print(f"[1] GET /authorize -> {resp.status_code}")
-        assert resp.status_code == 200, resp.text[:300]
 
         match = re.search(r"/authorize\?nonce=([A-Za-z0-9_\-]+)", resp.text)
         assert match, f"Nonce not found in HTML: {resp.text[:500]}"

@@ -101,9 +101,11 @@ def store_kg_with_memory_id(
             "WHERE source_id = ? AND target_id = ? AND relation_type = ?",
             params,
         )
-        # For UPDATE, executemany's rowcount is the sum of all affected rows.
-        # Bolt Performance Note: Using executemany eliminates N+1 updates.
-        edge_count = cursor.rowcount if cursor.rowcount != -1 else len(params)
+        # SQLite exposes affected-row count; D1 /query does not. The D1 adapter
+        # returns the unknown sentinel, so the prepared relation count is the
+        # safe contract for this idempotent update batch.
+        rowcount = getattr(cursor, "rowcount", -1)
+        edge_count = rowcount if rowcount != -1 else len(params)
         conn.commit()
 
     logger.debug(

@@ -19,6 +19,11 @@ from mnemo_mcp.server import lifespan
 _MIGRATION = (
     pathlib.Path(__file__).resolve().parent.parent / "migrations" / "0001_init.sql"
 )
+_MIGRATION_2 = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "migrations"
+    / "0002_per_sub_isolation.sql"
+)
 
 
 @pytest.fixture
@@ -268,6 +273,7 @@ class TestStartupLogNamesTheStoreItRead:
             tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
         )
         conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
+        conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
         monkeypatch.setenv("MEMORY_DB_BACKEND", "cf-d1")
         monkeypatch.setattr(
             "mnemo_mcp.db_cf.d1_backend_from_env",

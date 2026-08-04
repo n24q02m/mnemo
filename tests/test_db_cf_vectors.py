@@ -36,7 +36,8 @@ of by sleeping, and a ``fail_delete`` switch so the read-side supersession filte
 can be tested with the write-side deliberately broken. What it does not
 reproduce: Cloudflare's actual ANN recall (the double is an exact cosine scan, so
 ranking is exact where production is approximate), real propagation timing, and
-metadata-filter behaviour -- which the backend never uses, by design.
+metadata-filter behaviour -- the latter is exercised by the tenant-isolation
+regression tests.
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ from mnemo_mcp.exceptions import EmbeddingModelMismatch
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
+_MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 # Test vectors are 8-wide for readability. `test_wire_carries_full_width_vector`
@@ -99,6 +101,8 @@ class FakeVectorizeWorker:
     def __init__(self, *, settle_immediately: bool = True) -> None:
         self.visible: dict[str, list[float]] = {}
         self.pending: dict[str, list[float]] = {}
+        self.visible_metadata: dict[str, dict] = {}
+        self.pending_metadata: dict[str, dict] = {}
         self.settle_immediately = settle_immediately
         self.fail_delete = False
         self.requests: list[tuple[str, str, object]] = []
@@ -106,7 +110,9 @@ class FakeVectorizeWorker:
     def settle(self) -> None:
         """Make every pending upsert queryable, as Vectorize eventually does."""
         self.visible.update(self.pending)
+        self.visible_metadata.update(self.pending_metadata)
         self.pending.clear()
+        self.pending_metadata.clear()
 
     def request(self, method, url, data=None, headers=None):
         path = urlparse(url).path
@@ -116,20 +122,41 @@ class FakeVectorizeWorker:
             vectors = [json.loads(line) for line in data.decode().split("\n") if line]
             self.requests.append((method, path, vectors))
             target = self.visible if self.settle_immediately else self.pending
+            metadata_target = (
+                self.visible_metadata
+                if self.settle_immediately
+                else self.pending_metadata
+            )
             for vector in vectors:
                 target[vector["id"]] = vector["values"]
+                metadata_target[vector["id"]] = vector.get("metadata") or {}
             return (200, json.dumps({"mutationId": "m-upsert"}).encode())
 
         if method == "POST" and path == "/query":
             payload = json.loads(data.decode())
             self.requests.append((method, path, payload))
             vector, top_k = payload["vector"], payload["topK"]
+            metadata_filter = payload.get("filter") or {}
             ranked = sorted(
-                ((mid, _cosine(vector, v)) for mid, v in self.visible.items()),
+                (
+                    (mid, _cosine(vector, v))
+                    for mid, v in self.visible.items()
+                    if all(
+                        self.visible_metadata.get(mid, {}).get(key) == value
+                        for key, value in metadata_filter.items()
+                    )
+                ),
                 key=lambda kv: kv[1],
                 reverse=True,
             )
-            matches = [{"id": m, "score": s} for m, s in ranked[:top_k]]
+            matches = [
+                {
+                    "id": m,
+                    "score": s,
+                    "metadata": self.visible_metadata.get(m, {}),
+                }
+                for m, s in ranked[:top_k]
+            ]
             return (200, json.dumps({"matches": matches}).encode())
 
         if method == "POST" and path == "/deleteByIds":
@@ -140,6 +167,8 @@ class FakeVectorizeWorker:
             for mid in payload["ids"]:
                 self.visible.pop(mid, None)
                 self.pending.pop(mid, None)
+                self.visible_metadata.pop(mid, None)
+                self.pending_metadata.pop(mid, None)
             return (200, json.dumps({"mutationId": "m-delete"}).encode())
 
         self.requests.append((method, path, None))
@@ -175,6 +204,7 @@ class FakeD1Worker:
 def fake_worker(tmp_path) -> FakeD1Worker:
     conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
     return FakeD1Worker(conn)
 
 
@@ -290,7 +320,7 @@ class TestVectorWiring:
 
     def test_add_upserts_the_vector_under_the_memory_id(self, cf_db, fake_vectorize):
         mid = cf_db.add("Python is a programming language", embedding=_unit(0))
-        assert fake_vectorize.visible == {mid: _unit(0)}
+        assert fake_vectorize.visible == {cf_db._vectorize_id(mid): _unit(0)}
 
     def test_search_finds_a_memory_by_vector_alone(self, cf_db):
         """Text the FTS index cannot match; only the vector arm can answer.
@@ -313,7 +343,7 @@ class TestVectorWiring:
         mid = cf_db.add_with_context_type(
             "User prefers dark mode", context_type="preference", embedding=_unit(2)
         )
-        assert fake_vectorize.visible[mid] == _unit(2)
+        assert fake_vectorize.visible[cf_db._vectorize_id(mid)] == _unit(2)
 
     def test_hybrid_search_fuses_both_arms(self, cf_db):
         """Both arms contribute; the fused list is the borrowed RRF's output."""
@@ -341,14 +371,17 @@ class TestVectorWiring:
         """768 is what the live store's ``store_meta`` records."""
         db = _cf_db(fake_worker, fake_vectorize, embedding_dims=768)
         mid = db.add("real-width vector", embedding=[0.5] * 768)
-        assert len(fake_vectorize.visible[mid]) == 768
+        assert len(fake_vectorize.visible[db._vectorize_id(mid)]) == 768
 
     def test_oversized_vector_is_reshaped_like_sqlite(self, cf_db, fake_vectorize):
         """``db._serialize_f32`` truncates/pads; parity means doing the same."""
         long_id = cf_db.add("too long", embedding=[1.0] * (DIMS + 4))
         short_id = cf_db.add("too short", embedding=[1.0, 1.0])
-        assert fake_vectorize.visible[long_id] == [1.0] * DIMS
-        assert fake_vectorize.visible[short_id] == [1.0, 1.0] + [0.0] * (DIMS - 2)
+        assert fake_vectorize.visible[cf_db._vectorize_id(long_id)] == [1.0] * DIMS
+        assert fake_vectorize.visible[cf_db._vectorize_id(short_id)] == [
+            1.0,
+            1.0,
+        ] + [0.0] * (DIMS - 2)
 
     def test_vec_enabled_reflects_the_attached_index(self, cf_db, fake_worker):
         assert cf_db.vec_enabled is True
@@ -565,7 +598,9 @@ class TestSupersededRowsStayGone:
         fake_vectorize.fail_delete = True
 
         assert cf_db.delete(mid) is True
-        assert mid in fake_vectorize.visible, "precondition: the vector must survive"
+        assert cf_db._vectorize_id(mid) in fake_vectorize.visible, (
+            "precondition: the vector must survive"
+        )
         assert "[AUDIT]" in _messages(captured_logs, "ERROR")
 
         assert cf_db.search("zzzz-unmatchable-token", embedding=_unit(0)) == []
@@ -588,7 +623,9 @@ class TestSupersededRowsStayGone:
         fake_vectorize.fail_delete = True
         new_id = cf_db.update(old_id, content="Python is a great language")
 
-        assert old_id in fake_vectorize.visible, "precondition: the vector survives"
+        assert cf_db._vectorize_id(old_id) in fake_vectorize.visible, (
+            "precondition: the vector survives"
+        )
         assert new_id is not None
         assert cf_db.search("zzzz-unmatchable-token", embedding=_unit(0)) == []
 
@@ -598,7 +635,7 @@ class TestSupersededRowsStayGone:
         old_id = cf_db.add("Python is a programming language", embedding=_unit(0))
         new_id = cf_db.update(old_id, content="Python rules", embedding=_unit(1))
 
-        assert fake_vectorize.visible == {new_id: _unit(1)}
+        assert fake_vectorize.visible == {cf_db._vectorize_id(new_id): _unit(1)}
         hits = cf_db.search("zzzz-unmatchable-token", embedding=_unit(1))
         assert [h["id"] for h in hits] == [new_id]
 
@@ -725,7 +762,7 @@ class TestReplaceImportClearsVectors:
     def test_merge_import_keeps_vectors(self, cf_db, fake_vectorize):
         mid = cf_db.add("Python is a programming language", embedding=_unit(0))
         cf_db.import_jsonl(json.dumps({"id": "extra", "content": "another row"}))
-        assert fake_vectorize.visible == {mid: _unit(0)}
+        assert fake_vectorize.visible == {cf_db._vectorize_id(mid): _unit(0)}
 
 
 class TestVectorParityWithSqlite:

@@ -71,5 +71,6 @@ wrangler.deploy.jsonc
 .wrangler/
 .wrangler-dryrun/
 scripts/.mnemo_cf_token
+scripts/.wet_cf_token
 node_modules/
 package-lock.json

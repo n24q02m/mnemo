@@ -21,9 +21,11 @@ from the repo root:
 The maintainer injects the token via ``skret`` (one option), e.g.:
     MSYS_NO_PATHCONV=1 skret run -e dev --path=/n24q02m/dev -- python scripts/deploy_cf.py
 
-Requires: CLOUDFLARE_API_TOKEN in env, docker, and ``bunx wrangler``. The CF container
-registry only pulls from registry.cloudflare.com/<account>/... (not ghcr), so the
-local image is tagged to that path before ``wrangler containers push``.
+Requires: the CF token injected by skret as ``CF_DEV_TOKEN`` (or an existing
+``CLOUDFLARE_API_TOKEN``), docker, and ``bunx wrangler``. The harness maps the
+token only in Wrangler child environments. The CF container registry only
+pulls from registry.cloudflare.com/<account>/... (not ghcr), so the local image
+is tagged to that path before ``wrangler containers push``.
 
 Why the rollout wait: a heavy image (wet ~6GB) keeps serving OLD Durable Object
 instances for minutes after deploy (``containers list`` STATE=provisioning);
@@ -55,6 +57,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 # Windows consoles default to cp1252; wrangler emits box-drawing chars (│) and
@@ -66,6 +69,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 DEPLOY_CONFIG = "wrangler.deploy.jsonc"
 TEMPLATE_CONFIG = "wrangler.deploy.template.jsonc"
+_WRANGLER_TOKEN = "CLOUDFLARE_API_TOKEN"
+_SKRET_TOKEN = "CF_DEV_TOKEN"
 
 
 def render_template(path: str) -> str:
@@ -120,11 +125,48 @@ def _short_sha(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _run(cmd: list[str], *, dry: bool, cwd: Path | None = None) -> None:
+def _wrangler_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Build Wrangler's child environment without mutating the parent.
+
+    ``skret`` exposes the local development credential as ``CF_DEV_TOKEN``;
+    Wrangler only reads ``CLOUDFLARE_API_TOKEN``. An explicitly supplied
+    Wrangler token wins, while the source alias is removed from the child
+    environment after mapping to reduce unnecessary secret exposure.
+    """
+    child_env = dict(os.environ if env is None else env)
+    token = child_env.get(_WRANGLER_TOKEN) or child_env.get(_SKRET_TOKEN)
+    if token:
+        child_env[_WRANGLER_TOKEN] = token
+    child_env.pop(_SKRET_TOKEN, None)
+    return child_env
+
+
+def _run(
+    cmd: list[str],
+    *,
+    dry: bool,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> None:
     print(f"  $ {' '.join(cmd)}")
     if dry:
         return
-    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+    subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        env=dict(env) if env is not None else None,
+        check=True,
+    )
+
+
+def _run_wrangler(args: list[str], *, dry: bool, cwd: Path | None = None) -> None:
+    """Run Wrangler with the single, centrally resolved authentication env."""
+    _run(
+        ["bunx", "wrangler", *args],
+        dry=dry,
+        cwd=cwd,
+        env=_wrangler_env(),
+    )
 
 
 def _image_parts(cfg: dict) -> tuple[str, str, str]:
@@ -179,6 +221,7 @@ def _wait_ready(worker: str, *, dry: bool, timeout_s: int = 600) -> None:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=_wrangler_env(),
             ).stdout
             or ""
         )
@@ -319,8 +362,8 @@ def _rollback(repo: Path, worker: str, prev_ref: str, *, dry: bool) -> None:
     if dry:
         return
     _set_image_tag(repo, prev_ref)
-    _run(
-        ["bunx", "wrangler", "deploy", "--config", DEPLOY_CONFIG],
+    _run_wrangler(
+        ["deploy", "--config", DEPLOY_CONFIG],
         dry=False,
         cwd=repo,
     )
@@ -384,12 +427,16 @@ def main(argv: list[str] | None = None) -> int:
     print("[2/4] docker tag -> CF registry")
     _run(["docker", "tag", local, full], dry=args.dry_run)
     print("[3/4] wrangler containers push")
-    _run(["bunx", "wrangler", "containers", "push", full], dry=args.dry_run, cwd=repo)
+    _run_wrangler(
+        ["containers", "push", full],
+        dry=args.dry_run,
+        cwd=repo,
+    )
     print(f"[4/4] wrangler deploy --config {DEPLOY_CONFIG}")
     if not args.dry_run:
         _set_image_tag(repo, full)
-    _run(
-        ["bunx", "wrangler", "deploy", "--config", DEPLOY_CONFIG],
+    _run_wrangler(
+        ["deploy", "--config", DEPLOY_CONFIG],
         dry=args.dry_run,
         cwd=repo,
     )

@@ -47,9 +47,15 @@ class TestSetupStatus:
         ctx, _ = ctx_with_db
         set_state(CredentialState.CONFIGURED)
 
-        with patch(
-            "mnemo_mcp.credential_state.get_setup_url",
-            return_value="https://setup.url",
+        with (
+            patch(
+                "mnemo_mcp.credential_state.get_setup_url",
+                return_value="https://setup.url",
+            ),
+            patch(
+                "mcp_core.storage.per_plugin_store.PerPluginStore.load",
+                return_value={"GEMINI_API_KEY": "test-key"},
+            ),
         ):
             result = await config(action="setup_status", ctx=ctx)
 

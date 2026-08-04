@@ -16,8 +16,8 @@ mnemo/imagine/email CF harnesses):
                        forwarded JINA from os.environ, so a real user must submit one.
                        The harness submits whatever key skret /wet-mcp/prod injects.
   4. token          -- POST /token (code + verifier) -> bearer JWT
-  5. tool call      -- config(status) + search(action="search"); assert the search
-                       path resolves real results (URLs) over the CF deployment.
+  5. tool call      -- config(status) + unique add/search/delete round-trip over
+                       the deployed D1/Vectorize path.
 
 Secrets from env: Gate A login password MCP_RELAY_PASSWORD (or RELAY_PW) from skret
 /oci-vm-prod/prod (infra-shared); >=1 provider key (JINA_AI_API_KEY preferred) from
@@ -29,8 +29,8 @@ Run modes:
                        (recreate-gate setup half of the state-survives-recreate test).
   --auth-only          replay the SAME token (same sub) and search again WITHOUT
                        re-saving (recreate-gate verify: the sub vault survived KV).
-  --two-sub-isolation  two distinct subs; assert each authorizes to a distinct sub
-                       (the relay-login mints a fresh random sub per /authorize).
+  --two-sub-isolation  two distinct subs; sub B must not find sub A's unique marker
+                       before B creates and searches its own marker.
 
 Examples:
   skret run -e prod --path=/oci-vm-prod/prod -- \
@@ -54,11 +54,13 @@ import secrets
 import sys
 import time
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_ENDPOINT = "https://mnemo.n24q02m.com"
 
-# A unique marker memory added then searched to exercise the D1 FTS round-trip.
+# Stable prefix retained for recognizable harness data; each probe appends a
+# cryptographically random suffix so independent runs cannot deduplicate.
 MARKER = "cf-canary-probe-mnemo"
 
 
@@ -215,19 +217,79 @@ async def _call(s, label, tool, args, *, retries=20, delay=8):
     return None
 
 
-def _assert_search_resolved(txt: str | None) -> None:
-    """A real round-trip returns the just-added marker memory. An error string
-    (D1 / Vectorize misconfig) surfaces here -- a genuine CF-deployment finding."""
-    assert txt is not None, (
-        "search_memory returned no payload (gave up while not ready)"
+@dataclass(frozen=True)
+class _SearchProbe:
+    marker: str
+    memory_id: str
+    search_text: str | None
+
+
+def _new_marker(scope: str = "roundtrip") -> str:
+    return f"{MARKER}-{scope}-{secrets.token_hex(8)}"
+
+
+def _tool_payload(txt: str | None, operation: str) -> dict:
+    assert txt is not None, f"{operation} returned no payload"
+    try:
+        payload = _json.loads(txt)
+    except _json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"{operation} returned non-JSON payload: {txt[:300]}"
+        ) from exc
+    assert isinstance(payload, dict), f"{operation} returned a non-object payload"
+    assert not payload.get("error"), f"{operation} returned an error: {txt[:300]}"
+    return payload
+
+
+def _memory_id(payload: dict, operation: str) -> str:
+    memory_id = payload.get("id") or payload.get("memory_id")
+    assert isinstance(memory_id, str) and memory_id, (
+        f"{operation} did not return an exact memory id"
     )
-    assert not txt.lower().startswith("error"), (
-        f"search_memory returned an error: {txt[:300]}"
+    return memory_id
+
+
+def _search_results(txt: str | None) -> list[dict]:
+    payload = _tool_payload(txt, "search_memory")
+    results = payload.get("results")
+    assert isinstance(results, list), "search_memory did not return a results list"
+    assert all(isinstance(result, dict) for result in results), (
+        "search_memory returned a non-object result"
     )
-    assert MARKER in txt, f"search_memory did not return the added marker: {txt[:300]}"
+    return results
+
+
+def _assert_search_resolved(
+    txt: str | None,
+    marker: str = MARKER,
+    memory_id: str | None = None,
+) -> None:
+    """Require the exact added memory and its unique marker in search results."""
+    results = _search_results(txt)
+    result_text = _json.dumps(results, ensure_ascii=False)
+    assert any(
+        (
+            memory_id is None
+            or result.get("id") == memory_id
+            or result.get("memory_id") == memory_id
+        )
+        and marker in _json.dumps(result, ensure_ascii=False)
+        for result in results
+    ), f"search_memory did not return the added marker/id: {result_text[:300]}"
     print(
         "ASSERT OK: add_memory -> search_memory round-trip resolved over the CF deployment."
     )
+
+
+def _assert_search_absent(txt: str | None, marker: str) -> None:
+    """Require that search results contain no trace of a marker."""
+    results = _search_results(txt)
+    result_text = _json.dumps(results, ensure_ascii=False)
+    assert marker not in result_text, (
+        "isolation failure: search_memory returned sub A marker for sub B: "
+        f"{result_text[:300]}"
+    )
+    print("ASSERT OK: sub B search did not return sub A marker.")
 
 
 async def _session(endpoint: str, token: str):
@@ -239,15 +301,62 @@ async def _session(endpoint: str, token: str):
     ), ClientSession
 
 
-async def _run_search(s) -> str | None:
-    # mnemo round-trip: add a marker memory, then search for it over D1 FTS.
-    await _call(
+async def _delete_memory(s, memory_id: str) -> None:
+    txt = await _call(
         s,
-        "ADD_MEMORY",
-        "add_memory",
-        {"content": f"protocol self-test memory {MARKER}"},
+        "DELETE_MEMORY",
+        "delete_memory",
+        {"memory_id": memory_id},
+        retries=5,
+        delay=2,
     )
-    return await _call(s, "SEARCH_MEMORY", "search_memory", {"query": MARKER})
+    payload = _tool_payload(txt, "delete_memory")
+    deleted_id = _memory_id(payload, "delete_memory")
+    assert payload.get("status") == "deleted" and deleted_id == memory_id, (
+        f"delete_memory did not delete exact memory id {memory_id!r}: {txt[:300]}"
+    )
+
+
+async def _run_search(
+    s,
+    *,
+    marker: str | None = None,
+    cleanup: bool = True,
+) -> _SearchProbe:
+    """Add and search one unique marker, cleaning the exact added id by default."""
+    marker = marker or _new_marker()
+    memory_id: str | None = None
+    try:
+        add_txt = await _call(
+            s,
+            "ADD_MEMORY",
+            "add_memory",
+            {"content": f"protocol self-test memory {marker}"},
+        )
+        add_payload = _tool_payload(add_txt, "add_memory")
+        memory_id = _memory_id(add_payload, "add_memory")
+        assert "dedup_warning" not in add_payload, (
+            "add_memory returned a duplicate warning; unique probe was not saved"
+        )
+        search_txt = await _call(
+            s,
+            "SEARCH_MEMORY",
+            "search_memory",
+            {"query": marker},
+        )
+        return _SearchProbe(marker, memory_id, search_txt)
+    except BaseException:
+        if not cleanup and memory_id is not None:
+            try:
+                await _delete_memory(s, memory_id)
+            except Exception as cleanup_exc:
+                raise RuntimeError(
+                    f"probe failed and cleanup failed for memory id {memory_id!r}"
+                ) from cleanup_exc
+        raise
+    finally:
+        if cleanup and memory_id is not None:
+            await _delete_memory(s, memory_id)
 
 
 def _token_file() -> Path:
@@ -263,8 +372,8 @@ async def run_full(endpoint: str) -> None:
         tools = await s.list_tools()
         print("TOOLS:", [t.name for t in tools.tools])
         await _call(s, "CONFIG_STATUS", "config", {"action": "status"})
-        txt = await _run_search(s)
-        _assert_search_resolved(txt)
+        probe = await _run_search(s)
+        _assert_search_resolved(probe.search_text, probe.marker, probe.memory_id)
     print("FULL FLOW PASS.")
 
 
@@ -293,8 +402,8 @@ async def run_auth_only(endpoint: str) -> None:
     transport, ClientSession = await _session(endpoint, token)
     async with transport as (r, w, _), ClientSession(r, w) as s:
         await s.initialize()
-        txt = await _run_search(s)
-        _assert_search_resolved(txt)
+        probe = await _run_search(s)
+        _assert_search_resolved(probe.search_text, probe.marker, probe.memory_id)
     print("AUTH-ONLY PASS: sub survived recreate (KV vault resolved, no re-save).")
 
 
@@ -308,13 +417,41 @@ async def run_two_sub_isolation(endpoint: str) -> None:
         raise SystemExit(
             f"ISOLATION INCONCLUSIVE: both flows share sub {sub_a} (cannot test bleed)."
         )
-    transport, ClientSession = await _session(endpoint, token_b)
-    async with transport as (r, w, _), ClientSession(r, w) as s:
-        await s.initialize()
-        txt = await _run_search(s)
-        _assert_search_resolved(txt)
+    print("TWO-SUB: distinct bearer subjects acquired; testing marker isolation.")
+    marker_a = _new_marker("isolation-a")
+    marker_b = _new_marker("isolation-b")
+
+    transport_a, ClientSession = await _session(endpoint, token_a)
+    async with transport_a as (r_a, w_a, _), ClientSession(r_a, w_a) as s_a:
+        await s_a.initialize()
+        probe_a = await _run_search(s_a, marker=marker_a, cleanup=False)
+        try:
+            _assert_search_resolved(
+                probe_a.search_text, probe_a.marker, probe_a.memory_id
+            )
+
+            transport_b, ClientSession = await _session(endpoint, token_b)
+            async with transport_b as (r_b, w_b, _), ClientSession(r_b, w_b) as s_b:
+                await s_b.initialize()
+                search_a_from_b = await _call(
+                    s_b,
+                    "SEARCH_MEMORY_A_FROM_B",
+                    "search_memory",
+                    {"query": probe_a.marker},
+                )
+                _assert_search_absent(search_a_from_b, probe_a.marker)
+
+                probe_b = await _run_search(s_b, marker=marker_b, cleanup=False)
+                try:
+                    _assert_search_resolved(
+                        probe_b.search_text, probe_b.marker, probe_b.memory_id
+                    )
+                finally:
+                    await _delete_memory(s_b, probe_b.memory_id)
+        finally:
+            await _delete_memory(s_a, probe_a.memory_id)
     print(
-        "TWO-SUB ISOLATION OK: distinct subs, sub B authorizes + searches independently."
+        "TWO-SUB ISOLATION OK: B could not find A marker and created/searched its own."
     )
 
 
@@ -342,7 +479,10 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--two-sub-isolation",
         action="store_true",
-        help="Two distinct subs; assert sub B authorizes + searches independently.",
+        help=(
+            "Two distinct subs; B must not find A's marker before B creates "
+            "and searches its own."
+        ),
     )
     return p
 

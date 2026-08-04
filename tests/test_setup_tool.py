@@ -261,6 +261,27 @@ class TestRunWarmup:
         assert len(result["steps"]) == 1
         assert result["steps"][0]["status"] == "ok"
 
+    @patch("mnemo_mcp.setup_tool._download_local_embedding")
+    @patch("mnemo_mcp.setup_tool.settings")
+    async def test_local_embedding_disabled_skips_download(
+        self, mock_settings, mock_download
+    ):
+        from mnemo_mcp.setup_tool import run_warmup
+
+        mock_settings.setup_api_keys.return_value = {}
+        mock_settings.disable_local_embed = True
+
+        result = await run_warmup()
+
+        mock_download.assert_not_called()
+        assert result["status"] == "ok"
+        assert result["mode"] == "unavailable"
+        local_step = next(
+            step for step in result["steps"] if step["step"] == "local_embedding"
+        )
+        assert local_step["status"] == "skipped"
+        assert "disabled" in local_step["message"].lower()
+
     @patch("qwen3_embed.TextEmbedding")
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.setup_tool.settings")

@@ -104,11 +104,12 @@ async def run_warmup() -> dict:
     Returns a structured dict with warmup results:
     {
         "status": "ok" | "error",
-        "mode": "cloud" | "local",
+        "mode": "cloud" | "local" | "unavailable",
         "steps": [{"step": str, "status": str, ...}, ...],
     }
     """
     steps = []
+    local_disabled = getattr(settings, "disable_local_embed", False) is True
 
     # 1. Check cloud models if API keys are available
     keys = settings.setup_api_keys()
@@ -136,9 +137,27 @@ async def run_warmup() -> dict:
             {
                 "step": "cloud_embedding",
                 "status": "fallback",
-                "message": "Cloud models not available, falling back to local",
+                "message": (
+                    "Cloud models not available, local embedding is disabled"
+                    if local_disabled
+                    else "Cloud models not available, falling back to local"
+                ),
             }
         )
+
+    if local_disabled:
+        steps.append(
+            {
+                "step": "local_embedding",
+                "status": "skipped",
+                "message": "Local embedding disabled; embedding is unavailable",
+            }
+        )
+        return {
+            "status": "ok",
+            "mode": "unavailable",
+            "steps": steps,
+        }
 
     # 2. Download local embedding model
     embed_result = await asyncio.to_thread(_download_local_embedding, settings)

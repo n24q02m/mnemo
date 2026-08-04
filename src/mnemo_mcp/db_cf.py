@@ -99,9 +99,10 @@ import functools
 import inspect
 import json
 import os
+import re
 import uuid
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from loguru import logger
 from mcp_core.storage.d1 import D1Backend, d1_backend_from_env
@@ -112,6 +113,7 @@ from mnemo_mcp.db import (
     MAX_TAGS_FILTER,
     MEMORY_COLUMNS,
     MemoryDB,
+    _build_fts_queries,
     _now_iso,
 )
 
@@ -150,12 +152,13 @@ class VectorCandidateCap(NamedTuple):
 
 
 # Tables `MemoryDBCfBackend` reads or writes. wrangler owns schema creation via
-# `migrations/0001_init.sql`; this backend only asserts the migration ran.
+# the migration chain; this backend only asserts the migrations ran.
 REQUIRED_TABLES = (
     "memories",
     "memories_fts",
     "store_meta",
     "archived_memories",
+    "sync_state",
 )
 
 # Columns written by the bulk-import path, in the order `_process_import_batch`
@@ -181,6 +184,30 @@ _NO_VECTOR_INDEX = (
     "dimension of the active model (and MCP_VECTORIZE_IDX set) to enable vectors."
 )
 
+_SCOPED_TABLES = (
+    "memories",
+    "archived_memories",
+    "memory_entities",
+    "memory_edges",
+    "memory_entity_links",
+    "store_meta",
+    "sync_state",
+)
+_SCOPED_TABLE_RE = re.compile(
+    r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+("
+    + "|".join(_SCOPED_TABLES)
+    + r")\b",
+    re.IGNORECASE,
+)
+_INSERT_COLUMNS_RE = re.compile(
+    r"\bINTO\s+(?P<table>" + "|".join(_SCOPED_TABLES) + r")\s*\((?P<columns>[^)]*)\)",
+    re.IGNORECASE,
+)
+_SQL_CLAUSE_RE = re.compile(
+    r"\b(?:ORDER\s+BY|GROUP\s+BY|LIMIT|RETURNING|UNION|ON\s+CONFLICT)\b",
+    re.IGNORECASE,
+)
+
 
 class _D1Row(dict):
     """A D1 result row that also answers positional lookups.
@@ -200,17 +227,24 @@ class _D1Row(dict):
 class _D1Cursor:
     """Result handle over a materialised D1 row set.
 
-    ``rowcount`` is deliberately absent: ``POST /query`` returns rows only, with
-    no "rows changed" counter, so anything that needs a write count uses
-    ``RETURNING`` explicitly rather than reading a fabricated number here.
+    ``POST /query`` returns rows only, with no "rows changed" counter. Normal
+    queries therefore expose ``rowcount = -1`` like an unknown DB-API count;
+    batched writes use the same sentinel unless the caller has an explicit
+    count from ``RETURNING``.
     """
 
-    def __init__(self, conn: _D1Connection, rows: list[_D1Row]) -> None:
+    def __init__(
+        self, conn: _D1Connection, rows: list[_D1Row], rowcount: int = -1
+    ) -> None:
         self._conn = conn
         self.rows = rows
+        self.rowcount = rowcount
 
     def execute(self, sql: str, params: Any = ()) -> _D1Cursor:
         return self._conn.execute(sql, params)
+
+    def executemany(self, sql: str, seq_of_params: Any) -> _D1Cursor:
+        return self._conn.executemany(sql, seq_of_params)
 
     def fetchall(self) -> list[_D1Row]:
         return self.rows
@@ -231,20 +265,125 @@ class _D1Connection:
     believe it had undone a write it could not undo.
     """
 
-    def __init__(self, backend: D1Backend) -> None:
+    def __init__(self, backend: D1Backend, sub: str = "default") -> None:
         self._backend = backend
+        self.sub = sub
         self._closed = False
         self.last_error: Exception | None = None
+
+    def _scope_sql(self, sql: str, params: Any) -> tuple[str, list[Any]]:
+        """Bind this connection's tenant to one-table runtime statements.
+
+        Compound statements (FTS and graph queries) carry their predicates in
+        their own SQL because a generic predicate would be ambiguous across
+        joins and recursive CTEs. Inserts that already name ``sub`` are also
+        left untouched; this is how the graph layer makes its tenant boundary
+        explicit.
+        """
+        params_list = list(params)
+        tables = _SCOPED_TABLE_RE.findall(sql)
+        if not tables:
+            return sql, params_list
+
+        if re.search(r"(?:\b[A-Za-z_]\w*\.)?sub\b", sql, re.IGNORECASE):
+            return sql, params_list
+
+        if len(tables) != 1:
+            raise RuntimeError(
+                "D1 scoped SQL must name an explicit sub predicate for compound "
+                f"statements touching {', '.join(tables)}."
+            )
+
+        insert = _INSERT_COLUMNS_RE.search(sql)
+        if insert:
+            columns = insert.group("columns").strip()
+            scoped_sql = (
+                sql[: insert.start("columns")]
+                + "sub, "
+                + columns
+                + sql[insert.end("columns") :]
+            )
+            values = re.search(r"\bVALUES\s*\(", scoped_sql, re.IGNORECASE)
+            if values is None:
+                raise RuntimeError("D1 scoped INSERT must use bound VALUES.")
+            at = values.end()
+            scoped_sql = scoped_sql[:at] + "?, " + scoped_sql[at:]
+            return scoped_sql, [self.sub, *params_list]
+
+        predicate = "sub = ?"
+        where = re.search(r"\bWHERE\b", sql, re.IGNORECASE)
+        if where:
+            clause = _SQL_CLAUSE_RE.search(sql, where.end())
+            at = clause.start() if clause else len(sql)
+            scoped_sql = sql[:at].rstrip() + f" AND {predicate} " + sql[at:].lstrip()
+            before_clause = sql[:at].count("?")
+            return scoped_sql, (
+                params_list[:before_clause] + [self.sub] + params_list[before_clause:]
+            )
+        else:
+            clause = _SQL_CLAUSE_RE.search(sql)
+            at = clause.start() if clause else len(sql)
+            scoped_sql = sql[:at].rstrip() + f" WHERE {predicate} " + sql[at:].lstrip()
+        before_clause = sql[:at].count("?")
+        return scoped_sql, (
+            params_list[:before_clause] + [self.sub] + params_list[before_clause:]
+        )
 
     def execute(self, sql: str, params: Any = ()) -> _D1Cursor:
         if self._closed:
             raise RuntimeError("Cannot operate on a closed MemoryDBCfBackend.")
+        sql, params = self._scope_sql(sql, params)
         try:
             rows = self._backend.fetchall(sql, list(params))
         except Exception as exc:
             self.last_error = exc
             raise
         return _D1Cursor(self, [_D1Row(r) for r in rows])
+
+    def executemany(self, sql: str, seq_of_params: Any) -> _D1Cursor:
+        if self._closed:
+            raise RuntimeError("Cannot operate on a closed MemoryDBCfBackend.")
+        rows = [list(params) for params in seq_of_params]
+        if not rows:
+            return _D1Cursor(self, [], rowcount=0)
+        scoped_sql, first = self._scope_sql(sql, rows[0])
+        if len(first) != len(rows[0]):
+            scoped_rows = [self._scope_sql(sql, params)[1] for params in rows]
+        else:
+            scoped_rows = rows
+        values = re.search(r"\bVALUES\s*(\([^)]*\))", scoped_sql, re.IGNORECASE)
+        if values:
+            rows_per_statement = min(
+                len(scoped_rows),
+                int(getattr(self._backend, "max_rows_per_insert", 100)),
+            )
+            for start in range(0, len(scoped_rows), rows_per_statement):
+                batch = scoped_rows[start : start + rows_per_statement]
+                batched_sql = (
+                    scoped_sql[: values.start(1)]
+                    + ", ".join([values.group(1)] * len(batch))
+                    + scoped_sql[values.end(1) :]
+                )
+                flat = [value for params in batch for value in params]
+                try:
+                    self._backend.fetchall(batched_sql, flat)
+                except Exception as exc:
+                    self.last_error = exc
+                    raise
+            return _D1Cursor(self, [], rowcount=-1)
+
+        # The Worker intentionally exposes only D1's query endpoint. Running
+        # one scoped statement per parameter set keeps this fallback on that
+        # supported route instead of reaching for an unavailable batch API.
+        for params in rows:
+            self.execute(sql, params)
+        return _D1Cursor(self, [], rowcount=-1)
+
+    def fetchall(self, sql: str, params: Any = ()) -> list[_D1Row]:
+        return self.execute(sql, params).fetchall()
+
+    def fetchone(self, sql: str, params: Any = ()) -> _D1Row | None:
+        return self.execute(sql, params).fetchone()
 
     def cursor(self) -> _D1Cursor:
         return _D1Cursor(self, [])
@@ -384,7 +523,6 @@ class MemoryDBCfBackend:
     get = MemoryDB.get
     stats = MemoryDB.stats
     export_jsonl = MemoryDB.export_jsonl
-    list_archived = MemoryDB.list_archived
     check_duplicate = MemoryDB.check_duplicate
     _parse_import_data = MemoryDB._parse_import_data
     _process_import_batch = MemoryDB._process_import_batch
@@ -403,6 +541,7 @@ class MemoryDBCfBackend:
         recency_half_life_days: float = 7.0,
         embedding_model: str = "",
         reindex_on_model_change: bool = False,
+        sub: str = "default",
     ) -> None:
         """Open the D1-backed store.
 
@@ -427,8 +566,8 @@ class MemoryDBCfBackend:
         Raises:
             ValueError: On an out-of-range ``embedding_dims``, or when
                 ``vectors`` is supplied for a store declared text-only.
-            RuntimeError: When the D1 database has not had
-                ``migrations/0001_init.sql`` applied, or when vectors are
+            RuntimeError: When the D1 database has not had the migration chain
+                (including ``0002_per_sub_isolation.sql``) applied, or when vectors are
                 requested without ``MCP_VECTORIZE_IDX``.
             EmbeddingModelMismatch: Same contract as :class:`MemoryDB`.
         """
@@ -446,9 +585,12 @@ class MemoryDBCfBackend:
                 "would attach a Vectorize index the store then refuses to write "
                 "to, so it is rejected rather than quietly ignored."
             )
+        if not isinstance(sub, str) or not sub.strip():
+            raise ValueError("sub must be a non-empty string")
 
         self._backend = backend if backend is not None else d1_backend_from_env()
-        self._conn = _D1Connection(self._backend)
+        self.sub = sub
+        self._conn = _D1Connection(self._backend, sub=sub)
         self._db_path = f"cf-d1:{self._backend.base_url}"
         self._embedding_dims = embedding_dims
         self._embedding_model = embedding_model
@@ -468,6 +610,19 @@ class MemoryDBCfBackend:
         self._require_schema()
         self._guard_embedding_identity()
 
+    def clone_for_sub(self, sub: str) -> MemoryDBCfBackend:
+        """Return a request-scoped view sharing transport clients, not SQL scope."""
+        if not isinstance(sub, str) or not sub.strip():
+            raise ValueError("sub must be a non-empty string")
+        if self._conn._closed:
+            raise RuntimeError("Cannot clone a closed MemoryDBCfBackend.")
+        clone = object.__new__(type(self))
+        clone.__dict__ = self.__dict__.copy()
+        clone.sub = sub
+        clone._conn = _D1Connection(self._backend, sub=sub)
+        clone.last_vector_cap = None
+        return clone
+
     def _require_schema(self) -> None:
         """Fail at open time when the D1 migration has not been applied.
 
@@ -475,7 +630,7 @@ class MemoryDBCfBackend:
         Worker, several calls away from the actual cause.
         """
         try:
-            rows = self._backend.fetchall(
+            rows = self._conn.fetchall(
                 "SELECT name FROM sqlite_master WHERE type = 'table'", []
             )
         except Exception as exc:
@@ -484,6 +639,7 @@ class MemoryDBCfBackend:
                 f"{self._backend.base_url}: {exc}"
             ) from exc
         present = {r["name"] for r in rows}
+        self._sync_state_supported = "sync_state" in present
         missing = [t for t in REQUIRED_TABLES if t not in present]
         if missing:
             raise RuntimeError(
@@ -491,6 +647,42 @@ class MemoryDBCfBackend:
                 f"{', '.join(missing)}. Apply the schema first: "
                 "`wrangler d1 migrations apply mnemo-memories`."
             )
+
+    def list_archived(self, limit: int = 20) -> list[dict]:
+        """List both archive stores without crossing the current tenant."""
+        if isinstance(limit, int):
+            limit = max(1, min(limit, 100))
+        rows = self._conn.fetchall(
+            """
+            SELECT id, content, category, tags, importance, archived_at
+            FROM (
+                SELECT id, content, category, tags, importance, archived_at
+                FROM memories
+                WHERE sub = ? AND archived_at IS NOT NULL
+                UNION ALL
+                SELECT id, content, category, tags, importance, archived_at
+                FROM archived_memories
+                WHERE sub = ?
+            )
+            ORDER BY archived_at DESC
+            LIMIT ?
+            """,
+            [self.sub, self.sub, limit],
+        )
+        merged = []
+        for row in rows:
+            tags_val = row[3]
+            merged.append(
+                {
+                    "id": row[0],
+                    "content": row[1][:200],
+                    "category": row[2],
+                    "tags": [] if tags_val == "[]" else json.loads(tags_val),
+                    "importance": row[4],
+                    "archived_at": row[5],
+                }
+            )
+        return merged
 
     @property
     def vec_enabled(self) -> bool:
@@ -526,7 +718,22 @@ class MemoryDBCfBackend:
     def _upsert_vector(self, memory_id: str, embedding: list[float]) -> None:
         """Write one vector, keyed by the memory id it belongs to."""
         vectors = self._require_vectors("_upsert_vector")
-        vectors.upsert([{"id": memory_id, "values": self._fit_dims(embedding)}])
+        vectors.upsert(
+            [
+                {
+                    "id": self._vectorize_id(memory_id),
+                    "values": self._fit_dims(embedding),
+                    "metadata": {"sub": self.sub},
+                }
+            ]
+        )
+
+    def _vectorize_id(self, memory_id: str) -> str:
+        return f"{self.sub}:{memory_id}"
+
+    def _logical_vector_id(self, vector_id: str) -> str | None:
+        prefix = f"{self.sub}:"
+        return vector_id[len(prefix) :] if vector_id.startswith(prefix) else None
 
     def _discard_vectors(self, ids: list[str], context: str) -> None:
         """Delete vectors whose rows are gone, without failing the row change.
@@ -543,7 +750,9 @@ class MemoryDBCfBackend:
         if self._vectors is None or not ids:
             return
         try:
-            _vectorize_delete_by_ids(self._vectors, ids)
+            _vectorize_delete_by_ids(
+                self._vectors, [self._vectorize_id(memory_id) for memory_id in ids]
+            )
         except Exception as exc:
             logger.error(
                 "[AUDIT] {} closed row(s) {} in D1 but could not delete their "
@@ -576,8 +785,8 @@ class MemoryDBCfBackend:
                 "REINDEX_ON_MODEL_CHANGE cannot be honoured: no Vectorize index "
                 f"is attached to this store. {_NO_VECTOR_INDEX}"
             )
-        rows = self._backend.fetchall("SELECT id FROM memories", [])
-        ids = [r["id"] for r in rows]
+        rows = self._conn.fetchall("SELECT id FROM memories", [])
+        ids = [self._vectorize_id(r["id"]) for r in rows]
         _vectorize_delete_by_ids(vectors, ids)
         logger.warning(
             "[AUDIT] reindex dropped {} vector(s) from the Vectorize index; they "
@@ -597,18 +806,103 @@ class MemoryDBCfBackend:
         if mode != "replace":
             return
         if self._vectors is not None:
-            rows = self._backend.fetchall("SELECT id FROM memories", [])
-            _vectorize_delete_by_ids(self._vectors, [r["id"] for r in rows])
-        self._backend.execute("DELETE FROM memories", [])
+            rows = self._conn.fetchall("SELECT id FROM memories", [])
+            _vectorize_delete_by_ids(
+                self._vectors, [self._vectorize_id(r["id"]) for r in rows]
+            )
+        self._conn.execute("DELETE FROM memories", [])
 
     # -- Search ------------------------------------------------------------
 
-    def _search_fts(self, *args, **kwargs) -> dict[str, dict]:
-        """Borrowed FTS search, with swallowed transport errors re-raised."""
+    def _search_fts(
+        self,
+        query: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 5,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
+    ) -> dict[str, dict]:
+        """Run FTS against the current tenant, preserving duplicate logical ids."""
         self._conn.clear_error()
-        # cast: the borrow is structural -- the body only reaches for
-        # ``self._conn`` and the filter helpers, both of which exist here.
-        results = MemoryDB._search_fts(cast(MemoryDB, self), *args, **kwargs)
+        results: dict[str, dict] = {}
+        fts_queries = _build_fts_queries(query)
+        if not fts_queries:
+            return results
+
+        filter_fragments: list[str] = []
+        filter_params: list[Any] = []
+        if category:
+            filter_fragments.append("AND m.category = ?")
+            filter_params.append(category)
+        if tags:
+            filter_fragments.append(
+                "AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS "
+                "(SELECT 1 FROM json_each(m.tags) WHERE value IN "
+                "(SELECT value FROM json_each(?)))"
+            )
+            filter_params.append(json.dumps(tags))
+
+        extra_sql, extra_params = self._build_filter_sql(
+            context_type=context_type,
+            since=since,
+            until=until,
+            min_importance=min_importance,
+            include_archived=include_archived,
+        )
+        if extra_sql:
+            filter_fragments.append(extra_sql)
+            filter_params.extend(extra_params)
+        filter_sql = " ".join(filter_fragments)
+
+        for fts_query in fts_queries:
+            query_params = [fts_query, self.sub] + filter_params + [limit * 3]
+            fts_sql = """
+                WITH best_tier AS (
+                    SELECT m.rowid AS memory_rowid,
+                           m.id,
+                           bm25(memories_fts, 0.0, 1.0, 0.0, 5.0) AS bm25_score
+                    FROM memories_fts f
+                    JOIN memories m ON f.rowid = m.rowid
+                    WHERE memories_fts MATCH ?
+                      AND m.sub = ? placeholder_filter_sql
+                    ORDER BY bm25_score
+                    LIMIT ?
+                )
+                SELECT m.*, b.bm25_score
+                FROM best_tier b
+                JOIN memories m ON m.rowid = b.memory_rowid
+                ORDER BY b.bm25_score
+            """.replace("placeholder_filter_sql", filter_sql)
+            try:
+                rows = self._conn.execute(fts_sql, query_params).fetchall()
+                if rows:
+                    for row in rows:
+                        mid = row["id"]
+                        results[mid] = {
+                            **dict(row),
+                            "fts_score": -row["bm25_score"],
+                            "vec_score": 0.0,
+                        }
+                    break
+            except Exception as exc:
+                logger.error(f"FTS search failed for tier '{fts_query}': {exc}")
+
+        fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
+        if fts_vals:
+            min_f = min(fts_vals)
+            max_f = max(fts_vals)
+            rng = max_f - min_f
+            for memory in results.values():
+                if rng > 0 and memory["fts_score"] > 0:
+                    memory["fts_score"] = (memory["fts_score"] - min_f) / rng
+                elif memory["fts_score"] > 0:
+                    memory["fts_score"] = 1.0
+
         self._conn.raise_if_error("FTS5 search")
         return results
 
@@ -636,10 +930,9 @@ class MemoryDBCfBackend:
         Second, every returned id is re-fetched from D1 under the caller's
         filters -- whose ``_build_filter_sql`` tail always begins ``AND
         m.valid_to IS NULL``. That is what keeps a superseded or soft-deleted row
-        out of the results even when its vector is still in the index, and it is
-        also why no metadata filter is sent to Vectorize: filtering there would
-        need metadata indexes declared at index-creation time in wrangler, and
-        would still not be authoritative about supersession, which only D1 knows.
+        out of the results even when its vector is still in the index. The shared
+        Vectorize index also receives the caller's tenant metadata filter, but
+        D1 remains authoritative for supersession and all other row predicates.
         The cost is real and one-directional -- a narrow ``category`` filter can
         leave few of the 50 candidates standing -- so it is stated here rather
         than presented as a filtered top-50.
@@ -666,10 +959,13 @@ class MemoryDBCfBackend:
                 VECTORIZE_MAX_TOP_K,
             )
 
-        matches = vectors.query(self._fit_dims(embedding), top_k)
+        matches = vectors.query(
+            self._fit_dims(embedding), top_k, metadata_filter={"sub": self.sub}
+        )
         scores: dict[str, float] = {}
         for match in matches:
-            mid = match.get("id")
+            vector_id = match.get("id")
+            mid = self._logical_vector_id(vector_id) if vector_id is not None else None
             if mid is None:
                 continue
             # Vectorize returns a similarity score, where sqlite-vec returns a
@@ -679,8 +975,8 @@ class MemoryDBCfBackend:
         if not scores:
             return {}
 
-        fragments = ["WHERE m.id IN (SELECT value FROM json_each(?))"]
-        params: list = [json.dumps(list(scores))]
+        fragments = ["WHERE m.sub = ? AND m.id IN (SELECT value FROM json_each(?))"]
+        params: list = [self.sub, json.dumps(list(scores))]
         if category:
             fragments.append("AND m.category = ?")
             params.append(category)
@@ -696,7 +992,7 @@ class MemoryDBCfBackend:
             fragments.append(extra_sql)
             params.extend(extra_params)
 
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "SELECT m.* FROM memories m " + " ".join(fragments), params
         )
         # Re-keyed by Vectorize's ranking, not by whatever order D1 returned the
@@ -833,7 +1129,7 @@ class MemoryDBCfBackend:
         now = _now_iso()
         new_id = uuid.uuid4().hex
 
-        old_row = self._backend.fetchone(
+        old_row = self._conn.fetchone(
             "UPDATE memories SET valid_to = ?, superseded_by = ? "
             "WHERE id = ? AND valid_to IS NULL RETURNING *",
             [now, new_id, memory_id],
@@ -869,13 +1165,13 @@ class MemoryDBCfBackend:
         placeholders = ", ".join("?" for _ in columns)
 
         try:
-            self._backend.execute(
+            self._conn.execute(
                 f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
                 [new_row[c] for c in columns],
             )
         except Exception:
             try:
-                self._backend.execute(
+                self._conn.execute(
                     "UPDATE memories SET valid_to = NULL, superseded_by = NULL "
                     "WHERE id = ? AND superseded_by = ?",
                     [memory_id, new_id],
@@ -910,7 +1206,7 @@ class MemoryDBCfBackend:
 
     def delete(self, memory_id: str) -> bool:
         """Soft-close a memory and drop its vector. See :meth:`MemoryDB.delete`."""
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL "
             "RETURNING id",
             [_now_iso(), memory_id],
@@ -924,7 +1220,7 @@ class MemoryDBCfBackend:
     def update_importance(self, memory_id: str, importance: float) -> bool:
         """Update the importance score. See :meth:`MemoryDB.update_importance`."""
         importance = max(0.0, min(1.0, importance))
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "UPDATE memories SET importance = ? WHERE id = ? RETURNING id",
             [importance, memory_id],
         )
@@ -934,7 +1230,7 @@ class MemoryDBCfBackend:
         self, days: int = 90, importance_threshold: float = 0.3
     ) -> int:
         """Soft-archive old, low-importance rows. See :meth:`MemoryDB`."""
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "UPDATE memories SET archived_at = ? "
             "WHERE archived_at IS NULL "
             "  AND last_accessed < datetime('now', ?) "
@@ -962,7 +1258,7 @@ class MemoryDBCfBackend:
                 archive_after_days = 90
         archive_after_days = max(1, int(archive_after_days))
 
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "UPDATE memories SET archived_at = ? "
             "WHERE archived_at IS NULL "
             "AND ( MAX(0.0, julianday('now') - julianday(updated_at)) / ? ) "
@@ -981,7 +1277,7 @@ class MemoryDBCfBackend:
     def restore_memory(self, memory_id: str) -> bool:
         """Restore an archived memory. See :meth:`MemoryDB.restore_memory`."""
         now = _now_iso()
-        rows = self._backend.fetchall(
+        rows = self._conn.fetchall(
             "UPDATE memories SET archived_at = NULL, last_accessed = ? "
             "WHERE id = ? AND archived_at IS NOT NULL RETURNING id",
             [now, memory_id],
@@ -990,12 +1286,12 @@ class MemoryDBCfBackend:
             logger.info(f"[AUDIT] restore id={memory_id} mode=soft")
             return True
 
-        legacy = self._backend.fetchone(
+        legacy = self._conn.fetchone(
             "SELECT * FROM archived_memories WHERE id = ?", [memory_id]
         )
         if not legacy:
             return False
-        self._backend.execute(
+        self._conn.execute(
             "INSERT OR REPLACE INTO memories "
             "(id, content, category, tags, source, importance, "
             " created_at, updated_at, access_count, last_accessed) "
@@ -1013,7 +1309,7 @@ class MemoryDBCfBackend:
                 now,
             ],
         )
-        self._backend.execute("DELETE FROM archived_memories WHERE id = ?", [memory_id])
+        self._conn.execute("DELETE FROM archived_memories WHERE id = ?", [memory_id])
         logger.info(f"[AUDIT] restore id={memory_id} mode=legacy")
         return True
 
@@ -1030,17 +1326,16 @@ class MemoryDBCfBackend:
             return 0, 0
         op = "REPLACE" if mode == "replace" else "IGNORE"
         column_list = ", ".join(_IMPORT_COLUMNS)
-        row_placeholder = "(" + ", ".join("?" for _ in _IMPORT_COLUMNS) + ")"
 
         imported = 0
         for i in range(0, len(to_insert), _IMPORT_ROWS_PER_STATEMENT):
             chunk = to_insert[i : i + _IMPORT_ROWS_PER_STATEMENT]
-            values_sql = ", ".join([row_placeholder] * len(chunk))
-            flat = [value for row in chunk for value in row]
-            rows = self._backend.fetchall(
-                f"INSERT OR {op} INTO memories ({column_list}) "
+            scoped_placeholder = "(?, " + ", ".join("?" for _ in _IMPORT_COLUMNS) + ")"
+            values_sql = ", ".join([scoped_placeholder] * len(chunk))
+            rows = self._conn.fetchall(
+                f"INSERT OR {op} INTO memories (sub, {column_list}) "
                 f"VALUES {values_sql} RETURNING id",
-                flat,
+                [value for row in chunk for value in (self.sub, *row)],
             )
             imported += len(rows)
 
@@ -1066,14 +1361,15 @@ class MemoryDBCfBackend:
             logger.info(f"[AUDIT] import count={imported} mode={mode}")
         return {"imported": imported, "skipped": skipped, "rejected": rejected}
 
-    # -- Not available on this backend -------------------------------------
-
     def get_sync_state(self, backend: str) -> dict | None:
-        raise NotImplementedError(
-            "sync_state is not part of migrations/0001_init.sql, so the D1 "
-            "database has no delta-sync cursor table. Add it in a follow-up "
-            "migration before running the sync pipeline against cf-d1."
+        if not self._sync_state_supported:
+            return None
+        row = self._conn.fetchone(
+            "SELECT backend, last_sync_at, last_commit_sha, upload_cursor "
+            "FROM sync_state WHERE sub = ? AND backend = ?",
+            [self.sub, backend],
         )
+        return dict(row) if row else None
 
     def upsert_sync_state(
         self,
@@ -1082,10 +1378,17 @@ class MemoryDBCfBackend:
         last_commit_sha: str | None = None,
         upload_cursor: int | None = None,
     ) -> None:
-        raise NotImplementedError(
-            "sync_state is not part of migrations/0001_init.sql, so the D1 "
-            "database has no delta-sync cursor table. Add it in a follow-up "
-            "migration before running the sync pipeline against cf-d1."
+        if not self._sync_state_supported:
+            return
+        self._conn.execute(
+            "INSERT INTO sync_state "
+            "(sub, backend, last_sync_at, last_commit_sha, upload_cursor) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(sub, backend) DO UPDATE SET "
+            "last_sync_at = COALESCE(excluded.last_sync_at, sync_state.last_sync_at), "
+            "last_commit_sha = COALESCE(excluded.last_commit_sha, sync_state.last_commit_sha), "
+            "upload_cursor = COALESCE(excluded.upload_cursor, sync_state.upload_cursor)",
+            [self.sub, backend, last_sync_at, last_commit_sha, upload_cursor],
         )
 
     def close(self) -> None:

@@ -25,7 +25,7 @@ from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.db_cf import open_memory_db
+from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
 # to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
@@ -368,9 +368,20 @@ mcp._mcp_server.version = __version__
 
 
 def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
-    """Extract db, model, dims from context."""
+    """Extract request-scoped db, model, and dimensions from context."""
     lc = ctx.request_context.lifespan_context
-    return lc["db"], lc["embedding_model"], lc["embedding_dims"]
+    db = lc["db"]
+    if isinstance(db, MemoryDBCfBackend):
+        from mnemo_mcp.credential_state import get_current_sub
+
+        sub = get_current_sub()
+        if sub is None:
+            raise RuntimeError(
+                "JWT sub is required for Cloudflare D1 requests; refusing an "
+                "unscoped backend."
+            )
+        db = db.clone_for_sub(sub)
+    return db, lc["embedding_model"], lc["embedding_dims"]
 
 
 def _json(obj: object) -> str:

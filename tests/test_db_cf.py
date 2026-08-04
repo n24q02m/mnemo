@@ -13,7 +13,8 @@ How the D1 side is exercised
 implements that transport by transcribing ``src/worker.ts``'s ``d1Outbound``
 handler -- ``POST /query`` runs ``prepare(sql).bind(...params).all()`` and
 answers ``Response.json({ results })``; every other route 404s -- against a real
-SQLite database that has ``migrations/0001_init.sql`` applied.
+SQLite database that has ``migrations/0001_init.sql`` and the additive
+``migrations/0002_per_sub_isolation.sql`` applied.
 
 What that reproduces faithfully: the SQL text and bound parameters actually sent,
 the JSON request/response envelope, rows as JSON objects, one statement per
@@ -60,6 +61,7 @@ from mnemo_mcp.exceptions import EmbeddingModelMismatch
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
+_MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 
@@ -109,6 +111,7 @@ def d1_conn(tmp_path) -> sqlite3.Connection:
         tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
     )
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
     return conn
 
 
@@ -597,22 +600,26 @@ class TestVectorPathIsLoud:
 
 
 class TestUnavailableSurface:
-    """Methods this backend cannot serve raise and say what is missing."""
+    """Exercise the deliberately unavailable D1 transaction surface."""
 
-    def test_get_sync_state_raises(self, cf_db):
-        with pytest.raises(NotImplementedError, match="sync_state"):
-            cf_db.get_sync_state("gdrive")
+    def test_get_sync_state_reads_the_scoped_row(self, cf_db):
+        assert cf_db.get_sync_state("gdrive") is None
 
-    def test_upsert_sync_state_raises(self, cf_db):
-        with pytest.raises(NotImplementedError, match="sync_state"):
-            cf_db.upsert_sync_state("gdrive", last_sync_at=1.0)
+    def test_upsert_sync_state_writes_the_scoped_row(self, cf_db):
+        cf_db.upsert_sync_state("gdrive", last_sync_at=1.0)
+        assert cf_db.get_sync_state("gdrive") == {
+            "backend": "gdrive",
+            "last_sync_at": 1.0,
+            "last_commit_sha": None,
+            "upload_cursor": None,
+        }
 
-    def test_sync_state_is_genuinely_absent_from_the_d1_schema(self, d1_conn):
-        """The NotImplementedError above states a fact; check the fact."""
+    def test_sync_state_is_present_in_the_d1_schema(self, d1_conn):
+        """The tenant-scoped migration owns the sync-state table."""
         names = {
             r[0] for r in d1_conn.execute("SELECT name FROM sqlite_master").fetchall()
         }
-        assert "sync_state" not in names
+        assert "sync_state" in names
         assert "memories" in names
 
     def test_rollback_is_not_silently_a_noop(self, cf_db):
@@ -784,9 +791,14 @@ class TestStatusNamesTheStoreItRead:
 
     async def test_cf_d1_status_names_d1_not_a_sqlite_file(self, cf_db):
         from mnemo_mcp.config import settings
+        from mnemo_mcp.credential_state import set_current_sub
         from mnemo_mcp.server import _handle_config_status
 
-        status = await _handle_config_status(self._ctx(cf_db))
+        set_current_sub("status-test")
+        try:
+            status = await _handle_config_status(self._ctx(cf_db))
+        finally:
+            set_current_sub(None)
         assert status["database"]["path"] == "cf-d1:http://d1.internal"
         # The regression this pins: the SQLite path from settings, which a D1
         # deployment never opens.
@@ -798,11 +810,20 @@ class TestStatusNamesTheStoreItRead:
         ``memory_stats`` and ``config status`` read the same store in the same
         process, so they may not name two different ones.
         """
+        from mnemo_mcp.credential_state import set_current_sub
+        from mnemo_mcp.db_cf import MemoryDBCfBackend
         from mnemo_mcp.server import _handle_config_status, _handle_stats
 
-        ctx = self._ctx(either_db)
-        status = await _handle_config_status(ctx)
-        stats = await _handle_stats(ctx)
+        is_cf = isinstance(either_db, MemoryDBCfBackend)
+        if is_cf:
+            set_current_sub("status-test")
+        try:
+            ctx = self._ctx(either_db)
+            status = await _handle_config_status(ctx)
+            stats = await _handle_stats(ctx)
+        finally:
+            if is_cf:
+                set_current_sub(None)
         assert status["database"]["path"] == stats["db_path"]
         assert status["database"]["total_memories"] == stats["total_memories"]
 
