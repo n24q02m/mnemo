@@ -2,6 +2,38 @@
 
 <!-- version list -->
 
+## v2.8.0-beta.2 (2026-08-04)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.22.0
+  ([`2c0347b`](https://github.com/n24q02m/mnemo-mcp/commit/2c0347bd735f3bd7f762ad3bc62ba418c3804973))
+
+- Isolate Cloudflare memory state per subject
+  ([`d802884`](https://github.com/n24q02m/mnemo-mcp/commit/d802884d1e84b769b48260b1fc1e17f9b7203c6f))
+
+- Name the store the startup log counted, not the SQLite path
+  ([#1057](https://github.com/n24q02m/mnemo-mcp/pull/1057),
+  [`568d77f`](https://github.com/n24q02m/mnemo-mcp/commit/568d77f46fa206ee6e53f23f0eb0dc08a28ab254))
+
+- Report the store config status actually read, not the SQLite path
+  ([#1055](https://github.com/n24q02m/mnemo-mcp/pull/1055),
+  [`025afce`](https://github.com/n24q02m/mnemo-mcp/commit/025afce8af7a3e99ff93eeb2c6a196b89ce48302))
+
+- **deps**: Lock file maintenance ([#1063](https://github.com/n24q02m/mnemo-mcp/pull/1063),
+  [`ebe2d70`](https://github.com/n24q02m/mnemo-mcp/commit/ebe2d7049e67c82b9a6186f26ce343efacf76e90))
+
+- **deps**: Lock file maintenance ([#1058](https://github.com/n24q02m/mnemo-mcp/pull/1058),
+  [`b451f29`](https://github.com/n24q02m/mnemo-mcp/commit/b451f29da978f443f14487983d9f11476bf7d793))
+
+- **deps**: Lock file maintenance ([#1056](https://github.com/n24q02m/mnemo-mcp/pull/1056),
+  [`22ae202`](https://github.com/n24q02m/mnemo-mcp/commit/22ae202ece45dd4998eaf709183eb7aa2ea8a7e6))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260727.1
+  ([#1062](https://github.com/n24q02m/mnemo-mcp/pull/1062),
+  [`d0ee7a5`](https://github.com/n24q02m/mnemo-mcp/commit/d0ee7a54098e60140155bbefd1873d268bef87e6))
+
+
 ## v2.8.0-beta.1 (2026-08-02)
 
 ### Bug Fixes
