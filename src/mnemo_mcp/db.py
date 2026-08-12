@@ -620,6 +620,59 @@ class MemoryDB:
         """Whether vector search is available."""
         return self._vec_enabled
 
+    def rows_without_vectors(
+        self,
+        limit: int,
+        *,
+        exclude_ids: set[str] | None = None,
+    ) -> list[dict]:
+        """Return memory rows that do not yet have a stored vector.
+
+        ``exclude_ids`` is used by bounded backfill runs to make progress past
+        rows that cannot be embedded (for example, empty content) without
+        changing the public backfill interface used by lightweight adapters.
+        """
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        if not self._vec_enabled:
+            raise RuntimeError("vector storage is not enabled for this database")
+
+        excluded = sorted({str(memory_id) for memory_id in (exclude_ids or set())})
+        where = "v.id IS NULL"
+        params: list[object] = []
+        if excluded:
+            placeholders = ", ".join("?" for _ in excluded)
+            where += f" AND m.id NOT IN ({placeholders})"
+            params.extend(excluded)
+
+        params.append(limit)
+        rows = self._conn.execute(
+            f"""
+            SELECT m.id, m.content
+            FROM memories AS m
+            LEFT JOIN memories_vec AS v ON v.id = m.id
+            WHERE m.valid_to IS NULL AND {where}
+            ORDER BY m.created_at ASC, m.id ASC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def write_vector(self, memory_id: str, vector: list[float]) -> None:
+        """Persist or replace one memory vector for an active vector store."""
+        if not self._vec_enabled:
+            raise RuntimeError("vector storage is not enabled for this database")
+        if not self.get(memory_id):
+            raise KeyError(f"memory not found: {memory_id}")
+
+        self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
+        self._conn.execute(
+            "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+            (memory_id, _serialize_f32(vector, self._embedding_dims)),
+        )
+        self._conn.commit()
+
     def add(
         self,
         content: str,

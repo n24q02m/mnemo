@@ -62,6 +62,7 @@ from mnemo_mcp.exceptions import EmbeddingModelMismatch
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
+_MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 
@@ -112,6 +113,7 @@ def d1_conn(tmp_path) -> sqlite3.Connection:
     )
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
     return conn
 
 

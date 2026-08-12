@@ -46,6 +46,37 @@ def test_store_and_read_for_sub_round_trip(tmp_path, monkeypatch):
     assert _read_for_sub("bob") == {"JINA_AI_API_KEY": "key_b"}
 
 
+def test_multi_user_cf_storage_uses_per_plugin_sub_backend(tmp_path, monkeypatch):
+    """Cloud storage must keep the per-sub credential blob off local disk."""
+    from mcp_core.storage.backends import InMemoryBackend
+
+    backend = InMemoryBackend()
+    factory_calls = []
+
+    def backend_factory():
+        factory_calls.append(True)
+        return backend
+
+    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example.com")
+    monkeypatch.setenv("MCP_STORAGE_BACKEND", "cf-kv")
+    monkeypatch.setenv("CREDENTIAL_SECRET", "test-master-secret")
+    monkeypatch.setattr("mnemo_mcp.credential_state.backend_from_env", backend_factory)
+    monkeypatch.setattr(
+        "mnemo_mcp.credential_state._trigger_gdrive_flow",
+        lambda **kwargs: None,
+    )
+
+    from mnemo_mcp.credential_state import save_credentials
+
+    assert save_credentials({"JINA_AI_API_KEY": "key_a"}, {"sub": "alice"}) is None
+
+    assert backend.get("mnemo/subs/alice/config") is not None
+    assert _read_for_sub("alice") == {"JINA_AI_API_KEY": "key_a"}
+    assert len(factory_calls) == 2
+    assert not list(tmp_path.rglob("config.json"))
+
+
 def test_read_for_sub_missing_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
 

@@ -29,7 +29,7 @@
   "d1_databases": [
     { "binding": "D1", "database_name": "mnemo-memories", "database_id": "<mnemo-d1-database-id>", "migrations_dir": "migrations" }
   ],
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors" }],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors-1536" }],
   // Non-secret container config (forwarded into the container by MnemoContainer.envVars).
   // Secrets via `wrangler secret put`: CREDENTIAL_SECRET, JINA_AI_API_KEY,
   // GOOGLE_VERTEX_EXPRESS_API_KEY, MCP_RELAY_PASSWORD, MCP_DCR_SERVER_SECRET.
@@ -42,11 +42,16 @@
     "MEMORY_DB_BACKEND": "cf-d1",
     "MCP_D1_BASE_URL": "http://d1.internal",
     "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
-    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors",
-    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
-    "LLM_MODELS": "openrouter/minimax/minimax-m3",
-    "EMBEDDING_DIMS": "768"
+    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors-1536",
+    // Mnemo data is authoritative in Cloudflare after cutover; keep the
+    // legacy Google Drive DB sync disabled on this deployment.
+    "SYNC_ENABLED": "false",
+    // The D1 store may contain vectors stamped by the pre-CF 768-width Jina
+    // deployment. Clear the stale Vectorize ledger and re-stamp on cutover;
+    // the next authenticated embed pass rebuilds vectors at the active width.
+    "REINDEX_ON_MODEL_CHANGE": "true"
+    // Model, endpoint, and provider key are selected per authenticated
+    // subject through the relay; keep no model/provider lock in Worker vars.
   },
   "routes": [{ "pattern": "<YOUR_WORKER_DOMAIN>", "custom_domain": true }],
   "observability": { "enabled": true }

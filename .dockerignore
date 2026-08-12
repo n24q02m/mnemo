@@ -9,8 +9,20 @@
 .ruff_cache
 .pytest_cache
 __pycache__
+.coverage
+cov_annotate
+.code-review-graph
+.wrangler
+.wrangler-dryrun
+.superpowers
+.claude
+.claude-plugin
+.jules
+.worktrees
 
 # Development
+.venv
+node_modules
 tests/
 temp/
 docs/
@@ -33,3 +45,8 @@ CONTRIBUTING.md
 SECURITY.md
 LICENSE
 CHANGELOG.md
+
+# Local state and databases
+*.db
+*.sqlite
+*.sqlite3

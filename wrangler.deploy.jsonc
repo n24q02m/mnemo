@@ -9,8 +9,8 @@
     {
       "name": "mnemo-mcp-worker",
       "class_name": "MnemoContainer",
-      "image": "registry.cloudflare.com/53feac446e497b886f384c9f8a58132b/mnemo-mcp:b-eb59e87",
-      "instance_type": "standard-1",
+      "image": "registry.cloudflare.com/53feac446e497b886f384c9f8a58132b/mnemo-mcp:b-57bc8ea",
+      "instance_type": "basic",
       "max_instances": 1
     }
   ],

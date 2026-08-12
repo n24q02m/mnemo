@@ -5,7 +5,8 @@ Turns the manual CF redeploy recipe into one repeatable command. Reads the
 gitignored ``wrangler.deploy.jsonc`` (real account/KV/D1/Vectorize IDs) for the
 container image name + account, builds the ``http`` target, pushes to the CF
 managed registry, deploys, waits for the container rollout to finish
-(STATE=ready) so you never verify against a half-rolled old image, then runs a
+(STATE=ready/active with a live instance) so you never verify against a
+degraded or half-rolled old image, then runs a
 **credential-free canary gate** and **auto-rolls-back** if it fails.
 
 Set CLOUDFLARE_API_TOKEN in the environment (any secret manager works), then run
@@ -69,6 +70,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 DEPLOY_CONFIG = "wrangler.deploy.jsonc"
 TEMPLATE_CONFIG = "wrangler.deploy.template.jsonc"
+DEFAULT_ROLLOUT_TIMEOUT_S = 1800
 _WRANGLER_TOKEN = "CLOUDFLARE_API_TOKEN"
 _SKRET_TOKEN = "CF_DEV_TOKEN"
 
@@ -207,31 +209,53 @@ def _set_image_tag(repo: Path, full_ref: str) -> None:
     path.write_text(new, encoding="utf-8")
 
 
-def _wait_ready(worker: str, *, dry: bool, timeout_s: int = 600) -> None:
-    """Poll `wrangler containers list` until the worker leaves provisioning."""
+def _wait_ready(
+    worker: str, *, dry: bool, timeout_s: int = DEFAULT_ROLLOUT_TIMEOUT_S
+) -> bool:
+    """Poll JSON container state until a healthy worker has a live instance."""
     if dry:
         print(f"  (dry-run) would poll containers list until {worker} STATE=ready")
-        return
+        return True
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        out = (
-            subprocess.run(
-                ["bunx", "wrangler", "containers", "list"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=_wrangler_env(),
-            ).stdout
-            or ""
+        result = subprocess.run(
+            ["bunx", "wrangler", "containers", "list", "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_wrangler_env(),
         )
-        line = next((ln for ln in out.splitlines() if worker in ln), "")
-        print(f"  [rollout] {line.strip() or '(no row yet)'}")
-        if line and "provisioning" not in line.lower():
-            print(f"  rollout complete: {worker} is no longer provisioning.")
-            return
+        try:
+            rows = json.loads(result.stdout or "")
+        except json.JSONDecodeError:
+            rows = []
+        if not isinstance(rows, list):
+            rows = []
+        row = next(
+            (
+                item
+                for item in rows
+                if isinstance(item, dict) and item.get("name") == worker
+            ),
+            None,
+        )
+        state = str((row or {}).get("state", "unknown")).lower()
+        try:
+            instances = int((row or {}).get("instances", 0) or 0)
+        except (TypeError, ValueError):
+            instances = 0
+        detail = f"state={state} instances={instances}" if row else "(no row yet)"
+        print(f"  [rollout] {worker}: {detail}")
+        if state in {"ready", "active"} and instances > 0:
+            print(f"  rollout complete: {worker} is healthy with a live instance.")
+            return True
         time.sleep(25)
-    print(f"  WARNING: {worker} still provisioning after {timeout_s}s — verify later.")
+    print(
+        f"  WARNING: {worker} has no healthy live instance after {timeout_s}s — "
+        "deployment is not verified."
+    )
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -390,6 +414,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the post-deploy canary gate (and its auto-rollback)",
     )
+    p.add_argument(
+        "--rollout-timeout",
+        type=int,
+        default=DEFAULT_ROLLOUT_TIMEOUT_S,
+        help=(
+            "seconds to wait for a healthy live container "
+            f"(default: {DEFAULT_ROLLOUT_TIMEOUT_S})"
+        ),
+    )
     args = p.parse_args(argv)
 
     repo = Path(__file__).resolve().parent.parent
@@ -408,11 +441,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Deploy {worker}: image {local} -> {full}")
     if not args.skip_build:
-        print("[1/4] docker build --target http")
+        print("[1/4] docker build --load --target http")
         _run(
             [
                 "docker",
                 "build",
+                "--load",
                 "--target",
                 "http",
                 "--build-arg",
@@ -441,8 +475,18 @@ def main(argv: list[str] | None = None) -> int:
         cwd=repo,
     )
 
-    print("Waiting for container rollout (avoid verifying a half-rolled old image)...")
-    _wait_ready(worker, dry=args.dry_run)
+    print("Waiting for a healthy container rollout...")
+    if not _wait_ready(worker, dry=args.dry_run, timeout_s=args.rollout_timeout):
+        print(f"FAILED: {worker} has no healthy live container instance.")
+        if prev_ref == full:
+            print(
+                "  The previous image ref equals the requested ref; "
+                "rollback is not safe to repeat."
+            )
+            return 1
+        _rollback(repo, worker, prev_ref, dry=args.dry_run)
+        print(f"FAILED: {worker} rollout did not become healthy; rolled back.")
+        return 1
 
     if args.no_canary:
         print(

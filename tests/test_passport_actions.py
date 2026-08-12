@@ -46,6 +46,7 @@ def _isolated_registry() -> Iterator[None]:
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
         "SYNC_PASSPHRASE",
+        "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",

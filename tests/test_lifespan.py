@@ -24,6 +24,11 @@ _MIGRATION_2 = (
     / "migrations"
     / "0002_per_sub_isolation.sql"
 )
+_MIGRATION_3 = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "migrations"
+    / "0003_vector_state.sql"
+)
 
 
 @pytest.fixture
@@ -144,6 +149,22 @@ async def test_lifespan_sync_enabled(mock_settings, mock_db, mock_embedder, mock
 
 
 @pytest.mark.asyncio
+async def test_lifespan_sync_disabled_skips_legacy_auto_sync(
+    mock_settings, mock_db, mock_embedder, mock_sync
+):
+    """A Cloudflare cutover must not initialize the legacy Google Drive loop."""
+    mock_settings.sync_enabled = False
+    start_sync, stop_sync = mock_sync
+
+    server = MagicMock()
+    async with lifespan(server):
+        pass
+
+    start_sync.assert_not_called()
+    stop_sync.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_lifespan_local_backend_explicit(
     mock_settings, mock_db, mock_embedder, mock_sync
 ):
@@ -175,6 +196,27 @@ async def test_lifespan_api_keys_logging(
 
     # setup_providers should be called once during lifespan
     mock_settings.setup_providers.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_continues_when_credential_resolution_fails(
+    mock_settings, mock_db, mock_embedder, mock_sync
+):
+    """A transient credential-state failure must not prevent server startup."""
+    with (
+        patch(
+            "mnemo_mcp.credential_state.resolve_credential_state",
+            side_effect=RuntimeError("credential probe failed"),
+        ) as resolve_state,
+        patch("mnemo_mcp.server.logger") as mock_logger,
+    ):
+        async with lifespan(MagicMock()):
+            pass
+
+    resolve_state.assert_called_once_with()
+    mock_logger.debug.assert_any_call(
+        "Credential resolution not available: credential probe failed"
+    )
 
 
 @pytest.mark.asyncio
@@ -274,6 +316,7 @@ class TestStartupLogNamesTheStoreItRead:
         )
         conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
         conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
+        conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
         monkeypatch.setenv("MEMORY_DB_BACKEND", "cf-d1")
         monkeypatch.setattr(
             "mnemo_mcp.db_cf.d1_backend_from_env",

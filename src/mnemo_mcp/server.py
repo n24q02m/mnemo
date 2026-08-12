@@ -31,10 +31,27 @@ from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
 # to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
 __version__ = _pkgver("mnemo-mcp")
 
-# Constant embedding dimensions for sqlite-vec.
-# All embeddings are truncated to this size so switching models never
-# breaks the vector table. Override via EMBEDDING_DIMS env var.
+# Constant embedding dimensions for sqlite-vec and the Cloudflare Vectorize
+# index. All embeddings are fitted to this size so switching models never
+# breaks the vector table. Override via EMBEDDING_DIMS env var when a backend
+# has an explicit dimension contract.
 _DEFAULT_EMBEDDING_DIMS = 768
+_DEFAULT_CF_EMBEDDING_DIMS = 1536
+
+
+def _default_embedding_dims() -> int:
+    """Return the storage width for the active backend.
+
+    Cohere ``embed-v4.0`` is the relay-managed CF deployment target and its
+    Vectorize index is 1536-dimensional. Keeping the CF default here means
+    removing deployment-level model/dimension locks does not silently revert
+    the D1 ledger and provider request to the old 768-width Jina contract.
+    SQLite/local deployments retain the historical 768 default.
+    """
+    if os.getenv("MEMORY_DB_BACKEND", "").strip().lower() == "cf-d1":
+        return _DEFAULT_CF_EMBEDDING_DIMS
+    return _DEFAULT_EMBEDDING_DIMS
+
 
 # --- Lifespan ---
 
@@ -140,7 +157,7 @@ async def _init_embedding_backend(
             native_dims = await asyncio.to_thread(backend.check_available)
             if native_dims > 0:
                 if embedding_dims == 0:
-                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                    embedding_dims = _default_embedding_dims()
                 logger.info(
                     f"Embedding: local {local_model} "
                     f"(native={native_dims}, stored={embedding_dims})"
@@ -161,7 +178,7 @@ async def _init_embedding_backend(
             native_dims = await asyncio.to_thread(backend.check_available)
             if native_dims > 0:
                 if embedding_dims == 0:
-                    embedding_dims = _DEFAULT_EMBEDDING_DIMS
+                    embedding_dims = _default_embedding_dims()
                 logger.info(
                     f"Embedding: {candidate} "
                     f"(native={native_dims}, stored={embedding_dims})"
@@ -258,7 +275,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     # 2. Resolve initial embedding dims (may be refined by background task)
     embedding_dims = settings.resolve_embedding_dims()
     if embedding_dims == 0:
-        embedding_dims = _DEFAULT_EMBEDDING_DIMS
+        embedding_dims = _default_embedding_dims()
 
     # 3. Initialize database (fast, no network)
     # Resolve the active embedding-model identity synchronously so the vector
@@ -296,24 +313,27 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     # Per the 2026-05-14 Test B design: operator picks ONE backend at deploy
     # time. SYNC_S3_BUCKET set -> S3 (Method 2/3 docker); otherwise -> GDrive
     # (Method 1 local-relay). See ``docs/passport.md``.
-    from mnemo_mcp.sync import resolve_active_backend
-
-    sync_mode = resolve_active_backend()
-    if sync_mode == "s3":
-        logger.info("Sync mode: s3 (S3 operator-config) — GDrive auto-init skipped")
+    if not settings.sync_enabled:
+        logger.info("Sync mode: disabled (legacy Google Drive sync is off)")
     else:
-        logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
-        # Legacy GDrive DB-file copy path (Phase 1) — kept for backward compat
-        # with existing GDrive users. Phase 2 passport bundles still flow
-        # through the scheduler regardless of this background task.
-        if settings.google_drive_client_id:
-            from mnemo_mcp.sync import start_auto_sync
+        from mnemo_mcp.sync import resolve_active_backend
 
-            start_auto_sync(db)
-            logger.info(
-                f"Sync: Google Drive/{settings.sync_folder} "
-                f"(interval={settings.sync_interval}s)"
-            )
+        sync_mode = resolve_active_backend()
+        if sync_mode == "s3":
+            logger.info("Sync mode: s3 (S3 operator-config) — GDrive auto-init skipped")
+        else:
+            logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
+            # Legacy GDrive DB-file copy path (Phase 1) — kept for backward
+            # compat with existing GDrive users. Phase 2 passport bundles still
+            # flow through the scheduler regardless of this background task.
+            if settings.google_drive_client_id:
+                from mnemo_mcp.sync import start_auto_sync
+
+                start_auto_sync(db)
+                logger.info(
+                    f"Sync: Google Drive/{settings.sync_folder} "
+                    f"(interval={settings.sync_interval}s)"
+                )
 
     # Shared context -- embedding_model starts as None (not ready yet).
     # Background task updates it in-place once the backend is validated.
@@ -372,7 +392,7 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
     lc = ctx.request_context.lifespan_context
     db = lc["db"]
     if isinstance(db, MemoryDBCfBackend):
-        from mnemo_mcp.credential_state import get_current_sub
+        from mnemo_mcp.credential_state import get_current_sub, model_for_task
 
         sub = get_current_sub()
         if sub is None:
@@ -380,8 +400,116 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
                 "JWT sub is required for Cloudflare D1 requests; refusing an "
                 "unscoped backend."
             )
-        db = db.clone_for_sub(sub)
+        request_model = model_for_task("embedding") or lc.get("embedding_model")
+        db = db.clone_for_sub(sub, embedding_model=request_model)
     return db, lc["embedding_model"], lc["embedding_dims"]
+
+
+def _request_backend_cache(ctx: Context | None, name: str) -> dict:
+    """Return a per-lifespan cache for request-scoped cloud backends."""
+    if ctx is None:
+        return {}
+    lc = ctx.request_context.lifespan_context
+    return lc.setdefault(name, {})
+
+
+def _backend_cache_key(
+    task: str,
+    model: str,
+    api_base: str | None,
+    subject: str,
+) -> tuple[str, str, str | None, str]:
+    """Build a cache key from non-secret request configuration."""
+    return task, model, api_base, subject
+
+
+def _get_request_embedding(
+    ctx: Context | None,
+    global_model: str | None,
+    _global_dims: int,
+):
+    """Resolve the embedding backend for the current authenticated subject.
+
+    The startup singleton is valid for stdio and single-user HTTP. Public
+    multi-user HTTP must instead construct a cloud backend from the current
+    subject's persisted model, endpoint, and key; otherwise one subject would
+    silently use the host process configuration.
+    """
+    from mnemo_mcp.credential_state import (
+        api_base_for_task,
+        api_key_for_model,
+        get_current_sub,
+        model_for_task,
+    )
+
+    subject = get_current_sub()
+    if subject is None:
+        from mnemo_mcp.embedder import get_backend
+
+        return global_model, get_backend()
+
+    model = model_for_task("embedding")
+    if not model:
+        return None, None
+
+    api_key = api_key_for_model(model)
+    if not api_key:
+        logger.debug("Embedding skipped: no key for current subject's model")
+        return None, None
+
+    api_base = api_base_for_task("EMBEDDING_API_BASE")
+    cache = _request_backend_cache(ctx, "request_embedding_backends")
+    cache_key = _backend_cache_key("embedding", model, api_base, subject)
+    backend = cache.get(cache_key)
+    if backend is None or backend.api_key != api_key:
+        from mnemo_mcp.embedder import CloudEmbeddingBackend
+
+        backend = CloudEmbeddingBackend(
+            model=model,
+            api_base=api_base,
+            api_key=api_key,
+        )
+        cache[cache_key] = backend
+    return model, backend
+
+
+def _get_request_reranker(ctx: Context | None):
+    """Resolve the reranker without crossing authenticated-subject boundaries."""
+    from mnemo_mcp.credential_state import (
+        api_base_for_task,
+        api_key_for_model,
+        get_current_sub,
+        model_for_task,
+    )
+
+    subject = get_current_sub()
+    if subject is None:
+        from mnemo_mcp.reranker import get_reranker
+
+        return get_reranker()
+
+    model = model_for_task("rerank")
+    if not model:
+        return None
+    api_key = api_key_for_model(model)
+    if not api_key:
+        logger.debug("Reranking skipped: no key for current subject's model")
+        return None
+
+    api_base = api_base_for_task("RERANK_API_BASE")
+    cache = _request_backend_cache(ctx, "request_rerankers")
+    cache_key = _backend_cache_key("rerank", model, api_base, subject)
+    backend = cache.get(cache_key)
+    if backend is None or backend.api_key != api_key:
+        from mnemo_mcp.reranker import CloudReranker
+
+        backend = CloudReranker(
+            model=model,
+            api_base=api_base,
+            api_key=api_key,
+        )
+        cache[cache_key] = backend
+    return backend
 
 
 def _json(obj: object) -> str:
@@ -472,7 +600,12 @@ def _format_memory(mem: dict) -> dict:
 
 
 async def _embed(
-    text: str, model: str | None, dims: int, is_query: bool = False
+    text: str,
+    model: str | None,
+    dims: int,
+    is_query: bool = False,
+    *,
+    backend=None,
 ) -> list[float] | None:
     """Embed text if embedding is available.
 
@@ -488,7 +621,7 @@ async def _embed(
 
     from mnemo_mcp.embedder import Qwen3EmbedBackend, get_backend
 
-    backend = get_backend()
+    backend = backend or get_backend()
     if backend is None:
         # Should not happen if model is set (implies init succeeded), but safe guard.
         logger.warning(f"Embedding backend not initialized despite model={model}")
@@ -527,6 +660,9 @@ async def _handle_add(
     tags: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, embedding_backend = _get_request_embedding(
+        ctx, embedding_model, embedding_dims
+    )
 
     if not content:
         return {
@@ -548,7 +684,12 @@ async def _handle_add(
     except Exception as e:
         logger.warning(f"Dedup check failed (non-blocking): {e}")
 
-    embedding = await _embed(content, embedding_model, embedding_dims)
+    embedding = await _embed(
+        content,
+        embedding_model,
+        embedding_dims,
+        backend=embedding_backend,
+    )
     try:
         memory_id = await asyncio.to_thread(
             db.add,
@@ -668,19 +809,24 @@ async def _handle_search(
             "suggestion": "Provide the 'query' parameter to perform a search.",
         }
 
-    db, _, _ = _get_ctx(ctx)
-
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
-    embedding = await _embed(query, embedding_model, embedding_dims, is_query=True)
+    embedding_model, embedding_backend = _get_request_embedding(
+        ctx, embedding_model, embedding_dims
+    )
+    embedding = await _embed(
+        query,
+        embedding_model,
+        embedding_dims,
+        is_query=True,
+        backend=embedding_backend,
+    )
 
     # Spec section 4.2: rerank operates on a wider candidate pool
     # (top-50 -> top-N) so we ask db.search for ``max(50, limit*5)`` rows
     # when a reranker is active and otherwise stay at the LLM-requested limit.
-    from mnemo_mcp.reranker import get_reranker
-
-    reranker = get_reranker()
+    reranker = _get_request_reranker(ctx)
     rerank_pool = max(50, limit * 5) if reranker else None
 
     results = await asyncio.to_thread(
@@ -800,6 +946,9 @@ async def _handle_update(
 
     db, _, _ = _get_ctx(ctx)
     db, embedding_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, embedding_backend = _get_request_embedding(
+        ctx, embedding_model, embedding_dims
+    )
 
     if not memory_id:
         return {
@@ -810,7 +959,12 @@ async def _handle_update(
 
     embedding = None
     if content:
-        embedding = await _embed(content, embedding_model, embedding_dims)
+        embedding = await _embed(
+            content,
+            embedding_model,
+            embedding_dims,
+            backend=embedding_backend,
+        )
 
     try:
         new_id = await asyncio.to_thread(
@@ -919,6 +1073,7 @@ async def _handle_import(
 
 async def _handle_stats(ctx: Context | None) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, _ = _get_request_embedding(ctx, embedding_model, embedding_dims)
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
@@ -1003,6 +1158,9 @@ async def _handle_capture(
     reaching into module-level globals.
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, embedding_backend = _get_request_embedding(
+        ctx, embedding_model, embedding_dims
+    )
 
     if not text:
         return {
@@ -1014,7 +1172,12 @@ async def _handle_capture(
             "suggestion": ("Provide the 'text' parameter to capture a typed memory."),
         }
 
-    embedding = await _embed(text, embedding_model, embedding_dims)
+    embedding = await _embed(
+        text,
+        embedding_model,
+        embedding_dims,
+        backend=embedding_backend,
+    )
 
     from mnemo_mcp.capture import CONTEXT_TYPES
     from mnemo_mcp.capture import capture as _capture
@@ -1750,7 +1913,8 @@ async def memory(
 
 @mcp.tool(
     description=(
-        "Server config, sync, and setup. Actions: status|sync|set|warmup|setup_sync.\n"
+        "Server config, sync, setup, and bounded vector backfill. Actions: "
+        "status|sync|set|warmup|setup_sync|backfill_embeddings.\n"
         "\n"
         "ACTION GUIDE — when to use each:\n"
         "- status: Show current configuration, setup status, and database stats.\n"
@@ -1759,6 +1923,8 @@ async def memory(
         "  Valid keys: 'sync_enabled' (true/false), 'sync_interval' (int), 'log_level' (str).\n"
         "  Example: action='set', key='sync_enabled', value='true'\n"
         "- warmup: Pre-download embedding model (~570 MB) to avoid delays later.\n"
+        "- backfill_embeddings: Embed active rows missing a current Vectorize ledger "
+        "entry; optional batch_size is bounded to 100.\n"
         "- setup_sync: Authenticate Google Drive via Device Code OAuth flow."
     ),
     annotations=ToolAnnotations(
@@ -1773,6 +1939,7 @@ async def config(
     action: str,
     key: str | None = None,
     value: str | None = None,
+    batch_size: int | None = None,
     ctx: Context | None = None,
 ) -> dict[str, typing.Any]:
     """Server configuration, sync control, and setup.
@@ -1782,6 +1949,7 @@ async def config(
     - sync: Trigger manual Google Drive sync (requires sync_enabled + google_drive_client_id)
     - set: Update setting (key + value required)
     - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
+    - backfill_embeddings: Embed active rows missing a current Vectorize ledger entry
     - setup_sync: Authenticate Google Drive via Device Code OAuth flow
     """
     match action:
@@ -1805,6 +1973,8 @@ async def config(
             return await _handle_config_setup_reset()
         case "setup_complete":
             return await _handle_config_setup_complete(ctx)
+        case "backfill_embeddings":
+            return await _handle_config_backfill(ctx, batch_size)
         case "setup_relay":
             return await _handle_config_setup_relay()
         case "sync_now":
@@ -1817,6 +1987,7 @@ async def config(
             valid_actions = [
                 "export_passport",
                 "import_passport",
+                "backfill_embeddings",
                 "set",
                 "setup_complete",
                 "setup_relay",
@@ -1849,8 +2020,118 @@ async def config(
             return resp
 
 
+async def _handle_config_backfill(
+    ctx: Context | None,
+    batch_size: int | None,
+) -> dict[str, typing.Any]:
+    """Backfill active rows through the request-scoped store and embedder.
+
+    This is intentionally a bounded MCP operation rather than a laptop-side
+    D1 shortcut: the D1 and Vectorize transports are only available inside the
+    deployed container. The migration-0003 ledger makes each page idempotent,
+    while the authenticated subject selects the model, endpoint, and key.
+    """
+    if batch_size is None:
+        batch_size = 32
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or not 1 <= batch_size <= 100
+    ):
+        return {
+            "error": "batch_size must be an integer between 1 and 100",
+            "suggestion": "Use a bounded batch_size such as 32.",
+        }
+
+    db, global_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, backend = _get_request_embedding(ctx, global_model, embedding_dims)
+    if not embedding_model or backend is None:
+        return {
+            "status": "unavailable",
+            "error": "No embedding backend is configured for the current subject.",
+            "scanned": 0,
+            "embedded": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
+
+    scanned = embedded = skipped = failed = 0
+    seen_ids: set[str] = set()
+    while True:
+        try:
+            rows = await asyncio.to_thread(
+                db.rows_without_vectors,
+                batch_size,
+                exclude_ids=seen_ids,
+            )
+        except TypeError as exc:
+            if "exclude_ids" not in str(exc):
+                raise
+            rows = await asyncio.to_thread(db.rows_without_vectors, batch_size)
+
+        fresh_rows = [
+            dict(row) for row in rows if str(row.get("id", "")) not in seen_ids
+        ]
+        if not fresh_rows:
+            break
+        seen_ids.update(str(row.get("id", "")) for row in fresh_rows)
+        scanned += len(fresh_rows)
+
+        usable = [row for row in fresh_rows if str(row.get("content") or "").strip()]
+        skipped += len(fresh_rows) - len(usable)
+        if not usable:
+            if len(rows) < batch_size:
+                break
+            continue
+
+        try:
+            vectors = await backend.embed_texts(
+                [str(row["content"]) for row in usable],
+                embedding_dims,
+            )
+        except Exception as exc:
+            logger.warning(f"Embedding backfill batch failed: {exc}")
+            failed += len(usable)
+            break
+
+        if len(vectors) != len(usable):
+            failed += len(usable)
+            break
+
+        batch_failed = False
+        for row, vector in zip(usable, vectors, strict=True):
+            if not vector:
+                failed += 1
+                batch_failed = True
+                continue
+            try:
+                await asyncio.to_thread(db.write_vector, row["id"], list(vector))
+            except Exception as exc:
+                logger.warning(
+                    f"Embedding backfill write failed for {row['id']}: {exc}"
+                )
+                failed += 1
+                batch_failed = True
+                continue
+            embedded += 1
+
+        if batch_failed or len(rows) < batch_size:
+            break
+
+    return {
+        "status": "completed" if failed == 0 else "partial",
+        "model": embedding_model,
+        "dimensions": embedding_dims,
+        "scanned": scanned,
+        "embedded": embedded,
+        "skipped": skipped,
+        "failed": failed,
+    }
+
+
 async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
+    embedding_model, _ = _get_request_embedding(ctx, embedding_model, embedding_dims)
     s = await asyncio.to_thread(db.stats)
     return {
         "database": {
@@ -2007,6 +2288,9 @@ async def _handle_config_setup_status() -> dict[str, typing.Any]:
     _providers = list(dict.fromkeys(_env_keys + _store_keys))
     _state = get_state()
 
+    # CONFIGURED is a cached lifecycle marker, not proof that credentials are
+    # still loadable.  Derive it only from the live env/store snapshot so a
+    # stale process state cannot mask a cleared or unreadable configuration.
     if _providers:
         _derived_state = "configured"
     elif _state == CredentialState.LOCAL:
@@ -2533,6 +2817,11 @@ async def run_http(port: int = 0) -> None:
         setup_complete_hook=wire_gdrive_callbacks,
         auth_scope=_per_request_sub_scope if public_url else None,
         stable_sub_enabled=True,
+        # Cloudflare may route successive Streamable HTTP requests to
+        # different container instances. JSON request/response mode keeps the
+        # MCP session response in the request that owns it instead of relying
+        # on a long-lived SSE stream through the edge.
+        json_response=bool(public_url),
     )
 
 

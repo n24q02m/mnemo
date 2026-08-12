@@ -9,32 +9,34 @@ Flow (authorization_code + PKCE, DCR public client; ported verbatim from the
 mnemo/imagine/email CF harnesses):
   1. DCR register   -- POST /register (RFC 7591) -> client_id
   2. password-grant -- GET /authorize -> POST /login (Gate A relay password) -> form
-  3. save creds     -- POST /authorize?nonce=... {provider key} (retry-on-500 for the
-                       E.1 outbound-interception race). wet's _require_credentials()
-                       gates every tool on the per-sub vault holding >=1 provider key
-                       (JINA/GEMINI/OPENAI/COHERE); it does NOT read the server-side
-                       forwarded JINA from os.environ, so a real user must submit one.
-                       The harness submits whatever key skret /wet-mcp/prod injects.
+  3. save creds     -- POST /authorize?nonce=... {provider key + routing} (retry-on-500
+                       for the E.1 outbound-interception race). Mnemo's credential
+                       gate requires >=1 provider key in the per-sub vault; the
+                       harness also submits the model and endpoint routing explicitly.
   4. token          -- POST /token (code + verifier) -> bearer JWT
-  5. tool call      -- config(status) + unique add/search/delete round-trip over
-                       the deployed D1/Vectorize path.
+  5. tool call      -- config(status) + unique add/search/delete round-trip and a
+                       multi-candidate semantic/rerank probe over D1/Vectorize.
 
 Secrets from env: Gate A login password MCP_RELAY_PASSWORD (or RELAY_PW) from skret
-/oci-vm-prod/prod (infra-shared); >=1 provider key (JINA_AI_API_KEY preferred) from
-skret /wet-mcp/prod -- compose both namespaces.
+/oci-vm-prod/prod (infra-shared); default provider values come from the configured
+per-sub relay. With --cohere-cf-gateway, CF_AIG_BASE and CF_AIG_TOKEN come from the
+existing /n24q02m/dev namespace and are mapped to the approved Cohere gateway route.
 
 Run modes:
-  (default)            full flow: config(status) + search, assert real results.
+  (default)            full flow: config(status) + search and multi-candidate
+                       semantic/rerank probe, asserting real results.
   --save-only          configure one sub (submit provider key) + dump the token
                        (recreate-gate setup half of the state-survives-recreate test).
   --auth-only          replay the SAME token (same sub) and search again WITHOUT
                        re-saving (recreate-gate verify: the sub vault survived KV).
+  --backfill           configure the sub through the relay, then run the bounded
+                       embedding backfill over the deployed D1/Vectorize path.
   --two-sub-isolation  two distinct subs; sub B must not find sub A's unique marker
                        before B creates and searches its own marker.
 
 Examples:
   skret run -e prod --path=/oci-vm-prod/prod -- \
-    skret run -e prod --path=/wet-mcp/prod -- \
+    skret run -e prod --path=/mnemo-mcp/prod -- \
       python scripts/cf_full_flow.py
   ... -- python scripts/cf_full_flow.py --endpoint https://mnemo.n24q02m.com
   ... -- python scripts/cf_full_flow.py --save-only
@@ -64,23 +66,62 @@ DEFAULT_ENDPOINT = "https://mnemo.n24q02m.com"
 MARKER = "cf-canary-probe-mnemo"
 
 
+def _configure_cohere_cf_gateway() -> None:
+    """Configure the approved Cohere-through-CF-AI-Gateway BYOK route.
+
+    The deployed relay must receive the gateway token as ``COHERE_API_KEY`` so
+    LiteLLM sends it as the gateway ``Authorization`` credential.  The
+    gateway then selects Cohere from the explicit endpoint paths.  Clear
+    competing provider/model values first so a stale local or skret export
+    cannot silently route the probe to Jina or another provider.
+    """
+    base = os.environ.get("CF_AIG_BASE", "").strip().rstrip("/")
+    token = os.environ.get("CF_AIG_TOKEN", "").strip()
+    if not base or not token:
+        raise SystemExit(
+            "--cohere-cf-gateway requires non-empty CF_AIG_BASE and CF_AIG_TOKEN "
+            "from the existing skret namespace."
+        )
+
+    for env_name in (
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "COHERE_API_KEY",
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        os.environ.pop(env_name, None)
+
+    os.environ.update(
+        {
+            "COHERE_API_KEY": token,
+            "EMBEDDING_MODELS": "cohere/embed-v4.0",
+            "EMBEDDING_API_BASE": f"{base}/cohere/v2/embed",
+            "RERANK_MODELS": "cohere/rerank-v4.0-fast",
+            "RERANK_API_BASE": f"{base}/cohere",
+        }
+    )
+
+
 def _password() -> str:
     pw = os.environ.get("RELAY_PW") or os.environ.get("MCP_RELAY_PASSWORD")
     if not pw:
         raise SystemExit(
             "MCP_RELAY_PASSWORD (or RELAY_PW) is required for the password-grant "
             "login gate. It lives in skret /oci-vm-prod/prod (infra-shared), NOT "
-            "/wet-mcp/prod -- compose both namespaces."
+            "/mnemo-mcp/prod -- compose both namespaces."
         )
     return pw
 
 
 def _creds() -> dict[str, str]:
-    """Per-sub credential form payload. wet's `_require_credentials()` gates every
-    tool on the per-sub vault holding at least one provider key (JINA / GEMINI /
-    OPENAI / COHERE) -- it does NOT read the server-side forwarded JINA from
-    os.environ. So a real user must submit a key; the harness submits whichever
-    provider key skret /wet-mcp/prod injects (JINA preferred)."""
+    """Build the per-sub provider and model-routing form payload."""
     creds: dict[str, str] = {}
     for env_name in (
         "JINA_AI_API_KEY",
@@ -92,11 +133,22 @@ def _creds() -> dict[str, str]:
         v = os.environ.get(env_name)
         if v:
             creds[env_name] = v
+    for env_name in (
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        v = os.environ.get(env_name)
+        if v:
+            creds[env_name] = v
     if not creds:
         raise SystemExit(
             "No provider key in env (JINA_AI_API_KEY / GEMINI_API_KEY / "
-            "OPENAI_API_KEY / COHERE_API_KEY). skret /wet-mcp/prod injects them; "
-            "wet's per-sub gate requires at least one to authorize tool calls."
+            "OPENAI_API_KEY / COHERE_API_KEY). Provide the relay-managed per-sub "
+            "provider key through skret."
         )
     return creds
 
@@ -109,7 +161,7 @@ def get_token(endpoint: str, creds: dict[str, str], *, save_retries: int = 8) ->
     """Run the full OAuth flow, retrying on a transient 500 at the credential save
     step (CF Containers outbound-interception race on cold-started instances; E.1).
     Each retry restarts from DCR so the nonce is fresh. ``creds`` is the /authorize
-    form payload (EMPTY for wet: search/extract + embed are server-side)."""
+    form payload (provider and routing settings are explicit for Mnemo)."""
     import httpx  # lazy: keep --help importable without httpx installed
 
     last: Exception | None = None
@@ -292,6 +344,31 @@ def _assert_search_absent(txt: str | None, marker: str) -> None:
     print("ASSERT OK: sub B search did not return sub A marker.")
 
 
+def _assert_rerank_payload(txt: str | None, memory_ids: list[str]) -> None:
+    """Require a multi-result search to use both embedding and reranking."""
+    payload = _tool_payload(txt, "search_memory(rerank)")
+    assert payload.get("semantic") is True, (
+        "multi-candidate search did not report semantic=true: "
+        f"{_json.dumps(payload, ensure_ascii=False)[:400]}"
+    )
+    assert payload.get("reranked") is True, (
+        "multi-candidate search did not report reranked=true: "
+        f"{_json.dumps(payload, ensure_ascii=False)[:400]}"
+    )
+    results = _search_results(txt)
+    result_ids = {result.get("id") or result.get("memory_id") for result in results}
+    missing = [memory_id for memory_id in memory_ids if memory_id not in result_ids]
+    assert not missing, (
+        "multi-candidate search omitted exact probe ids: "
+        f"{missing}; results={_json.dumps(results, ensure_ascii=False)[:400]}"
+    )
+    assert len(results) >= 2, "rerank probe returned fewer than two results"
+    print(
+        "ASSERT OK: multi-candidate search reported semantic=true and "
+        f"reranked=true for {len(results)} results."
+    )
+
+
 async def _session(endpoint: str, token: str):
     from mcp import ClientSession  # lazy: keep --help importable without mcp installed
     from mcp.client.streamable_http import streamablehttp_client
@@ -359,6 +436,46 @@ async def _run_search(
             await _delete_memory(s, memory_id)
 
 
+async def _run_rerank(s) -> None:
+    """Exercise semantic retrieval and reranking with three related memories."""
+    marker = _new_marker("rerank")
+    query = "enterprise multi-user team deployment backlog"
+    contents = (
+        f"{query} {marker}: tenant isolation and OAuth relay configuration.",
+        f"{query} {marker}: Cloudflare container cold-start and cost controls "
+        "for an MCP team.",
+        f"{query} {marker}: per-sub credentials, D1 and Vectorize retrieval "
+        "for an enterprise rollout.",
+    )
+    memory_ids: list[str] = []
+    try:
+        for index, content in enumerate(contents, start=1):
+            add_txt = await _call(
+                s,
+                f"ADD_RERANK_{index}",
+                "add_memory",
+                {"content": content},
+            )
+            add_payload = _tool_payload(add_txt, "add_memory(rerank)")
+            memory_id = _memory_id(add_payload, "add_memory(rerank)")
+            assert add_payload.get("status") in {"saved", "created"}, add_payload
+            memory_ids.append(memory_id)
+
+        search_txt = await _call(
+            s,
+            "SEARCH_RERANK",
+            "search_memory",
+            {
+                "query": query,
+                "limit": 8,
+            },
+        )
+        _assert_rerank_payload(search_txt, memory_ids)
+    finally:
+        for memory_id in reversed(memory_ids):
+            await _delete_memory(s, memory_id)
+
+
 def _token_file() -> Path:
     return Path(__file__).with_name(".wet_cf_token")
 
@@ -374,7 +491,31 @@ async def run_full(endpoint: str) -> None:
         await _call(s, "CONFIG_STATUS", "config", {"action": "status"})
         probe = await _run_search(s)
         _assert_search_resolved(probe.search_text, probe.marker, probe.memory_id)
+        await _run_rerank(s)
     print("FULL FLOW PASS.")
+
+
+async def run_backfill(endpoint: str, batch_size: int = 32) -> None:
+    """Run the deployed request-scoped embedding backfill through MCP."""
+    if not 1 <= batch_size <= 100:
+        raise SystemExit("--batch-size must be between 1 and 100")
+    token = get_token(endpoint, _creds())
+    print("TOKEN OK len=", len(token), "sub=", _sub_of(token))
+    transport, ClientSession = await _session(endpoint, token)
+    async with transport as (r, w, _), ClientSession(r, w) as s:
+        await s.initialize()
+        txt = await _call(
+            s,
+            "BACKFILL_EMBEDDINGS",
+            "config",
+            {"action": "backfill_embeddings", "batch_size": batch_size},
+            retries=5,
+            delay=2,
+        )
+    payload = _tool_payload(txt, "config(backfill_embeddings)")
+    assert payload.get("status") == "completed", payload
+    assert payload.get("failed") == 0, payload
+    print("BACKFILL PASS:", _json.dumps(payload, sort_keys=True))
 
 
 async def run_save_only(endpoint: str) -> None:
@@ -457,13 +598,21 @@ async def run_two_sub_isolation(endpoint: str) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="CF wet-mcp live OAuth full-flow self-test harness.",
+        description="CF mnemo-mcp live OAuth full-flow self-test harness.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--endpoint",
         default=DEFAULT_ENDPOINT,
-        help=f"Deployed wet endpoint (default: {DEFAULT_ENDPOINT})",
+        help=f"Deployed mnemo endpoint (default: {DEFAULT_ENDPOINT})",
+    )
+    p.add_argument(
+        "--cohere-cf-gateway",
+        action="store_true",
+        help=(
+            "Use the existing CF_AIG_TOKEN as Cohere BYOK through CF_AIG_BASE; "
+            "clears competing provider/model env values without logging secrets."
+        ),
     )
     mode = p.add_mutually_exclusive_group()
     mode.add_argument(
@@ -475,6 +624,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--auth-only",
         action="store_true",
         help="Replay the SAME token + search WITHOUT re-saving (recreate verify).",
+    )
+    mode.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Run the bounded request-scoped embedding backfill over deployed D1/Vectorize.",
+    )
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Backfill batch size (1-100; default: 32).",
     )
     mode.add_argument(
         "--two-sub-isolation",
@@ -489,10 +649,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cohere_cf_gateway:
+        _configure_cohere_cf_gateway()
     if args.save_only:
         asyncio.run(run_save_only(args.endpoint))
     elif args.auth_only:
         asyncio.run(run_auth_only(args.endpoint))
+    elif args.backfill:
+        asyncio.run(run_backfill(args.endpoint, args.batch_size))
     elif args.two_sub_isolation:
         asyncio.run(run_two_sub_isolation(args.endpoint))
     else:

@@ -247,3 +247,14 @@ def mock_ctx(tmp_db: MemoryDB):
         "embedding_dims": 0,
     }
     return ctx, tmp_db
+
+
+# --- added 2026-07-24: keep local test runs from hijacking the developer's browser.
+# credential_state/relay flows call mcp_core.try_open_browser(), which opens
+# http://127.0.0.1:<port> in the real browser. Newer mcp-core honours
+# MCP_NO_BROWSER but older installs do not, so patch the symbol too.
+@pytest.fixture(autouse=True)
+def _never_open_a_real_browser_local_guard(monkeypatch):
+    monkeypatch.setenv("MCP_NO_BROWSER", "1")
+    monkeypatch.setenv("SKRET_NO_BROWSER", "1")
+    monkeypatch.setattr("mcp_core.try_open_browser", lambda url: False, raising=False)

@@ -11,6 +11,7 @@ import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -170,21 +171,30 @@ class TestCloudEmbeddingBackend:
         monkeypatch.delenv("PUBLIC_URL", raising=False)
         monkeypatch.setattr(embedder, "PROBE_TIMEOUT", 1.0)
 
-        # litellm's first import in a process costs ~10s and would otherwise be
-        # charged to the measurement below.
-        import litellm  # noqa: F401
-
         with _stalled_endpoint() as api_base:
+
+            def _stalling_embedding(**kwargs):
+                address = urlsplit(kwargs["api_base"])
+                with socket.create_connection(
+                    (address.hostname, address.port), timeout=kwargs["timeout"]
+                ) as connection:
+                    connection.settimeout(kwargs["timeout"])
+                    connection.recv(1)
+
+            provider = MagicMock(side_effect=_stalling_embedding)
             backend = CloudEmbeddingBackend(
                 model="openai/text-embedding-3-small",
                 api_base=api_base,
                 api_key="key",
             )
             started = time.monotonic()
-            dims = backend.check_available()
+            with patch("mcp_core.llm.embedding", provider):
+                dims = backend.check_available()
             elapsed = time.monotonic() - started
 
         assert dims == 0
+        assert provider.call_args.kwargs["timeout"] == 1.0
+        assert provider.call_args.kwargs["num_retries"] == 0
         # Generous next to the 1.0s bound because the provider SDK retries the
         # attempt, and each retry gets its own timeout -- see the note on
         # PROBE_TIMEOUT. The point being pinned is the order of magnitude:

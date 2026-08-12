@@ -64,6 +64,7 @@ from mnemo_mcp.exceptions import EmbeddingModelMismatch
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
+_MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 # Test vectors are 8-wide for readability. `test_wire_carries_full_width_vector`
@@ -205,6 +206,7 @@ def fake_worker(tmp_path) -> FakeD1Worker:
     conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
     return FakeD1Worker(conn)
 
 
@@ -322,6 +324,30 @@ class TestVectorWiring:
         mid = cf_db.add("Python is a programming language", embedding=_unit(0))
         assert fake_vectorize.visible == {cf_db._vectorize_id(mid): _unit(0)}
 
+    def test_vector_ledger_closes_the_backfill_gap(self, cf_db, fake_vectorize):
+        """A successful remote write is the only thing that clears a backfill row."""
+        mid = cf_db.add("Python is a programming language")
+
+        assert [row["id"] for row in cf_db.rows_without_vectors(10)] == [mid]
+
+        cf_db.write_vector(mid, _unit(0))
+
+        assert cf_db.rows_without_vectors(10) == []
+        assert fake_vectorize.visible == {cf_db._vectorize_id(mid): _unit(0)}
+
+    def test_vector_ledger_reopens_after_model_or_width_drift(self, cf_db):
+        """The ledger is a version stamp, not a permanent "has vector" flag."""
+        mid = cf_db.add("Python is a programming language", embedding=_unit(0))
+        assert cf_db.rows_without_vectors(10) == []
+
+        cf_db._conn.execute(
+            "UPDATE memory_vectors SET embedding_model = ?, embedding_dims = ? "
+            "WHERE sub = ? AND memory_id = ?",
+            ["old-model", DIMS + 1, cf_db.sub, mid],
+        )
+
+        assert [row["id"] for row in cf_db.rows_without_vectors(10)] == [mid]
+
     def test_search_finds_a_memory_by_vector_alone(self, cf_db):
         """Text the FTS index cannot match; only the vector arm can answer.
 
@@ -366,6 +392,9 @@ class TestVectorWiring:
         with pytest.raises(RuntimeError, match="upsert failed"):
             cf_db.add("ordering check", embedding=_unit(0))
         assert [h["id"] for h in cf_db.search("ordering check")] != []
+        assert [row["content"] for row in cf_db.rows_without_vectors(10)] == [
+            "ordering check"
+        ]
 
     def test_wire_carries_full_width_vector(self, fake_worker, fake_vectorize):
         """768 is what the live store's ``store_meta`` records."""

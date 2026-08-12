@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -18,12 +19,83 @@ sys.modules[_HARNESS_SPEC.name] = _HARNESS
 _HARNESS_SPEC.loader.exec_module(_HARNESS)
 
 
+def test_configure_cohere_cf_gateway_uses_existing_gateway_token(monkeypatch):
+    for name in (
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "COHERE_API_KEY",
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        monkeypatch.setenv(name, "stale")
+    monkeypatch.setenv(
+        "CF_AIG_BASE",
+        "https://gateway.example/v1/account/llm-main/",
+    )
+    monkeypatch.setenv("CF_AIG_TOKEN", "gateway-token")
+
+    _HARNESS._configure_cohere_cf_gateway()
+
+    assert os.environ["COHERE_API_KEY"] == "gateway-token"
+    assert os.environ["EMBEDDING_MODELS"] == "cohere/embed-v4.0"
+    assert (
+        os.environ["EMBEDDING_API_BASE"]
+        == "https://gateway.example/v1/account/llm-main/cohere/v2/embed"
+    )
+    assert os.environ["RERANK_MODELS"] == "cohere/rerank-v4.0-fast"
+    assert (
+        os.environ["RERANK_API_BASE"]
+        == "https://gateway.example/v1/account/llm-main/cohere"
+    )
+    assert not os.environ.get("JINA_AI_API_KEY")
+
+
+def test_assert_rerank_payload_requires_semantic_and_reranked_flags():
+    payload = {
+        "semantic": True,
+        "reranked": True,
+        "count": 3,
+        "results": [
+            {"id": "memory-1"},
+            {"id": "memory-2"},
+            {"id": "memory-3"},
+        ],
+    }
+
+    _HARNESS._assert_rerank_payload(
+        json.dumps(payload),
+        ["memory-1", "memory-2", "memory-3"],
+    )
+
+    payload["reranked"] = False
+    with pytest.raises(AssertionError, match="reranked"):
+        _HARNESS._assert_rerank_payload(
+            json.dumps(payload),
+            ["memory-1", "memory-2", "memory-3"],
+        )
+
+
 class _FakeSession:
     def __init__(self, *, duplicate_warning: bool = False) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.next_id = 0
         self.memories: dict[str, str] = {}
         self.duplicate_warning = duplicate_warning
+        self.backfill_payload = {
+            "status": "completed",
+            "model": "cohere/embed-v4.0",
+            "dimensions": 1536,
+            "scanned": 267,
+            "embedded": 267,
+            "skipped": 0,
+            "failed": 0,
+        }
 
     async def initialize(self) -> None:
         return None
@@ -65,6 +137,12 @@ class _FakeSession:
             payload = {"status": "deleted", "id": memory_id}
             return SimpleNamespace(
                 content=[SimpleNamespace(text=json.dumps(payload))],
+            )
+
+        if name == "config":
+            assert arguments == {"action": "backfill_embeddings", "batch_size": 32}
+            return SimpleNamespace(
+                content=[SimpleNamespace(text=json.dumps(self.backfill_payload))],
             )
 
         raise AssertionError(f"unexpected tool: {name}")
@@ -129,6 +207,44 @@ async def test_run_search_rejects_duplicate_warning_and_cleans_up_exact_memory()
         "delete_memory",
     ]
     assert session.calls[-1][1]["memory_id"] == "memory-1"
+
+
+@pytest.mark.asyncio
+async def test_run_backfill_uses_config_action_and_requires_zero_failures(monkeypatch):
+    session = _FakeSession()
+
+    monkeypatch.setattr(_HARNESS, "_creds", lambda: {"COHERE_API_KEY": "gateway"})
+    monkeypatch.setattr(_HARNESS, "get_token", lambda endpoint, creds: "token")
+    monkeypatch.setattr(_HARNESS, "_sub_of", lambda token: "sub-a")
+
+    async def fake_session(endpoint: str, token: str):
+        return _FakeTransport(), lambda read, write: _FakeClientSessionContext(session)
+
+    monkeypatch.setattr(_HARNESS, "_session", fake_session)
+
+    await _HARNESS.run_backfill("https://mnemo.test")
+
+    assert session.calls == [
+        ("config", {"action": "backfill_embeddings", "batch_size": 32}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_backfill_rejects_failures(monkeypatch):
+    session = _FakeSession()
+    session.backfill_payload["failed"] = 1
+
+    monkeypatch.setattr(_HARNESS, "_creds", lambda: {"COHERE_API_KEY": "gateway"})
+    monkeypatch.setattr(_HARNESS, "get_token", lambda endpoint, creds: "token")
+    monkeypatch.setattr(_HARNESS, "_sub_of", lambda token: "sub-a")
+
+    async def fake_session(endpoint: str, token: str):
+        return _FakeTransport(), lambda read, write: _FakeClientSessionContext(session)
+
+    monkeypatch.setattr(_HARNESS, "_session", fake_session)
+
+    with pytest.raises(AssertionError, match="failed"):
+        await _HARNESS.run_backfill("https://mnemo.test")
 
 
 def test_assert_search_absent_rejects_leaked_marker():

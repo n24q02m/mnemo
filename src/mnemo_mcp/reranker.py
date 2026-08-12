@@ -62,6 +62,10 @@ class CloudReranker:
         api_base: str | None = None,
         api_key: str | None = None,
     ):
+        if model is None:
+            from mnemo_mcp.credential_state import model_for_task
+
+            model = model_for_task("rerank")
         self.model = model or "rerank-v4.0-pro"
         self.api_base = api_base
         self.api_key = api_key
@@ -82,13 +86,17 @@ class CloudReranker:
         # Lazy import: litellm costs ~1-2s on first import.
         from mcp_core.llm import rerank as core_rerank
 
+        from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
+
+        litellm_model = self._litellm_model()
+
         response = core_rerank(
-            model=self._litellm_model(),
+            model=litellm_model,
             query=query,
             documents=documents,
             top_n=top_n,
-            api_base=self.api_base or os.getenv("RERANK_API_BASE") or None,
-            api_key=self.api_key or None,
+            api_base=self.api_base or api_base_for_task("RERANK_API_BASE"),
+            api_key=self.api_key or api_key_for_model(litellm_model),
         )
 
         # litellm RerankResponse.results defaults to None and rerank items

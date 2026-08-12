@@ -13,7 +13,7 @@
       "name": "mnemo-mcp-worker",
       "class_name": "MnemoContainer",
       "image": "registry.cloudflare.com/${CLOUDFLARE_ACCOUNT_ID}/mnemo-mcp:${IMAGE_TAG}",
-      "instance_type": "standard-1",
+      "instance_type": "basic",
       "max_instances": 1
     }
   ],
@@ -34,10 +34,15 @@
     "MCP_D1_BASE_URL": "http://d1.internal",
     "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
     "MCP_VECTORIZE_IDX": "${CF_VECTORIZE_ID}",
-    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
-    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
-    "LLM_MODELS": "openrouter/minimax/minimax-m3",
-    "EMBEDDING_DIMS": "768"
+    // Mnemo data is authoritative in Cloudflare after cutover; keep the
+    // legacy Google Drive DB sync disabled on this deployment.
+    "SYNC_ENABLED": "false",
+    // The D1 store may contain vectors stamped by the pre-CF 768-width Jina
+    // deployment. Clear the stale Vectorize ledger and re-stamp on cutover;
+    // the next authenticated embed pass rebuilds vectors at the active width.
+    "REINDEX_ON_MODEL_CHANGE": "true"
+    // Model, endpoint, and provider key are selected per authenticated
+    // subject through the relay; keep no model/provider lock in Worker vars.
   },
   "observability": { "enabled": true }
 }

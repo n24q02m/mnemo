@@ -25,7 +25,6 @@ fact-extraction prompting / parsing logic is deferred to Phase 2
 
 from __future__ import annotations
 
-import os
 from typing import Final
 
 from loguru import logger
@@ -54,13 +53,19 @@ _DEFAULT_MODELS: Final[dict[str, str]] = {
 def detect_provider() -> str | None:
     """Return the highest-priority provider with a configured API key.
 
-    Returns ``None`` when no provider key is found in the environment so
-    callers can short-circuit to a graceful skip path.
+    The credential resolver is request-scoped in multi-user mode and
+    environment-backed in single-user/stdio mode.
     """
+    from mnemo_mcp.credential_state import detect_llm_provider_key
+
+    env_var = detect_llm_provider_key()
+    if env_var is None:
+        return None
     for provider, env_vars in _PROVIDER_ENV_VARS:
-        for env_var in env_vars:
-            if os.environ.get(env_var):
-                return provider
+        if env_var in env_vars:
+            return provider
+    if env_var == "GOOGLE_VERTEX_EXPRESS_API_KEY":
+        return "vertex_express"
     return None
 
 
@@ -77,20 +82,17 @@ def get_default_model(provider: str) -> str:
     entry for ``provider``, the per-provider sane default from
     ``_DEFAULT_MODELS`` is returned.
     """
-    raw = os.environ.get("LLM_MODELS", "").strip()
-    if raw:
-        for pair in raw.split(","):
-            pair = pair.strip()
-            if not pair:
-                continue
-            for sep in ("=", "/"):
-                if sep in pair:
-                    key, _, model = pair.partition(sep)
-                    if key.strip().lower() == provider:
-                        model = model.strip()
-                        if model:
-                            return model
-                    break
+    from mnemo_mcp.credential_state import model_chain_for_task
+
+    for pair in model_chain_for_task("llm"):
+        for sep in ("=", "/"):
+            if sep in pair:
+                key, _, model = pair.partition(sep)
+                if key.strip().lower() == provider:
+                    model = model.strip()
+                    if model:
+                        return model
+                break
 
     return _DEFAULT_MODELS.get(provider, "")
 
@@ -130,17 +132,21 @@ async def call_llm(
         return None
 
     resolved_model = model or get_default_model(resolved_provider)
+    litellm_model = f"{resolved_provider}/{resolved_model}"
 
     try:
         # Lazy import: litellm costs ~1-2s on first import.
         from mcp_core.llm import acompletion
 
+        from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
+
         response = await acompletion(
-            model=f"{resolved_provider}/{resolved_model}",
+            model=litellm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens,
-            api_base=os.environ.get("LLM_API_BASE") or None,
+            api_base=api_base_for_task("LLM_API_BASE"),
+            api_key=api_key_for_model(litellm_model),
         )
         return response.choices[0].message.content or ""
     except Exception as e:  # pragma: no cover - per-provider runtime guard

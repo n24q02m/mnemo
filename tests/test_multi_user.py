@@ -11,6 +11,7 @@ Spec: ``~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multius
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -182,3 +183,20 @@ def test_per_request_sub_scope_callback(tmp_path, monkeypatch):
     asyncio.run(_runner())
 
     assert seen == ["carol"]
+
+
+def test_public_http_enables_json_streamable_responses(monkeypatch):
+    """Remote Streamable HTTP must keep sessions across Cloudflare requests."""
+    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example.com")
+    monkeypatch.setenv("MCP_DCR_SERVER_SECRET", "test-secret")
+
+    from mnemo_mcp.server import run_http
+
+    fake_run_http_server = AsyncMock()
+    with patch(
+        "mcp_core.transport.local_server.run_http_server",
+        fake_run_http_server,
+    ):
+        asyncio.run(run_http())
+
+    assert fake_run_http_server.call_args.kwargs["json_response"] is True

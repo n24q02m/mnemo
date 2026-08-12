@@ -9,10 +9,13 @@ happens in exactly one place -- :func:`open_memory_db`, driven by the
 Storage split: rows and the FTS5 index live in D1; dense vectors live in a
 Cloudflare Vectorize index reached through ``src/worker.ts``'s
 ``vectorizeOutbound``. ``migrations/0001_init.sql`` deliberately has no
-``memories_vec`` -- D1 cannot load the ``sqlite-vec`` extension -- so there is no
-in-database vector table to fall back on. When the store is opened with
-``embedding_dims=0`` no Vectorize index is attached, ``vec_enabled`` is ``False``,
-and an entry point handed an embedding raises rather than dropping it.
+``memories_vec`` -- D1 cannot load the ``sqlite-vec`` extension -- while
+``migrations/0003_vector_state.sql`` adds only a D1 ledger of successful vector
+writes. The ledger is not a dense-vector fallback: it makes backfill and
+reindex deterministic despite Vectorize having no list or get-by-id operation.
+When the store is opened with ``embedding_dims=0`` no Vectorize index is
+attached, ``vec_enabled`` is ``False``, and an entry point handed an embedding
+raises rather than dropping it.
 
 Vector design notes
 -------------------
@@ -192,6 +195,7 @@ _SCOPED_TABLES = (
     "memory_entity_links",
     "store_meta",
     "sync_state",
+    "memory_vectors",
 )
 _SCOPED_TABLE_RE = re.compile(
     r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+("
@@ -610,7 +614,13 @@ class MemoryDBCfBackend:
         self._require_schema()
         self._guard_embedding_identity()
 
-    def clone_for_sub(self, sub: str) -> MemoryDBCfBackend:
+    def clone_for_sub(
+        self,
+        sub: str,
+        *,
+        embedding_model: str | None = None,
+        embedding_dims: int | None = None,
+    ) -> MemoryDBCfBackend:
         """Return a request-scoped view sharing transport clients, not SQL scope."""
         if not isinstance(sub, str) or not sub.strip():
             raise ValueError("sub must be a non-empty string")
@@ -620,6 +630,10 @@ class MemoryDBCfBackend:
         clone.__dict__ = self.__dict__.copy()
         clone.sub = sub
         clone._conn = _D1Connection(self._backend, sub=sub)
+        if embedding_model is not None:
+            clone._embedding_model = embedding_model
+        if embedding_dims is not None:
+            clone._embedding_dims = embedding_dims
         clone.last_vector_cap = None
         return clone
 
@@ -716,7 +730,7 @@ class MemoryDBCfBackend:
         return vec
 
     def _upsert_vector(self, memory_id: str, embedding: list[float]) -> None:
-        """Write one vector, keyed by the memory id it belongs to."""
+        """Write one vector and record the successful Vectorize mutation."""
         vectors = self._require_vectors("_upsert_vector")
         vectors.upsert(
             [
@@ -727,6 +741,25 @@ class MemoryDBCfBackend:
                 }
             ]
         )
+        # Vectorize has no list/get operation. Record the successful mutation
+        # only after the remote upsert returns, so a failed write remains
+        # visible to the backfill query instead of being marked complete.
+        self._conn.execute(
+            "INSERT INTO memory_vectors "
+            "(sub, memory_id, embedding_model, embedding_dims, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(sub, memory_id) DO UPDATE SET "
+            "embedding_model = excluded.embedding_model, "
+            "embedding_dims = excluded.embedding_dims, "
+            "updated_at = excluded.updated_at",
+            [
+                self.sub,
+                memory_id,
+                self._embedding_model,
+                self._embedding_dims,
+                _now_iso(),
+            ],
+        )
 
     def _vectorize_id(self, memory_id: str) -> str:
         return f"{self.sub}:{memory_id}"
@@ -734,6 +767,58 @@ class MemoryDBCfBackend:
     def _logical_vector_id(self, vector_id: str) -> str | None:
         prefix = f"{self.sub}:"
         return vector_id[len(prefix) :] if vector_id.startswith(prefix) else None
+
+    def rows_without_vectors(
+        self,
+        limit: int,
+        *,
+        exclude_ids: set[str] | None = None,
+    ) -> list[dict]:
+        """Return current D1 rows without a matching Vectorize ledger entry.
+
+        The dense values remain remote, so the D1 ledger created by migration
+        0003 is the only reliable way to make a bounded backfill idempotent.
+        Rows from superseded versions are excluded: they are historical and
+        must not be re-embedded into the active tenant index.
+        """
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        self._require_vectors("rows_without_vectors")
+
+        excluded = sorted({str(memory_id) for memory_id in (exclude_ids or set())})
+        predicates = [
+            "m.sub = ?",
+            "m.valid_to IS NULL",
+            "(v.memory_id IS NULL OR v.embedding_dims != ? OR v.embedding_model != ?)",
+        ]
+        params: list[Any] = [
+            self.sub,
+            self._embedding_dims,
+            self._embedding_model,
+        ]
+        if excluded:
+            placeholders = ", ".join("?" for _ in excluded)
+            predicates.append(f"m.id NOT IN ({placeholders})")
+            params.extend(excluded)
+
+        params.append(limit)
+        rows = self._conn.fetchall(
+            "SELECT m.id, m.content "
+            "FROM memories AS m "
+            "LEFT JOIN memory_vectors AS v "
+            "ON v.sub = m.sub AND v.memory_id = m.id "
+            f"WHERE {' AND '.join(predicates)} "
+            "ORDER BY m.created_at ASC, m.id ASC LIMIT ?",
+            params,
+        )
+        return [dict(row) for row in rows]
+
+    def write_vector(self, memory_id: str, vector: list[float]) -> None:
+        """Persist one vector in Vectorize and its D1 ledger entry."""
+        self._require_vectors("write_vector")
+        if not self.get(memory_id):
+            raise KeyError(f"memory not found: {memory_id}")
+        self._upsert_vector(memory_id, vector)
 
     def _discard_vectors(self, ids: list[str], context: str) -> None:
         """Delete vectors whose rows are gone, without failing the row change.
@@ -753,6 +838,14 @@ class MemoryDBCfBackend:
             _vectorize_delete_by_ids(
                 self._vectors, [self._vectorize_id(memory_id) for memory_id in ids]
             )
+            for start in range(0, len(ids), VECTORIZE_DELETE_CHUNK):
+                chunk = ids[start : start + VECTORIZE_DELETE_CHUNK]
+                placeholders = ", ".join("?" for _ in chunk)
+                self._conn.execute(
+                    "DELETE FROM memory_vectors "
+                    f"WHERE sub = ? AND memory_id IN ({placeholders})",
+                    [self.sub, *chunk],
+                )
         except Exception as exc:
             logger.error(
                 "[AUDIT] {} closed row(s) {} in D1 but could not delete their "
@@ -788,6 +881,7 @@ class MemoryDBCfBackend:
         rows = self._conn.fetchall("SELECT id FROM memories", [])
         ids = [self._vectorize_id(r["id"]) for r in rows]
         _vectorize_delete_by_ids(vectors, ids)
+        self._conn.execute("DELETE FROM memory_vectors WHERE sub = ?", [self.sub])
         logger.warning(
             "[AUDIT] reindex dropped {} vector(s) from the Vectorize index; they "
             "rebuild on the next embed pass.",
@@ -811,6 +905,7 @@ class MemoryDBCfBackend:
                 self._vectors, [self._vectorize_id(r["id"]) for r in rows]
             )
         self._conn.execute("DELETE FROM memories", [])
+        self._conn.execute("DELETE FROM memory_vectors WHERE sub = ?", [self.sub])
 
     # -- Search ------------------------------------------------------------
 

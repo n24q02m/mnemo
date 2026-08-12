@@ -20,11 +20,13 @@ from mnemo_mcp.server import _get_ctx
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION_1 = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
+_MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
     conn.executescript(_MIGRATION_1.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
 
 
 def _memory_row(memory_id: str, content: str) -> dict[str, str]:
