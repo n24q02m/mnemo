@@ -39,6 +39,7 @@ from loguru import logger
 from mcp_core.auth import token_client_mismatch
 
 from mnemo_mcp.config import settings
+from mnemo_mcp.secure_file import write_owner_only
 from mnemo_mcp.sync.base import SyncBackend
 
 if TYPE_CHECKING:
@@ -238,20 +239,7 @@ async def _save_folder_id(folder_name: str, folder_id: str) -> None:
     path = settings.get_data_dir() / "sync_folder_ids.json"
 
     def _write_secure(file_path: Path, content: str) -> None:
-        import os
-        import stat
-
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-        mode = stat.S_IRUSR | stat.S_IWUSR
-        fd = os.open(file_path, flags, mode)
-        try:
-            if os.name != "nt":
-                os.fchmod(fd, mode)
-        except OSError:
-            pass
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
+        write_owner_only(file_path, content.encode("utf-8"))
 
     async with _folder_id_disk_lock:
         data: dict[str, str] = {}
@@ -451,24 +439,7 @@ async def _download_file(token: dict, file_id: str, dest_path: Path) -> bool:
     )
 
     if response.status_code == 200:
-
-        def _write_secure_bytes(file_path: Path, content: bytes) -> None:
-            import os
-            import stat
-
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-            mode = stat.S_IRUSR | stat.S_IWUSR
-            fd = os.open(file_path, flags, mode)
-            try:
-                if os.name != "nt":
-                    os.fchmod(fd, mode)
-            except OSError:
-                pass
-            with os.fdopen(fd, "wb") as f:
-                f.write(content)
-
-        await asyncio.to_thread(_write_secure_bytes, dest_path, response.content)
+        await asyncio.to_thread(write_owner_only, dest_path, response.content)
         return True
 
     logger.error(f"Download failed ({response.status_code}): {response.text[:100]}")

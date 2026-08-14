@@ -32,6 +32,8 @@ from loguru import logger
 from mcp_core.storage.backends import backend_from_env
 from mcp_core.storage.per_plugin_store import PerPluginStore
 
+from mnemo_mcp.secure_file import write_owner_only
+
 SERVER_NAME = "mnemo-mcp"
 
 # Grace window so the browser renders "Setup complete!" before the local spawn closes.
@@ -446,24 +448,10 @@ def store_for_sub(sub: str, config: dict[str, str]) -> None:
         store.save(config)
         return
 
-    import stat
-
     path = _sub_data_dir(sub) / "config.json"
     config_json = json.dumps(config)
 
-    # SECURITY: Ensure the credential file is created with 0600 permissions
-    # (read/write for owner only) to prevent unauthorized access by other
-    # local users, mitigating a TOCTOU vulnerability from using write_text.
-    flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-    mode = stat.S_IRUSR | stat.S_IWUSR
-    fd = os.open(path, flags, mode)
-    try:
-        if os.name != "nt":
-            os.fchmod(fd, mode)
-    except OSError:
-        pass
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(config_json)
+    write_owner_only(path, config_json.encode("utf-8"))
 
 
 def read_for_sub(sub: str) -> dict[str, str]:

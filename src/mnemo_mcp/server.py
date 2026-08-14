@@ -26,6 +26,7 @@ from mcp.types import ToolAnnotations
 from mnemo_mcp.config import settings
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
+from mnemo_mcp.secure_file import write_owner_only
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
 # to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
@@ -2489,23 +2490,7 @@ async def _handle_config_export_passport(ctx: Context | None) -> dict[str, typin
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"passport-{int(__import__('time').time())}.mnemo"
 
-    def _write_secure_bytes(file_path: typing.Any, content: bytes) -> None:
-        import os
-        import stat
-
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        flags = os.O_CREAT | os.O_WRONLY | os.O_TRUNC
-        mode = stat.S_IRUSR | stat.S_IWUSR
-        fd = os.open(file_path, flags, mode)
-        try:
-            if os.name != "nt":
-                os.fchmod(fd, mode)
-        except OSError:
-            pass
-        with os.fdopen(fd, "wb") as f:
-            f.write(content)
-
-    await asyncio.to_thread(_write_secure_bytes, path, bundle)
+    await asyncio.to_thread(write_owner_only, path, bundle)
     return {"status": "exported", "path": str(path), "size": len(bundle)}
 
 
