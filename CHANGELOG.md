@@ -2,6 +2,67 @@
 
 <!-- version list -->
 
+## v2.8.0-beta.3 (2026-08-15)
+
+### Bug Fixes
+
+- Align mnemo migration coverage with current config
+  ([#1104](https://github.com/n24q02m/mnemo-mcp/pull/1104),
+  [`1c66393`](https://github.com/n24q02m/mnemo-mcp/commit/1c6639368ceaf880cd75eb164f46621dcf8a13a0))
+
+- Harden secure local file writes ([#1102](https://github.com/n24q02m/mnemo-mcp/pull/1102),
+  [`a87c223`](https://github.com/n24q02m/mnemo-mcp/commit/a87c223e471795e1872523519fdb9bed151822ee))
+
+- Make secure file platform test portable ([#1102](https://github.com/n24q02m/mnemo-mcp/pull/1102),
+  [`a87c223`](https://github.com/n24q02m/mnemo-mcp/commit/a87c223e471795e1872523519fdb9bed151822ee))
+
+- Migrate mnemo-mcp to fastretrieval ([#1104](https://github.com/n24q02m/mnemo-mcp/pull/1104),
+  [`1c66393`](https://github.com/n24q02m/mnemo-mcp/commit/1c6639368ceaf880cd75eb164f46621dcf8a13a0))
+
+- Persist remote credentials in cloud kv
+  ([`aaf8350`](https://github.com/n24q02m/mnemo-mcp/commit/aaf8350a96f20c0b458c1b549b84a39bd8ae25e2))
+
+- **deps**: Lock file maintenance ([#1100](https://github.com/n24q02m/mnemo-mcp/pull/1100),
+  [`f8fdd61`](https://github.com/n24q02m/mnemo-mcp/commit/f8fdd61d4eea58e67b80786cccc2b2399f220bfb))
+
+- **deps**: Lock file maintenance ([#1083](https://github.com/n24q02m/mnemo-mcp/pull/1083),
+  [`4502c74`](https://github.com/n24q02m/mnemo-mcp/commit/4502c74722637891547babe2a8dd3976de2f627b))
+
+- **deps**: Lock file maintenance ([#1078](https://github.com/n24q02m/mnemo-mcp/pull/1078),
+  [`59c7df9`](https://github.com/n24q02m/mnemo-mcp/commit/59c7df9a6a7c4a52ac194104ce359302548b5d76))
+
+- **deps**: Lock file maintenance ([#1074](https://github.com/n24q02m/mnemo-mcp/pull/1074),
+  [`92c0850`](https://github.com/n24q02m/mnemo-mcp/commit/92c0850c4d0f388ab4225f40308fe9ce5561b1f7))
+
+- **deps**: Lock file maintenance ([#1073](https://github.com/n24q02m/mnemo-mcp/pull/1073),
+  [`4f38bc3`](https://github.com/n24q02m/mnemo-mcp/commit/4f38bc3909236db3ba922e4674338c3ef48ecea7))
+
+- **deps**: Lock file maintenance ([#1069](https://github.com/n24q02m/mnemo-mcp/pull/1069),
+  [`ca8c79a`](https://github.com/n24q02m/mnemo-mcp/commit/ca8c79aea9ed3eccb2091957d102d4564abd201e))
+
+- **deps**: Lock file maintenance ([#1067](https://github.com/n24q02m/mnemo-mcp/pull/1067),
+  [`98cc6b9`](https://github.com/n24q02m/mnemo-mcp/commit/98cc6b998607fab6b841db044065f8990dc33bc2))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260801.1
+  ([#1082](https://github.com/n24q02m/mnemo-mcp/pull/1082),
+  [`49dfd92`](https://github.com/n24q02m/mnemo-mcp/commit/49dfd921311ec1a42a9261d3eec67577c558a40f))
+
+- **deps**: Update non-major dev dependencies
+  ([#1097](https://github.com/n24q02m/mnemo-mcp/pull/1097),
+  [`f5dc4e7`](https://github.com/n24q02m/mnemo-mcp/commit/f5dc4e74f7ee3cb5324ed1c2123fcd7b43677fb8))
+
+- **deps**: Update non-major dev dependencies
+  ([#1072](https://github.com/n24q02m/mnemo-mcp/pull/1072),
+  [`b1160a5`](https://github.com/n24q02m/mnemo-mcp/commit/b1160a5eaab0547341033bd70e03d5c24daa57ba))
+
+- **deps**: Update non-major dev dependencies
+  ([#1066](https://github.com/n24q02m/mnemo-mcp/pull/1066),
+  [`bc682f4`](https://github.com/n24q02m/mnemo-mcp/commit/bc682f45ae653b0ed1feb73b46e31e8538cf7a9e))
+
+- **deps**: Update wrangler to ^4.118.0 ([#1077](https://github.com/n24q02m/mnemo-mcp/pull/1077),
+  [`5f549c0`](https://github.com/n24q02m/mnemo-mcp/commit/5f549c0f41e8403efe70b6e1ff1954dee0fd157d))
+
+
 ## v2.8.0-beta.2 (2026-08-04)
 
 ### Bug Fixes
