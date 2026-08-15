@@ -7,7 +7,6 @@ async functions that return structured dicts for MCP tool responses.
 import asyncio
 import os
 import shutil
-import tempfile
 from pathlib import Path
 
 from loguru import logger
@@ -43,7 +42,10 @@ def _resolve_cache_dir() -> Path:
         )
         return Path(old)
 
-    return Path(tempfile.gettempdir()) / "fastretrieval_cache"
+    from fastretrieval.common.utils import define_cache_dir
+
+    # Keep cache recovery aligned with fastretrieval's own default path.
+    return define_cache_dir()
 
 
 def _validate_cloud_models(settings_obj) -> dict:

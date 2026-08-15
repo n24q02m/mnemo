@@ -65,6 +65,7 @@ _EXTRA_ENV_NAMES = {
     "USE_BUNDLED_GOOGLE_CLIENT",
     "MCP_RELAY_URL",
     "QWEN3_EMBED_CACHE_PATH",
+    "FASTRETRIEVAL_CACHE_PATH",
 }
 # litellm's per-provider endpoint override lives beside each provider key
 # (JINA_AI_API_KEY -> JINA_AI_API_BASE). Real developer shells do export these

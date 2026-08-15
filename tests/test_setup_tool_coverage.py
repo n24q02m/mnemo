@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 from mnemo_mcp.setup_tool import clear_model_cache
@@ -41,20 +40,20 @@ def test_clear_model_cache_respects_env_var(tmp_path):
         assert not model_cache.exists()
 
 
-def test_clear_model_cache_fallback_to_temp(tmp_path):
-    """Test clear_model_cache falls back to default temp dir if env var is missing."""
-    # We mock tempfile.gettempdir to point to our tmp_path to avoid polluting real temp
-    with patch("tempfile.gettempdir", return_value=str(tmp_path)):
-        # Ensure env var is NOT set
-        with patch.dict(os.environ, {}, clear=True):
-            model_name = "fallback/model"
-            safe_name = model_name.replace("/", "--")
+def test_clear_model_cache_fallback_to_fastretrieval_default(tmp_path):
+    """Use fastretrieval's default cache when no compatibility env is set."""
+    with patch.dict(os.environ, {}, clear=True):
+        model_name = "fallback/model"
+        safe_name = model_name.replace("/", "--")
+        default_cache_dir = tmp_path / "fastretrieval"
+        model_cache = default_cache_dir / f"models--{safe_name}"
+        model_cache.mkdir(parents=True)
 
-            # The expected fallback path is tmp_path / "fastretrieval_cache" / "models--fallback--model"
-            default_cache_dir = Path(tmp_path) / "fastretrieval_cache"
-            model_cache = default_cache_dir / f"models--{safe_name}"
-            model_cache.mkdir(parents=True)
-
+        with patch(
+            "fastretrieval.common.utils.define_cache_dir",
+            return_value=default_cache_dir,
+        ):
             result = clear_model_cache(model_name)
-            assert result == str(model_cache)
-            assert not model_cache.exists()
+
+        assert result == str(model_cache)
+        assert not model_cache.exists()
