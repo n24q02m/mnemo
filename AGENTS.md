@@ -52,8 +52,8 @@ src/mnemo_mcp/
   server.py        # FastMCP server, tools, resources, prompts
   setup_tool.py    # Warmup + setup-sync logic (config tool actions)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
-  embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + qwen3-embed local
-  reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (qwen3-embed cross-encoder)
+  embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + fastretrieval local
+  reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (fastretrieval cross-encoder)
   graph.py         # Knowledge graph: entity/relation extraction via LLM
   relay_setup.py   # Zero-config relay: create session, poll for config
   relay_schema.py  # Relay form schema (local + cloud modes)
@@ -67,7 +67,7 @@ tests/             # 1:1 mapping voi source modules
 
 Khong co prefix (khac voi cac project khac):
 - `DB_PATH` -- default `~/.mnemo-mcp/memories.db`
-- `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (qwen3-embed).
+- `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (fastretrieval, Qwen3 là profile tham chiếu mặc định).
 - `RERANK_MODELS` -- chain rerank, CSV `provider/model,...`; order = fallback. Rong = local ONNX cross-encoder.
 - `LLM_MODELS` -- chain LLM (graph extraction), CSV `provider/model,...`; order = fallback. Rong = tat feature LLM.
 - Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 7 provider servers goi y:
@@ -136,7 +136,7 @@ PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `qwen3-embed`, `sqlite-vec`, `n24q02m-mcp-core[llm]` (litellm). Native SDK (google-genai/openai/cohere/anthropic) da go -- moi LLM/embed/rerank qua litellm passthrough.
+- Dependencies: `fastretrieval>=1.0.1`, `sqlite-vec`, `n24q02m-mcp-core[llm]` (litellm). Native SDK (google-genai/openai/cohere/anthropic) da go -- moi LLM/embed/rerank qua litellm passthrough.
 - Pre-commit: ruff lint + format, ty check, pytest.
 - Secrets: skret SSM namespace `/mnemo-mcp/prod` (region `ap-southeast-1`)
 

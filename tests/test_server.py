@@ -817,18 +817,25 @@ class TestServerVersion:
 class TestMaybeRegisterCustomEmbed:
     """BYO local embedding model registration (no model download)."""
 
-    def test_builtin_id_skips_registration(self):
-        import qwen3_embed
+    def test_registry_id_skips_registration(self):
+        import fastretrieval
 
-        with patch.object(qwen3_embed.TextEmbedding, "add_custom_model") as mock_add:
-            _maybe_register_custom_embed("n24q02m/Qwen3-Embedding-0.6B-ONNX")
+        with (
+            patch.object(
+                fastretrieval.TextEmbedding,
+                "list_supported_models",
+                return_value=[{"model": "Org/reference-embed"}],
+            ),
+            patch.object(fastretrieval.TextEmbedding, "add_custom_model") as mock_add,
+        ):
+            _maybe_register_custom_embed("Org/reference-embed")
             mock_add.assert_not_called()
 
     def test_custom_id_registers_with_dim_and_pooling(self):
-        import qwen3_embed
-        from qwen3_embed.common.model_description import PoolingType
+        import fastretrieval
+        from fastretrieval.common.model_description import PoolingType
 
-        with patch.object(qwen3_embed.TextEmbedding, "add_custom_model") as mock_add:
+        with patch.object(fastretrieval.TextEmbedding, "add_custom_model") as mock_add:
             with patch("mnemo_mcp.server.settings") as mock_settings:
                 mock_settings.local_embedding_dim = 1024
                 mock_settings.resolve_embedding_dims.return_value = 768
@@ -847,10 +854,10 @@ class TestMaybeRegisterCustomEmbed:
 
     def test_reregistration_is_graceful(self):
         """A second register (backend re-init) swallows 'already registered'."""
-        import qwen3_embed
+        import fastretrieval
 
         with patch.object(
-            qwen3_embed.TextEmbedding,
+            fastretrieval.TextEmbedding,
             "add_custom_model",
             side_effect=ValueError("Model Org/custom-embed is already registered"),
         ):
@@ -868,17 +875,28 @@ class TestMaybeRegisterCustomEmbed:
 class TestMaybeRegisterCustomRerank:
     """BYO local reranker registration (no model download)."""
 
-    def test_builtin_id_skips_registration(self):
-        import qwen3_embed
+    def test_registry_id_skips_registration(self):
+        import fastretrieval
 
-        with patch.object(qwen3_embed.TextCrossEncoder, "add_custom_model") as mock_add:
-            _maybe_register_custom_rerank("n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo")
+        with (
+            patch.object(
+                fastretrieval.TextCrossEncoder,
+                "list_supported_models",
+                return_value=[{"model": "Org/reference-reranker"}],
+            ),
+            patch.object(
+                fastretrieval.TextCrossEncoder, "add_custom_model"
+            ) as mock_add,
+        ):
+            _maybe_register_custom_rerank("Org/reference-reranker")
             mock_add.assert_not_called()
 
     def test_custom_id_registers_with_model_file(self):
-        import qwen3_embed
+        import fastretrieval
 
-        with patch.object(qwen3_embed.TextCrossEncoder, "add_custom_model") as mock_add:
+        with patch.object(
+            fastretrieval.TextCrossEncoder, "add_custom_model"
+        ) as mock_add:
             with patch("mnemo_mcp.server.settings") as mock_settings:
                 mock_settings.local_rerank_model_file = "onnx/model_quantized.onnx"
 

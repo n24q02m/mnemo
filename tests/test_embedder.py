@@ -348,8 +348,8 @@ class TestQwen3EmbedBackend:
 
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
     def test_check_available_not_installed(self, mock_get_model):
-        """Returns 0 when qwen3-embed is not available."""
-        mock_get_model.side_effect = ImportError("No module named 'qwen3_embed'")
+        """Returns 0 when fastretrieval is not available."""
+        mock_get_model.side_effect = ImportError("No module named 'fastretrieval'")
         backend = Qwen3EmbedBackend()
         assert backend.check_available() == 0
 

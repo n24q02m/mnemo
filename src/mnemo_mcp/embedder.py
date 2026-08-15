@@ -1,10 +1,10 @@
-"""Dual-backend embedding: Cloud (litellm passthrough) + qwen3-embed (local).
+"""Dual-backend embedding: Cloud (litellm passthrough) + fastretrieval (local).
 
 Supports two backends:
 - **cloud**: Cloud embedding via mcp_core.llm (litellm passthrough — Jina,
   Gemini, OpenAI, Cohere, or any litellm 'provider/model'). Requires API
   keys. Auto-detects provider from model name or API keys in environment.
-- **local**: Local inference via qwen3-embed. GGUF if GPU + llama-cpp-python,
+- **local**: Local inference via fastretrieval. GGUF if GPU + llama-cpp-python,
   ONNX otherwise. No API keys needed, ~0.5GB model download on first use.
 
 Backend selection (always returns a valid backend):
@@ -463,12 +463,12 @@ LiteLLMBackend = CloudEmbeddingBackend
 
 
 # ---------------------------------------------------------------------------
-# qwen3-embed Backend (local ONNX)
+# fastretrieval Backend (local ONNX)
 # ---------------------------------------------------------------------------
 
 
 class Qwen3EmbedBackend:
-    """Local ONNX embedding via qwen3-embed (Qwen3-Embedding-0.6B).
+    """Local ONNX embedding via fastretrieval.
 
     Model is downloaded on first use (~0.57GB).
     Batch size is forced to 1 (static ONNX graph).
@@ -487,7 +487,7 @@ class Qwen3EmbedBackend:
         if not already cached. Logs a warning so users know why startup is slow.
         """
         if self._model is None:
-            from qwen3_embed import TextEmbedding
+            from fastretrieval import TextEmbedding
 
             logger.warning(
                 f"Loading local embedding model: {self._model_name} "
@@ -545,7 +545,7 @@ class Qwen3EmbedBackend:
         return await asyncio.to_thread(_query)
 
     def check_available(self) -> int:
-        """Check if qwen3-embed is available."""
+        """Kiểm tra runtime fastretrieval cục bộ có hoạt động hay không."""
         try:
             model = self._get_model()
             result = list(model.embed(["test"]))

@@ -49,7 +49,7 @@ class TestCloudEmbeddingBackendCustomEndpoint:
 
 
 class TestQwen3GetModel:
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_lazy_loads_model(self, mock_te):
         """Model is loaded lazily on first _get_model() call."""
         mock_model = MagicMock()
@@ -62,7 +62,7 @@ class TestQwen3GetModel:
         assert result == mock_model
         mock_te.assert_called_once_with(model_name="test/model")
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_caches_model(self, mock_te):
         """Model is only loaded once (cached)."""
         mock_model = MagicMock()
@@ -82,7 +82,7 @@ class TestQwen3GetModel:
 
 
 class TestQwen3EmbedTextsInner:
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     async def test_embed_texts_with_dimensions(self, mock_te):
         """embed_texts passes dim parameter to model.embed()."""
         mock_emb = MagicMock()
@@ -101,7 +101,7 @@ class TestQwen3EmbedTextsInner:
         call_kwargs = mock_model.embed.call_args
         assert call_kwargs[1].get("dim") == 512
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     async def test_embed_texts_without_dimensions(self, mock_te):
         """embed_texts works without dimensions parameter."""
         mock_emb = MagicMock()
@@ -123,7 +123,7 @@ class TestQwen3EmbedTextsInner:
 
 
 class TestQwen3EmbedSingleQuery:
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     async def test_embed_single_query(self, mock_te):
         """embed_single_query uses query_embed for asymmetric retrieval."""
         mock_emb = MagicMock()
@@ -139,7 +139,7 @@ class TestQwen3EmbedSingleQuery:
         assert result == [0.5, 0.6, 0.7]
         mock_model.query_embed.assert_called_once()
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     async def test_embed_single_query_with_dimensions(self, mock_te):
         """embed_single_query passes dim parameter."""
         mock_emb = MagicMock()

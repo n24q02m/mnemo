@@ -18,11 +18,34 @@ class TestClearModelCache:
         (model_dir / "blobs").mkdir()
         (model_dir / "blobs" / "abc.incomplete").touch()
 
-        with patch.dict("os.environ", {"QWEN3_EMBED_CACHE_PATH": str(tmp_path)}):
+        with patch.dict("os.environ", {"FASTRETRIEVAL_CACHE_PATH": str(tmp_path)}):
             result = clear_model_cache("org/model")
 
         assert result == str(model_dir)
         assert not model_dir.exists()
+
+    def test_prefers_new_cache_env_over_old(self, tmp_path):
+        from mnemo_mcp.setup_tool import clear_model_cache
+
+        old_cache = tmp_path / "old"
+        new_cache = tmp_path / "new"
+        old_model = old_cache / "models--org--model"
+        new_model = new_cache / "models--org--model"
+        old_model.mkdir(parents=True)
+        new_model.mkdir(parents=True)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "FASTRETRIEVAL_CACHE_PATH": str(new_cache),
+                "QWEN3_EMBED_CACHE_PATH": str(old_cache),
+            },
+        ):
+            result = clear_model_cache("org/model")
+
+        assert result == str(new_model)
+        assert not new_model.exists()
+        assert old_model.exists()
 
     def test_returns_none_when_cache_missing(self, tmp_path):
         from mnemo_mcp.setup_tool import clear_model_cache
@@ -137,7 +160,7 @@ class TestValidateCloudModels:
 class TestDownloadLocalEmbedding:
     """_download_local_embedding downloads and validates local model."""
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_success(self, mock_te):
         from mnemo_mcp.setup_tool import _download_local_embedding
 
@@ -154,7 +177,7 @@ class TestDownloadLocalEmbedding:
         assert result["model"] == "test/model"
         assert result["dims"] == 3
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_empty_result_returns_warning(self, mock_te):
         from mnemo_mcp.setup_tool import _download_local_embedding
 
@@ -171,7 +194,7 @@ class TestDownloadLocalEmbedding:
         assert "empty" in result["message"].lower()
 
     @patch("mnemo_mcp.setup_tool.clear_model_cache")
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_corrupted_cache_clears_and_retries(self, mock_te, mock_clear):
         from mnemo_mcp.setup_tool import _download_local_embedding
 
@@ -190,7 +213,7 @@ class TestDownloadLocalEmbedding:
         mock_clear.assert_called_once_with("org/model")
 
     @patch("mnemo_mcp.setup_tool.clear_model_cache")
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_corrupted_cache_retry_fails(self, mock_te, mock_clear):
         from mnemo_mcp.setup_tool import _download_local_embedding
 
@@ -207,14 +230,14 @@ class TestDownloadLocalEmbedding:
         assert result["status"] == "warning"
         assert "cache clear" in result["message"].lower()
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     def test_non_cache_error_re_raises(self, mock_te):
         from mnemo_mcp.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/model"
 
-        mock_te.side_effect = ImportError("qwen3_embed not installed")
+        mock_te.side_effect = ImportError("fastretrieval not installed")
 
         with pytest.raises(ImportError, match="not installed"):
             _download_local_embedding(mock_settings)
@@ -242,7 +265,7 @@ class TestRunWarmup:
         assert result["embedding"]["model"] == "gemini/model-1"
         assert result["embedding"]["dims"] == 768
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     @patch("mnemo_mcp.setup_tool.settings")
     async def test_no_api_keys_downloads_local(self, mock_settings, mock_te):
         from mnemo_mcp.setup_tool import run_warmup
@@ -282,7 +305,7 @@ class TestRunWarmup:
         assert local_step["status"] == "skipped"
         assert "disabled" in local_step["message"].lower()
 
-    @patch("qwen3_embed.TextEmbedding")
+    @patch("fastretrieval.TextEmbedding")
     @patch("mnemo_mcp.embedder.init_backend")
     @patch("mnemo_mcp.setup_tool.settings")
     async def test_cloud_fail_falls_back_to_local(

@@ -70,7 +70,7 @@ def mock_embedder():
     with (
         patch("mnemo_mcp.embedder.init_backend") as m,
         # Isolate the BYO custom-model registration side effect; tests here
-        # exercise backend selection, not qwen3-embed registration.
+        # exercise backend selection, not fastretrieval registration.
         patch("mnemo_mcp.server._maybe_register_custom_embed"),
     ):
         backend = MagicMock()

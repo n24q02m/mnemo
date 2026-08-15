@@ -126,7 +126,7 @@ class Settings(BaseSettings):
 
     # BYO (bring-your-own) LOCAL model override. When set, the local
     # embed/rerank backend loads this model id instead of the bundled
-    # Qwen3 default. A non-built-in id is registered with qwen3-embed via
+    # Qwen3 reference default. A non-built-in id is registered with fastretrieval via
     # CustomModelSpec / CustomRerankerSpec (server.py) using the companion
     # vars below.
     local_embedding_model: str = ""
@@ -451,7 +451,7 @@ class Settings(BaseSettings):
 
         The ONNX default is the YesNo variant (~598 MB at inference vs ~12 GB
         for the full-vocab build); it is mathematically equivalent and, since
-        qwen3-embed 1.11.2b3, produces batch-invariant scores (issue #725).
+        fastretrieval's local runtime, produces batch-invariant scores.
         A BYO ``LOCAL_RERANK_MODEL`` override takes precedence when set.
         """
         if self.local_rerank_model:

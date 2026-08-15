@@ -181,7 +181,7 @@ class TestQwen3Reranker:
         reranker = Qwen3Reranker()
 
         with patch.object(
-            reranker, "_get_model", side_effect=ImportError("no qwen3_embed")
+            reranker, "_get_model", side_effect=ImportError("no fastretrieval")
         ):
             assert reranker.check_available() is False
 

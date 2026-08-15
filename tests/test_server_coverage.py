@@ -528,7 +528,7 @@ class TestCustomEmbeddingRegistration:
 
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("qwen3_embed.CustomModelSpec") as mock_spec,
+            patch("fastretrieval.CustomModelSpec") as mock_spec,
         ):
             mock_settings.local_embedding_dim = 0
             mock_settings.resolve_embedding_dims.return_value = 0

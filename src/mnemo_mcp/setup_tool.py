@@ -20,18 +20,30 @@ def clear_model_cache(model_name: str) -> str | None:
 
     Returns the path that was cleared, or None if no cache existed.
     """
-    cache_dir = Path(
-        os.getenv(
-            "QWEN3_EMBED_CACHE_PATH",
-            os.path.join(tempfile.gettempdir(), "qwen3_embed_cache"),
-        )
-    )
+    cache_dir = _resolve_cache_dir()
     safe_name = model_name.replace("/", "--")
     model_cache = cache_dir / f"models--{safe_name}"
     if model_cache.exists():
         shutil.rmtree(model_cache)
         return str(model_cache)
     return None
+
+
+def _resolve_cache_dir() -> Path:
+    """Resolve the local model cache while preserving the old env name."""
+    new = os.getenv("FASTRETRIEVAL_CACHE_PATH")
+    if new:
+        return Path(new)
+
+    old = os.getenv("QWEN3_EMBED_CACHE_PATH")
+    if old:
+        logger.warning(
+            "QWEN3_EMBED_CACHE_PATH is the old name; rename it to "
+            "FASTRETRIEVAL_CACHE_PATH. Still honouring it for now."
+        )
+        return Path(old)
+
+    return Path(tempfile.gettempdir()) / "fastretrieval_cache"
 
 
 def _validate_cloud_models(settings_obj) -> dict:
@@ -58,7 +70,7 @@ def _validate_cloud_models(settings_obj) -> dict:
 
 def _download_local_embedding(settings_obj) -> dict:
     """Download and validate local embedding model."""
-    from qwen3_embed import TextEmbedding
+    from fastretrieval import TextEmbedding
 
     local_model = settings_obj.resolve_local_embedding_model()
     try:

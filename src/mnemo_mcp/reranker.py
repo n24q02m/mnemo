@@ -1,4 +1,4 @@
-"""Dual-backend reranking: Cloud (litellm passthrough) + qwen3-embed (local ONNX).
+"""Dual-backend reranking: Cloud (litellm passthrough) + fastretrieval (local ONNX).
 
 Cloud reranking goes through mcp_core.llm (litellm passthrough — Jina, Cohere,
 or any litellm rerank 'provider/model'). Reranker takes search results and
@@ -149,10 +149,10 @@ LiteLLMReranker = CloudReranker
 
 
 class Qwen3Reranker:
-    """Local ONNX cross-encoder reranking via qwen3-embed."""
+    """Local ONNX cross-encoder reranking via fastretrieval."""
 
     # YesNo variant: ~598 MB at inference vs ~12 GB for the full-vocab build,
-    # mathematically equivalent, batch-invariant since qwen3-embed 1.11.2b3 (#725).
+    # mathematically equivalent and batch-invariant for the reference profile.
     DEFAULT_MODEL = "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
 
     def __init__(self, model_name: str | None = None):
@@ -166,7 +166,7 @@ class Qwen3Reranker:
         if not already cached.
         """
         if self._model is None:
-            from qwen3_embed import TextCrossEncoder
+            from fastretrieval import TextCrossEncoder
 
             logger.warning(
                 f"Loading local reranker: {self._model_name} (~570 MB on first run)"

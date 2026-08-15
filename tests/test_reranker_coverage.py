@@ -151,30 +151,32 @@ class TestCheckAvailableReranker:
 class TestQwen3RerankerLazyLoad:
     def test_lazy_load(self):
         """Model is loaded lazily on first _get_model() call."""
-        mock_qwen = MagicMock()
+        mock_fastretrieval = MagicMock()
         mock_model = MagicMock()
-        mock_qwen.TextCrossEncoder.return_value = mock_model
+        mock_fastretrieval.TextCrossEncoder.return_value = mock_model
 
-        with patch.dict(sys.modules, {"qwen3_embed": mock_qwen}):
+        with patch.dict(sys.modules, {"fastretrieval": mock_fastretrieval}):
             reranker = Qwen3Reranker("test/model")
             assert reranker._model is None
 
             result = reranker._get_model()
             assert result == mock_model
-            mock_qwen.TextCrossEncoder.assert_called_once_with(model_name="test/model")
+            mock_fastretrieval.TextCrossEncoder.assert_called_once_with(
+                model_name="test/model"
+            )
 
     def test_caches_model(self):
         """Model is only loaded once (cached)."""
-        mock_qwen = MagicMock()
+        mock_fastretrieval = MagicMock()
         mock_model = MagicMock()
-        mock_qwen.TextCrossEncoder.return_value = mock_model
+        mock_fastretrieval.TextCrossEncoder.return_value = mock_model
 
-        with patch.dict(sys.modules, {"qwen3_embed": mock_qwen}):
+        with patch.dict(sys.modules, {"fastretrieval": mock_fastretrieval}):
             reranker = Qwen3Reranker()
             reranker._get_model()
             reranker._get_model()
 
-            mock_qwen.TextCrossEncoder.assert_called_once()
+            mock_fastretrieval.TextCrossEncoder.assert_called_once()
 
     def test_check_available_empty_scores(self):
         """check_available returns False when rerank returns empty."""

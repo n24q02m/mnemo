@@ -54,7 +54,7 @@ def _settings_env_names() -> set[str]:
 #     rather than retyped so the two lists cannot diverge.
 #   * The two alias keys ``resolve_provider_mode`` probes that ``CLOUD_KEYS``
 #     does not carry.
-#   * Toggles read by mcp-core / qwen3-embed during field-default resolution.
+#   * Toggles read by mcp-core / fastretrieval during field-default resolution.
 _EXTRA_ENV_NAMES = {
     *CLOUD_KEYS,
     # config.resolve_provider_mode() / Settings._ENV_ALIASES probe these.

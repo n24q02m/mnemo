@@ -57,32 +57,42 @@ def _default_embedding_dims() -> int:
 # --- Lifespan ---
 
 
+def _supported_model_ids(model_cls) -> set[str]:
+    """Read model ids from a fastretrieval facade's public registry."""
+    return {
+        item["model"] if isinstance(item, dict) else item
+        for item in model_cls.list_supported_models()
+    }
+
+
+def _register_embed_spec(**kwargs) -> None:
+    """Register a dense-text BYO model through fastretrieval's public API."""
+    from fastretrieval import CustomModelSpec
+
+    CustomModelSpec(**kwargs).register()
+
+
 def _maybe_register_custom_embed(model_id: str) -> None:
-    """Register a BYO local embedding model with qwen3-embed.
+    """Register an explicit local embedding model when it is not in the registry."""
+    from fastretrieval import TextEmbedding
 
-    Built-in ``n24q02m/Qwen3-*`` ids are already known to qwen3-embed, so
-    they are skipped. Any other id (set via ``LOCAL_EMBEDDING_MODEL``) is
-    registered via ``CustomModelSpec`` using the companion ``LOCAL_EMBEDDING_*``
-    settings, so ``TextEmbedding(model_id)`` can load it.
-    """
-    if model_id.startswith("n24q02m/Qwen3-"):
+    supported_ids = {item.casefold() for item in _supported_model_ids(TextEmbedding)}
+    if model_id.casefold() in supported_ids:
         return
-
-    from qwen3_embed import CustomModelSpec
 
     dim = settings.local_embedding_dim or settings.resolve_embedding_dims()
     if dim <= 0:
         dim = _DEFAULT_EMBEDDING_DIMS
 
     try:
-        CustomModelSpec(
+        _register_embed_spec(
             model_id=model_id,
             hf=model_id,
             model_file=settings.local_embedding_model_file,
             dim=dim,
             pooling=settings.local_embedding_pooling,
             normalization=settings.local_embedding_normalize,
-        ).register()
+        )
         logger.info(f"Registered custom local embedding model: {model_id}")
     except ValueError as e:
         # Already registered (embedding backend re-init) or invalid spec --
@@ -90,26 +100,28 @@ def _maybe_register_custom_embed(model_id: str) -> None:
         logger.debug(f"Custom embedding registration skipped: {e}")
 
 
-def _maybe_register_custom_rerank(model_id: str) -> None:
-    """Register a BYO local reranker with qwen3-embed.
+def _register_reranker_spec(**kwargs) -> None:
+    """Register a cross-encoder BYO model through fastretrieval."""
+    from fastretrieval import CustomRerankerSpec
 
-    Built-in ``n24q02m/Qwen3-Reranker-*`` ids are already known to qwen3-embed,
-    so they are skipped. Any other id (set via ``LOCAL_RERANK_MODEL``) is
-    registered via ``CustomRerankerSpec`` using ``LOCAL_RERANK_MODEL_FILE``, so
-    ``TextCrossEncoder(model_id)`` can load it. A cross-encoder needs no
-    dim/pooling.
-    """
-    if model_id.startswith("n24q02m/Qwen3-Reranker-"):
+    CustomRerankerSpec(**kwargs).register()
+
+
+def _maybe_register_custom_rerank(model_id: str) -> None:
+    """Register an explicit local reranker when it is not in the registry."""
+    from fastretrieval import TextCrossEncoder
+
+    if model_id.casefold() in {
+        item.casefold() for item in _supported_model_ids(TextCrossEncoder)
+    }:
         return
 
-    from qwen3_embed import CustomRerankerSpec
-
     try:
-        CustomRerankerSpec(
+        _register_reranker_spec(
             model_id=model_id,
             hf=model_id,
             model_file=settings.local_rerank_model_file,
-        ).register()
+        )
         logger.info(f"Registered custom local reranker: {model_id}")
     except ValueError as e:
         # Already registered (reranker backend re-init) or invalid spec --
@@ -124,7 +136,7 @@ async def _init_embedding_backend(
     """Initialize embedding backend based on credential state.
 
     AWAITING_SETUP: skip (FTS5-only mode until user configures credentials).
-    LOCAL: local-only path (qwen3-embed ONNX).
+    LOCAL: local-only path (fastretrieval ONNX).
     CONFIGURED: cloud-only path -- no silent local fallback.
 
     Running this as a background task lets the MCP server accept connections
@@ -525,7 +537,7 @@ async def _maybe_include_setup_hint(result: dict) -> dict:
     """If in awaiting_setup, surface a hint pointing the user at HTTP setup.
 
     Stdio mode reads creds from env vars; missing creds is non-fatal because
-    mnemo-mcp falls back to local Qwen3-Embedding ONNX. The hint nudges users
+    mnemo-mcp falls back to the local fastretrieval runtime. The hint nudges users
     toward the optional HTTP setup form for cloud providers / GDrive sync.
     """
     from mnemo_mcp.credential_state import CredentialState, get_state

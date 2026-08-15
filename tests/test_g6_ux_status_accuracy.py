@@ -50,10 +50,10 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status returns awaiting_setup when store empty and no env vars."""
-        monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("COHERE_API_KEY", raising=False)
+        from mnemo_mcp.credential_state import ALL_CONFIG_KEYS
+
+        for key in ALL_CONFIG_KEYS:
+            monkeypatch.delenv(key, raising=False)
 
         # Force module-level state to CONFIGURED (stale) to reproduce the bug
         import mnemo_mcp.credential_state as cs
