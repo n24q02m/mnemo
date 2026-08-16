@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v2.8.0-beta.4 (2026-08-16)
+
+### Bug Fixes
+
+- Align cache recovery with fastretrieval ([#1106](https://github.com/n24q02m/mnemo-mcp/pull/1106),
+  [`11947c8`](https://github.com/n24q02m/mnemo-mcp/commit/11947c8f3f6141febc475b5f4dcb2d24813e0b28))
+
+- **deploy**: Align Mnemo Vectorize index dimensions
+  ([#1109](https://github.com/n24q02m/mnemo-mcp/pull/1109),
+  [`e3ab419`](https://github.com/n24q02m/mnemo-mcp/commit/e3ab419d33828d613688b5bb257062ba92470449))
+
+- **deps**: Lock file maintenance ([#1108](https://github.com/n24q02m/mnemo-mcp/pull/1108),
+  [`d6ad799`](https://github.com/n24q02m/mnemo-mcp/commit/d6ad799f001a77a0dc00e274f17c8812e6ba9609))
+
+- **deps**: Update non-major dev dependencies
+  ([#1105](https://github.com/n24q02m/mnemo-mcp/pull/1105),
+  [`421ab8d`](https://github.com/n24q02m/mnemo-mcp/commit/421ab8dbc80a39a5006db3f1ff977e7e66603638))
+
+
 ## v2.8.0-beta.3 (2026-08-15)
 
 ### Bug Fixes
