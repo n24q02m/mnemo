@@ -22,7 +22,7 @@
   "d1_databases": [
     { "binding": "D1", "database_name": "mnemo-memories", "database_id": "9463057b-da9a-4583-b825-41972dee27d3", "migrations_dir": "migrations" }
   ],
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors" }],
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors-1536" }],
   "vars": {
     "PUBLIC_URL": "https://mnemo.n24q02m.com",
     "MCP_STORAGE_BACKEND": "cf-kv",
@@ -30,11 +30,11 @@
     "MEMORY_DB_BACKEND": "cf-d1",
     "MCP_D1_BASE_URL": "http://d1.internal",
     "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
-    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors",
+    "MCP_VECTORIZE_IDX": "mnemo-memory-vectors-1536",
     "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
     "RERANK_MODELS": "jina_ai/jina-reranker-v3",
     "LLM_MODELS": "vertex_express/gemini-3.5-flash",
-    "EMBEDDING_DIMS": "768"
+    "EMBEDDING_DIMS": "1536"
   },
   "observability": { "enabled": true }
 }
