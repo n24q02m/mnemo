@@ -324,12 +324,50 @@ class TestStats:
         s = tmp_db.stats()
         assert s["last_updated"] is not None
 
+    def test_preserves_empty_imported_updated_at(self, tmp_db: MemoryDB):
+        result = tmp_db.import_jsonl(
+            json.dumps(
+                {"id": "empty-updated-at", "content": "imported", "updated_at": ""}
+            ),
+            mode="merge",
+        )
+
+        assert result["imported"] == 1
+        assert tmp_db.stats()["last_updated"] == ""
+
     def test_categories_count(self, tmp_db: MemoryDB):
         tmp_db.add("a", category="x")
         tmp_db.add("b", category="x")
         tmp_db.add("c", category="y")
         s = tmp_db.stats()
         assert s["categories"] == {"x": 2, "y": 1}
+
+    def test_excludes_superseded_and_deleted_rows(self, tmp_db: MemoryDB):
+        tmp_db.add("active", category="active")
+        superseded_id = tmp_db.add("old", category="old")
+        tmp_db.update(superseded_id, category="current")
+        deleted_id = tmp_db.add("deleted", category="deleted")
+        assert tmp_db.delete(deleted_id) is True
+
+        stats = tmp_db.stats()
+
+        assert stats["total_memories"] == 2
+        assert stats["categories"] == {"active": 1, "current": 1}
+
+    def test_stats_uses_one_aggregate_query(self, tmp_db_with_data: MemoryDB):
+        statements: list[str] = []
+        tmp_db_with_data._conn.set_trace_callback(statements.append)
+        try:
+            tmp_db_with_data.stats()
+        finally:
+            tmp_db_with_data._conn.set_trace_callback(None)
+
+        select_statements = [
+            statement
+            for statement in statements
+            if statement.lstrip().upper().startswith("SELECT")
+        ]
+        assert len(select_statements) == 1
 
 
 class TestExportImport:
