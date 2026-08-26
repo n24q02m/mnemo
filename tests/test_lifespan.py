@@ -179,7 +179,7 @@ async def test_lifespan_local_backend_explicit(
     server = MagicMock()
     async with lifespan(server) as ctx:
         await _settle_background_init()
-        assert ctx["embedding_model"] == "__local__"
+        assert ctx["embedding_model"] == "local-model"
         assert ctx["embedding_dims"] == 768  # Default for stored
 
 

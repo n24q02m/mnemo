@@ -55,6 +55,29 @@ class TestClearModelCache:
 
         assert result is None
 
+    def test_resolve_cache_dir_uses_fastretrieval_public_api(
+        self, tmp_path, monkeypatch
+    ):
+        import fastretrieval
+
+        from mnemo_mcp import setup_tool
+
+        public_cache = tmp_path / "public"
+        monkeypatch.delenv("FASTRETRIEVAL_CACHE_PATH", raising=False)
+        monkeypatch.delenv("QWEN3_EMBED_CACHE_PATH", raising=False)
+
+        public_define = MagicMock(return_value=public_cache)
+        monkeypatch.setattr(
+            fastretrieval, "define_cache_dir", public_define, raising=False
+        )
+        monkeypatch.setattr(
+            "fastretrieval.common.utils.define_cache_dir",
+            MagicMock(side_effect=AssertionError("private fastretrieval import used")),
+        )
+
+        assert setup_tool._resolve_cache_dir() == public_cache
+        public_define.assert_called_once_with()
+
 
 class TestValidateCloudModels:
     """_validate_cloud_models checks cloud embedding availability."""

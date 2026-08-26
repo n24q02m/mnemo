@@ -175,7 +175,7 @@ async def _init_embedding_backend(
                     f"Embedding: local {local_model} "
                     f"(native={native_dims}, stored={embedding_dims})"
                 )
-                ctx["embedding_model"] = "__local__"
+                ctx["embedding_model"] = local_model
                 ctx["embedding_dims"] = embedding_dims
             else:
                 logger.error("Local embedding model not available")

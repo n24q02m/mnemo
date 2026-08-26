@@ -42,9 +42,9 @@ def _resolve_cache_dir() -> Path:
         )
         return Path(old)
 
-    from fastretrieval.common.utils import define_cache_dir
+    from fastretrieval import define_cache_dir
 
-    # Keep cache recovery aligned with fastretrieval's own default path.
+    # Keep cache recovery aligned with fastretrieval's public API and default path.
     return define_cache_dir()
 
 

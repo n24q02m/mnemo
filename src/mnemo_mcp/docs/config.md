@@ -22,7 +22,7 @@ Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
 
 ### `status` - Show current configuration
 
-Returns database stats, embedding model info, and sync status.
+Returns database stats, the resolved embedding identity, dimensions, availability, and sync status.
 
 **Parameters:** None
 
@@ -31,7 +31,7 @@ Returns database stats, embedding model info, and sync status.
   `cf-d1:<base-url>` when `MEMORY_DB_BACKEND=cf-d1`
 - `total_memories`: Total memory count
 - `categories`: Memory count by category
-- `embedding`: Model name, dimensions, availability
+- `embedding`: Exact resolved model identity (local model id or cloud candidate), storage dimensions, and availability. FTS-only/unavailable state is represented by a null model.
 - `sync`: Enabled, provider, folder, interval
 
 ### `sync` - Trigger manual sync

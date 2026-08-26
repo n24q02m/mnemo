@@ -518,7 +518,7 @@ class TestInitEmbeddingBackendCandidate:
         ctx: dict = {"embedding_model": None, "embedding_dims": 768}
         await _init_embedding_backend("local", ctx)
 
-        assert ctx == {"embedding_model": "__local__", "embedding_dims": 384}
+        assert ctx == {"embedding_model": "local/m", "embedding_dims": 384}
 
 
 class TestCustomEmbeddingRegistration:
@@ -847,7 +847,7 @@ class TestWarmupInitEmbeddingBackend:
         await _init_embedding_backend("local", ctx)
 
         mock_init.assert_called_once_with("local", "local/m")
-        assert ctx["embedding_model"] == "__local__"
+        assert ctx["embedding_model"] == "local/m"
 
     @patch("mnemo_mcp.server._maybe_register_custom_embed")
     @patch(

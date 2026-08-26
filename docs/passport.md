@@ -16,6 +16,22 @@ When you bootstrap a fresh machine you supply your passphrase, point at
 your backend, and `config(action="import_passport")` rehydrates the local
 SQLite store with the full passport content.
 
+## Production authority boundary
+
+Passport sync is a local/self-host migration and backup capability; it is not
+the production source of truth for the hosted Cloudflare deployment. In that
+profile:
+
+- Cloudflare **D1** owns memory rows and FTS5 search.
+- Cloudflare **Vectorize** owns dense vectors.
+- Cloudflare **KV** owns encrypted per-user credentials and session state.
+- `SYNC_ENABLED=false` keeps the legacy database-file Google Drive sync path
+  disabled.
+
+Do not treat a historical Drive `memories.db` or export as a complete inventory
+of current production memories. Any Drive cleanup is a separate exact-root,
+manifest, backup/restore, and exact-ID verification workflow.
+
 ## Backend choice (XOR per deployment mode)
 
 | Backend | Pros | Cons |

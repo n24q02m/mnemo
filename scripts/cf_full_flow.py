@@ -109,6 +109,36 @@ def _configure_cohere_cf_gateway() -> None:
     )
 
 
+def _configure_cohere_direct() -> None:
+    """Configure direct Cohere API route using a skret-provided alias."""
+    token = (
+        os.environ.get("COHERE_API_KEY_DIRECT") or os.environ.get("COHERE_API_KEY", "")
+    ).strip()
+    if not token:
+        raise SystemExit("COHERE_API_KEY_DIRECT (or COHERE_API_KEY) is required.")
+    for env_name in (
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "COHERE_API_KEY",
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        os.environ.pop(env_name, None)
+    os.environ.update(
+        {
+            "COHERE_API_KEY": token,
+            "EMBEDDING_MODELS": "cohere/embed-multilingual-v3.0",
+            "RERANK_MODELS": "cohere/rerank-multilingual-v3.0",
+        }
+    )
+
+
 def _password() -> str:
     pw = os.environ.get("RELAY_PW") or os.environ.get("MCP_RELAY_PASSWORD")
     if not pw:
@@ -123,14 +153,14 @@ def _password() -> str:
 def _creds() -> dict[str, str]:
     """Build the per-sub provider and model-routing form payload."""
     creds: dict[str, str] = {}
-    for env_name in (
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY",
-        "COHERE_API_KEY",
-        "XAI_API_KEY",
+    for env_name, alias in (
+        ("JINA_AI_API_KEY", "JINA_AI_API_KEY_DIRECT"),
+        ("GEMINI_API_KEY", "VERTEX_EXPRESS_KEY_DIRECT"),
+        ("OPENAI_API_KEY", None),
+        ("COHERE_API_KEY", "COHERE_API_KEY_DIRECT"),
+        ("XAI_API_KEY", "XAI_API_KEY_DIRECT"),
     ):
-        v = os.environ.get(env_name)
+        v = os.environ.get(env_name) or (os.environ.get(alias) if alias else None)
         if v:
             creds[env_name] = v
     for env_name in (
@@ -614,6 +644,11 @@ def build_parser() -> argparse.ArgumentParser:
             "clears competing provider/model env values without logging secrets."
         ),
     )
+    p.add_argument(
+        "--cohere-direct",
+        action="store_true",
+        help="Use COHERE_API_KEY_DIRECT with LiteLLM direct Cohere route.",
+    )
     mode = p.add_mutually_exclusive_group()
     mode.add_argument(
         "--save-only",
@@ -651,6 +686,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cohere_cf_gateway:
         _configure_cohere_cf_gateway()
+    elif getattr(args, "cohere_direct", False):
+        _configure_cohere_direct()
+
     if args.save_only:
         asyncio.run(run_save_only(args.endpoint))
     elif args.auth_only:

@@ -289,6 +289,15 @@ cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS`
 `RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads the local Qwen3 ONNX
 models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
 
+### Authority & Sync Boundary
+
+On Cloudflare deployments, **Cloudflare D1 + Vectorize + KV** is the sole production authority:
+- **D1** (`MEMORY_DB_BACKEND=cf-d1`): Authoritative storage for memory rows, metadata, bitemporal valid ranges, and FTS5 search.
+- **Vectorize** (`MCP_VECTORIZE_IDX`): Dense vector index for semantic similarity search.
+- **KV** (`MCP_STORAGE_BACKEND=cf-kv`): Encrypted per-user credential and session store.
+- **Sync boundary** (`SYNC_ENABLED=false`): Production Cloudflare deployments pin legacy Google Drive sync off; Cloudflare serves as the live authority.
+- **Local & self-host bootstrap**: Local stdio (`~/.mnemo-mcp/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
+
 ## Trust Model
 
 This plugin implements **TC-Local** (machine-bound, single trust principal). The mode/storage/encryption breakdown below is the full classification.

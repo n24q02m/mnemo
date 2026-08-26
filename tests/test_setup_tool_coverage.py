@@ -50,7 +50,7 @@ def test_clear_model_cache_fallback_to_fastretrieval_default(tmp_path):
         model_cache.mkdir(parents=True)
 
         with patch(
-            "fastretrieval.common.utils.define_cache_dir",
+            "fastretrieval.define_cache_dir",
             return_value=default_cache_dir,
         ):
             result = clear_model_cache(model_name)

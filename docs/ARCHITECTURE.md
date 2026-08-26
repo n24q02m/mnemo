@@ -9,25 +9,22 @@
 +--------------------+        +---------------------+
 | MCP client         |  MCP   | mnemo-mcp           |
 | (Claude Code,      | <----> | FastMCP server      |
-|  Cursor, Codex,    |        | 15 tools (memory    |
-|  claude.ai web)    |        | + config + help)    |
+| Cursor, Codex,     |        | 15 tools (memory    |
+| claude.ai web)     |        | + config + help)    |
 +--------------------+        +----------+----------+
                                          |
-                                         v
-                                +--------------------+
-                                | SQLite (WAL)       |
-                                |  - memories table  |
-                                |  - memories_fts    |
-                                |  - memories_vec    |
-                                |  - alembic_version |
-                                +--------------------+
+                         +---------------+----------------+
+                         |                                |
+                         v                                v
+                +--------------------+          +------------------------+
+                | Local/self-host    |          | Cloudflare deployment  |
+                | SQLite (WAL)       |          | D1 + Vectorize + KV     |
+                | FTS5 + sqlite-vec  |          | sync disabled           |
+                +--------------------+          +------------------------+
 ```
-
-The server stores everything in a single SQLite file under
-`~/.mnemo-mcp/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual
-tables back the hybrid retrieval pipeline. No external services are
-required for the local-only (ONNX) configuration.
-
+The server supports two distinct storage authorities:
+- **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo-mcp/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline with optional passport sync (GDrive/S3).
+- **Cloudflare Deployed Mode**: Production authority is Cloudflare D1 (relational rows + FTS5) + Vectorize (dense vector index) + KV (encrypted credentials). `SYNC_ENABLED=false` is enforced in Worker container configuration.
 ## Capture pipeline (`memory(action="capture")`)
 
 ```

@@ -56,6 +56,31 @@ def test_configure_cohere_cf_gateway_uses_existing_gateway_token(monkeypatch):
     assert not os.environ.get("JINA_AI_API_KEY")
 
 
+def test_configure_cohere_direct_uses_direct_alias_and_clears_stale_routes(monkeypatch):
+    for name in (
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "COHERE_API_KEY",
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        monkeypatch.setenv(name, "stale")
+    monkeypatch.setenv("COHERE_API_KEY_DIRECT", "direct-token")
+
+    _HARNESS._configure_cohere_direct()
+
+    assert os.environ["COHERE_API_KEY"] == "direct-token"
+    assert os.environ["EMBEDDING_MODELS"] == "cohere/embed-multilingual-v3.0"
+    assert os.environ["RERANK_MODELS"] == "cohere/rerank-multilingual-v3.0"
+    assert not os.environ.get("JINA_AI_API_KEY")
+
+
 def test_assert_rerank_payload_requires_semantic_and_reranked_flags():
     payload = {
         "semantic": True,
