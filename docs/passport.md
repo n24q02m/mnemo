@@ -73,6 +73,7 @@ paste API keys via the relay form — the passport sync is invisible to
 them and S3-backed under the hood.
 
 ```bash
+docker build --target http -t mnemo-mcp:local .
 docker run \
   -e SYNC_S3_BUCKET=mnemo-prod-passport \
   -e SYNC_S3_ACCESS_KEY_ID=AKIA... \
@@ -82,7 +83,7 @@ docker run \
   -e SYNC_PASSPHRASE='<strong-shared-passphrase>' \
   -e PUBLIC_URL=https://mnemo.example.com \
   -e MCP_DCR_SERVER_SECRET=<dcr-secret> \
-  ghcr.io/n24q02m/mnemo-mcp:latest --http
+  mnemo-mcp:local --http
 ```
 
 The `SYNC_PASSPHRASE` env var lives ONLY in the container process — it

@@ -93,6 +93,13 @@
       "allowedVersions": ">=10.0.0"
     },
     {
+      "description": "Hold pydantic-settings below 2.15 until the MCP SDK rebuilds Settings",
+      "matchPackageNames": [
+        "pydantic-settings"
+      ],
+      "allowedVersions": "<2.15"
+    },
+    {
       "description": "Pin Python runtime to 3.13.x",
       "matchPackageNames": [
         "python"

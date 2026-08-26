@@ -106,7 +106,8 @@ Releases are automated using **python-semantic-release (PSR) v10**. We strictly 
    - Bumps version, updates `CHANGELOG.md`, creates a tag.
    - Publishes to PyPI.
    - Creates a GitHub Release.
-   - Builds and pushes Docker images.
+   - Publishes eligible stable releases to the MCP Registry and syncs the marketplace.
+   - Builds and pushes the Cloudflare internal image during the deploy job.
 
 You do **not** need to create manual tags or changelog entries.
 

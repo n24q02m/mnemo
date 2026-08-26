@@ -143,7 +143,7 @@ the next embedding pass. Never mix vectors from different model identities.
 
 ## CD Pipeline
 
-PSR v10 (workflow_dispatch) -> PyPI + Docker (amd64+arm64) + GHCR + MCP Registry.
+PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace; Cloudflare deploy builds/pushes the internal image.
 
 ## Luu y
 

@@ -24,7 +24,8 @@ dependencies = [
     "httpx",
     # Config
     "pydantic",
-    "pydantic-settings",
+    # 2.15 warns while constructing MCP SDK Settings; lift after upstream rebuilds its model.
+    "pydantic-settings>=2.14.2,<2.15",
     # Logging
     "loguru",
     # SQLite vector search

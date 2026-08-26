@@ -246,10 +246,10 @@ async function extractUserId(_request: Request): Promise<string> {
   return 'default'
 }
 
-// Per-user container Durable Object. wrangler.jsonc binds MNEMO to this class and
-// runs the ghcr.io/n24q02m/mnemo-mcp:http image; one instance per JWT sub. The
-// container's HTTP server listens on 8080 (Dockerfile http target: MCP_PORT=8080
-// + EXPOSE 8080).
+// The per-user container Durable Object is bound to this class in wrangler.jsonc
+// and runs the registry.cloudflare.com/<account>/mnemo-mcp:<tag> image; one
+// instance per JWT sub. The container's HTTP server listens on 8080
+// (Dockerfile http target: MCP_PORT=8080 + EXPOSE 8080).
 export class MnemoContainer extends Container<Env> {
   defaultPort = 8080
   sleepAfter = '5m'

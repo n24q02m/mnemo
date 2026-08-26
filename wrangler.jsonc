@@ -12,11 +12,11 @@
     {
       "name": "mnemo-mcp-worker",
       "class_name": "MnemoContainer",
-      // CF Containers pull only from the Cloudflare managed registry (an external
-      // ghcr.io ref fails with IMAGE_REGISTRY_NOT_CONFIGURED). Push the pre-built
-      // image first: `docker pull ghcr.io/n24q02m/mnemo-mcp:beta && docker tag ... mnemo-mcp:beta
-      // && wrangler containers push mnemo-mcp:beta`, then fill <YOUR_ACCOUNT_ID>.
-      "image": "registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:beta",
+      // CF Containers pull only from the Cloudflare managed registry. Build the
+      // HTTP image from this checkout first: `docker build --target http -t
+      // mnemo-mcp:local . && wrangler containers push mnemo-mcp:local`, then fill
+      // <YOUR_ACCOUNT_ID> and keep the matching internal image reference below.
+      "image": "registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:local",
       "instance_type": "basic",
       "max_instances": 1
     }

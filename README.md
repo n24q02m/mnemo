@@ -8,7 +8,6 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
-[![Docker](https://img.shields.io/docker/v/n24q02m/mnemo-mcp?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/mnemo-mcp)
 [![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
 [![SafeSkill 91/100](https://img.shields.io/badge/SafeSkill-91%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/n24q02m-mnemo-mcp)
 
@@ -237,6 +236,10 @@ mnemo-mcp doctor                # environment diagnostics (Python, backend, stor
 
 Deployed over HTTP, mnemo speaks Streamable HTTP transport and is OAuth-gated. Point any MCP client that supports remote HTTP + OAuth at `https://<your-host>/mcp` and authenticate on first connect; each authenticated user gets an isolated per-user credential store (see [Trust Model](#trust-model)). To stand up an instance, see [Deploy to Cloudflare](#deploy-to-cloudflare).
 
+Public OCI image publication is discontinued. Existing historical registry tags
+remain untouched; new container deployments build from source or use the
+Cloudflare-managed registry.
+
 ## Deploy to Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/mnemo-mcp)
@@ -264,12 +267,11 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
    points at that folder via `migrations_dir: "migrations"`. Full-text search uses FTS5,
    which D1 ships; vector similarity is served by Vectorize rather than by an in-database
    extension, because D1 cannot load one.
-4. Push the container image to your Cloudflare managed registry (CF Containers cannot
-   pull from external registries directly), then set `<YOUR_ACCOUNT_ID>` in `wrangler.jsonc`:
+4. Build the HTTP container from this checkout and push it to your Cloudflare managed registry (CF Containers cannot pull from external registries directly), then set `<YOUR_ACCOUNT_ID>` in `wrangler.jsonc`:
    ```
-   docker pull ghcr.io/n24q02m/mnemo-mcp:beta
-   docker tag ghcr.io/n24q02m/mnemo-mcp:beta mnemo-mcp:beta
-   wrangler containers push mnemo-mcp:beta   # prints registry.cloudflare.com/<ACCOUNT_ID>/mnemo-mcp:beta
+   docker build --target http -t mnemo-mcp:local .
+   wrangler containers push mnemo-mcp:local
+   # set image to registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:local
    ```
 5. Set `<YOUR_PUBLIC_URL>` (e.g. `https://mnemo.example.com`) and `<YOUR_WORKER_DOMAIN>`
    (e.g. `mnemo.example.com`) in `wrangler.jsonc`, then set the secrets:
