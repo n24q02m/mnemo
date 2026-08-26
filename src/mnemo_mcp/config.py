@@ -168,6 +168,40 @@ class Settings(BaseSettings):
     archive_after_days: int = 90
     archive_importance_threshold: float = 0.3
 
+    # --- Enterprise profile (Wave A; spec 2026-08-25-mnemo-enterprise-design) ---
+    # Master switch. False (default) => stdio/single-user HTTP behavior is
+    # byte-for-byte unchanged; enterprise tables stay empty and unread.
+    enterprise_enabled: bool = Field(
+        False, validation_alias=AliasChoices("MNEMO_ENTERPRISE")
+    )
+    # Trusted external IdP issuers (CSV) — Wave C consumes; declared now so
+    # deploy config lands once.
+    enterprise_issuers: str = Field(
+        "", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ISSUERS")
+    )
+    enterprise_audience: str = Field(
+        "", validation_alias=AliasChoices("MNEMO_ENTERPRISE_AUDIENCE")
+    )
+    # Claim -> role mapping. Unmapped groups fall back to "member".
+    enterprise_role_claim: str = Field(
+        "groups", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ROLE_CLAIM")
+    )
+    enterprise_role_mapping: str = Field(
+        "{}", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ROLE_MAPPING")
+    )
+    enterprise_tenant_claim: str = Field(
+        "tid", validation_alias=AliasChoices("MNEMO_ENTERPRISE_TENANT_CLAIM")
+    )
+    # Audit chain key. Deployed value arrives via skret-injected env (C2) —
+    # never committed. Empty => enterprise audit writes raise at runtime.
+    audit_hash_key: str = Field(
+        "", validation_alias=AliasChoices("MNEMO_AUDIT_HASH_KEY")
+    )
+    audit_key_id: str = Field("k1", validation_alias=AliasChoices("MNEMO_AUDIT_KEY_ID"))
+    audit_retention_days: int = Field(
+        400, validation_alias=AliasChoices("MNEMO_AUDIT_RETENTION_DAYS")
+    )
+
     # Dedup
     dedup_threshold: float = 0.9
     dedup_warn_threshold: float = 0.7

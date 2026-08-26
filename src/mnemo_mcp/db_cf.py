@@ -1495,6 +1495,78 @@ class MemoryDBCfBackend:
         """
         self._conn.close()
 
+    def append_audit_event(
+        self, event_fields: dict, *, key: bytes, key_id: str = "k1"
+    ) -> dict:
+        """Append one tamper-evident audit event (D1: no client transaction).
+
+        Hash depends on prev/seq, so it cannot be computed in SQL: SELECT prev,
+        build + hash in Python, INSERT with the known seq/prev_hash. A racing
+        writer that wins the same seq raises a UNIQUE conflict; retry the whole
+        read-build-insert loop up to 3 times. A lost chain locality shows up as
+        a gap, which verify_audit_chain reports as a failure -- safe, never
+        silent.
+        """
+        from mnemo_mcp.enterprise.audit import GENESIS, build_event
+
+        for attempt in range(3):
+            row = self._conn.execute(
+                "SELECT seq, event_hash FROM enterprise_audit WHERE tenant_id = ? "
+                "ORDER BY seq DESC LIMIT 1",
+                (event_fields["tenant_id"],),
+            ).fetchone()
+            seq = (row["seq"] + 1) if row else 1
+            prev = row["event_hash"] if row else GENESIS
+            event = build_event(
+                seq=seq, prev_hash=prev, key=key, key_id=key_id, **event_fields
+            )
+            try:
+                self._conn.execute(
+                    "INSERT INTO enterprise_audit (id, tenant_id, seq, actor_sub,"
+                    " actor_roles, operation, resource_type, resource_id, decision,"
+                    " prev_hash, event_hash, key_id, details, occurred_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        event["id"],
+                        event["tenant_id"],
+                        event["seq"],
+                        event["actor_sub"],
+                        json.dumps(event["actor_roles"], ensure_ascii=False),
+                        event["operation"],
+                        event["resource_type"],
+                        event["resource_id"],
+                        event["decision"],
+                        event["prev_hash"],
+                        event["event_hash"],
+                        event["key_id"],
+                        json.dumps(event["details"], ensure_ascii=False),
+                        event["occurred_at"],
+                    ),
+                )
+                return event
+            except Exception as exc:
+                if (
+                    "UNIQUE constraint failed: enterprise_audit" in str(exc)
+                    and attempt < 2
+                ):
+                    continue
+                raise
+        raise RuntimeError("unreachable: audit append retry loop")
+
+    def verify_audit_chain(self, tenant_id: str, keys: dict[str, bytes]):
+        """Recompute the per-tenant HMAC chain over stored D1 rows."""
+        from mnemo_mcp.enterprise.audit import verify_rows
+
+        rows = self._conn.fetchall(
+            "SELECT * FROM enterprise_audit WHERE tenant_id = ? ORDER BY seq",
+            [tenant_id],
+        )
+        parsed = [dict(r) for r in rows]
+        for row in parsed:  # parse JSON columns back
+            row["actor_roles"] = json.loads(row["actor_roles"])
+            row["details"] = json.loads(row["details"])
+        return verify_rows(tenant_id, parsed, keys)
+
 
 def open_memory_db(
     db_path: Path,

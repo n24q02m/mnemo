@@ -24,6 +24,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
+from mnemo_mcp.credential_state import _current_sub
 from mnemo_mcp.db import MemoryDB
 from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
 from mnemo_mcp.secure_file import write_owner_only
@@ -2740,6 +2741,56 @@ def recall_context(topic: str) -> str:
     )
 
 
+def _build_request_scope(enterprise_enabled: bool):
+    """Build the auth_scope middleware (module-level để test import được).
+
+    Always pins the verified JWT ``sub`` into the ``_current_sub`` contextvar
+    (credential scoping, unchanged behavior). When ``enterprise_enabled``, it
+    additionally builds the PrincipalContext from the claims mcp-core already
+    verified; malformed claims log a warning and yield None (deny-by-default
+    downstream) instead of raising — a claims-shape error is a config error,
+    not an auth failure, because mcp-core has already 401'd bad tokens.
+    """
+    from mnemo_mcp.enterprise.identity import (
+        principal_from_claims,
+        reset_current_principal,
+        set_current_principal,
+    )
+
+    role_mapping: dict[str, str] = json.loads(settings.enterprise_role_mapping or "{}")
+    # Wave C thay bằng mapping issuer->tenant thật; Wave A chỉ dùng tenant claim.
+    issuer_tenant_map = {
+        i.strip(): "" for i in settings.enterprise_issuers.split(",") if i.strip()
+    }
+
+    async def _per_request_sub_scope(
+        claims: dict, next_: Callable[[], Awaitable[None]]
+    ) -> None:
+        token = _current_sub.set(claims.get("sub"))
+        ptoken = None
+        if enterprise_enabled:
+            try:
+                principal = principal_from_claims(
+                    claims,
+                    role_claim=settings.enterprise_role_claim,
+                    role_mapping=role_mapping,
+                    tenant_claim=settings.enterprise_tenant_claim,
+                    issuer_tenant_map=issuer_tenant_map,
+                )
+            except ValueError as exc:
+                logger.warning(f"enterprise principal rejected: {exc}")
+                principal = None
+            ptoken = set_current_principal(principal)
+        try:
+            await next_()
+        finally:
+            if ptoken is not None:
+                reset_current_principal(ptoken)
+            _current_sub.reset(token)
+
+    return _per_request_sub_scope
+
+
 # --- Entrypoint ---
 
 
@@ -2759,7 +2810,6 @@ async def run_http(port: int = 0) -> None:
     from mcp_core.transport.local_server import run_http_server
 
     from mnemo_mcp.credential_state import (
-        _current_sub,
         save_credentials,
         wire_gdrive_callbacks,
     )
@@ -2780,19 +2830,14 @@ async def run_http(port: int = 0) -> None:
         host = "127.0.0.1"
 
     # HTTP multi-user remote mode (PUBLIC_URL set) wires an auth_scope
-    # middleware that pins the decoded JWT ``sub`` into a contextvar for the
-    # duration of the request so per-tool-call credential lookups can resolve
-    # against ``$MNEMO_DATA_DIR/subs/<sub>/config.json`` instead of process
-    # environment. Single-user HTTP (PUBLIC_URL unset) keeps the existing
-    # env-driven flow untouched.
-    async def _per_request_sub_scope(
-        claims: dict, next_: Callable[[], Awaitable[None]]
-    ) -> None:
-        token = _current_sub.set(claims.get("sub"))
-        try:
-            await next_()
-        finally:
-            _current_sub.reset(token)
+    # middleware built by _build_request_scope: it pins the decoded JWT
+    # ``sub`` into a contextvar for the duration of the request so per-tool-call
+    # credential lookups can resolve against ``$MNEMO_DATA_DIR/subs/<sub>/config.json``
+    # instead of process environment, and — enterprise mode only — builds the
+    # verified PrincipalContext from the already-verified claims. Single-user
+    # HTTP (PUBLIC_URL unset, enterprise off) keeps the existing env-driven
+    # flow untouched.
+    _per_request_sub_scope = _build_request_scope(bool(settings.enterprise_enabled))
 
     # MCP_AUTH_DISABLE=1 skips Bearer JWT verification on /mcp -- for
     # deployments behind an external auth boundary (reverse proxy / API

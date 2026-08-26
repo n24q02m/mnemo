@@ -100,6 +100,20 @@ Khong co prefix (khac voi cac project khac):
 - `RECENCY_HALF_LIFE_DAYS` -- half-life cho temporal decay scoring (default: 7)
 - `LOG_LEVEL` -- log level (default: INFO)
 
+### Enterprise profile (Wave A; default off)
+
+- `MNEMO_ENTERPRISE` -- `true`/`false`, default false. False = hành vi hiện tại nguyên vẹn.
+- `MNEMO_ENTERPRISE_ISSUERS` -- CSV trusted IdP issuers (dùng ở Wave C).
+- `MNEMO_ENTERPRISE_AUDIENCE` -- JWT audience check (Wave C).
+- `MNEMO_ENTERPRISE_ROLE_CLAIM` -- claim chứa groups (default `groups`).
+- `MNEMO_ENTERPRISE_ROLE_MAPPING` -- JSON group→role, group lạ fallback `member`.
+- `MNEMO_ENTERPRISE_TENANT_CLAIM` -- claim tenant (default `tid`).
+- `MNEMO_AUDIT_HASH_KEY` -- khoá HMAC audit chain; cấp qua skret tại deploy, KHÔNG commit.
+- `MNEMO_AUDIT_KEY_ID` -- default `k1`; dùng khi xoay khoá (verify chấp nhận cửa sổ khoá).
+- `MNEMO_AUDIT_RETENTION_DAYS` -- default 400; retention của chính bảng audit (sweeper Wave D).
+
+CLI: `mnemo-mcp audit verify --tenant T [--db-path P]` — exit 0 ok / 1 chain đứt / 2 thiếu key.
+
 ### Manual config example
 
 ```json

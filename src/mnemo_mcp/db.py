@@ -1963,6 +1963,63 @@ class MemoryDB:
         """Close database connection."""
         self._conn.close()
 
+    def append_audit_event(
+        self, event_fields: dict, *, key: bytes, key_id: str = "k1"
+    ) -> dict:
+        """Append one tamper-evident audit event (SQLite: single transaction)."""
+        from mnemo_mcp.enterprise.audit import GENESIS, build_event
+
+        with self._conn:  # BEGIN..COMMIT implicit via context manager
+            row = self._conn.execute(
+                "SELECT seq, event_hash FROM enterprise_audit WHERE tenant_id = ? "
+                "ORDER BY seq DESC LIMIT 1",
+                (event_fields["tenant_id"],),
+            ).fetchone()
+            seq = (row["seq"] + 1) if row else 1
+            prev = row["event_hash"] if row else GENESIS
+            event = build_event(
+                seq=seq, prev_hash=prev, key=key, key_id=key_id, **event_fields
+            )
+            self._conn.execute(
+                "INSERT INTO enterprise_audit (id, tenant_id, seq, actor_sub,"
+                " actor_roles, operation, resource_type, resource_id, decision,"
+                " prev_hash, event_hash, key_id, details, occurred_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    event["id"],
+                    event["tenant_id"],
+                    event["seq"],
+                    event["actor_sub"],
+                    json.dumps(event["actor_roles"], ensure_ascii=False),
+                    event["operation"],
+                    event["resource_type"],
+                    event["resource_id"],
+                    event["decision"],
+                    event["prev_hash"],
+                    event["event_hash"],
+                    event["key_id"],
+                    json.dumps(event["details"], ensure_ascii=False),
+                    event["occurred_at"],
+                ),
+            )
+        return event
+
+    def verify_audit_chain(self, tenant_id: str, keys: dict[str, bytes]):
+        """Recompute the per-tenant HMAC chain over stored rows."""
+        from mnemo_mcp.enterprise.audit import verify_rows
+
+        rows = [
+            dict(r)
+            for r in self._conn.execute(
+                "SELECT * FROM enterprise_audit WHERE tenant_id = ? ORDER BY seq",
+                (tenant_id,),
+            ).fetchall()
+        ]
+        for row in rows:  # parse JSON columns back
+            row["actor_roles"] = json.loads(row["actor_roles"])
+            row["details"] = json.loads(row["details"])
+        return verify_rows(tenant_id, rows, keys)
+
     def _run_migrations(self) -> None:
         """Run Alembic migrations to head, with backup-before-migrate.
 

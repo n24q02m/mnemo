@@ -26,10 +26,11 @@ from mnemo_mcp.db import MemoryDB
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
+_MIGRATION_4 = _REPO_ROOT / "migrations" / "0004_enterprise_audit.sql"
 
-# Every object migrations/0001_init.sql is expected to create. Written out in
-# full rather than derived, so that adding or dropping DDL forces a deliberate
-# edit here.
+# Every object the applied D1 migrations (0001 + 0004) are expected to create.
+# Written out in full rather than derived, so that adding or dropping DDL
+# forces a deliberate edit here.
 EXPECTED_TABLES = {
     "archived_memories",
     "memories",
@@ -38,6 +39,7 @@ EXPECTED_TABLES = {
     "memory_entities",
     "memory_entity_links",
     "store_meta",
+    "enterprise_audit",
 }
 EXPECTED_INDEXES = {
     "idx_archived_memories_archived_at",
@@ -50,6 +52,7 @@ EXPECTED_INDEXES = {
     "idx_memory_edges_unique",
     "idx_memory_entities_name_type",
     "idx_memory_entity_links_entity_id",
+    "idx_enterprise_audit_tenant_time",
 }
 EXPECTED_TRIGGERS = {"memories_ai", "memories_ad", "memories_au"}
 
@@ -82,9 +85,10 @@ def migration_sql() -> str:
 
 @pytest.fixture(scope="module")
 def migrated_conn(migration_sql: str) -> sqlite3.Connection:
-    """A blank in-memory SQLite database with the migration applied."""
+    """A blank in-memory SQLite database with the migrations applied."""
     conn = sqlite3.connect(":memory:")
     conn.executescript(migration_sql)
+    conn.executescript(_MIGRATION_4.read_text(encoding="utf-8"))
     return conn
 
 
@@ -255,6 +259,25 @@ class TestParityWithSqliteSchema:
         assert not unexplained, (
             f"tables present in SQLite but absent from the D1 migration: {unexplained}"
         )
+
+
+class TestEnterpriseAuditMigration:
+    """migrations/0004_enterprise_audit.sql pins the Wave A audit table."""
+
+    def test_migration_file_exists(self):
+        assert _MIGRATION_4.is_file(), f"missing migration: {_MIGRATION_4}"
+
+    def test_pins_audit_table(self):
+        sql = _MIGRATION_4.read_text(encoding="utf-8")
+        assert "CREATE TABLE IF NOT EXISTS enterprise_audit" in sql
+        assert "UNIQUE(tenant_id, seq)" in sql
+        assert "idx_enterprise_audit_tenant_time" in sql
+
+    def test_no_vec0_or_pragma_or_transaction(self):
+        sql = _strip_sql_comments(_MIGRATION_4.read_text(encoding="utf-8"))
+        assert "vec0" not in sql and "sqlite_vec" not in sql
+        assert "PRAGMA" not in sql
+        assert "BEGIN" not in sql
 
 
 def test_wrangler_config_points_at_migrations_dir():

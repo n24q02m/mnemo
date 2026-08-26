@@ -4,6 +4,17 @@
 # module-level ``patch("importlib.metadata.version")``. Once fastmcp is
 # cached in sys.modules, later imports skip its ``__init__`` (which would
 # otherwise try to resolve its own version via the leaked mock).
+# Coverage + beartype-claw guard: ``key_value.aio`` activates beartype's
+# claw import hook, whose loader lazily imports ``beartype.claw._clawstate``
+# on every get_code. When coverage traces that first self-import, the loader
+# re-enters itself and dies with a partial-initialization ImportError before
+# any test runs. Importing the state module up front (before the hook exists,
+# through the normal loader) caches it in sys.modules and defuses the loop.
+
+# Force-import fastmcp BEFORE test_security_log_level.py loads its
+# module-level ``patch("importlib.metadata.version")``. Once fastmcp is
+# cached in sys.modules, later imports skip its ``__init__`` (which would
+# otherwise try to resolve its own version via the leaked mock).
 import ipaddress
 import os
 import socket

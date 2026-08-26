@@ -87,9 +87,45 @@ def _handle_warmup(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "ok" else 1
 
 
+def _configure_audit(p: argparse.ArgumentParser) -> None:
+    """Attach the `audit` subcommand group onto the parser build_cli hands us."""
+    sub = p.add_subparsers(dest="audit_action", required=True)
+    v = sub.add_parser("verify", help="Verify the per-tenant audit hash chain")
+    v.add_argument("--tenant", required=True)
+    v.add_argument("--db-path", default=None)
+
+
+def _handle_audit_verify(args: argparse.Namespace) -> int:
+    import os
+    from pathlib import Path
+
+    key_hex_or_raw = os.environ.get("MNEMO_AUDIT_HASH_KEY", "")
+    if not key_hex_or_raw:
+        print("audit key not configured (MNEMO_AUDIT_HASH_KEY empty)")
+        return 2
+    from mnemo_mcp.config import settings
+    from mnemo_mcp.db import MemoryDB
+
+    db_path = Path(args.db_path).expanduser() if args.db_path else None
+    if db_path is None:
+        db_path = (
+            Path(settings.db_path).expanduser()
+            if settings.db_path
+            else (Path.home() / ".mnemo-mcp" / "memories.db")
+        )
+    db = MemoryDB(db_path, embedding_dims=0)
+    report = db.verify_audit_chain(args.tenant, {"k1": key_hex_or_raw.encode()})
+    if report.ok:
+        print(f"VERIFY {args.tenant} OK checked={report.checked}")
+        return 0
+    print(f"VERIFY {args.tenant} FAIL at seq={report.first_bad_seq}: {report.reason}")
+    return 1
+
+
 def _extras() -> dict:
     return {
         "auth": (_configure_auth, _handle_auth),
+        "audit": (_configure_audit, _handle_audit_verify),
         "warmup": _handle_warmup,
         "logout": _handle_logout,
     }
