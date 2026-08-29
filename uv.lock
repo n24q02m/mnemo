@@ -1125,21 +1125,21 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.19.1" },
-    { name = "boto3", specifier = ">=1.43.69" },
+    { name = "boto3", specifier = ">=1.43.78" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "fastmcp", specifier = ">=3.4.7,<4" },
     { name = "fastretrieval", specifier = ">=1.1.0b1,<2" },
     { name = "httpx" },
-    { name = "idna", specifier = ">=3.18" },
+    { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"] },
     { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.23.1b1,<2" },
     { name = "pydantic" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
-    { name = "pygments", specifier = ">=2.20.0" },
+    { name = "pygments", specifier = ">=2.21.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlite-vec" },
-    { name = "tiktoken", specifier = ">=0.13.0" },
+    { name = "tiktoken", specifier = ">=0.14.0" },
     { name = "urllib3", specifier = ">=2.7.0" },
 ]
 
