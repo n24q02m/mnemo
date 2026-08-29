@@ -131,7 +131,7 @@ async def test_sync_now_unknown_backend(
     raw = await _handle_config_sync_now(ctx, backend="nonexistent")
     payload = raw
     assert "error" in payload
-    assert "nonexistent" in payload["error"]
+    assert "backend configuration incomplete" in payload["error"]
 
 
 # ---------------------------------------------------------------------------

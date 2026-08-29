@@ -2469,9 +2469,10 @@ async def _handle_config_sync_now(
 
         result = await sync_now(db, target, passphrase)
         return {"backend": target, **result}
-    except KeyError as e:
+    except KeyError:
+        logger.exception("sync_now failed: backend not found")
         return {
-            "error": str(e),
+            "error": "backend configuration incomplete",
             "suggestion": "Check if backend configuration is complete.",
         }
     except Exception:
@@ -2530,9 +2531,10 @@ async def _handle_config_import_passport(
 
         backend = get_backend(target)
         bundle = await backend.pull(sequence=None)
-    except KeyError as e:
+    except KeyError:
+        logger.exception("import_passport failed: backend not found")
         return {
-            "error": str(e),
+            "error": "backend configuration incomplete",
             "suggestion": "Ensure the specified backend is properly configured.",
         }
     except Exception:
