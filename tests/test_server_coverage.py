@@ -247,6 +247,7 @@ class TestConfigSync:
         assert result == {
             "status": "unavailable",
             "error": "No embedding backend is configured for the current subject.",
+            "suggestion": "Verify embedding configuration or run the setup flow.",
             "scanned": 0,
             "embedded": 0,
             "skipped": 0,

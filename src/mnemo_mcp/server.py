@@ -2063,6 +2063,7 @@ async def _handle_config_backfill(
         return {
             "status": "unavailable",
             "error": "No embedding backend is configured for the current subject.",
+            "suggestion": "Verify embedding configuration or run the setup flow.",
             "scanned": 0,
             "embedded": 0,
             "skipped": 0,
