@@ -1154,7 +1154,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff" },
-    { name = "syrupy", specifier = ">=5.5.3" },
+    { name = "syrupy", specifier = ">=6.0.0" },
     { name = "ty" },
 ]
 
