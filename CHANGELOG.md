@@ -2,6 +2,169 @@
 
 <!-- version list -->
 
+## v2.8.0 (2026-08-29)
+
+### Bug Fixes
+
+- Add missing end-of-file newline to infisical config
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Aggregate memory stats in one query ([#1113](https://github.com/n24q02m/mnemo-mcp/pull/1113),
+  [`aeb70a5`](https://github.com/n24q02m/mnemo-mcp/commit/aeb70a50242b0dc461795cdc7784ff3301034567))
+
+- Align mnemo retrieval contract ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+- Align mnemo retrieval contract ([#1132](https://github.com/n24q02m/mnemo-mcp/pull/1132),
+  [`17c360b`](https://github.com/n24q02m/mnemo-mcp/commit/17c360baa85e50315b1087ab4bdc9c09f7a64c90))
+
+- Document mnemo authority and retrieval flow
+  ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+- Document mnemo authority and retrieval flow
+  ([#1132](https://github.com/n24q02m/mnemo-mcp/pull/1132),
+  [`17c360b`](https://github.com/n24q02m/mnemo-mcp/commit/17c360baa85e50315b1087ab4bdc9c09f7a64c90))
+
+- Pin workflow actions ([#1128](https://github.com/n24q02m/mnemo-mcp/pull/1128),
+  [`dc2d89a`](https://github.com/n24q02m/mnemo-mcp/commit/dc2d89aa63e2d0cf5a7f65a511c21236918f363d))
+
+- Prevent pydantic settings startup warning
+  ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+- Prewarm beartype claw state so coverage runs load tests
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Test timeout by adding check_same_thread=False
+  ([#1151](https://github.com/n24q02m/mnemo-mcp/pull/1151),
+  [`73f85ff`](https://github.com/n24q02m/mnemo-mcp/commit/73f85ffc388341490d8c3c470e57045e5753c8e6))
+
+- Use regex doc assertion in oci sunset test
+  ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+- 🛡️ Sentinel: [MEDIUM] Fix information disclosure in backend configuration errors
+  ([#1152](https://github.com/n24q02m/mnemo-mcp/pull/1152),
+  [`c8b2b6f`](https://github.com/n24q02m/mnemo-mcp/commit/c8b2b6fc500c79a86a8fb1b6d67c7d5ccbc0bd95))
+
+- **db**: Aggregate memory stats in one query
+  ([#1113](https://github.com/n24q02m/mnemo-mcp/pull/1113),
+  [`aeb70a5`](https://github.com/n24q02m/mnemo-mcp/commit/aeb70a50242b0dc461795cdc7784ff3301034567))
+
+- **db**: Preserve empty imported timestamps
+  ([#1113](https://github.com/n24q02m/mnemo-mcp/pull/1113),
+  [`aeb70a5`](https://github.com/n24q02m/mnemo-mcp/commit/aeb70a50242b0dc461795cdc7784ff3301034567))
+
+- **deps**: Lock file maintenance ([#1145](https://github.com/n24q02m/mnemo-mcp/pull/1145),
+  [`15d753a`](https://github.com/n24q02m/mnemo-mcp/commit/15d753a13745848845a5ff62c3c949398d246747))
+
+- **deps**: Lock file maintenance ([#1119](https://github.com/n24q02m/mnemo-mcp/pull/1119),
+  [`c8ef75d`](https://github.com/n24q02m/mnemo-mcp/commit/c8ef75df185ed62ca085c2a345b0a3910cc92224))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260810.1
+  ([#1111](https://github.com/n24q02m/mnemo-mcp/pull/1111),
+  [`eacba6b`](https://github.com/n24q02m/mnemo-mcp/commit/eacba6b47d240df81a1f9980c845261d039f2748))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260815.1
+  ([#1123](https://github.com/n24q02m/mnemo-mcp/pull/1123),
+  [`fbffd76`](https://github.com/n24q02m/mnemo-mcp/commit/fbffd761b2e167a002fedd308145ed25f2656ec5))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260816.1
+  ([#1129](https://github.com/n24q02m/mnemo-mcp/pull/1129),
+  [`22d54d5`](https://github.com/n24q02m/mnemo-mcp/commit/22d54d5948e970de0915de7b3f94f7837bcc7623))
+
+- **deps**: Update minor dependencies ([#1065](https://github.com/n24q02m/mnemo-mcp/pull/1065),
+  [`90b797f`](https://github.com/n24q02m/mnemo-mcp/commit/90b797f1d8df7c022cfd2715aae9f2b3346cadd3))
+
+- **deps**: Update non-major dev dependencies
+  ([#1141](https://github.com/n24q02m/mnemo-mcp/pull/1141),
+  [`495db7a`](https://github.com/n24q02m/mnemo-mcp/commit/495db7aed7183737c77586d3525f8c0bbfdccf9b))
+
+- **deps**: Update non-major dev dependencies
+  ([#1116](https://github.com/n24q02m/mnemo-mcp/pull/1116),
+  [`d94139d`](https://github.com/n24q02m/mnemo-mcp/commit/d94139dcf8f6f262108bbcc6304e9837ab57193f))
+
+- **deps**: Update patch dependencies ([#1117](https://github.com/n24q02m/mnemo-mcp/pull/1117),
+  [`8387edd`](https://github.com/n24q02m/mnemo-mcp/commit/8387eddc44b2b3b0ec65856b6cc3ad4f4bf54e2e))
+
+- **deps**: Update patch dependencies ([#1052](https://github.com/n24q02m/mnemo-mcp/pull/1052),
+  [`3f1993f`](https://github.com/n24q02m/mnemo-mcp/commit/3f1993ff47a833766186d4312cd3d50537167f55))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to c45a22e
+  ([#1068](https://github.com/n24q02m/mnemo-mcp/pull/1068),
+  [`74d5d6b`](https://github.com/n24q02m/mnemo-mcp/commit/74d5d6b77d6934dee53e9c4444c13c529061dbda))
+
+- **deps**: Update syrupy to v6 ([#1124](https://github.com/n24q02m/mnemo-mcp/pull/1124),
+  [`2479f30`](https://github.com/n24q02m/mnemo-mcp/commit/2479f30f028ec24affbf05458e5d5ad1155b8c47))
+
+- **deps**: Update wrangler to ^4.123.0 ([#1118](https://github.com/n24q02m/mnemo-mcp/pull/1118),
+  [`49525f4`](https://github.com/n24q02m/mnemo-mcp/commit/49525f4cc0429e8796e4a7f70ab4c488ddbb980d))
+
+- **release**: Sunset OCI and prevent startup warning
+  ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+### Chores
+
+- Bump better-semantic-release to v1.4.0 ([#1139](https://github.com/n24q02m/mnemo-mcp/pull/1139),
+  [`b78bbc6`](https://github.com/n24q02m/mnemo-mcp/commit/b78bbc6e70746a68740220b7d9ba6524b95cea1d))
+
+- **release**: Sunset public OCI publishing
+  ([#1135](https://github.com/n24q02m/mnemo-mcp/pull/1135),
+  [`c3b871b`](https://github.com/n24q02m/mnemo-mcp/commit/c3b871b028d86fec365f330fe4ecc14cf122f22a))
+
+### Features
+
+- Add audit verify subcommand to cli ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add d1 enterprise audit parity with retry on seq conflict
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add deny-by-default enterprise authorization service
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add enterprise principal identity from verified claims
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add enterprise settings fields for identity and audit
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add sqlite enterprise audit chain storage
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Add suggestion to backfill embedding error
+  ([#1150](https://github.com/n24q02m/mnemo-mcp/pull/1150),
+  [`291e729`](https://github.com/n24q02m/mnemo-mcp/commit/291e729ba47c16af4332d9fcbaa91062b74a5116))
+
+- Add tamper-evident audit hash chain primitives
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Build verified principal in auth scope when enterprise mode on
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Cache recency math in hybrid scoring ([#1151](https://github.com/n24q02m/mnemo-mcp/pull/1151),
+  [`73f85ff`](https://github.com/n24q02m/mnemo-mcp/commit/73f85ffc388341490d8c3c470e57045e5753c8e6))
+
+- Document enterprise profile env vars and audit verify cli
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+- Enterprise Wave A - identity core, authz, tamper-evident audit chain
+  ([#1140](https://github.com/n24q02m/mnemo-mcp/pull/1140),
+  [`72613bc`](https://github.com/n24q02m/mnemo-mcp/commit/72613bcc7e1771a904ca8a0b9de5fbbacada88fd))
+
+
 ## v2.8.0-beta.4 (2026-08-16)
 
 ### Bug Fixes
