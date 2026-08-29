@@ -203,7 +203,9 @@ class FakeD1Worker:
 
 @pytest.fixture
 def fake_worker(tmp_path) -> FakeD1Worker:
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))

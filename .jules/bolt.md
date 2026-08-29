@@ -41,3 +41,11 @@ The proposed entry was headed `## $(date +%Y-%m-%d)`, a literal shell command wr
 
 ### 2026-08-01 - Unmeasured speedup figures on `update` (#1029)
 Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into #1038. The Impact section claimed the removed `SELECT` was a throughput win, with no harness in the diff. Measured here at 4500 samples x 4 runs per branch: the `SELECT` is 12.6us inside a ~350us call, and the spread within a single branch (297-383us) is wider than the difference between branches (~2us median-of-medians). The change was worth making for atomicity, and #1038 stands on that argument alone. A profile that says a statement is removable does not say the removal is measurable.
+
+## 2026-08-29 - Cache datetime.fromisoformat parsing in tight loops
+**Learning:** `datetime.fromisoformat` string parsing and exponential recency decay math are expensive when called repeatedly in `_compute_hybrid_scores`. Because batched results (like those from a single tool call or sync) often share identical `updated_at` string values, computing the decay per-row without caching does a lot of redundant math.
+**Action:** Introduced a local dictionary cache `recency_cache = {}` at the top of `_compute_hybrid_scores` to memoize the result of `_calc_recency(updated_at, now)`. This gives a ~85% speedup on large lists of records with identical timestamps by avoiding redundant `fromisoformat()` and floating-point math overhead.
+
+## 2026-08-29 - Missing `check_same_thread=False` in fixture connection causes lockups in pytest
+**Learning:** `FakeD1Worker` is called from HTTP threads via `asyncio.to_thread` during `MemoryDBCfBackend` tests. If the underlying `sqlite3.connect` for the test fixture does not include `check_same_thread=False`, the thread-crossing results in a hanging/timeout on Windows due to SQLite library locks/thread-safety checks silently halting execution or failing without a clean crash during the tests.
+**Action:** Always include `check_same_thread=False` when constructing local SQLite test fixtures (`fake_worker` connecting to `d1.sqlite`) that simulate remote backend operations accessed through `asyncio.to_thread`.

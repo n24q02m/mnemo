@@ -1250,6 +1250,7 @@ class MemoryDB:
         """Compute final scores combining FTS, vector, recency, and frequency."""
         now = datetime.now(UTC)
         scored = []
+        recency_cache = {}
         has_vec = any(m.get("vec_score", 0.0) > 0 for m in results.values())
 
         if has_vec:
@@ -1269,7 +1270,11 @@ class MemoryDB:
                 vr = vec_rank.get(mid, len(all_ids))
                 rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
 
-                recency = self._calc_recency(mem.get("updated_at", ""), now)
+                updated_at = mem.get("updated_at", "")
+                if updated_at not in recency_cache:
+                    recency_cache[updated_at] = self._calc_recency(updated_at, now)
+                recency = recency_cache[updated_at]
+
                 freq = self._calc_frequency(mem.get("access_count", 0))
 
                 rrf_norm = rrf * (k + 1) / 2.0
@@ -1283,7 +1288,12 @@ class MemoryDB:
         else:
             for mem in results.values():
                 fts = mem.get("fts_score", 0.0)
-                recency = self._calc_recency(mem.get("updated_at", ""), now)
+
+                updated_at = mem.get("updated_at", "")
+                if updated_at not in recency_cache:
+                    recency_cache[updated_at] = self._calc_recency(updated_at, now)
+                recency = recency_cache[updated_at]
+
                 freq = self._calc_frequency(mem.get("access_count", 0))
 
                 base = fts * 0.6 + recency * 0.3 + freq * 0.1
