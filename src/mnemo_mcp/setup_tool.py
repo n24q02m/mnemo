@@ -29,18 +29,10 @@ def clear_model_cache(model_name: str) -> str | None:
 
 
 def _resolve_cache_dir() -> Path:
-    """Resolve the local model cache while preserving the old env name."""
+    """Resolve the local model cache using fastretrieval's public API."""
     new = os.getenv("FASTRETRIEVAL_CACHE_PATH")
     if new:
         return Path(new)
-
-    old = os.getenv("QWEN3_EMBED_CACHE_PATH")
-    if old:
-        logger.warning(
-            "QWEN3_EMBED_CACHE_PATH is the old name; rename it to "
-            "FASTRETRIEVAL_CACHE_PATH. Still honouring it for now."
-        )
-        return Path(old)
 
     from fastretrieval import define_cache_dir
 

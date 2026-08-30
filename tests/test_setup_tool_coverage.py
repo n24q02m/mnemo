@@ -25,8 +25,8 @@ def test_clear_model_cache_removes_dir(tmp_path):
         assert not model_cache.exists()
 
 
-def test_clear_model_cache_respects_env_var(tmp_path):
-    """Test clear_model_cache still reads the old cache env name."""
+def test_clear_model_cache_uses_fastretrieval_env_var(tmp_path):
+    """Test clear_model_cache reads the fastretrieval cache env name."""
     custom_cache = tmp_path / "custom_cache"
     custom_cache.mkdir()
     model_name = "test/model"
@@ -34,7 +34,7 @@ def test_clear_model_cache_respects_env_var(tmp_path):
     model_cache = custom_cache / f"models--{safe_name}"
     model_cache.mkdir()
 
-    with patch.dict(os.environ, {"QWEN3_EMBED_CACHE_PATH": str(custom_cache)}):
+    with patch.dict(os.environ, {"FASTRETRIEVAL_CACHE_PATH": str(custom_cache)}):
         result = clear_model_cache(model_name)
         assert result == str(model_cache)
         assert not model_cache.exists()

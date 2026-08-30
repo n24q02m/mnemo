@@ -64,7 +64,6 @@ _EXTRA_ENV_NAMES = {
     # google_drive_client_* field defaults.
     "USE_BUNDLED_GOOGLE_CLIENT",
     "MCP_RELAY_URL",
-    "QWEN3_EMBED_CACHE_PATH",
     "FASTRETRIEVAL_CACHE_PATH",
 }
 # litellm's per-provider endpoint override lives beside each provider key

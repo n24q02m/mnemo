@@ -24,33 +24,38 @@ class TestClearModelCache:
         assert result == str(model_dir)
         assert not model_dir.exists()
 
-    def test_prefers_new_cache_env_over_old(self, tmp_path):
-        from mnemo_mcp.setup_tool import clear_model_cache
+    def test_ignores_legacy_cache_env_and_uses_public_default(
+        self, tmp_path, monkeypatch
+    ):
+        import fastretrieval
 
-        old_cache = tmp_path / "old"
-        new_cache = tmp_path / "new"
-        old_model = old_cache / "models--org--model"
-        new_model = new_cache / "models--org--model"
-        old_model.mkdir(parents=True)
-        new_model.mkdir(parents=True)
+        from mnemo_mcp import setup_tool
 
-        with patch.dict(
-            "os.environ",
-            {
-                "FASTRETRIEVAL_CACHE_PATH": str(new_cache),
-                "QWEN3_EMBED_CACHE_PATH": str(old_cache),
-            },
-        ):
-            result = clear_model_cache("org/model")
+        legacy_cache = tmp_path / "legacy"
+        public_cache = tmp_path / "public"
+        legacy_model = legacy_cache / "models--org--model"
+        public_model = public_cache / "models--org--model"
+        legacy_model.mkdir(parents=True)
+        public_model.mkdir(parents=True)
 
-        assert result == str(new_model)
-        assert not new_model.exists()
-        assert old_model.exists()
+        monkeypatch.delenv("FASTRETRIEVAL_CACHE_PATH", raising=False)
+        monkeypatch.setenv("QWEN3_EMBED_CACHE_PATH", str(legacy_cache))
+        public_define = MagicMock(return_value=public_cache)
+        monkeypatch.setattr(
+            fastretrieval, "define_cache_dir", public_define, raising=False
+        )
+
+        result = setup_tool.clear_model_cache("org/model")
+
+        assert result == str(public_model)
+        assert not public_model.exists()
+        assert legacy_model.exists()
+        public_define.assert_called_once_with()
 
     def test_returns_none_when_cache_missing(self, tmp_path):
         from mnemo_mcp.setup_tool import clear_model_cache
 
-        with patch.dict("os.environ", {"QWEN3_EMBED_CACHE_PATH": str(tmp_path)}):
+        with patch.dict("os.environ", {"FASTRETRIEVAL_CACHE_PATH": str(tmp_path)}):
             result = clear_model_cache("nonexistent/model")
 
         assert result is None
