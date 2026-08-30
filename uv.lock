@@ -532,7 +532,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.1.0b2"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -543,9 +543,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/bf/7e16cba2cd2a3cb8f1eeec013b2ee55ba2ec9cd88c4edadfb872f0ffaa35/fastretrieval-1.1.0b2.tar.gz", hash = "sha256:439adebaaec715447d2c108382b5b8826a7d2065af77eadd8cc01a7914ad6236", size = 331046, upload-time = "2026-08-24T15:25:24.915Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/be/00314cfc1aafdf3089e4384e319f32f106ca6dd63184c4583bb3e92114b2/fastretrieval-1.1.0.tar.gz", hash = "sha256:53b958b7b29a18c4ff6982bfd74c3d2b71f5e213c2ef794bbd89a0672361cdc8", size = 316103, upload-time = "2026-08-29T12:43:06.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/42/39afed64b4181da8d1fee647e77ad82c57742704933f1a75398f8be0fc25/fastretrieval-1.1.0b2-py3-none-any.whl", hash = "sha256:9d3bcd6c161680b1165b4029a2e05d3cfb24c3549d67d7ee37f78e654908a0d6", size = 144565, upload-time = "2026-08-24T15:25:23.549Z" },
+    { url = "https://files.pythonhosted.org/packages/95/de/3e05f7c5cd33dd5716233a87e15a99c95fa8cc2c3dae53e3b0d60bc85977/fastretrieval-1.1.0-py3-none-any.whl", hash = "sha256:3c371d3fb8f76d1e029c9bd99adf8118cf0d49259c6a50649027324ba320e4ec", size = 144628, upload-time = "2026-08-29T12:43:04.505Z" },
 ]
 
 [[package]]
@@ -867,14 +867,14 @@ wheels = [
 
 [[package]]
 name = "joserfc"
-version = "1.7.4"
+version = "1.7.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/e0/27a6a081ae25420eda6768ceae05d7022a7f2447f420588843f2a44e4298/joserfc-1.7.4.tar.gz", hash = "sha256:b3bc561672ae541b17a9237053b48a03dacddd92d68047b3ecdfb4b5714a88ed", size = 234027, upload-time = "2026-07-19T15:43:02.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/94/80fea1514b7c6d7d37804d3fe9ca81455f633347fc98731bd71ffe1faa17/joserfc-1.7.5.tar.gz", hash = "sha256:d5ff536e658e17664f8c1b1ab60dc4aa62aa973fcef1edd33cc44bda45d6f5ea", size = 234990, upload-time = "2026-08-29T13:05:42.057Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/bf/249dcd99b3376375910b7fa922383b57792975c8758f50d44612e749226c/joserfc-1.7.4-py3-none-any.whl", hash = "sha256:32d46c2cd5e3203c13e87a6c61333cab310b1ba80cd54b4c4f386a848a122463", size = 71000, upload-time = "2026-07-19T15:43:01.299Z" },
+    { url = "https://files.pythonhosted.org/packages/67/c5/82addfd375e5ee6520644e0553e4aadde92d668c4fc99cc716d337fe7bb3/joserfc-1.7.5-py3-none-any.whl", hash = "sha256:add2c2c84e8373b084d526a8b53daba5d7a513a118cd2dcd9fc9f979d0922159", size = 71269, upload-time = "2026-08-29T13:05:40.718Z" },
 ]
 
 [[package]]
@@ -1085,7 +1085,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.8.0b4"
+version = "2.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1238,7 +1238,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.23.1b3"
+version = "1.23.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -1254,9 +1254,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f0/23/9a48e7b5e35d34613aa1f7a18450258093b64e9e9cb68d03fb5d8731c0a7/n24q02m_mcp_core-1.23.1b3.tar.gz", hash = "sha256:c6c94984751c77ef410f317f59a24ff4e32a61ea33ef33e5a95ccd6d4a40f4e1", size = 364539, upload-time = "2026-08-24T14:40:08.34Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/ea/060df6d5c00c13a7e5ffe7bf04536bcbbc5577d68180d0533be3b8096f27/n24q02m_mcp_core-1.23.1.tar.gz", hash = "sha256:4408b14f73c16163048988e8b429fd73a02ffe83a4b4b8ffeef312ab843606a9", size = 364418, upload-time = "2026-08-29T12:46:36.993Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/aa/a6efe95b390d8c6f4dc86dd7a4d26b59dc2798678d8cb2528e0ddbe9e403/n24q02m_mcp_core-1.23.1b3-py3-none-any.whl", hash = "sha256:0a41684cf769026ab5d26835beb1aed02c36e83d16a7f706f5167893b147d263", size = 196671, upload-time = "2026-08-24T14:40:06.903Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/63/5ab34cca3f47402314622bd61e755d3c19ea4433676433a8536d6c7507df/n24q02m_mcp_core-1.23.1-py3-none-any.whl", hash = "sha256:8feac38084817544a1f9b9d256ec1b1d78584e971ab9967ba5a9526a6bbf01e6", size = 196653, upload-time = "2026-08-29T12:46:35.66Z" },
 ]
 
 [package.optional-dependencies]
