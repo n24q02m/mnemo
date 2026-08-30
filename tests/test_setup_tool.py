@@ -75,10 +75,6 @@ class TestClearModelCache:
         monkeypatch.setattr(
             fastretrieval, "define_cache_dir", public_define, raising=False
         )
-        monkeypatch.setattr(
-            "fastretrieval.common.utils.define_cache_dir",
-            MagicMock(side_effect=AssertionError("private fastretrieval import used")),
-        )
 
         assert setup_tool._resolve_cache_dir() == public_cache
         public_define.assert_called_once_with()

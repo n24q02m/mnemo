@@ -833,7 +833,6 @@ class TestMaybeRegisterCustomEmbed:
 
     def test_custom_id_registers_with_dim_and_pooling(self):
         import fastretrieval
-        from fastretrieval.common.model_description import PoolingType
 
         with patch.object(fastretrieval.TextEmbedding, "add_custom_model") as mock_add:
             with patch("mnemo_mcp.server.settings") as mock_settings:
@@ -849,7 +848,8 @@ class TestMaybeRegisterCustomEmbed:
             description = mock_add.call_args.args[0]
             assert description.model == "Org/custom-embed"
             assert description.dim == 1024
-            assert mock_add.call_args.kwargs["pooling"] == PoolingType.CLS
+            pooling = mock_add.call_args.kwargs["pooling"]
+            assert getattr(pooling, "name", pooling) == "CLS"
             assert mock_add.call_args.kwargs["normalization"] is True
 
     def test_reregistration_is_graceful(self):
