@@ -7,8 +7,11 @@ Usage:
     uv run pytest tests/test_live_protocol.py -v --tb=short -m live
 """
 
+import asyncio
 import json
 import os
+import subprocess
+import time
 import warnings
 
 import pytest
@@ -66,6 +69,91 @@ async def mcp_session(tmp_path):
                 yield session
     except (RuntimeError, ExceptionGroup) as exc:
         # anyio cancel-scope teardown error -- harmless in test context
+        msg = str(exc).lower()
+        if "cancel scope" in msg or "different task" in msg:
+            warnings.warn(
+                f"Suppressed teardown error: {exc}",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+        else:
+            raise
+
+
+@pytest.fixture
+async def local_mcp_session(tmp_path):
+    """Start mnemo-mcp with deterministic local-only provider selection."""
+    from fastretrieval import define_cache_dir
+
+    local_state = tmp_path / "local-state"
+    cache_dir = define_cache_dir()
+    db_path = str(tmp_path / "local-test.db")
+    local_env = {
+        **os.environ,
+        "DB_PATH": db_path,
+        "LOG_LEVEL": "WARNING",
+        "SYNC_ENABLED": "false",
+        "MCP_TRANSPORT": "stdio",
+        "HOME": str(local_state),
+        "USERPROFILE": str(local_state),
+        "XDG_CONFIG_HOME": str(local_state),
+        "LOCALAPPDATA": str(local_state),
+        "APPDATA": str(local_state),
+        "FASTRETRIEVAL_CACHE_PATH": str(cache_dir),
+        "QWEN3_EMBED_CACHE_PATH": "",
+        "API_KEYS": "",
+        "JINA_API_KEY": "",
+        "JINA_AI_API_KEY": "",
+        "GEMINI_API_KEY": "",
+        "GOOGLE_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "COHERE_API_KEY": "",
+        "CO_API_KEY": "",
+        "ANTHROPIC_API_KEY": "",
+        "XAI_API_KEY": "",
+        "GOOGLE_VERTEX_EXPRESS_API_KEY": "",
+        "GOOGLE_DRIVE_CLIENT_ID": "",
+        "EMBEDDING_MODELS": "",
+        "RERANK_MODELS": "",
+        "LLM_MODELS": "",
+        "EMBEDDING_MODEL": "",
+        "RERANK_MODEL": "",
+        "EMBEDDING_BACKEND": "",
+        "RERANK_BACKEND": "",
+        "EMBEDDING_API_BASE": "",
+        "RERANK_API_BASE": "",
+        "LLM_API_BASE": "",
+        "LOCAL_EMBEDDING_MODEL": "",
+        "LOCAL_RERANK_MODEL": "",
+        "EMBEDDING_DIMS": "0",
+        "RERANK_ENABLED": "true",
+        "DISABLE_LOCAL_EMBED": "false",
+        "DISABLE_LOCAL_RERANK": "false",
+    }
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "python",
+            "-c",
+            "from mcp_core import set_local_mode; set_local_mode('mnemo-mcp')",
+        ],
+        env=local_env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    server_params = StdioServerParameters(
+        command="uv",
+        args=["run", "mnemo-mcp"],
+        env=local_env,
+    )
+    try:
+        async with stdio_client(server_params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                yield session
+    except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
         if "cancel scope" in msg or "different task" in msg:
             warnings.warn(
@@ -311,6 +399,114 @@ class TestMemoryHappyPath:
         )
         text = parse(r)
         assert any(w in text.lower() for w in ("import", "merge", "success")), text[:80]
+
+
+# ---------------------------------------------------------------------------
+# Granular retrieval tools (offline, temp DB)
+# ---------------------------------------------------------------------------
+
+
+class TestGranularRetrieval:
+    @pytest.mark.timeout(300)
+    async def test_add_search_reports_retrieval_state(
+        self, local_mcp_session: ClientSession
+    ):
+        deadline = time.monotonic() + 300
+
+        setup_result = await local_mcp_session.call_tool(
+            "config", {"action": "setup_status"}
+        )
+        setup_text = parse(setup_result)
+        setup = json.loads(setup_text)
+        assert setup.get("state") == "local", setup
+        assert setup.get("cloud_keys_in_env") == [], setup
+
+        warmup_result = await local_mcp_session.call_tool(
+            "config", {"action": "warmup"}
+        )
+        warmup_text = parse(warmup_result)
+        warmup = json.loads(warmup_text)
+        assert warmup.get("status") == "ok", warmup
+        assert warmup.get("mode") == "local", warmup
+
+        status: dict = {}
+        embedding = None
+        while time.monotonic() < deadline:
+            status_result = await local_mcp_session.call_tool(
+                "config", {"action": "status"}
+            )
+            status_text = parse(status_result)
+            status = json.loads(status_text)
+            embedding = status.get("embedding")
+            if (
+                isinstance(embedding, dict)
+                and embedding.get("available") is True
+                and isinstance(embedding.get("model"), str)
+                and embedding["model"]
+                and isinstance(embedding.get("dims"), int)
+                and embedding["dims"] > 0
+            ):
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(0.5, remaining))
+
+        assert (
+            isinstance(embedding, dict)
+            and embedding.get("available") is True
+            and isinstance(embedding.get("model"), str)
+            and embedding["model"]
+            and isinstance(embedding.get("dims"), int)
+            and embedding["dims"] > 0
+        ), f"Embedding backend not ready: {status}"
+
+        for content in (
+            "Python testing commonly uses pytest.",
+            "Python testing can also use unittest.",
+        ):
+            r = await local_mcp_session.call_tool(
+                "add_memory",
+                {"content": content, "category": "tech", "tags": ["python"]},
+            )
+            text = parse(r)
+            data = json.loads(text)
+            assert data.get("status") == "saved", text[:80]
+            assert data.get("id"), "Missing memory id"
+
+        search_data = None
+        candidate: dict = {}
+        while time.monotonic() < deadline:
+            r = await local_mcp_session.call_tool(
+                "search_memory", {"query": "Python testing", "limit": 5}
+            )
+            text = parse(r)
+            candidate = json.loads(text)
+            if candidate.get("semantic") is True and candidate.get("reranked") is True:
+                search_data = candidate
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(0.5, remaining))
+
+        assert search_data is not None, (
+            f"Retrieval backends not ready before deadline: {candidate}"
+        )
+        assert search_data.get("count", 0) >= 1, search_data
+        assert search_data.get("semantic") is True, search_data
+        assert search_data.get("reranked") is True, search_data
+
+        r = await local_mcp_session.call_tool("config", {"action": "status"})
+        text = parse(r)
+        status = json.loads(text)
+        embedding = status["embedding"]
+        assert embedding["model"] in {
+            "n24q02m/Qwen3-Embedding-0.6B-ONNX",
+            "n24q02m/Qwen3-Embedding-0.6B-GGUF",
+        }
+        assert embedding["dims"] == 768
+        assert embedding["available"] is True
 
 
 # ---------------------------------------------------------------------------
