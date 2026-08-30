@@ -18,7 +18,7 @@
       },
       "environmentVariables": [
         {
-          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chain falls back to the built-in local Qwen3 model.",
+          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chains select Fastretrieval local ONNX/GGUF models; configured cloud chains never silently fall back to local.",
           "isRequired": false,
           "isSecret": true,
           "name": "API_KEYS"

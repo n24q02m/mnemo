@@ -114,6 +114,26 @@ def test_fallback_chain_returns_first_successful():
     good.rerank.assert_called_once()
 
 
+def test_fallback_chain_identity_is_call_local():
+    first = MagicMock(spec=CloudReranker)
+    first.backend_name = "cloud"
+    first.model_name = "jina_ai/jina-reranker-v3"
+    first.rerank.side_effect = [[(0, 0.9)], []]
+
+    second = MagicMock(spec=CloudReranker)
+    second.backend_name = "cloud"
+    second.model_name = "cohere/rerank-v4.0-pro"
+    second.rerank.return_value = [(0, 0.8)]
+
+    chain = FallbackChainReranker([first, second])
+    first_outcome = chain.rerank_with_identity("q1", ["a"], top_n=1)
+    second_outcome = chain.rerank_with_identity("q2", ["b"], top_n=1)
+
+    assert first_outcome.model_name == "jina_ai/jina-reranker-v3"
+    assert second_outcome.model_name == "cohere/rerank-v4.0-pro"
+    assert first_outcome.model_name == "jina_ai/jina-reranker-v3"
+
+
 def test_fallback_chain_all_fail_returns_empty():
     bad1 = MagicMock(spec=CloudReranker)
     bad1.rerank.side_effect = RuntimeError("first")

@@ -216,7 +216,9 @@ async def _init_reranker_backend(mode: str) -> None:
     CONFIGURED: cloud-only path -- no silent local fallback.
     """
     from mnemo_mcp.credential_state import CredentialState, get_state
-    from mnemo_mcp.reranker import init_reranker
+    from mnemo_mcp.reranker import clear_reranker, init_reranker
+
+    clear_reranker()
 
     backend_type = settings.resolve_rerank_backend()
     if not backend_type:
@@ -246,8 +248,10 @@ async def _init_reranker_backend(mode: str) -> None:
                 logger.info(f"Reranker: local {local_model}")
             else:
                 logger.error("Local reranker not available")
+                clear_reranker()
         except Exception as e:
             logger.error(f"Local reranker init failed: {e}")
+            clear_reranker()
         return
 
     # CONFIGURED + cloud backend -- no local fallback.
@@ -260,8 +264,10 @@ async def _init_reranker_backend(mode: str) -> None:
                 if available:
                     logger.info(f"Reranker: {model}")
                     return
+                clear_reranker()
             except Exception as e:
                 logger.warning(f"Reranker {model} not available: {e}")
+                clear_reranker()
         logger.error("Cloud reranker not available and local fallback is disabled")
 
 
@@ -841,6 +847,10 @@ async def _handle_search(
     # (top-50 -> top-N) so we ask db.search for ``max(50, limit*5)`` rows
     # when a reranker is active and otherwise stay at the LLM-requested limit.
     reranker = _get_request_reranker(ctx)
+    from mnemo_mcp.reranker import describe_reranker, rerank_with_identity
+
+    reranker_backend, reranker_model = describe_reranker(reranker)
+    reranker_fallback = "not_configured" if reranker is None else "not_needed"
     rerank_pool = max(50, limit * 5) if reranker else None
 
     results = await asyncio.to_thread(
@@ -860,11 +870,17 @@ async def _handle_search(
 
     reranked = False
     if reranker and len(results) > 1:
+        reranker_fallback = "none"
         documents = [r["content"] for r in results]
         try:
-            ranked = await asyncio.to_thread(
-                reranker.rerank, query, documents, top_n=limit
+            outcome = await asyncio.to_thread(
+                rerank_with_identity, reranker, query, documents, limit
             )
+            ranked = outcome.results
+            if outcome.backend_name is not None:
+                reranker_backend = outcome.backend_name
+            if outcome.model_name is not None:
+                reranker_model = outcome.model_name
             if ranked:
                 reranked_results = []
                 for idx, score in ranked:
@@ -874,10 +890,12 @@ async def _handle_search(
                 results = reranked_results
                 reranked = True
             else:
+                reranker_fallback = "original_order_after_empty_result"
                 # No reranker output -> fall back to top-``limit`` of the
                 # hybrid-scored pool so the response still respects ``limit``.
                 results = results[:limit]
         except Exception as e:
+            reranker_fallback = "original_order_after_error"
             logger.debug(f"Reranking failed, using original order: {e}")
             results = results[:limit]
     else:
@@ -905,6 +923,11 @@ async def _handle_search(
         "results": [_format_memory(r) for r in results],
         "semantic": embedding is not None,
         "reranked": reranked,
+        "reranker": {
+            "backend": reranker_backend,
+            "model": reranker_model,
+            "fallback": reranker_fallback,
+        },
     }
 
     if len(results) == 0:

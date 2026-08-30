@@ -496,6 +496,13 @@ class TestGranularRetrieval:
         assert search_data.get("count", 0) >= 1, search_data
         assert search_data.get("semantic") is True, search_data
         assert search_data.get("reranked") is True, search_data
+        reranker = search_data["reranker"]
+        assert reranker["backend"] == "local", reranker
+        assert reranker["model"] in {
+            "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo",
+            "n24q02m/Qwen3-Reranker-0.6B-GGUF",
+        }
+        assert reranker["fallback"] == "none", reranker
 
         r = await local_mcp_session.call_tool("config", {"action": "status"})
         text = parse(r)

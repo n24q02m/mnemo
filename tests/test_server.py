@@ -642,11 +642,18 @@ class TestSearchRerankerAndGraph:
         db.add("Python for web")
         db.add("Python for data")
         mock_reranker = MagicMock()
+        mock_reranker.backend_name = "local"
+        mock_reranker.model_name = "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
         mock_reranker.rerank.return_value = [(1, 0.95), (0, 0.85), (2, 0.70)]
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
             result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is True
         assert result["results"][0]["rerank_score"] == 0.95
+        assert result["reranker"] == {
+            "backend": "local",
+            "model": "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo",
+            "fallback": "none",
+        }
 
     async def test_search_reranker_failure(self, ctx_with_db):
         """Cover line 451: reranker failure falls back to original order."""
@@ -654,10 +661,17 @@ class TestSearchRerankerAndGraph:
         db.add("Python for AI")
         db.add("Python for web")
         mock_reranker = MagicMock()
+        mock_reranker.backend_name = "cloud"
+        mock_reranker.model_name = "cohere/rerank-v4.0-pro"
         mock_reranker.rerank.side_effect = RuntimeError("rerank failed")
         with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
             result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is False
+        assert result["reranker"] == {
+            "backend": "cloud",
+            "model": "cohere/rerank-v4.0-pro",
+            "fallback": "original_order_after_error",
+        }
 
     async def test_search_with_graph_boost(self, ctx_with_db):
         """Cover lines 463-468: graph boost marks related memories."""

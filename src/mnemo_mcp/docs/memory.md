@@ -88,6 +88,8 @@ Hybrid search combining full-text and semantic similarity.
 - Semantic vector search (when embedding model is configured)
 - Results scored by: text relevance + semantic similarity + recency + access frequency
 - Access count is incremented for returned results
+- Each response reports `semantic`, `reranked`, and a `reranker` object with
+  the selected `backend`, public model identity, and fallback outcome.
 
 **Example:**
 ```json
@@ -213,7 +215,9 @@ Memories older than `ARCHIVE_AFTER_DAYS` (90) with importance below
 
 ### Reranking
 Search results are reranked using a cross-encoder model for improved precision.
-Supports Jina AI and Cohere cloud rerankers, with local Qwen3 as fallback.
+Configured chains use Jina AI or Cohere. An empty chain selects the local
+Fastretrieval Qwen3 model; a configured cloud chain never silently falls back
+to local execution.
 
 ## Proactive Memory Guidelines
 

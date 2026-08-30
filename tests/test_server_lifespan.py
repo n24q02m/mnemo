@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.reranker import get_reranker, init_reranker
 from mnemo_mcp.server import (
     _enrich_memory,
     _init_reranker_backend,
@@ -133,9 +134,11 @@ class TestInitRerankerBackend:
 
         local_backend = MagicMock()
         local_backend.check_available.return_value = False
+        init_reranker("local", "stale/model")
 
         with patch("mnemo_mcp.reranker.init_reranker", return_value=local_backend):
             await _init_reranker_backend("local")
+        assert get_reranker() is None
 
     @patch(
         "mnemo_mcp.server.asyncio.to_thread",

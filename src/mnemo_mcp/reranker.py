@@ -9,6 +9,7 @@ Pipeline: retrieve top-N*3 -> rerank -> return top-N.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from loguru import logger
@@ -39,6 +40,9 @@ def _strip_provider(model: str) -> str:
 class RerankerBackend(Protocol):
     """Protocol for reranker backends."""
 
+    backend_name: str
+    model_name: str
+
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
     ) -> list[tuple[int, float]]:
@@ -51,6 +55,29 @@ class RerankerBackend(Protocol):
     def check_available(self) -> bool:
         """Check if the reranker backend is available."""
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class RerankOutcome:
+    """Per-call rerank result and the backend that produced it."""
+
+    results: list[tuple[int, float]]
+    backend_name: str | None
+    model_name: str | None
+
+
+def describe_reranker(
+    backend: RerankerBackend | None,
+) -> tuple[str | None, str | None]:
+    """Return public backend/model identity without provider credentials."""
+    if backend is None:
+        return None, None
+    backend_name = getattr(backend, "backend_name", None)
+    model_name = getattr(backend, "model_name", None)
+    return (
+        backend_name if isinstance(backend_name, str) else None,
+        model_name if isinstance(model_name, str) else None,
+    )
 
 
 class CloudReranker:
@@ -70,6 +97,8 @@ class CloudReranker:
         self.api_base = api_base
         self.api_key = api_key
         self._provider = _detect_rerank_provider(self.model)
+        self.backend_name = "cloud"
+        self.model_name = self.model
 
     def _litellm_model(self) -> str:
         """Map mnemo's model naming to a litellm ``provider/model`` string."""
@@ -157,6 +186,8 @@ class Qwen3Reranker:
 
     def __init__(self, model_name: str | None = None):
         self._model_name = model_name or self.DEFAULT_MODEL
+        self.backend_name = "local"
+        self.model_name = self._model_name
         self._model = None
 
     def _get_model(self):
@@ -214,6 +245,12 @@ def get_reranker() -> RerankerBackend | None:
     return _backend
 
 
+def clear_reranker() -> None:
+    """Clear the cached reranker backend."""
+    global _backend
+    _backend = None
+
+
 def init_reranker(
     backend_type: str,
     model: str | None = None,
@@ -257,11 +294,29 @@ class FallbackChainReranker:
             raise ValueError("FallbackChainReranker requires at least one backend")
         self._backends = backends
 
+    @property
+    def backend_name(self) -> str:
+        return "fallback-chain"
+
+    @property
+    def model_name(self) -> str:
+        return ",".join(
+            model_name
+            for backend in self._backends
+            if (model_name := describe_reranker(backend)[1]) is not None
+        )
+
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
     ) -> list[tuple[int, float]]:
+        return self.rerank_with_identity(query, documents, top_n=top_n).results
+
+    def rerank_with_identity(
+        self, query: str, documents: list[str], top_n: int = 10
+    ) -> RerankOutcome:
+        """Rerank once and return call-local selection metadata."""
         if not documents:
-            return []
+            return RerankOutcome([], None, None)
         for backend in self._backends:
             try:
                 ranked = backend.rerank(query, documents, top_n=top_n)
@@ -272,8 +327,9 @@ class FallbackChainReranker:
                 )
                 continue
             if ranked:
-                return ranked
-        return []
+                backend_name, model_name = describe_reranker(backend)
+                return RerankOutcome(ranked, backend_name, model_name)
+        return RerankOutcome([], None, None)
 
     def check_available(self) -> bool:
         """Available if any backend in the chain reports availability."""
@@ -284,6 +340,20 @@ class FallbackChainReranker:
             except Exception:
                 continue
         return False
+
+
+def rerank_with_identity(
+    backend: RerankerBackend,
+    query: str,
+    documents: list[str],
+    top_n: int = 10,
+) -> RerankOutcome:
+    """Run one backend and preserve call-local selection metadata."""
+    if isinstance(backend, FallbackChainReranker):
+        return backend.rerank_with_identity(query, documents, top_n=top_n)
+    results = backend.rerank(query, documents, top_n=top_n)
+    backend_name, model_name = describe_reranker(backend)
+    return RerankOutcome(results, backend_name, model_name)
 
 
 def build_default_rerank_chain(
