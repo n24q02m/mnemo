@@ -78,14 +78,14 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 
 ## Features
 
-- **Hybrid retrieval** -- FTS5 + vector search (sqlite-vec locally, Vectorize on Cloudflare), fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> local qwen3-reranker) with temporal decay and importance boost
+- **Hybrid retrieval** -- FTS5 + vector search (sqlite-vec locally, Vectorize on Cloudflare), fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> Fastretrieval's local Qwen3 reranker) with temporal decay and importance boost
 - **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a configurable LLM chain (`LLM_MODELS`, order = litellm fallback)
 - **Knowledge graph** -- Automatic entity extraction and relation tracking; top results boosted by graph proximity
 - **Importance scoring + archive policy** -- LLM-scored 0.0-1.0 importance; soft-archive when `recency_factor * (1 - importance) > 1.0`; restore action available
 - **Auto-archive trigger** -- Background sweep every Nth capture (default 100) -- no cron required
 - **STM-to-LTM consolidation** -- LLM summarization of related memories in a category
 - **Duplicate detection** -- Warns before adding semantically similar memories
-- **Zero config** -- Built-in local Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere)
+- **Zero config** -- Fastretrieval's built-in local registry resolves Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere)
 - **Multi-machine sync** -- JSONL-based merge sync via Google Drive (bundled Desktop OAuth public client)
 - **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
@@ -98,7 +98,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | Feature | mnemo-mcp | Mem0 | Letta | OpenMemory |
 |---|---|---|---|---|
 | Hybrid retrieval (FTS + vec) | yes (FTS5 + RRF; sqlite-vec local / Vectorize on Cloudflare) | yes | partial | yes |
-| Cross-encoder rerank chain | yes (qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
+| Cross-encoder rerank chain | yes (Fastretrieval Qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
 | Temporal decay scoring | yes (exp half-life) | no | no | no |
 | Importance boost in rank | yes (LLM 0.0-1.0) | no | no | no |
 | Soft-archive + restore policy | yes (importance x recency) | no | no | no |
@@ -214,7 +214,7 @@ mnemo-mcp --http                # start the Streamable HTTP server
 mnemo-mcp auth google           # authorize Google Drive sync via OAuth
 mnemo-mcp auth google --client-id <ID> --client-secret <SECRET>   # bring-your-own OAuth client
 mnemo-mcp logout                # clear the local Google Drive sync token
-mnemo-mcp warmup                # pre-download the bundled local embedding + rerank model
+mnemo-mcp warmup                # pre-download Fastretrieval-managed local embedding + rerank models
 
 mnemo-mcp config status         # report whether stored config exists
 mnemo-mcp config delete --yes   # delete the stored (encrypted) config
@@ -227,7 +227,7 @@ mnemo-mcp doctor                # environment diagnostics (Python, backend, stor
 | Subcommand | Purpose |
 |:-----------|:--------|
 | `auth <provider>` | Authorize a sync credential provider (currently `google`); `--client-id` / `--client-secret` supply a bring-your-own OAuth client |
-| `warmup` | Pre-download the bundled local Qwen3 ONNX embedding + rerank model so first use works offline |
+| `warmup` | Pre-download the Fastretrieval-managed local Qwen3 ONNX embedding + rerank models so first use works offline |
 | `config status` \| `config delete [--yes]` | Inspect or remove the stored encrypted configuration |
 | `relay status` \| `relay open` \| `relay reset` | Inspect, open, or clear the zero-config browser setup session |
 | `doctor` | Report Python version, credential backend, store dir, config, relay session, and storage mode |
@@ -288,8 +288,8 @@ Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens
 `MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
 keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
 cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS` /
-`RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads the local Qwen3 ONNX
-models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
+`RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads Fastretrieval's
+local Qwen3 ONNX models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
 
 ### Authority & Sync Boundary
 
