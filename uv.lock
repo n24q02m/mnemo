@@ -1146,7 +1146,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.9.4" },
-    { name = "moto", extras = ["s3"], specifier = ">=5.2.2" },
+    { name = "moto", extras = ["s3"], specifier = ">=5.2.3" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },

@@ -80,7 +80,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "syrupy>=6.0.0",
     # Phase 2: in-memory S3 fixture for sync backend tests
-    "moto[s3]>=5.2.2",
+    "moto[s3]>=5.2.3",
     "bandit>=1.9.4",
 ]
 
