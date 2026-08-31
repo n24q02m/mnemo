@@ -39,7 +39,7 @@ dependencies = [
     # server_name ("mnemo-mcp") instead of the plugin slug ("mnemo")
     # this server actually saves credentials under, so `mnemo-mcp
     # config status` always reported "not configured".
-    "n24q02m-mcp-core[llm]>=1.23.1,<2",
+    "n24q02m-mcp-core[llm]==1.23.2",
     # Transitive pin: fastmcp reaches us only through mcp-core, which requires
     # it unbounded -- so nothing in this repo constrained it and Renovate's
     # lockFileMaintenance (`uv lock --upgrade`, automerge on) locked the
