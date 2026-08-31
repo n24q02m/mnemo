@@ -13,6 +13,7 @@ import os
 import subprocess
 import time
 import warnings
+from pathlib import Path
 
 import pytest
 from mcp import StdioServerParameters
@@ -20,6 +21,93 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
 pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
+
+
+# Environment names needed to launch ``uv`` and its child process on all
+# supported platforms. Everything else must be supplied explicitly below.
+_PROCESS_ENV_KEYS = (
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "VIRTUAL_ENV",
+    "UV_PROJECT_ENVIRONMENT",
+)
+
+_KNOWN_PROVIDER_ENV_KEYS = (
+    "API_KEYS",
+    "JINA_API_KEY",
+    "JINA_AI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "COHERE_API_KEY",
+    "CO_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "XAI_API_KEY",
+    "GOOGLE_VERTEX_EXPRESS_API_KEY",
+    "GOOGLE_DRIVE_CLIENT_ID",
+    "EMBEDDING_MODELS",
+    "RERANK_MODELS",
+    "LLM_MODELS",
+    "EMBEDDING_MODEL",
+    "RERANK_MODEL",
+    "EMBEDDING_BACKEND",
+    "RERANK_BACKEND",
+    "EMBEDDING_API_BASE",
+    "RERANK_API_BASE",
+    "LLM_API_BASE",
+    "LOCAL_EMBEDDING_MODEL",
+    "LOCAL_RERANK_MODEL",
+    "MCP_RELAY_URL",
+)
+
+
+def _build_local_replay_env(
+    tmp_path: Path,
+    *,
+    cache_dir: Path | str,
+) -> dict[str, str]:
+    """Build a credential-free, temporary environment for a local replay."""
+    parent_by_upper = {name.upper(): value for name, value in os.environ.items()}
+    parent_env = {
+        name: parent_by_upper[name.upper()]
+        for name in _PROCESS_ENV_KEYS
+        if name.upper() in parent_by_upper
+    }
+    local_state = tmp_path / "local-state"
+    config_dir = tmp_path / "local-config"
+    data_dir = tmp_path / "local-data"
+    temp_dir = tmp_path / "local-temp"
+    db_path = tmp_path / "local-test.db"
+    env = {
+        **parent_env,
+        "DB_PATH": str(db_path),
+        "MNEMO_DB_PATH": str(db_path),
+        "LOG_LEVEL": "WARNING",
+        "SYNC_ENABLED": "false",
+        "MCP_TRANSPORT": "stdio",
+        "MEMORY_DB_BACKEND": "sqlite",
+        "MNEMO_DATA_DIR": str(data_dir),
+        "HOME": str(local_state),
+        "USERPROFILE": str(local_state),
+        "XDG_CONFIG_HOME": str(config_dir),
+        "XDG_DATA_HOME": str(data_dir),
+        "LOCALAPPDATA": str(local_state),
+        "APPDATA": str(local_state),
+        "TMP": str(temp_dir),
+        "TEMP": str(temp_dir),
+        "TMPDIR": str(temp_dir),
+        "FASTRETRIEVAL_CACHE_PATH": str(cache_dir),
+        "QWEN3_EMBED_CACHE_PATH": "",
+        "EMBEDDING_DIMS": "0",
+        "RERANK_ENABLED": "true",
+        "DISABLE_LOCAL_EMBED": "false",
+        "DISABLE_LOCAL_RERANK": "false",
+    }
+    env.update(dict.fromkeys(_KNOWN_PROVIDER_ENV_KEYS, ""))
+    return env
 
 
 # ---------------------------------------------------------------------------
@@ -51,16 +139,12 @@ async def mcp_session(tmp_path):
     Suppresses anyio cancel-scope teardown errors that occur when
     pytest-asyncio tears down the event loop in a different task context.
     """
-    db_path = str(tmp_path / "test.db")
+    from fastretrieval import define_cache_dir
+
     server_params = StdioServerParameters(
         command="uv",
         args=["run", "mnemo-mcp"],
-        env={
-            **os.environ,
-            "DB_PATH": db_path,
-            "LOG_LEVEL": "WARNING",
-            "SYNC_ENABLED": "false",
-        },
+        env=_build_local_replay_env(tmp_path, cache_dir=define_cache_dir()),
     )
     try:
         async with stdio_client(server_params) as (read_stream, write_stream):
@@ -85,51 +169,10 @@ async def local_mcp_session(tmp_path):
     """Start mnemo-mcp with deterministic local-only provider selection."""
     from fastretrieval import define_cache_dir
 
-    local_state = tmp_path / "local-state"
-    cache_dir = define_cache_dir()
-    db_path = str(tmp_path / "local-test.db")
-    local_env = {
-        **os.environ,
-        "DB_PATH": db_path,
-        "LOG_LEVEL": "WARNING",
-        "SYNC_ENABLED": "false",
-        "MCP_TRANSPORT": "stdio",
-        "HOME": str(local_state),
-        "USERPROFILE": str(local_state),
-        "XDG_CONFIG_HOME": str(local_state),
-        "LOCALAPPDATA": str(local_state),
-        "APPDATA": str(local_state),
-        "FASTRETRIEVAL_CACHE_PATH": str(cache_dir),
-        "QWEN3_EMBED_CACHE_PATH": "",
-        "API_KEYS": "",
-        "JINA_API_KEY": "",
-        "JINA_AI_API_KEY": "",
-        "GEMINI_API_KEY": "",
-        "GOOGLE_API_KEY": "",
-        "OPENAI_API_KEY": "",
-        "COHERE_API_KEY": "",
-        "CO_API_KEY": "",
-        "ANTHROPIC_API_KEY": "",
-        "XAI_API_KEY": "",
-        "GOOGLE_VERTEX_EXPRESS_API_KEY": "",
-        "GOOGLE_DRIVE_CLIENT_ID": "",
-        "EMBEDDING_MODELS": "",
-        "RERANK_MODELS": "",
-        "LLM_MODELS": "",
-        "EMBEDDING_MODEL": "",
-        "RERANK_MODEL": "",
-        "EMBEDDING_BACKEND": "",
-        "RERANK_BACKEND": "",
-        "EMBEDDING_API_BASE": "",
-        "RERANK_API_BASE": "",
-        "LLM_API_BASE": "",
-        "LOCAL_EMBEDDING_MODEL": "",
-        "LOCAL_RERANK_MODEL": "",
-        "EMBEDDING_DIMS": "0",
-        "RERANK_ENABLED": "true",
-        "DISABLE_LOCAL_EMBED": "false",
-        "DISABLE_LOCAL_RERANK": "false",
-    }
+    local_env = _build_local_replay_env(
+        tmp_path,
+        cache_dir=define_cache_dir(),
+    )
     subprocess.run(
         [
             "uv",
