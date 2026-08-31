@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v2.9.0-beta.1 (2026-08-31)
+
+### Bug Fixes
+
+- Clarify retrieval runtime ownership ([#1159](https://github.com/n24q02m/mnemo-mcp/pull/1159),
+  [`069eb3f`](https://github.com/n24q02m/mnemo-mcp/commit/069eb3fe6769a3639ff8274b8b6bc2724ca7694f))
+
+- Cover granular retrieval metadata ([#1158](https://github.com/n24q02m/mnemo-mcp/pull/1158),
+  [`71f2549`](https://github.com/n24q02m/mnemo-mcp/commit/71f25498b7c9ac6e7d627a2118879e6cb3753d20))
+
+- Isolate mnemo local protocol replay ([#1164](https://github.com/n24q02m/mnemo-mcp/pull/1164),
+  [`771b1f8`](https://github.com/n24q02m/mnemo-mcp/commit/771b1f8abe460fda1e81aa8f28e6eaf567d01bf2))
+
+- Migrate runtime to stable retrieval dependencies
+  ([`9942bf6`](https://github.com/n24q02m/mnemo-mcp/commit/9942bf6eafebf249c62a3c2bcef524bb7c8408ad))
+
+- Remove private fastretrieval test dependencies
+  ([#1157](https://github.com/n24q02m/mnemo-mcp/pull/1157),
+  [`1a26344`](https://github.com/n24q02m/mnemo-mcp/commit/1a26344df379b2d77403de58c59b38756a4c56d6))
+
+- **deps**: Lock file maintenance ([#1162](https://github.com/n24q02m/mnemo-mcp/pull/1162),
+  [`810c818`](https://github.com/n24q02m/mnemo-mcp/commit/810c81879d1de4c0ce09dd5aba839a2f0acc2562))
+
+- **deps**: Lock file maintenance ([#1155](https://github.com/n24q02m/mnemo-mcp/pull/1155),
+  [`4b9e1c0`](https://github.com/n24q02m/mnemo-mcp/commit/4b9e1c0f705268919b254a569fc26e92a2229b79))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260823.1
+  ([#1161](https://github.com/n24q02m/mnemo-mcp/pull/1161),
+  [`a41b1d8`](https://github.com/n24q02m/mnemo-mcp/commit/a41b1d8b56eb3e000deb447c0ec7390797ecfca4))
+
+- **deps**: Update moto to >=5.2.3 ([#1160](https://github.com/n24q02m/mnemo-mcp/pull/1160),
+  [`5e4893c`](https://github.com/n24q02m/mnemo-mcp/commit/5e4893c24ce94a36d64f8ce2a301b54f084540c9))
+
+- **deps**: Update non-major dev dependencies
+  ([#1154](https://github.com/n24q02m/mnemo-mcp/pull/1154),
+  [`4a73263`](https://github.com/n24q02m/mnemo-mcp/commit/4a73263cb21667a113cde13e25310384bdaab1ec))
+
+### Features
+
+- Expose reranker selection metadata ([#1163](https://github.com/n24q02m/mnemo-mcp/pull/1163),
+  [`936f059`](https://github.com/n24q02m/mnemo-mcp/commit/936f059651a95a4eea2b1594af5e93867bd04de3))
+
+
 ## v2.8.0 (2026-08-29)
 
 ### Bug Fixes
