@@ -217,6 +217,30 @@ class TestCloudEmbeddingPassthrough:
         assert mock.call_args.kwargs["input_type"] == "search_document"
         assert mock.call_args.kwargs["model"] == "cohere/embed-multilingual-v3.0"
 
+    async def test_cohere_query_uses_search_query(self):
+        response = _embedding_response([0.1, 0.2])
+        with patch(
+            "mcp_core.llm.aembedding", new=AsyncMock(return_value=response)
+        ) as call:
+            backend = CloudEmbeddingBackend(
+                "cohere/embed-multilingual-v3.0", api_key="key"
+            )
+            result = await backend.embed_single("find this", role="query")
+
+        assert result == [0.1, 0.2]
+        assert call.call_args.kwargs["input_type"] == "search_query"
+
+    async def test_non_cohere_query_adds_no_provider_role_kwarg(self):
+        response = _embedding_response([0.3])
+        with patch(
+            "mcp_core.llm.aembedding", new=AsyncMock(return_value=response)
+        ) as call:
+            backend = CloudEmbeddingBackend("jina_ai/jina-embeddings-v3", api_key="key")
+            await backend.embed_single("find this", role="query")
+
+        assert "input_type" not in call.call_args.kwargs
+        assert "role" not in call.call_args.kwargs
+
     async def test_none_data_returns_empty(self):
         """resp.data=None is guarded and yields []."""
         mock = AsyncMock(return_value=SimpleNamespace(data=None))

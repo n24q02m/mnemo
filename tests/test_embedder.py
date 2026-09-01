@@ -109,6 +109,24 @@ class TestCloudEmbeddingBackend:
             result = await backend.embed_texts(["test"], dimensions=768)
         assert len(result[0]) == 768
 
+    async def test_dimensions_fallback_preserves_query_role(self):
+        """Dropping unsupported dimensions does not change the provider role."""
+        unsupported_err = Exception("output_dimension is not supported for this model")
+        mock = AsyncMock(side_effect=[unsupported_err, _resp([0.1] * 1024)])
+        with patch("mcp_core.llm.aembedding", mock):
+            backend = CloudEmbeddingBackend(
+                model="embed-multilingual-v3.0", api_key="key"
+            )
+            result = await backend.embed_texts(["test"], dimensions=768, role="query")
+
+        assert len(result[0]) == 768
+        assert [call.kwargs["input_type"] for call in mock.call_args_list] == [
+            "search_query",
+            "search_query",
+        ]
+        assert mock.call_args_list[0].kwargs["dimensions"] == 768
+        assert "dimensions" not in mock.call_args_list[1].kwargs
+
     async def test_local_truncation_when_server_returns_more(self):
         """Truncates locally when server returns more dims than requested."""
         mock = _async_resp([0.1] * 3072)
@@ -127,8 +145,11 @@ class TestCloudEmbeddingBackend:
     def test_check_available_returns_dims(self):
         mock = MagicMock(return_value=_resp([0.1, 0.2]))
         with patch("mcp_core.llm.embedding", mock):
-            backend = CloudEmbeddingBackend(api_key="key")
+            backend = CloudEmbeddingBackend(
+                model="embed-multilingual-v3.0", api_key="key"
+            )
             assert backend.check_available() == 2
+        assert mock.call_args.kwargs["input_type"] == "search_document"
 
     def test_check_available_error(self):
         mock = MagicMock(side_effect=Exception("Model not found"))
@@ -449,3 +470,16 @@ class TestLegacyCompat:
                 "test", "embed-multilingual-v3.0", api_key="key"
             )
         assert result == [0.1, 0.2]
+
+    async def test_embed_single_legacy_forwards_role(self):
+        with patch.object(
+            CloudEmbeddingBackend,
+            "embed_single",
+            new=AsyncMock(return_value=[0.1, 0.2]),
+        ) as mock:
+            result = await embed_single(
+                "test", "embed-multilingual-v3.0", api_key="key", role="query"
+            )
+
+        assert result == [0.1, 0.2]
+        mock.assert_awaited_once_with("test", None, role="query")

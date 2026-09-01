@@ -1,9 +1,8 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from litellm.exceptions import APIConnectionError, RateLimitError
 
-from mnemo_mcp.embedder import Qwen3EmbedBackend
 from mnemo_mcp.server import _embed
 
 
@@ -15,40 +14,29 @@ async def test_embed_no_model():
 
 
 @pytest.mark.asyncio
-async def test_embed_with_generic_backend_query():
-    """Test _embed with a generic backend (not Qwen3) calls embed_single even for query."""
-    mock_backend = AsyncMock()
-    mock_backend.embed_single.return_value = [0.1, 0.2]
+async def test_embed_query_passes_query_role_to_any_backend():
+    """Queries use the protocol role rather than a concrete backend branch."""
+    backend = MagicMock()
+    backend.embed_single = AsyncMock(return_value=[0.3, 0.4])
 
-    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-        # Call with is_query=True
-        result = await _embed("text", "model", 768, is_query=True)
-        assert result == [0.1, 0.2]
-        mock_backend.embed_single.assert_called_once_with("text", 768)
+    result = await _embed(
+        "search query", "some-model", 768, is_query=True, backend=backend
+    )
 
-
-@pytest.mark.asyncio
-async def test_embed_with_qwen3_backend_query():
-    """Test _embed with Qwen3Backend and is_query=True calls embed_single_query."""
-    mock_backend = AsyncMock(spec=Qwen3EmbedBackend)
-    mock_backend.embed_single_query.return_value = [0.3, 0.4]
-
-    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-        result = await _embed("text", "model", 768, is_query=True)
-        assert result == [0.3, 0.4]
-        mock_backend.embed_single_query.assert_called_once_with("text", 768)
+    assert result == [0.3, 0.4]
+    backend.embed_single.assert_awaited_once_with("search query", 768, role="query")
 
 
 @pytest.mark.asyncio
-async def test_embed_with_qwen3_backend_doc():
-    """Test _embed with Qwen3Backend and is_query=False calls embed_single."""
-    mock_backend = AsyncMock(spec=Qwen3EmbedBackend)
-    mock_backend.embed_single.return_value = [0.5, 0.6]
+async def test_embed_document_passes_document_role():
+    """Documents use the protocol's explicit document role."""
+    backend = MagicMock()
+    backend.embed_single = AsyncMock(return_value=[0.5, 0.6])
 
-    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-        result = await _embed("text", "model", 768, is_query=False)
-        assert result == [0.5, 0.6]
-        mock_backend.embed_single.assert_called_once_with("text", 768)
+    result = await _embed("memory body", "some-model", 768, backend=backend)
+
+    assert result == [0.5, 0.6]
+    backend.embed_single.assert_awaited_once_with("memory body", 768, role="document")
 
 
 @pytest.mark.asyncio

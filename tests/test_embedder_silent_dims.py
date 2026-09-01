@@ -80,7 +80,8 @@ class TestWrappedDimsRejectionRecovery:
         # hide the defect.
         native_dim = 1536
 
-        async def fake_call(texts, dimensions=None):
+        async def fake_call(texts, dimensions=None, *, role):
+            assert role == "document"
             if dimensions is not None:
                 raise _wrapped_422()
             return [[0.1] * native_dim for _ in texts]
@@ -98,11 +99,14 @@ class TestWrappedDimsRejectionRecovery:
         assert mock_call.call_count == 2
         assert mock_call.call_args_list[0].args[1] == 768
         assert mock_call.call_args_list[1].args[1] is None
+        assert mock_call.call_args_list[0].kwargs["role"] == "document"
+        assert mock_call.call_args_list[1].kwargs["role"] == "document"
 
     async def test_wrapped_422_is_not_retried_with_same_dims(self):
         # If the fallback did NOT fire, the buggy code would retry MAX_RETRIES
         # times with the same rejected dims. Assert it does NOT.
-        async def always_reject(texts, dimensions=None):
+        async def always_reject(texts, dimensions=None, *, role):
+            assert role == "document"
             raise _wrapped_422()
 
         backend = CloudEmbeddingBackend(model="cohere/embed-v4.0")
@@ -118,3 +122,5 @@ class TestWrappedDimsRejectionRecovery:
         assert mock_call.call_count < MAX_RETRIES + 1
         assert mock_call.call_args_list[0].args[1] == 768
         assert mock_call.call_args_list[1].args[1] is None
+        assert mock_call.call_args_list[0].kwargs["role"] == "document"
+        assert mock_call.call_args_list[1].kwargs["role"] == "document"

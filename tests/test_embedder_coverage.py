@@ -1,7 +1,7 @@
 """Additional tests for mnemo_mcp.embedder -- covering uncovered lines.
 
 Targets: CloudEmbeddingBackend with api_base/api_key, Qwen3EmbedBackend._get_model,
-embed_texts inner function, embed_single_query, check_available result empty.
+embed_texts inner function, query role, check_available result empty.
 """
 
 from types import SimpleNamespace
@@ -118,14 +118,14 @@ class TestQwen3EmbedTextsInner:
 
 
 # ---------------------------------------------------------------------------
-# Qwen3EmbedBackend.embed_single_query
+# Qwen3EmbedBackend query role
 # ---------------------------------------------------------------------------
 
 
-class TestQwen3EmbedSingleQuery:
+class TestQwen3EmbedQueryRole:
     @patch("fastretrieval.TextEmbedding")
-    async def test_embed_single_query(self, mock_te):
-        """embed_single_query uses query_embed for asymmetric retrieval."""
+    async def test_embed_texts_query_role(self, mock_te):
+        """query role uses query_embed for asymmetric retrieval."""
         mock_emb = MagicMock()
         mock_emb.tolist.return_value = [0.5, 0.6, 0.7]
 
@@ -134,14 +134,15 @@ class TestQwen3EmbedSingleQuery:
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
-        result = await backend.embed_single_query("search query")
+        result = await backend.embed_texts(["search query"], role="query")
 
-        assert result == [0.5, 0.6, 0.7]
-        mock_model.query_embed.assert_called_once()
+        assert result == [[0.5, 0.6, 0.7]]
+        mock_model.query_embed.assert_called_once_with("search query")
+        mock_model.embed.assert_not_called()
 
     @patch("fastretrieval.TextEmbedding")
-    async def test_embed_single_query_with_dimensions(self, mock_te):
-        """embed_single_query passes dim parameter."""
+    async def test_embed_single_with_query_role_and_dimensions(self, mock_te):
+        """embed_single with query role passes the dimension to query_embed."""
         mock_emb = MagicMock()
         mock_emb.tolist.return_value = [0.5, 0.6]
 
@@ -150,11 +151,10 @@ class TestQwen3EmbedSingleQuery:
         mock_te.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
-        result = await backend.embed_single_query("query", dimensions=256)
+        result = await backend.embed_single("query", dimensions=256, role="query")
 
         assert result == [0.5, 0.6]
-        call_kwargs = mock_model.query_embed.call_args
-        assert call_kwargs[1].get("dim") == 256
+        mock_model.query_embed.assert_called_once_with("query", dim=256)
 
 
 # ---------------------------------------------------------------------------

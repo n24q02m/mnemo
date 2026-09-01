@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from loguru import logger
+
+EmbeddingRole = Literal["document", "query"]
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -136,6 +138,8 @@ class EmbeddingBackend(Protocol):
         self,
         texts: list[str],
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Embed a batch of texts. Returns list of embedding vectors."""
         ...
@@ -144,6 +148,8 @@ class EmbeddingBackend(Protocol):
         self,
         text: str,
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[float]:
         """Embed a single text. Returns embedding vector."""
         ...
@@ -259,17 +265,25 @@ class CloudEmbeddingBackend:
         # OpenAI-style bare names (text-embedding-3-*) pass through as-is.
         return self.model
 
-    def _build_kwargs(self, dimensions: int | None) -> dict:
+    def _build_kwargs(
+        self, dimensions: int | None, role: EmbeddingRole
+    ) -> dict[str, Any]:
         """Build provider-specific aembedding/embedding kwargs."""
-        kwargs: dict = {}
+        kwargs: dict[str, Any] = {}
         if dimensions:
             kwargs["dimensions"] = dimensions
         if self._provider == "cohere":
-            kwargs["input_type"] = "search_document"
+            kwargs["input_type"] = (
+                "search_query" if role == "query" else "search_document"
+            )
         return kwargs
 
     async def _call_provider(
-        self, texts: list[str], dimensions: int | None = None
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Single cloud path via mcp_core.llm (litellm passthrough)."""
         # Lazy import: litellm costs ~1-2s on first import.
@@ -284,12 +298,16 @@ class CloudEmbeddingBackend:
             input=texts,
             api_base=self.api_base or api_base_for_task("EMBEDDING_API_BASE"),
             api_key=self.api_key or api_key_for_model(litellm_model),
-            **self._build_kwargs(dimensions),
+            **self._build_kwargs(dimensions, role),
         )
         return _parse_embeddings(response)
 
     def _call_provider_sync(
-        self, texts: list[str], dimensions: int | None = None
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Sync cloud path for ``check_available`` (sync mirror).
 
@@ -315,7 +333,7 @@ class CloudEmbeddingBackend:
             # loops otherwise multiply the timeout and make a stalled endpoint
             # hold startup open far beyond PROBE_TIMEOUT.
             num_retries=0,
-            **self._build_kwargs(dimensions),
+            **self._build_kwargs(dimensions, role),
         )
         return _parse_embeddings(response)
 
@@ -323,6 +341,8 @@ class CloudEmbeddingBackend:
         self,
         texts: list[str],
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors.
 
@@ -335,7 +355,7 @@ class CloudEmbeddingBackend:
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                embeddings = await self._call_provider(texts, use_dimensions)
+                embeddings = await self._call_provider(texts, use_dimensions, role=role)
 
                 # Truncate locally if server returned more dims than requested
                 if dimensions and embeddings and len(embeddings[0]) > dimensions:
@@ -376,13 +396,15 @@ class CloudEmbeddingBackend:
         self,
         texts: list[str],
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Embed texts with auto batch splitting."""
         if not texts:
             return []
 
         if len(texts) <= self.MAX_BATCH_SIZE:
-            return await self._embed_batch_inner(texts, dimensions)
+            return await self._embed_batch_inner(texts, dimensions, role=role)
 
         # Split into batches
         total_batches = (len(texts) + self.MAX_BATCH_SIZE - 1) // self.MAX_BATCH_SIZE
@@ -404,7 +426,7 @@ class CloudEmbeddingBackend:
                 logger.debug(
                     f"Embedding batch {batch_idx + 1}/{total_batches}: {len(batch_texts)} texts"
                 )
-                res = await self._embed_batch_inner(batch_texts, dimensions)
+                res = await self._embed_batch_inner(batch_texts, dimensions, role=role)
                 return batch_idx, res
 
         tasks = []
@@ -426,9 +448,11 @@ class CloudEmbeddingBackend:
         self,
         text: str,
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[float]:
         """Embed a single text."""
-        results = await self.embed_texts([text], dimensions)
+        results = await self.embed_texts([text], dimensions, role=role)
         return results[0]
 
     def check_available(self) -> int:
@@ -438,7 +462,7 @@ class CloudEmbeddingBackend:
         failures (debug) so users know when their keys are wrong.
         """
         try:
-            embeddings = self._call_provider_sync(["test"])
+            embeddings = self._call_provider_sync(["test"], role="document")
             if embeddings:
                 dim = len(embeddings[0])
                 logger.info(f"Embedding model {self.model} available (dims={dim})")
@@ -502,19 +526,22 @@ class Qwen3EmbedBackend:
         self,
         texts: list[str],
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[list[float]]:
         """Embed texts using local ONNX model (runs in thread)."""
         if not texts:
             return []
 
-        def _embed():
+        def _embed() -> list[list[float]]:
             model = self._get_model()
-            # Pass dim to model.embed() so MRL truncation happens BEFORE L2-normalization
-            kwargs = {}
-            if dimensions and dimensions > 0:
-                kwargs["dim"] = dimensions
-            embeddings = list(model.embed(texts, **kwargs))
-            return [emb.tolist() for emb in embeddings]
+            kwargs = {"dim": dimensions} if dimensions and dimensions > 0 else {}
+            if role == "query":
+                return [
+                    list(model.query_embed(text, **kwargs))[0].tolist()
+                    for text in texts
+                ]
+            return [embedding.tolist() for embedding in model.embed(texts, **kwargs)]
 
         return await asyncio.to_thread(_embed)
 
@@ -522,27 +549,12 @@ class Qwen3EmbedBackend:
         self,
         text: str,
         dimensions: int | None = None,
+        *,
+        role: EmbeddingRole = "document",
     ) -> list[float]:
-        """Embed a single text (document/passage)."""
-        results = await self.embed_texts([text], dimensions)
+        """Embed a single text."""
+        results = await self.embed_texts([text], dimensions, role=role)
         return results[0]
-
-    async def embed_single_query(
-        self,
-        text: str,
-        dimensions: int | None = None,
-    ) -> list[float]:
-        """Embed a query with instruction prefix (asymmetric retrieval)."""
-
-        def _query():
-            model = self._get_model()
-            kwargs = {}
-            if dimensions and dimensions > 0:
-                kwargs["dim"] = dimensions
-            result = list(model.query_embed(text, **kwargs))
-            return result[0].tolist()
-
-        return await asyncio.to_thread(_query)
 
     def check_available(self) -> int:
         """Kiểm tra runtime fastretrieval cục bộ có hoạt động hay không."""
@@ -613,7 +625,9 @@ async def embed_single(
     dimensions: int | None = None,
     api_base: str | None = None,
     api_key: str | None = None,
+    *,
+    role: EmbeddingRole = "document",
 ) -> list[float]:
     """Embed a single text (legacy interface)."""
     backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
-    return await backend.embed_single(text, dimensions)
+    return await backend.embed_single(text, dimensions, role=role)

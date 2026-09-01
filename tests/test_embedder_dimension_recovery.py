@@ -38,7 +38,10 @@ class TestDimensionRecovery:
         # First call should have had dimensions=512
         # Second call should have had dimensions=None
         mock_call_provider.assert_has_calls(
-            [call(["hello"], 512), call(["hello"], None)]
+            [
+                call(["hello"], 512, role="document"),
+                call(["hello"], None, role="document"),
+            ]
         )
 
     @patch(

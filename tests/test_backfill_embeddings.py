@@ -1,6 +1,41 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
+from mnemo_mcp.server import _handle_config_backfill
 from scripts.backfill_embeddings import backfill
+
+
+async def test_server_backfill_passes_document_role_and_aligns_vectors():
+    db = MagicMock()
+    db.rows_without_vectors.side_effect = [
+        [
+            {"id": "a", "content": "alpha"},
+            {"id": "b", "content": "beta"},
+        ],
+        [],
+    ]
+    backend = MagicMock()
+    backend.embed_texts = AsyncMock(return_value=[[0.1], [0.2]])
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {
+        "db": db,
+        "embedding_model": None,
+        "embedding_dims": 1,
+    }
+
+    with patch(
+        "mnemo_mcp.server._get_request_embedding",
+        return_value=("some-model", backend),
+    ):
+        result = await _handle_config_backfill(ctx, batch_size=2)
+
+    assert result["embedded"] == 2
+    backend.embed_texts.assert_awaited_once_with(["alpha", "beta"], 1, role="document")
+    assert db.write_vector.call_args_list == [
+        call("a", [0.1]),
+        call("b", [0.2]),
+    ]
 
 
 class _FakeDB:

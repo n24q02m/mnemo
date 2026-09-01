@@ -633,13 +633,13 @@ async def _embed(
         text: Text to embed.
         model: Embedding model name.
         dims: Target dimensions (MRL truncation).
-        is_query: If True, use query_embed for instruction-aware asymmetric
-            retrieval (Qwen3). Document embeddings stay raw.
+        is_query: If True, request the backend's query role for asymmetric
+            retrieval. Document embeddings use the document role.
     """
     if not model:
         return None
 
-    from mnemo_mcp.embedder import Qwen3EmbedBackend, get_backend
+    from mnemo_mcp.embedder import EmbeddingRole, get_backend
 
     backend = backend or get_backend()
     if backend is None:
@@ -647,10 +647,9 @@ async def _embed(
         logger.warning(f"Embedding backend not initialized despite model={model}")
         return None
 
+    role: EmbeddingRole = "query" if is_query else "document"
     try:
-        if is_query and isinstance(backend, Qwen3EmbedBackend):
-            return await backend.embed_single_query(text, dims)
-        return await backend.embed_single(text, dims)
+        return await backend.embed_single(text, dims, role=role)
     except Exception as e:
         from mnemo_mcp.embedder import _is_retryable
 
@@ -2126,6 +2125,7 @@ async def _handle_config_backfill(
             vectors = await backend.embed_texts(
                 [str(row["content"]) for row in usable],
                 embedding_dims,
+                role="document",
             )
         except Exception as exc:
             logger.warning(f"Embedding backfill batch failed: {exc}")

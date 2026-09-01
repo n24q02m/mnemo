@@ -94,27 +94,40 @@ class TestEmbed:
             with pytest.raises(Exception, match="does not exist"):
                 await _embed("test text", "some-model", 768)
 
-    async def test_embed_with_qwen3_query(self):
-        """Uses query_embed for Qwen3 backend with is_query=True."""
-        from mnemo_mcp.embedder import Qwen3EmbedBackend
+    async def test_embed_query_passes_query_role(self):
+        """Any backend receives the query role for search embeddings."""
+        mock_backend = MagicMock()
+        mock_backend.embed_single = AsyncMock(return_value=[0.1, 0.2])
 
-        mock_backend = MagicMock(spec=Qwen3EmbedBackend)
-        mock_backend.embed_single_query = AsyncMock(return_value=[0.1, 0.2])
+        result = await _embed(
+            "search query",
+            "some-model",
+            768,
+            is_query=True,
+            backend=mock_backend,
+        )
 
-        with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-            result = await _embed("search query", "__local__", 768, is_query=True)
-            assert result == [0.1, 0.2]
-            mock_backend.embed_single_query.assert_called_once_with("search query", 768)
+        assert result == [0.1, 0.2]
+        mock_backend.embed_single.assert_awaited_once_with(
+            "search query", 768, role="query"
+        )
 
-    async def test_embed_with_non_qwen3_query(self):
-        """Uses regular embed_single for non-Qwen3 backends even with is_query."""
+    async def test_embed_document_passes_document_role(self):
+        """Any backend receives the document role for stored embeddings."""
         mock_backend = MagicMock()
         mock_backend.embed_single = AsyncMock(return_value=[0.3, 0.4])
 
-        with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-            result = await _embed("search query", "some-model", 768, is_query=True)
-            assert result == [0.3, 0.4]
-            mock_backend.embed_single.assert_called_once_with("search query", 768)
+        result = await _embed(
+            "memory body",
+            "some-model",
+            768,
+            backend=mock_backend,
+        )
+
+        assert result == [0.3, 0.4]
+        mock_backend.embed_single.assert_awaited_once_with(
+            "memory body", 768, role="document"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +234,9 @@ class TestConfigSync:
             "failed": 0,
         }
         assert db.write_vector.call_count == 2
-        backend.embed_texts.assert_awaited_once()
+        backend.embed_texts.assert_awaited_once_with(
+            ["first memory", "second memory"], 1536, role="document"
+        )
 
     @pytest.mark.parametrize("batch_size", [0, 101, True, "2"])
     async def test_config_backfill_rejects_unbounded_batch_size(
