@@ -532,7 +532,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.1.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -543,9 +543,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/11/be/00314cfc1aafdf3089e4384e319f32f106ca6dd63184c4583bb3e92114b2/fastretrieval-1.1.0.tar.gz", hash = "sha256:53b958b7b29a18c4ff6982bfd74c3d2b71f5e213c2ef794bbd89a0672361cdc8", size = 316103, upload-time = "2026-08-29T12:43:06.098Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/89/acef3ff8502054764c275dc373bb68c8fbe011e9290b0bbdb72ce78c0b5e/fastretrieval-1.2.0.tar.gz", hash = "sha256:4b566df8afc79421248c1ec97a21e1dd4355ccb0c43df29d8e366a2dd43c07dd", size = 323790, upload-time = "2026-08-31T11:23:17.129Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/de/3e05f7c5cd33dd5716233a87e15a99c95fa8cc2c3dae53e3b0d60bc85977/fastretrieval-1.1.0-py3-none-any.whl", hash = "sha256:3c371d3fb8f76d1e029c9bd99adf8118cf0d49259c6a50649027324ba320e4ec", size = 144628, upload-time = "2026-08-29T12:43:04.505Z" },
+    { url = "https://files.pythonhosted.org/packages/21/07/264fa767eca0a5a842e8cd26b57d955e631015f31f33702fb329b9bcf701/fastretrieval-1.2.0-py3-none-any.whl", hash = "sha256:7699bdff1f9773c2a1429b3457d179328b685691fb67fc9f3888c67e706b4ebe", size = 144691, upload-time = "2026-08-31T11:23:15.556Z" },
 ]
 
 [[package]]
@@ -1128,7 +1128,7 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.80" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastmcp", specifier = ">=3.4.7,<4" },
-    { name = "fastretrieval", specifier = ">=1.1.0,<2" },
+    { name = "fastretrieval", specifier = ">=1.2.0,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
