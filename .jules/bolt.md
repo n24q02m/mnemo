@@ -49,3 +49,7 @@ Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into 
 ## 2026-08-29 - Missing `check_same_thread=False` in fixture connection causes lockups in pytest
 **Learning:** `FakeD1Worker` is called from HTTP threads via `asyncio.to_thread` during `MemoryDBCfBackend` tests. If the underlying `sqlite3.connect` for the test fixture does not include `check_same_thread=False`, the thread-crossing results in a hanging/timeout on Windows due to SQLite library locks/thread-safety checks silently halting execution or failing without a clean crash during the tests.
 **Action:** Always include `check_same_thread=False` when constructing local SQLite test fixtures (`fake_worker` connecting to `d1.sqlite`) that simulate remote backend operations accessed through `asyncio.to_thread`.
+
+## 2026-09-01 - Cache math.log1p frequency calculations in tight loops
+**Learning:** `math.log1p` and floating point division are expensive when called repeatedly in `_compute_hybrid_scores`. Because many search or query results share the same `access_count` (often 0 or a low integer), computing this per-row without caching does a lot of redundant math.
+**Action:** Introduced a local dictionary cache `freq_cache = {}` in `_compute_hybrid_scores` to memoize the result of `_calc_frequency(access_count)`. This provides a measurable speedup on large lists of records by avoiding redundant math overhead.

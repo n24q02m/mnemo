@@ -1251,6 +1251,7 @@ class MemoryDB:
         now = datetime.now(UTC)
         scored = []
         recency_cache = {}
+        freq_cache = {}
         has_vec = any(m.get("vec_score", 0.0) > 0 for m in results.values())
 
         if has_vec:
@@ -1275,7 +1276,10 @@ class MemoryDB:
                     recency_cache[updated_at] = self._calc_recency(updated_at, now)
                 recency = recency_cache[updated_at]
 
-                freq = self._calc_frequency(mem.get("access_count", 0))
+                ac = mem.get("access_count", 0)
+                if ac not in freq_cache:
+                    freq_cache[ac] = self._calc_frequency(ac)
+                freq = freq_cache[ac]
 
                 rrf_norm = rrf * (k + 1) / 2.0
                 # Phase 1 retrieval polish: temporal decay multiplied into the
@@ -1294,7 +1298,10 @@ class MemoryDB:
                     recency_cache[updated_at] = self._calc_recency(updated_at, now)
                 recency = recency_cache[updated_at]
 
-                freq = self._calc_frequency(mem.get("access_count", 0))
+                ac = mem.get("access_count", 0)
+                if ac not in freq_cache:
+                    freq_cache[ac] = self._calc_frequency(ac)
+                freq = freq_cache[ac]
 
                 base = fts * 0.6 + recency * 0.3 + freq * 0.1
                 importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
