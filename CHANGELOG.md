@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.10.0 (2026-09-02)
+
+### Bug Fixes
+
+- **deps**: Pin mcp[cli]<2 for FastMCP v1 SDK compatibility
+  ([#1175](https://github.com/n24q02m/mnemo-mcp/pull/1175),
+  [`dface6e`](https://github.com/n24q02m/mnemo-mcp/commit/dface6e1708de0798b22e487c10055cee2bcfa71))
+
+
 ## v2.10.0-beta.1 (2026-09-02)
 
 ### Bug Fixes
