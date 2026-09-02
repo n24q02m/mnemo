@@ -2,6 +2,45 @@
 
 <!-- version list -->
 
+## v2.10.0-beta.1 (2026-09-02)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.23.2 ([#1166](https://github.com/n24q02m/mnemo-mcp/pull/1166),
+  [`3f3a040`](https://github.com/n24q02m/mnemo-mcp/commit/3f3a040232b8a22fca1047d5493aa88cf73ea440))
+
+- Preserve embedding query and document roles
+  ([#1171](https://github.com/n24q02m/mnemo-mcp/pull/1171),
+  [`8f7ef7a`](https://github.com/n24q02m/mnemo-mcp/commit/8f7ef7abc99d31c2a4a700ca71c0b7ca8c1575b9))
+
+- **deps**: Update fastretrieval to >=1.2.0,<2
+  ([#1168](https://github.com/n24q02m/mnemo-mcp/pull/1168),
+  [`c202f63`](https://github.com/n24q02m/mnemo-mcp/commit/c202f6329e82ed7d891f908fda1cc67567849326))
+
+- **deps**: Update non-major dev dependencies
+  ([#1173](https://github.com/n24q02m/mnemo-mcp/pull/1173),
+  [`b1f0ffd`](https://github.com/n24q02m/mnemo-mcp/commit/b1f0ffd990e24517a2f74f011af18b0f810e6bb3))
+
+- **deps**: Update patch dependencies ([#1167](https://github.com/n24q02m/mnemo-mcp/pull/1167),
+  [`aaabfb0`](https://github.com/n24q02m/mnemo-mcp/commit/aaabfb03a3a3d8c7d0c7a8e82fe0d95a06bfba7e))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to ed86c82
+  ([#1172](https://github.com/n24q02m/mnemo-mcp/pull/1172),
+  [`4317f18`](https://github.com/n24q02m/mnemo-mcp/commit/4317f18c9e4b48e27e88eb3648b04dccc7e41984))
+
+### Features
+
+- Cache math.log1p frequency calculations in hybrid scoring
+  ([#1170](https://github.com/n24q02m/mnemo-mcp/pull/1170),
+  [`3771bd7`](https://github.com/n24q02m/mnemo-mcp/commit/3771bd75971eff73f3d7e4c5f440e33dd78f82f8))
+
+### Performance Improvements
+
+- Cache math.log1p frequency calculations in hybrid scoring
+  ([#1170](https://github.com/n24q02m/mnemo-mcp/pull/1170),
+  [`3771bd7`](https://github.com/n24q02m/mnemo-mcp/commit/3771bd75971eff73f3d7e4c5f440e33dd78f82f8))
+
+
 ## v2.9.0 (2026-08-31)
 
 
