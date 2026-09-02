@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.10.1 (2026-09-02)
+
+### Bug Fixes
+
+- Prevent information disclosure in validation errors
+  ([#1174](https://github.com/n24q02m/mnemo-mcp/pull/1174),
+  [`8f93ec4`](https://github.com/n24q02m/mnemo-mcp/commit/8f93ec4465b0f76a109d72129b7ce029918113bc))
+
+- Prevent information disclosure in ValueError messages
+  ([#1174](https://github.com/n24q02m/mnemo-mcp/pull/1174),
+  [`8f93ec4`](https://github.com/n24q02m/mnemo-mcp/commit/8f93ec4465b0f76a109d72129b7ce029918113bc))
+
+
 ## v2.10.0 (2026-09-02)
 
 ### Bug Fixes
