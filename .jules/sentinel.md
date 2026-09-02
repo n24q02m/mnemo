@@ -57,3 +57,8 @@ section the heading level puts it in.
 **Vulnerability:** Raw exception strings from `KeyError` (e.g., `str(e)`) were exposed in the JSON response payload of `sync_now` and `import_passport` tool handlers when an unknown or misconfigured backend was requested.
 **Learning:** Returning exception details like `str(e)` from `KeyError` directly to the client can leak sensitive internal configuration keys or backend structure details. Exception strings should be masked with generic error messages in API responses.
 **Prevention:** Catch `KeyError` without an `as e` binding, log the exception securely on the server using `logger.exception()`, and return a generic error message (e.g., `"backend configuration incomplete"`) to the client.
+
+## 2026-08-30 - Prevent Information Disclosure in ValueError Validation Errors
+**Vulnerability:** Raw exception strings from `ValueError` (e.g., `str(e)`) were exposed in the JSON response payload of `_handle_add`, `_handle_update`, and `_handle_capture` tool handlers when validation failed for reasons other than content length limits.
+**Learning:** Returning exception details like `str(e)` from `ValueError` directly to the client can leak sensitive internal constraints or processing logic. Exception strings should be masked with generic error messages in API responses unless they relate to necessary client-side validation feedback (like 'content exceeds limit').
+**Prevention:** Catch `ValueError`, and if the error string does not contain benign validation feedback (like 'exceeds limit'), return a generic error message (e.g., `"validation failed"`) to the client and rely on server-side logging.

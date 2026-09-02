@@ -718,8 +718,12 @@ async def _handle_add(
             embedding=embedding,
         )
     except ValueError as e:
+        msg = str(e)
+        if "exceeds limit" not in msg:
+            logger.exception("Validation failed in _handle_add")
+            msg = "validation failed"
         return {
-            "error": str(e),
+            "error": msg,
             "suggestion": "Ensure input parameters meet validation rules.",
         }
     except Exception:
@@ -1014,8 +1018,12 @@ async def _handle_update(
             embedding=embedding,
         )
     except ValueError as e:
+        msg = str(e)
+        if "exceeds limit" not in msg:
+            logger.exception("Validation failed in _handle_update")
+            msg = "validation failed"
         return {
-            "error": str(e),
+            "error": msg,
             "suggestion": "Check input parameters for invalid types or values.",
         }
     except Exception:
@@ -1249,6 +1257,9 @@ async def _handle_capture(
                     f"Pick a context_type from {sorted(CONTEXT_TYPES)}."
                 )
             return resp
+        if "exceeds limit" not in msg:
+            logger.exception("Validation failed in _handle_capture")
+            msg = "validation failed"
         return {"error": msg, "suggestion": "Check payload length and constraints."}
     except Exception:
         logger.exception("Unexpected error in _handle_capture")
