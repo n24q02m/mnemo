@@ -44,3 +44,6 @@ reviewable surface here is -- the `error`, `suggestion` and `note` strings in
 `src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/` -- and
 that a decision to change nothing belongs in this file as an entry. Read this
 file before opening anything against this repository.
+## 2024-05-18 - Actionable suggestions for empty sets across API
+**Learning:** Tools returning empty sets (like entity queries or historical timelines) without `suggestion` strings degrade DX by leaving developers guessing what to do next.
+**Action:** Ensure all tool handlers returning lists or graph outputs include an actionable `suggestion` string (e.g., "Try a broader search...") when the result set is empty, not just the primary search/list tools.

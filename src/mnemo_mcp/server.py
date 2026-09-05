@@ -1371,11 +1371,16 @@ async def _handle_entity_search(
     rows = await asyncio.to_thread(
         entity_search, db, name=name, entity_type=entity_type, limit=limit
     )
-    return {
+    response: dict = {
         "count": len(rows),
         "results": [_format_memory(r) for r in rows],
         "matched_name": name,
     }
+    if len(rows) == 0:
+        response["suggestion"] = (
+            "No entities found. Try a broader search or verify the entity name/type."
+        )
+    return response
 
 
 async def _handle_entity_graph(
@@ -1398,6 +1403,10 @@ async def _handle_entity_graph(
     result = await asyncio.to_thread(
         entity_graph, db, entity_id=entity_id, name=name, depth=depth, limit=limit
     )
+    if not result.get("nodes"):
+        result["suggestion"] = (
+            "No entity graph found. Verify the entity_id or name exists."
+        )
     return result
 
 
@@ -1417,11 +1426,16 @@ async def _handle_as_of(
     from mnemo_mcp.temporal.queries import memories_as_of
 
     rows = await asyncio.to_thread(memories_as_of, db, as_of, limit)
-    return {
+    response: dict = {
         "memories": [_format_memory(m) for m in rows],
         "count": len(rows),
         "as_of": as_of,
     }
+    if len(rows) == 0:
+        response["suggestion"] = (
+            "No memories found at that point in time. Try adjusting the as_of timestamp."
+        )
+    return response
 
 
 async def _handle_history(
@@ -1441,11 +1455,16 @@ async def _handle_history(
     from mnemo_mcp.temporal.queries import history_for_entity
 
     timeline = await asyncio.to_thread(history_for_entity, db, entity_id)
-    return {
+    response: dict = {
         "entity_id": entity_id,
         "count": len(timeline),
         "timeline": [_format_memory(m) for m in timeline],
     }
+    if len(timeline) == 0:
+        response["suggestion"] = (
+            "No history found for this entity. Verify the entity_id exists and has linked memories."
+        )
+    return response
 
 
 async def _handle_consolidate(
