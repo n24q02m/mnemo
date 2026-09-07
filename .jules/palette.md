@@ -44,3 +44,7 @@ reviewable surface here is -- the `error`, `suggestion` and `note` strings in
 `src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/` -- and
 that a decision to change nothing belongs in this file as an entry. Read this
 file before opening anything against this repository.
+
+## 2026-10-24 - Setup Start Suggestions
+**Learning:** Returning error messages without actionable next steps degrades DX. The `stdio_unsupported` and `already_configured` responses lacked explicit `suggestion` fields, which is the standard across the repository for actionable fallbacks.
+**Action:** When updating dictionary responses, add a `suggestion` key to provide actionable resolution paths to developers and LLMs, even if the primary `message` already contains some guidance.

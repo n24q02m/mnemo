@@ -2365,6 +2365,7 @@ async def _handle_config_setup_start(key: str | None) -> dict[str, typing.Any]:
         return {
             "status": "already_configured",
             "message": "Already configured. Use key='force' to reconfigure.",
+            "suggestion": "If you need to change existing settings, pass key='force' to reconfigure.",
         }
     return {
         "status": "stdio_unsupported",
@@ -2375,6 +2376,7 @@ async def _handle_config_setup_start(key: str | None) -> dict[str, typing.Any]:
             "directly (JINA_AI_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, "
             "COHERE_API_KEY, GOOGLE_DRIVE_CLIENT_ID)."
         ),
+        "suggestion": "Restart the server with the --http flag to use the setup form, or configure via environment variables.",
     }
 
 
