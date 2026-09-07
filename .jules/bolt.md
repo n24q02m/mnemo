@@ -53,3 +53,7 @@ Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into 
 ## 2026-09-01 - Cache math.log1p frequency calculations in tight loops
 **Learning:** `math.log1p` and floating point division are expensive when called repeatedly in `_compute_hybrid_scores`. Because many search or query results share the same `access_count` (often 0 or a low integer), computing this per-row without caching does a lot of redundant math.
 **Action:** Introduced a local dictionary cache `freq_cache = {}` in `_compute_hybrid_scores` to memoize the result of `_calc_frequency(access_count)`. This provides a measurable speedup on large lists of records by avoiding redundant math overhead.
+
+## 2024-09-07 - Avoid redundant min/max clamping in loop when value is already bounded
+**Learning:** `max(0.0, min(1.0, float(mem.get("importance") or 0.0)))` is expensive in a tight loop and unnecessary when reading from the database, because SQLite already clamps this column on insertion. Replacing it with `val = mem.get("importance"); importance = float(val) if val else 0.0` is over 4x faster on large loops.
+**Action:** Extract dictionary values first and conditionally cast them (`float(val) if val else 0.0`) instead of doing redundant `max`/`min` operations on values we know are bounded in the database schema.

@@ -1286,7 +1286,8 @@ class MemoryDB:
                 # base, then importance boost ``score *= (1 + importance)``
                 # so highly-rated memories outrank equal-relevance peers.
                 base = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
-                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                val = mem.get("importance")
+                importance = float(val) if val else 0.0
                 mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
         else:
@@ -1304,7 +1305,8 @@ class MemoryDB:
                 freq = freq_cache[ac]
 
                 base = fts * 0.6 + recency * 0.3 + freq * 0.1
-                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                val = mem.get("importance")
+                importance = float(val) if val else 0.0
                 mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
 
