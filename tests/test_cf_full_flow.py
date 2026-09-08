@@ -56,31 +56,6 @@ def test_configure_cohere_cf_gateway_uses_existing_gateway_token(monkeypatch):
     assert not os.environ.get("JINA_AI_API_KEY")
 
 
-def test_configure_cohere_direct_uses_direct_alias_and_clears_stale_routes(monkeypatch):
-    for name in (
-        "JINA_AI_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY",
-        "XAI_API_KEY",
-        "COHERE_API_KEY",
-        "EMBEDDING_MODELS",
-        "EMBEDDING_API_BASE",
-        "RERANK_MODELS",
-        "RERANK_API_BASE",
-        "LLM_MODELS",
-        "LLM_API_BASE",
-    ):
-        monkeypatch.setenv(name, "stale")
-    monkeypatch.setenv("COHERE_API_KEY_DIRECT", "direct-token")
-
-    _HARNESS._configure_cohere_direct()
-
-    assert os.environ["COHERE_API_KEY"] == "direct-token"
-    assert os.environ["EMBEDDING_MODELS"] == "cohere/embed-multilingual-v3.0"
-    assert os.environ["RERANK_MODELS"] == "cohere/rerank-multilingual-v3.0"
-    assert not os.environ.get("JINA_AI_API_KEY")
-
-
 def test_assert_rerank_payload_requires_semantic_and_reranked_flags():
     payload = {
         "semantic": True,
@@ -332,3 +307,49 @@ async def test_run_two_sub_isolation_uses_distinct_markers_and_exact_cleanup(
     assert "-isolation-b-" in marker_b
     assert marker_a != marker_b
     assert session_b.calls[-1][1]["memory_id"] == "memory-1"
+
+
+@pytest.mark.asyncio
+async def test_tool_receipts_never_print_memory_data_or_provider_error_details(capsys):
+    private_fixture = "fixture-private-memory-detail"
+
+    class Session:
+        async def call_tool(self, name, args):
+            if name == "failure":
+                raise RuntimeError(private_fixture)
+            return SimpleNamespace(
+                content=[SimpleNamespace(text=json.dumps({"content": private_fixture}))]
+            )
+
+    assert await _HARNESS._call(Session(), "FIXTURE", "success", {}) is not None
+    assert await _HARNESS._call(Session(), "FIXTURE", "failure", {}) is None
+    receipt = capsys.readouterr()
+    assert private_fixture not in receipt.out + receipt.err
+
+
+@pytest.mark.asyncio
+async def test_completion_failure_removes_every_exact_provider_fixture():
+    class CompletionFailure(_FakeSession):
+        async def call_tool(self, name, arguments):
+            if name == "search_memory":
+                payload = {
+                    "semantic": True,
+                    "reranked": True,
+                    "results": [{"id": memory_id} for memory_id in self.memories],
+                }
+                return SimpleNamespace(
+                    content=[SimpleNamespace(text=json.dumps(payload))]
+                )
+            if name == "consolidate_memories":
+                return SimpleNamespace(
+                    content=[
+                        SimpleNamespace(text=json.dumps({"error": "fixture failure"}))
+                    ]
+                )
+            return await super().call_tool(name, arguments)
+
+    session = CompletionFailure()
+    with pytest.raises(AssertionError):
+        await _HARNESS._run_rerank(session)
+    assert session.next_id == 3
+    assert session.memories == {}

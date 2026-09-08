@@ -18,10 +18,9 @@ Behaviour:
    tiktoken cl100k_base (matches OpenAI / Anthropic Claude estimates closely
    enough for the 3x reduction metric). On empty / failed response -> the
    pipeline degrades to the graceful skip path.
-3. **Env override** -> ``COMPRESSION_PROVIDER`` and ``COMPRESSION_MODEL`` win
-   over the auto-detect priority order in :func:`mnemo_mcp.llm.detect_provider`
-   (Task 3 of the Phase 2 plan). ``COMPRESSION_ENABLED=false`` skips the
-   pipeline entirely.
+3. **Local env override** -> ``COMPRESSION_PROVIDER`` and ``COMPRESSION_MODEL``
+   apply only to single-user/local calls. Authenticated subjects use their own
+   completion configuration. ``COMPRESSION_ENABLED=false`` skips the pipeline.
 
 The module exposes the canonical prompt as :data:`COMPRESSION_PROMPT` so the
 fact-retention benchmark fixture can keep both prompt and ground-truth aligned
@@ -79,7 +78,11 @@ def _env_compression_enabled() -> bool:
 
 
 def _resolve_provider(explicit: str | None) -> str | None:
-    """Pick provider: explicit arg > COMPRESSION_PROVIDER env > auto-detect."""
+    """Use the subject's chain remotely; preserve explicit/local env overrides."""
+    from mnemo_mcp.credential_state import get_current_sub
+
+    if get_current_sub() is not None:
+        return detect_provider()
     if explicit:
         return explicit
     env = os.environ.get("COMPRESSION_PROVIDER", "").strip()
@@ -89,7 +92,11 @@ def _resolve_provider(explicit: str | None) -> str | None:
 
 
 def _resolve_model(provider: str, explicit: str | None) -> str:
-    """Pick model: explicit arg > COMPRESSION_MODEL env > provider default."""
+    """Use the subject's chain remotely; preserve explicit/local env overrides."""
+    from mnemo_mcp.credential_state import get_current_sub
+
+    if get_current_sub() is not None:
+        return get_default_model(provider)
     if explicit:
         return explicit
     env = os.environ.get("COMPRESSION_MODEL", "").strip()

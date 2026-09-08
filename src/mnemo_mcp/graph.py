@@ -21,11 +21,13 @@ def _resolve_llm_model(settings_obj) -> str:
     (slash form). A bare =-form first entry (no slash) is normalised to slash
     form so ``_litellm_model`` does not double-prefix it.
     """
-    from mnemo_mcp.credential_state import model_chain_for_task
+    from mnemo_mcp.credential_state import get_current_sub, model_chain_for_task
 
     models = model_chain_for_task("llm", fallback=settings_obj.llm_models)
+    if not models and get_current_sub() is not None:
+        return ""
     raw = models[0] if models else "gemini/gemini-3-flash-preview"
-    return raw.replace("=", "/", 1) if ("=" in raw and "/" not in raw) else raw
+    return raw.replace("=", "/", 1)
 
 
 def _litellm_model(model: str) -> str:
@@ -59,18 +61,33 @@ async def _llm_completion(
     # Lazy import: litellm costs ~1-2s on first import.
     from mcp_core.llm import acompletion
 
-    from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
+    from mnemo_mcp.credential_state import (
+        api_base_for_task,
+        api_key_for_model,
+        get_current_sub,
+        model_for_task,
+    )
 
     kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
     if response_format:
         kwargs["response_format"] = response_format
 
     litellm_model = _litellm_model(model)
+    if get_current_sub() is not None:
+        configured = model_for_task("llm")
+        if not configured:
+            raise RuntimeError("No completion model configured for current subject")
+        litellm_model = configured.replace("=", "/", 1)
+        api_key = api_key_for_model(litellm_model)
+        if not api_key:
+            raise RuntimeError("No completion key configured for current subject")
+    else:
+        api_key = api_key_for_model(litellm_model)
     resp = await acompletion(
         model=litellm_model,
         messages=messages,
         api_base=api_base_for_task("LLM_API_BASE"),
-        api_key=api_key_for_model(litellm_model),
+        api_key=api_key,
         **kwargs,
     )
     return resp.choices[0].message.content or ""

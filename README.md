@@ -254,7 +254,7 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
    index, and the encrypted credential store:
    ```
    wrangler d1 create mnemo-memories
-   wrangler vectorize create mnemo-memory-vectors --dimensions 768 --metric cosine
+   wrangler vectorize create mnemo-memory-vectors-1536 --dimensions 1536 --metric cosine
    wrangler kv namespace create mnemo-kv
    ```
    Paste the returned D1 database ID and KV namespace ID into `wrangler.jsonc` (the
@@ -279,17 +279,20 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
    wrangler secret put CREDENTIAL_SECRET              # per-user vault key (encrypts the cf-kv credential store)
    wrangler secret put MCP_RELAY_PASSWORD             # shared password gating the browser setup form
    wrangler secret put MCP_DCR_SERVER_SECRET          # required once PUBLIC_URL is set (multi-user, per-JWT-sub)
-   wrangler secret put JINA_AI_API_KEY                # EMBEDDING_MODELS + RERANK_MODELS (cloud embed / rerank)
-   wrangler secret put GOOGLE_VERTEX_EXPRESS_API_KEY  # LLM_MODELS (graph extraction, importance, consolidation)
    ```
 6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
+   Save each subject's models, endpoints and provider keys there, not in Worker
+   environment variables. The managed route uses Minimax-free completion and
+   paid Cohere embedding/reranking through Cloudflare AI Gateway; see the
+   [per-task configuration](src/mnemo_mcp/docs/config.md#remote-model-routing).
 
 Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
 `MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
 keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
-cosine). Embedding and reranking are forced cloud through the `EMBEDDING_MODELS` /
-`RERANK_MODELS` chains (`jina_ai/...`) so the container never downloads Fastretrieval's
-local Qwen3 ONNX models, and graph / LLM features run through the `LLM_MODELS` chain (`vertex_express/...`).
+cosine). Cloud embedding, reranking and completion resolve per authenticated
+subject. Remote startup does not probe shared provider credentials or download
+local Fastretrieval models. Missing subject configuration never selects a
+process-wide provider/model fallback.
 
 ### Authority & Sync Boundary
 
@@ -297,7 +300,7 @@ On Cloudflare deployments, **Cloudflare D1 + Vectorize + KV** is the sole produc
 - **D1** (`MEMORY_DB_BACKEND=cf-d1`): Authoritative storage for memory rows, metadata, bitemporal valid ranges, and FTS5 search.
 - **Vectorize** (`MCP_VECTORIZE_IDX`): Dense vector index for semantic similarity search.
 - **KV** (`MCP_STORAGE_BACKEND=cf-kv`): Encrypted per-user credential and session store.
-- **Sync boundary** (`SYNC_ENABLED=false`): Production Cloudflare deployments pin legacy Google Drive sync off; Cloudflare serves as the live authority.
+- **Sync boundary**: `MEMORY_DB_BACKEND=cf-d1` disables Google Drive OAuth and all external sync paths even if `SYNC_ENABLED` is toggled on or stale S3/Google settings remain. `SYNC_ENABLED=false` independently disables sync on non-CF deployments.
 - **Local & self-host bootstrap**: Local stdio (`~/.mnemo-mcp/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
 
 ## Trust Model

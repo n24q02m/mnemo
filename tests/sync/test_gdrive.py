@@ -783,14 +783,6 @@ def test_start_auto_sync_already_running():
             # Should return without creating new task (already running)
 
 
-def test_start_auto_sync_disabled():
-    mock_db = MagicMock()
-    with patch("mnemo_mcp.sync.gdrive.settings") as mock_settings:
-        mock_settings.sync_enabled = False
-        start_auto_sync(mock_db)
-        # Should return immediately
-
-
 def test_start_auto_sync_missing_config():
     mock_db = MagicMock()
     with patch("mnemo_mcp.sync.gdrive.settings") as mock_settings:

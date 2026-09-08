@@ -1257,6 +1257,7 @@ class MemoryDB:
         if has_vec:
             k = 60
             all_ids = list(results.keys())
+            len_all_ids = len(all_ids)
             fts_ranked = sorted(
                 all_ids, key=lambda x: results[x].get("fts_score", 0.0), reverse=True
             )
@@ -1267,26 +1268,31 @@ class MemoryDB:
             vec_rank = {cid: i + 1 for i, cid in enumerate(vec_ranked)}
 
             for mid, mem in results.items():
-                fr = fts_rank.get(mid, len(all_ids))
-                vr = vec_rank.get(mid, len(all_ids))
+                fr = fts_rank.get(mid, len_all_ids)
+                vr = vec_rank.get(mid, len_all_ids)
                 rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
 
                 updated_at = mem.get("updated_at", "")
                 if updated_at not in recency_cache:
                     recency_cache[updated_at] = self._calc_recency(updated_at, now)
-                recency = recency_cache[updated_at]
 
                 ac = mem.get("access_count", 0)
                 if ac not in freq_cache:
                     freq_cache[ac] = self._calc_frequency(ac)
-                freq = freq_cache[ac]
 
                 rrf_norm = rrf * (k + 1) / 2.0
                 # Phase 1 retrieval polish: temporal decay multiplied into the
                 # base, then importance boost ``score *= (1 + importance)``
                 # so highly-rated memories outrank equal-relevance peers.
-                base = rrf_norm * 0.7 + recency * 0.2 + freq * 0.1
-                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                base = (
+                    rrf_norm * 0.7
+                    + recency_cache[updated_at] * 0.2
+                    + freq_cache[ac] * 0.1
+                )
+
+                imp = mem.get("importance")
+                importance = max(0.0, min(1.0, float(imp))) if imp else 0.0
+
                 mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
         else:
@@ -1296,15 +1302,18 @@ class MemoryDB:
                 updated_at = mem.get("updated_at", "")
                 if updated_at not in recency_cache:
                     recency_cache[updated_at] = self._calc_recency(updated_at, now)
-                recency = recency_cache[updated_at]
 
                 ac = mem.get("access_count", 0)
                 if ac not in freq_cache:
                     freq_cache[ac] = self._calc_frequency(ac)
-                freq = freq_cache[ac]
 
-                base = fts * 0.6 + recency * 0.3 + freq * 0.1
-                importance = max(0.0, min(1.0, float(mem.get("importance") or 0.0)))
+                base = (
+                    fts * 0.6 + recency_cache[updated_at] * 0.3 + freq_cache[ac] * 0.1
+                )
+
+                imp = mem.get("importance")
+                importance = max(0.0, min(1.0, float(imp))) if imp else 0.0
+
                 mem["score"] = base * (1.0 + importance)
                 scored.append(mem)
 

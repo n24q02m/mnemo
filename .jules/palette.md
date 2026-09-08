@@ -48,3 +48,6 @@ file before opening anything against this repository.
 ## 2026-10-24 - Setup Start Suggestions
 **Learning:** Returning error messages without actionable next steps degrades DX. The `stdio_unsupported` and `already_configured` responses lacked explicit `suggestion` fields, which is the standard across the repository for actionable fallbacks.
 **Action:** When updating dictionary responses, add a `suggestion` key to provide actionable resolution paths to developers and LLMs, even if the primary `message` already contains some guidance.
+## 2026-08-01 - Missing Suggestion in as_of Action
+**Learning:** Found an opportunity to improve Developer Experience (DX). The `memory(action="as_of")` call lacked an explicit check for the `as_of` parameter and threw a raw unhelpful error or skipped downstream. Added an explicit validation step returning a structured error and suggestion.
+**Action:** When adding validation checks for API endpoints in purely backend MCP servers, ensure they return a structured dictionary containing both an `error` message and a `suggestion` for actionable recovery.

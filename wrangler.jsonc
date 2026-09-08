@@ -31,10 +31,9 @@
   ],
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "mnemo-memory-vectors-1536" }],
   // Non-secret container config (forwarded into the container by MnemoContainer.envVars).
-  // Secrets via `wrangler secret put`: CREDENTIAL_SECRET, JINA_AI_API_KEY,
-  // GOOGLE_VERTEX_EXPRESS_API_KEY, MCP_RELAY_PASSWORD, MCP_DCR_SERVER_SECRET.
-  // MCP_RELAY_PASSWORD (Gate A, password-grant login) lives in skret /oci-vm-prod/prod
-  // (infra-shared), NOT /mnemo-mcp/prod -- compose both namespaces at `wrangler secret put`.
+  // Operator secrets: CREDENTIAL_SECRET, MCP_RELAY_PASSWORD, MCP_DCR_SERVER_SECRET.
+  // Provider keys, models and API bases are saved per subject through the relay.
+  // Managed Gate A source: skret /mcp-stack/prod; no legacy namespace fallback.
   "vars": {
     "PUBLIC_URL": "<YOUR_PUBLIC_URL>",
     "MCP_STORAGE_BACKEND": "cf-kv",
