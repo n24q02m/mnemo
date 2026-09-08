@@ -293,8 +293,23 @@ class TestEnsureConfig:
         self, mock_read, mock_session, mock_poll, mock_save, mock_apply, monkeypatch
     ):
         """Relay success triggers GDrive OAuth when client_id is configured."""
+        import mnemo_mcp.config as config_mod
+        from mnemo_mcp.config import Settings
+
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("SYNC_S3_BUCKET", raising=False)
+        monkeypatch.setenv("MEMORY_DB_BACKEND", "sqlite")
+        monkeypatch.setenv("SYNC_ENABLED", "true")
+        monkeypatch.setattr(
+            config_mod,
+            "settings",
+            Settings(
+                sync_enabled=True,
+                sync_s3_bucket="",
+                google_drive_client_id="client123",
+            ),
+        )
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
             relay_url="https://relay.example.com/#k=abc",
@@ -305,7 +320,6 @@ class TestEnsureConfig:
 
         with (
             patch("httpx.AsyncClient") as mock_httpx,
-            patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
                 "mnemo_mcp.sync.setup_google_auth",
                 new_callable=AsyncMock,
@@ -315,12 +329,13 @@ class TestEnsureConfig:
             mock_client = AsyncMock()
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_settings.google_drive_client_id = "client123"
 
             result = await ensure_config()
 
         assert result == config
-        mock_gdrive.assert_called_once_with(
+        mock_save.assert_called_once_with(config)
+        mock_apply.assert_called_once_with(config)
+        mock_gdrive.assert_awaited_once_with(
             relay_url="https://relay.example.com",
             session_id="sess-123",
         )
@@ -334,8 +349,23 @@ class TestEnsureConfig:
         self, mock_read, mock_session, mock_poll, mock_save, mock_apply, monkeypatch
     ):
         """GDrive OAuth failure doesn't prevent config return."""
+        import mnemo_mcp.config as config_mod
+        from mnemo_mcp.config import Settings
+
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("SYNC_S3_BUCKET", raising=False)
+        monkeypatch.setenv("MEMORY_DB_BACKEND", "sqlite")
+        monkeypatch.setenv("SYNC_ENABLED", "true")
+        monkeypatch.setattr(
+            config_mod,
+            "settings",
+            Settings(
+                sync_enabled=True,
+                sync_s3_bucket="",
+                google_drive_client_id="client123",
+            ),
+        )
         mock_read.return_value = None
         mock_session.return_value = MagicMock(
             relay_url="https://relay.example.com/#k=abc",
@@ -346,21 +376,23 @@ class TestEnsureConfig:
 
         with (
             patch("httpx.AsyncClient") as mock_httpx,
-            patch("mnemo_mcp.config.settings") as mock_settings,
             patch(
                 "mnemo_mcp.sync.setup_google_auth",
                 new_callable=AsyncMock,
                 side_effect=Exception("GDrive OAuth failed"),
-            ),
+            ) as mock_gdrive,
         ):
             mock_client = AsyncMock()
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_settings.google_drive_client_id = "client123"
 
             result = await ensure_config()
 
         assert result == config
+        mock_gdrive.assert_awaited_once_with(
+            relay_url="https://relay.example.com",
+            session_id="sess-456",
+        )
 
     @patch("mcp_core.relay.client.create_session", new_callable=AsyncMock)
     @patch("mcp_core.storage.per_plugin_store.PerPluginStore.load")

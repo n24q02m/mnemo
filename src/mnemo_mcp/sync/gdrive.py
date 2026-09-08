@@ -576,9 +576,10 @@ async def sync_full(db: MemoryDB) -> dict:
         Dict with sync results.
     """
     from mnemo_mcp.db import MemoryDB
+    from mnemo_mcp.sync import resolve_active_backend
 
-    if not settings.sync_enabled:
-        return {"status": "disabled", "message": "Sync is disabled"}
+    if resolve_active_backend() != "gdrive":
+        return {"status": "disabled", "message": "Google Drive sync is not active"}
 
     if not settings.google_drive_client_id:
         return {
@@ -797,6 +798,12 @@ async def setup_google_auth(
 
     Returns True on success, False on failure.
     """
+    from mnemo_mcp.sync import resolve_active_backend
+
+    if resolve_active_backend() != "gdrive":
+        logger.info("Google Drive OAuth skipped: not the active sync backend")
+        return False
+
     client_id = client_id or settings.google_drive_client_id
     client_secret = client_secret or settings.google_drive_client_secret
     if not client_id or not client_secret:
@@ -859,8 +866,9 @@ async def _auto_sync_loop(db: MemoryDB) -> None:
 def start_auto_sync(db: MemoryDB) -> None:
     """Start background auto-sync task."""
     global _sync_task
+    from mnemo_mcp.sync import resolve_active_backend
 
-    if not settings.sync_enabled:
+    if resolve_active_backend() != "gdrive":
         return
 
     if not settings.google_drive_client_id or settings.sync_interval <= 0:
@@ -892,6 +900,12 @@ def setup_sync() -> None:
     Runs Device Code OAuth flow, saves token locally.
     """
     import sys
+
+    from mnemo_mcp.sync import resolve_active_backend
+
+    if resolve_active_backend() != "gdrive":
+        print("Google Drive sync is disabled for this deployment.")
+        return
 
     print("=== Mnemo MCP: Setup Google Drive Sync ===")
 

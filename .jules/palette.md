@@ -47,3 +47,6 @@ file before opening anything against this repository.
 ## 2024-05-18 - Actionable suggestions for empty sets across API
 **Learning:** Tools returning empty sets (like entity queries or historical timelines) without `suggestion` strings degrade DX by leaving developers guessing what to do next.
 **Action:** Ensure all tool handlers returning lists or graph outputs include an actionable `suggestion` string (e.g., "Try a broader search...") when the result set is empty, not just the primary search/list tools.
+## 2026-08-01 - Missing Suggestion in as_of Action
+**Learning:** Found an opportunity to improve Developer Experience (DX). The `memory(action="as_of")` call lacked an explicit check for the `as_of` parameter and threw a raw unhelpful error or skipped downstream. Added an explicit validation step returning a structured error and suggestion.
+**Action:** When adding validation checks for API endpoints in purely backend MCP servers, ensure they return a structured dictionary containing both an `error` message and a `suggestion` for actionable recovery.

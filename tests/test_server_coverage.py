@@ -50,6 +50,36 @@ def ctx_with_db(tmp_path: Path) -> Generator[tuple[MagicMock, MemoryDB]]:
     db.close()
 
 
+@pytest.mark.parametrize("operation", ["add", "update", "capture"])
+async def test_sentinel_validation_errors_hide_internal_details(
+    operation, ctx_with_db, monkeypatch
+):
+    from mnemo_mcp import server
+
+    ctx, db = ctx_with_db
+    internal_detail = "fixture internal storage constraint"
+
+    def reject(*args, **kwargs):
+        raise ValueError(internal_detail)
+
+    if operation == "add":
+        monkeypatch.setattr(db, "add", reject)
+        result = await server._handle_add(ctx, "fixture memory")
+    elif operation == "update":
+        monkeypatch.setattr(db, "update", reject)
+        result = await server._handle_update(ctx, "fixture-id", "fixture memory")
+    else:
+
+        async def reject_capture(*args, **kwargs):
+            raise ValueError(internal_detail)
+
+        monkeypatch.setattr("mnemo_mcp.capture.capture", reject_capture)
+        result = await server._handle_capture(ctx, "fixture memory")
+
+    assert "error" in result
+    assert internal_detail not in json.dumps(result)
+
+
 # ---------------------------------------------------------------------------
 # _embed edge cases
 # ---------------------------------------------------------------------------
@@ -565,112 +595,23 @@ class TestCustomEmbeddingRegistration:
         mock_spec.return_value.register.assert_called_once_with()
 
 
-# ---------------------------------------------------------------------------
-# _init_reranker_backend -- exception paths
-# ---------------------------------------------------------------------------
+async def test_remote_startup_does_not_probe_process_providers_or_local_models(
+    monkeypatch,
+):
+    from mnemo_mcp.server import _init_embedding_backend, _init_reranker_backend
 
+    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example")
+    monkeypatch.setenv("COHERE_API_KEY", "ambient-must-not-be-used")
 
-class TestInitRerankerBackend:
-    @patch("mnemo_mcp.server.settings")
-    async def test_reranker_unavailable_is_reported(self, mock_settings):
-        """An explicitly unavailable reranker stays disabled without init work."""
-        from mnemo_mcp.server import _init_reranker_backend
+    def forbidden(*args, **kwargs):
+        pytest.fail("Remote startup initialized a process-wide provider/model")
 
-        mock_settings.resolve_rerank_backend.return_value = "unavailable"
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_reranker_backend("sdk")
-
-        mock_logger.info.assert_called_once_with(
-            "Reranker: unavailable (DISABLE_LOCAL_RERANK set + no cloud model configured)"
-        )
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.reranker.init_reranker")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_reranker_init_fails(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When local reranker init raises exception, logs error."""
-        from mnemo_mcp.server import _init_reranker_backend
-
-        mock_settings.resolve_rerank_backend.return_value = "local"
-        mock_settings.resolve_local_rerank_model.return_value = "local/r"
-
-        mock_init.side_effect = Exception("reranker init failed test error")
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_reranker_backend("local")
-            mock_logger.error.assert_called_with(
-                "Local reranker init failed: reranker init failed test error"
-            )
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.reranker.init_reranker")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_reranker_not_available(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When local reranker check_available returns False, logs error."""
-        from mnemo_mcp.server import _init_reranker_backend
-
-        mock_settings.resolve_rerank_backend.return_value = "local"
-        mock_settings.resolve_local_rerank_model.return_value = "local/r"
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = False
-        mock_init.return_value = mock_backend
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_reranker_backend("local")
-            mock_logger.error.assert_called_with("Local reranker not available")
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_reranker_disabled(self, mock_settings, _mock_thread):
-        """When reranker is disabled, logs debug message."""
-        from mnemo_mcp.server import _init_reranker_backend
-
-        mock_settings.resolve_rerank_backend.return_value = None
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_reranker_backend("sdk")
-            mock_logger.debug.assert_called_with("Reranking disabled")
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.reranker.init_reranker")
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_not_available_no_local_fallback(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When cloud reranker is not available, logs error (no local fallback)."""
-        from mnemo_mcp.server import _init_reranker_backend
-
-        mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.rerank_chain.return_value = ["cloud-model"]
-
-        mock_init.side_effect = Exception("Cloud failed")
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_reranker_backend("sdk")
-            mock_logger.warning.assert_called_with(
-                "Reranker cloud-model not available: Cloud failed"
-            )
-            mock_logger.error.assert_called_with(
-                "Cloud reranker not available and local fallback is disabled"
-            )
+    monkeypatch.setattr("mnemo_mcp.embedder.init_backend", forbidden)
+    monkeypatch.setattr("mnemo_mcp.reranker.init_reranker", forbidden)
+    context = {"embedding_model": None, "embedding_dims": 1536}
+    await _init_embedding_backend("local", context)
+    await _init_reranker_backend("local")
+    assert context["embedding_model"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -1,26 +1,13 @@
-"""Multi-provider LLM dispatch layer (Phase 1 foundation).
+"""Completion dispatch through the in-process mcp_core.llm library.
 
-Provides a single ``call_llm`` entry point that auto-detects the active
-provider from environment variables and dispatches via ``mcp_core.llm``
-(litellm passthrough). The priority order matches the spec
-(`2026-04-19-mnemo-v2-design.md` §4.2):
+Authenticated subjects select their own model, endpoint and provider key from
+the relay store. Empty subject configuration skips optional enrichment; it never
+inherits process credentials or a default completion model. Local single-user
+callers retain explicit overrides and environment-based provider detection.
 
-    1. Gemini (``GEMINI_API_KEY`` or ``GOOGLE_API_KEY``)
-    2. OpenAI (``OPENAI_API_KEY``)
-    3. Anthropic (``ANTHROPIC_API_KEY``)
-    4. xAI / Grok (``XAI_API_KEY``)
-
-litellm calls each provider's API directly, so ``ANTHROPIC_API_KEY`` now
-works WITHOUT the ``anthropic`` package installed (no native SDK import).
-
-If no provider key is available, ``call_llm`` logs a warning and returns
-``None`` so callers (e.g. the upcoming ``capture`` action's optional fact
-extraction) can gracefully skip LLM-dependent enrichment.
-
-This module is intentionally a *dispatch layer only*. The actual
-fact-extraction prompting / parsing logic is deferred to Phase 2
-(compression). Existing graph-extraction logic continues to live in
-``graph.py`` and is not migrated here in this slice.
+The managed completion route is openrouter/minimax/minimax-m3:free. Library
+dispatch supports explicit gateway endpoints without a standalone proxy server.
+Provider errors return None to optional enrichment callers, not another model.
 """
 
 from __future__ import annotations
@@ -34,6 +21,7 @@ from loguru import logger
 _PROVIDER_ENV_VARS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
     ("openai", ("OPENAI_API_KEY",)),
+    ("openrouter", ("OPENROUTER_API_KEY",)),
     ("anthropic", ("ANTHROPIC_API_KEY",)),
     ("xai", ("XAI_API_KEY",)),
 )
@@ -45,18 +33,26 @@ _PROVIDER_ENV_VARS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 _DEFAULT_MODELS: Final[dict[str, str]] = {
     "gemini": "gemini-3-flash-preview",
     "openai": "gpt-5.4-mini-2026-03-17",
+    "openrouter": "minimax/minimax-m3:free",
     "anthropic": "claude-haiku-4-5",
     "xai": "grok-4-fast",
 }
 
 
 def detect_provider() -> str | None:
-    """Return the highest-priority provider with a configured API key.
+    """Resolve an explicit task chain before the local provider-key priority."""
+    from mnemo_mcp.credential_state import (
+        detect_llm_provider_key,
+        get_current_sub,
+        model_for_task,
+    )
 
-    The credential resolver is request-scoped in multi-user mode and
-    environment-backed in single-user/stdio mode.
-    """
-    from mnemo_mcp.credential_state import detect_llm_provider_key
+    configured = model_for_task("llm")
+    if configured:
+        provider, separator, model = configured.replace("=", "/", 1).partition("/")
+        return provider if separator and model else None
+    if get_current_sub() is not None:
+        return None
 
     env_var = detect_llm_provider_key()
     if env_var is None:
@@ -82,7 +78,7 @@ def get_default_model(provider: str) -> str:
     entry for ``provider``, the per-provider sane default from
     ``_DEFAULT_MODELS`` is returned.
     """
-    from mnemo_mcp.credential_state import model_chain_for_task
+    from mnemo_mcp.credential_state import get_current_sub, model_chain_for_task
 
     for pair in model_chain_for_task("llm"):
         for sep in ("=", "/"):
@@ -93,6 +89,9 @@ def get_default_model(provider: str) -> str:
                     if model:
                         return model
                 break
+
+    if get_current_sub() is not None:
+        return ""
 
     return _DEFAULT_MODELS.get(provider, "")
 
@@ -109,11 +108,10 @@ async def call_llm(
 
     Args:
         prompt: User prompt text. Treated as a single-turn user message.
-        provider: Optional explicit provider override
-            (``"gemini"`` / ``"openai"`` / ``"anthropic"`` / ``"xai"``).
-            When ``None`` (the default), auto-detection runs.
-        model: Optional explicit model override. When ``None``, the result of
-            :func:`get_default_model` for the resolved provider is used.
+        provider: Local single-user provider override (including ``"openrouter"``).
+            Authenticated subjects always use their own relay selection.
+        model: Local single-user model override. Otherwise the subject's model,
+            or the local provider default, is used.
         temperature: Sampling temperature passed through to litellm.
         max_tokens: Maximum response tokens to request from the provider.
 
@@ -122,17 +120,26 @@ async def call_llm(
         could be resolved (caller is expected to gracefully skip the
         LLM-dependent enrichment in that case).
     """
-    resolved_provider = provider or detect_provider()
-    if resolved_provider is None:
-        logger.warning(
-            "call_llm: no LLM provider API key found in environment "
-            "(GEMINI_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY / "
-            "ANTHROPIC_API_KEY / XAI_API_KEY); returning None for graceful skip"
-        )
-        return None
+    from mnemo_mcp.credential_state import get_current_sub, model_for_task
 
-    resolved_model = model or get_default_model(resolved_provider)
-    litellm_model = f"{resolved_provider}/{resolved_model}"
+    subject = get_current_sub()
+    if subject is not None:
+        configured = model_for_task("llm")
+        if not configured:
+            return None
+        litellm_model = configured.replace("=", "/", 1)
+        resolved_provider, separator, resolved_model = litellm_model.partition("/")
+        if not separator or not resolved_model:
+            return None
+    else:
+        resolved_provider = provider or detect_provider()
+        if resolved_provider is None:
+            logger.warning("call_llm: no LLM provider configured; skipping enrichment")
+            return None
+        resolved_model = model or get_default_model(resolved_provider)
+        if not resolved_model:
+            return None
+        litellm_model = f"{resolved_provider}/{resolved_model}"
 
     try:
         # Lazy import: litellm costs ~1-2s on first import.
@@ -140,13 +147,18 @@ async def call_llm(
 
         from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
 
+        api_key = api_key_for_model(litellm_model)
+        if subject is not None and not api_key:
+            logger.debug("Completion skipped: no key for current subject's model")
+            return None
+
         response = await acompletion(
             model=litellm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens,
             api_base=api_base_for_task("LLM_API_BASE"),
-            api_key=api_key_for_model(litellm_model),
+            api_key=api_key,
         )
         return response.choices[0].message.content or ""
     except Exception as e:  # pragma: no cover - per-provider runtime guard

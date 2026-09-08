@@ -43,6 +43,7 @@ CLOUD_KEYS = [
     "JINA_AI_API_KEY",
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
     "COHERE_API_KEY",
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
@@ -83,6 +84,7 @@ LLM_PROVIDER_KEYS = (
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
     "GOOGLE_VERTEX_EXPRESS_API_KEY",
@@ -104,12 +106,11 @@ def set_current_sub(sub: str | None) -> None:
 
 
 def get_current_sub() -> str | None:
-    """Return the per-request JWT sub if any, else ``None``.
-
-    ``None`` indicates stdio mode or single-user HTTP -- callers should read
-    credentials from environment variables.
-    """
-    return _current_sub.get()
+    """Return the request subject, rejecting an unscoped remote request."""
+    sub = _current_sub.get()
+    if not sub and os.environ.get("PUBLIC_URL"):
+        raise RuntimeError("JWT sub is required for multi-user credentials")
+    return sub
 
 
 def credentials_for_current_request() -> dict[str, str]:
@@ -122,7 +123,7 @@ def credentials_for_current_request() -> dict[str, str]:
     ``os.environ`` filtered to ``CLOUD_KEYS`` so callers never see unrelated
     process env.
     """
-    sub = _current_sub.get()
+    sub = get_current_sub()
     if sub is None:
         return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
     return read_for_sub(sub)
@@ -136,7 +137,7 @@ def detect_llm_provider_key() -> str | None:
     ``GOOGLE_API_KEY`` Gemini alias. Keeping this policy in one helper prevents
     graph and LLM availability gates from diverging.
     """
-    sub = _current_sub.get()
+    sub = get_current_sub()
     credentials = credentials_for_current_request()
     for key in LLM_PROVIDER_KEYS:
         if credentials.get(key):
@@ -158,7 +159,7 @@ def api_key_for_model(model: str) -> str | None:
     the result is passed explicitly to mcp_core. With no sub, ``None`` keeps
     the existing litellm environment fallback for single-user/stdio mode.
     """
-    if _current_sub.get() is None:
+    if get_current_sub() is None:
         return None
 
     from mcp_core.llm.providers import key_env_for_model
@@ -182,9 +183,12 @@ def api_base_for_task(env_key: str) -> str | None:
     the existing env-driven behavior because mcp-core does not know Mnemo's
     ``*_API_BASE`` names by itself.
     """
-    if _current_sub.get() is None:
+    if get_current_sub() is None:
         return os.environ.get(env_key) or None
-    return credentials_for_current_request().get(env_key) or None
+    api_base = credentials_for_current_request().get(env_key)
+    if not api_base:
+        raise RuntimeError(f"{env_key} is required for the current subject")
+    return api_base
 
 
 def model_chain_for_task(task: str, fallback: str | None = None) -> list[str]:
@@ -200,7 +204,7 @@ def model_chain_for_task(task: str, fallback: str | None = None) -> list[str]:
     if key is None:
         raise ValueError(f"Unknown model-chain task: {task}")
 
-    sub = _current_sub.get()
+    sub = get_current_sub()
     if sub is None:
         raw: object = os.environ.get(key, "")
         if not raw and fallback is not None:
@@ -583,22 +587,15 @@ def _trigger_gdrive_flow(
 ) -> dict | None:
     """Trigger GDrive OAuth Device Code flow if configured.
 
-    Gated by :func:`mnemo_mcp.sync.resolve_active_backend` (XOR design):
-    in S3 mode (``SYNC_S3_BUCKET`` set, Method 2/3 docker deploy) we
-    SKIP the GDrive flow entirely — the operator wired S3 credentials at
-    container spawn and end-users authenticating with cloud API keys via
-    the relay form should NOT be prompted for a Google Drive account on
-    top of that.
+    The deployment resolver disables this flow for Cloudflare D1, disabled
+    sync, and operator-configured S3. Local Google Drive remains opt-in via
+    the existing relay flow.
     """
-    try:
-        from mnemo_mcp.sync import resolve_active_backend
+    from mnemo_mcp.sync import resolve_active_backend
 
-        if resolve_active_backend() == "s3":
-            logger.info("GDrive flow skipped: SYNC_S3_BUCKET set (S3 mode active)")
-            return None
-    except Exception:
-        # Resolver failure is non-fatal — fall through to legacy GDrive path.
-        logger.opt(exception=True).debug("resolve_active_backend failed")
+    if resolve_active_backend() != "gdrive":
+        logger.info("GDrive flow skipped: not the active sync backend")
+        return None
 
     try:
         from mnemo_mcp.config import settings as s
