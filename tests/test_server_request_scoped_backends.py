@@ -113,7 +113,6 @@ def test_embedding_backend_reuses_cache_for_unchanged_credentials(
         "alice",
         {
             "EMBEDDING_MODELS": "cohere/embed-v4.0",
-            "EMBEDDING_API_BASE": "https://alice.example/embed",
             "COHERE_API_KEY": "stable-key",
         },
     )
@@ -123,28 +122,6 @@ def test_embedding_backend_reuses_cache_for_unchanged_credentials(
     try:
         _, first = _get_request_embedding(ctx, "global-model", 768)
         _, second = _get_request_embedding(ctx, "global-model", 768)
-    finally:
-        _current_sub.reset(token)
-
-    assert second is first
-
-
-def test_reranker_reuses_cache_for_unchanged_credentials(tmp_path, monkeypatch):
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    store_for_sub(
-        "bob",
-        {
-            "RERANK_MODELS": "cohere/rerank-v4.0-fast",
-            "RERANK_API_BASE": "https://bob.example/rerank",
-            "COHERE_API_KEY": "stable-key",
-        },
-    )
-
-    ctx = _typed_ctx()
-    token = _current_sub.set("bob")
-    try:
-        first = _get_request_reranker(ctx)
-        second = _get_request_reranker(ctx)
     finally:
         _current_sub.reset(token)
 
@@ -201,3 +178,24 @@ def test_reranker_is_unavailable_without_model_or_key(tmp_path, monkeypatch):
         assert _get_request_reranker(_typed_ctx()) is None
     finally:
         _current_sub.reset(no_key_token)
+
+
+def test_reranker_reuses_cache_for_unchanged_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
+    store_for_sub(
+        "bob",
+        {
+            "RERANK_MODELS": "cohere/rerank-v4.0-fast",
+            "COHERE_API_KEY": "stable-key",
+        },
+    )
+
+    ctx = _typed_ctx()
+    token = _current_sub.set("bob")
+    try:
+        first = _get_request_reranker(ctx)
+        second = _get_request_reranker(ctx)
+    finally:
+        _current_sub.reset(token)
+
+    assert second is first

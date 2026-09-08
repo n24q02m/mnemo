@@ -31,8 +31,9 @@
     "MCP_D1_BASE_URL": "http://d1.internal",
     "MCP_VECTORIZE_BASE_URL": "http://vectorize.internal",
     "MCP_VECTORIZE_IDX": "mnemo-memory-vectors-1536",
-    // Models, endpoints and provider keys belong to the authenticated subject.
-    "SYNC_ENABLED": "false",
+    "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small",
+    "RERANK_MODELS": "jina_ai/jina-reranker-v3",
+    "LLM_MODELS": "vertex_express/gemini-3.5-flash",
     "EMBEDDING_DIMS": "1536"
   },
   "observability": { "enabled": true }

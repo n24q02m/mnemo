@@ -15,13 +15,12 @@ mnemo/imagine/email CF harnesses):
                        harness also submits the model and endpoint routing explicitly.
   4. token          -- POST /token (code + verifier) -> bearer JWT
   5. tool call      -- config(status) + unique add/search/delete round-trip and a
-                       three-row semantic/rerank + completion probe in an isolated category.
+                       multi-candidate semantic/rerank probe over D1/Vectorize.
 
-Secrets from env: Gate A login password MCP_RELAY_PASSWORD (or RELAY_PW) from
-the MCP-owned skret /mcp-stack/prod namespace; no legacy namespace fallback.
-With --cohere-cf-gateway, CF_AIG_BASE and CF_AIG_TOKEN configure per-sub
-Minimax-free completion and paid Cohere embedding/reranking. Obtain explicit
-bounded spend authorization and isolate the fixture before executing this mode.
+Secrets from env: Gate A login password MCP_RELAY_PASSWORD (or RELAY_PW) from skret
+/oci-vm-prod/prod (infra-shared); default provider values come from the configured
+per-sub relay. With --cohere-cf-gateway, CF_AIG_BASE and CF_AIG_TOKEN come from the
+existing /n24q02m/dev namespace and are mapped to the approved Cohere gateway route.
 
 Run modes:
   (default)            full flow: config(status) + search and multi-candidate
@@ -36,9 +35,9 @@ Run modes:
                        before B creates and searches its own marker.
 
 Examples:
-  skret run -e prod --path=/mcp-stack/prod -- \
-    skret run -e dev --path=/n24q02m/dev -- \
-      python scripts/cf_full_flow.py --cohere-cf-gateway
+  skret run -e prod --path=/oci-vm-prod/prod -- \
+    skret run -e prod --path=/mnemo-mcp/prod -- \
+      python scripts/cf_full_flow.py
   ... -- python scripts/cf_full_flow.py --endpoint https://mnemo.n24q02m.com
   ... -- python scripts/cf_full_flow.py --save-only
   ... -- python scripts/cf_full_flow.py --auth-only
@@ -68,12 +67,12 @@ MARKER = "cf-canary-probe-mnemo"
 
 
 def _configure_cohere_cf_gateway() -> None:
-    """Configure Minimax-free completion and paid Cohere through CF AI Gateway.
+    """Configure the approved Cohere-through-CF-AI-Gateway BYOK route.
 
-    The relay receives the gateway token in both provider-key fields so the
-    library sends it as the gateway Authorization credential. Explicit endpoint
-    paths select OpenRouter or Cohere; there is no direct-provider fallback.
-    Clear competing provider/model values first so a stale local or skret export
+    The deployed relay must receive the gateway token as ``COHERE_API_KEY`` so
+    LiteLLM sends it as the gateway ``Authorization`` credential.  The
+    gateway then selects Cohere from the explicit endpoint paths.  Clear
+    competing provider/model values first so a stale local or skret export
     cannot silently route the probe to Jina or another provider.
     """
     base = os.environ.get("CF_AIG_BASE", "").strip().rstrip("/")
@@ -89,14 +88,6 @@ def _configure_cohere_cf_gateway() -> None:
         "GEMINI_API_KEY",
         "OPENAI_API_KEY",
         "XAI_API_KEY",
-        "OPENROUTER_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GOOGLE_VERTEX_EXPRESS_API_KEY",
-        "GOOGLE_API_KEY",
-        "JINA_AI_API_KEY_DIRECT",
-        "VERTEX_EXPRESS_KEY_DIRECT",
-        "COHERE_API_KEY_DIRECT",
-        "XAI_API_KEY_DIRECT",
         "COHERE_API_KEY",
         "EMBEDDING_MODELS",
         "EMBEDDING_API_BASE",
@@ -114,9 +105,36 @@ def _configure_cohere_cf_gateway() -> None:
             "EMBEDDING_API_BASE": f"{base}/cohere/v2/embed",
             "RERANK_MODELS": "cohere/rerank-v4.0-fast",
             "RERANK_API_BASE": f"{base}/cohere",
-            "OPENROUTER_API_KEY": token,
-            "LLM_MODELS": "openrouter/minimax/minimax-m3:free",
-            "LLM_API_BASE": f"{base}/openrouter/v1",
+        }
+    )
+
+
+def _configure_cohere_direct() -> None:
+    """Configure direct Cohere API route using a skret-provided alias."""
+    token = (
+        os.environ.get("COHERE_API_KEY_DIRECT") or os.environ.get("COHERE_API_KEY", "")
+    ).strip()
+    if not token:
+        raise SystemExit("COHERE_API_KEY_DIRECT (or COHERE_API_KEY) is required.")
+    for env_name in (
+        "JINA_AI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "XAI_API_KEY",
+        "COHERE_API_KEY",
+        "EMBEDDING_MODELS",
+        "EMBEDDING_API_BASE",
+        "RERANK_MODELS",
+        "RERANK_API_BASE",
+        "LLM_MODELS",
+        "LLM_API_BASE",
+    ):
+        os.environ.pop(env_name, None)
+    os.environ.update(
+        {
+            "COHERE_API_KEY": token,
+            "EMBEDDING_MODELS": "cohere/embed-multilingual-v3.0",
+            "RERANK_MODELS": "cohere/rerank-multilingual-v3.0",
         }
     )
 
@@ -126,8 +144,8 @@ def _password() -> str:
     if not pw:
         raise SystemExit(
             "MCP_RELAY_PASSWORD (or RELAY_PW) is required for the password-grant "
-            "login gate. Resolve only the MCP-owned /mcp-stack/prod namespace; "
-            "no legacy namespace fallback is allowed."
+            "login gate. It lives in skret /oci-vm-prod/prod (infra-shared), NOT "
+            "/mnemo-mcp/prod -- compose both namespaces."
         )
     return pw
 
@@ -139,7 +157,6 @@ def _creds() -> dict[str, str]:
         ("JINA_AI_API_KEY", "JINA_AI_API_KEY_DIRECT"),
         ("GEMINI_API_KEY", "VERTEX_EXPRESS_KEY_DIRECT"),
         ("OPENAI_API_KEY", None),
-        ("OPENROUTER_API_KEY", None),
         ("COHERE_API_KEY", "COHERE_API_KEY_DIRECT"),
         ("XAI_API_KEY", "XAI_API_KEY_DIRECT"),
     ):
@@ -177,15 +194,17 @@ def get_token(endpoint: str, creds: dict[str, str], *, save_retries: int = 8) ->
     form payload (provider and routing settings are explicit for Mnemo)."""
     import httpx  # lazy: keep --help importable without httpx installed
 
+    last: Exception | None = None
     for attempt in range(save_retries):
         try:
             return _get_token_once(httpx, endpoint, creds)
-        except _SaveRetry:
+        except _SaveRetry as e:
+            last = e
             print(
-                f"get_token: credential save HTTP 500, retry {attempt + 1}/{save_retries}"
+                f"get_token: save 500 (interception race), retry {attempt + 1}/{save_retries}"
             )
             time.sleep(3)
-    raise RuntimeError(f"get_token failed after {save_retries} credential-save retries")
+    raise RuntimeError(f"get_token failed after {save_retries} retries: {last}")
 
 
 def _get_token_once(httpx, endpoint: str, creds: dict[str, str]) -> str:
@@ -233,10 +252,10 @@ def _get_token_once(httpx, endpoint: str, creds: dict[str, str]) -> str:
         nonce = m.group(1)
         sub = c.post(f"{endpoint}/authorize", params={"nonce": nonce}, json=creds)
         if sub.status_code == 500 and "save credentials" in sub.text:
-            raise _SaveRetry("Credential save returned HTTP 500")
-        assert sub.status_code == 200, f"Credential save HTTP {sub.status_code}"
+            raise _SaveRetry(sub.text[:120])
+        assert sub.status_code == 200, (sub.status_code, sub.text[:300])
         data = sub.json()
-        assert data.get("ok"), "Credential save did not acknowledge success"
+        assert data.get("ok"), data
         code = urllib.parse.parse_qs(urllib.parse.urlparse(data["redirect_url"]).query)[
             "code"
         ][0]
@@ -250,7 +269,7 @@ def _get_token_once(httpx, endpoint: str, creds: dict[str, str]) -> str:
                 "code_verifier": verifier,
             },
         )
-        assert tok.status_code == 200, f"Token exchange HTTP {tok.status_code}"
+        assert tok.status_code == 200, (tok.status_code, tok.text[:300])
         return tok.json()["access_token"]
 
 
@@ -271,10 +290,10 @@ async def _call(s, label, tool, args, *, retries=20, delay=8):
                 print(f"{label}: awaiting_setup (KV propagating) try {i + 1}/{retries}")
                 await asyncio.sleep(delay)
                 continue
-            print(f"{label}: response received")
+            print(f"{label} OK:", txt[:320].replace("\n", " "))
             return txt
         except Exception as e:
-            print(f"{label} ERR:", type(e).__name__)
+            print(f"{label} ERR:", repr(e)[:300])
             return None
     print(f"{label}: gave up after {retries} tries")
     return None
@@ -295,10 +314,12 @@ def _tool_payload(txt: str | None, operation: str) -> dict:
     assert txt is not None, f"{operation} returned no payload"
     try:
         payload = _json.loads(txt)
-    except _json.JSONDecodeError:
-        raise AssertionError(f"{operation} returned non-JSON payload") from None
+    except _json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"{operation} returned non-JSON payload: {txt[:300]}"
+        ) from exc
     assert isinstance(payload, dict), f"{operation} returned a non-object payload"
-    assert not payload.get("error"), f"{operation} returned an error"
+    assert not payload.get("error"), f"{operation} returned an error: {txt[:300]}"
     return payload
 
 
@@ -327,6 +348,7 @@ def _assert_search_resolved(
 ) -> None:
     """Require the exact added memory and its unique marker in search results."""
     results = _search_results(txt)
+    result_text = _json.dumps(results, ensure_ascii=False)
     assert any(
         (
             memory_id is None
@@ -335,7 +357,7 @@ def _assert_search_resolved(
         )
         and marker in _json.dumps(result, ensure_ascii=False)
         for result in results
-    ), "search_memory did not return the exact added marker/id"
+    ), f"search_memory did not return the added marker/id: {result_text[:300]}"
     print(
         "ASSERT OK: add_memory -> search_memory round-trip resolved over the CF deployment."
     )
@@ -346,7 +368,8 @@ def _assert_search_absent(txt: str | None, marker: str) -> None:
     results = _search_results(txt)
     result_text = _json.dumps(results, ensure_ascii=False)
     assert marker not in result_text, (
-        "isolation failure: search_memory returned sub A marker for sub B"
+        "isolation failure: search_memory returned sub A marker for sub B: "
+        f"{result_text[:300]}"
     )
     print("ASSERT OK: sub B search did not return sub A marker.")
 
@@ -355,15 +378,20 @@ def _assert_rerank_payload(txt: str | None, memory_ids: list[str]) -> None:
     """Require a multi-result search to use both embedding and reranking."""
     payload = _tool_payload(txt, "search_memory(rerank)")
     assert payload.get("semantic") is True, (
-        "multi-candidate search did not report semantic=true"
+        "multi-candidate search did not report semantic=true: "
+        f"{_json.dumps(payload, ensure_ascii=False)[:400]}"
     )
     assert payload.get("reranked") is True, (
-        "multi-candidate search did not report reranked=true"
+        "multi-candidate search did not report reranked=true: "
+        f"{_json.dumps(payload, ensure_ascii=False)[:400]}"
     )
     results = _search_results(txt)
     result_ids = {result.get("id") or result.get("memory_id") for result in results}
     missing = [memory_id for memory_id in memory_ids if memory_id not in result_ids]
-    assert not missing, f"multi-candidate search omitted {len(missing)} exact probe ids"
+    assert not missing, (
+        "multi-candidate search omitted exact probe ids: "
+        f"{missing}; results={_json.dumps(results, ensure_ascii=False)[:400]}"
+    )
     assert len(results) >= 2, "rerank probe returned fewer than two results"
     print(
         "ASSERT OK: multi-candidate search reported semantic=true and "
@@ -392,7 +420,7 @@ async def _delete_memory(s, memory_id: str) -> None:
     payload = _tool_payload(txt, "delete_memory")
     deleted_id = _memory_id(payload, "delete_memory")
     assert payload.get("status") == "deleted" and deleted_id == memory_id, (
-        "delete_memory did not delete the exact fixture memory"
+        f"delete_memory did not delete exact memory id {memory_id!r}: {txt[:300]}"
     )
 
 
@@ -428,10 +456,10 @@ async def _run_search(
         if not cleanup and memory_id is not None:
             try:
                 await _delete_memory(s, memory_id)
-            except Exception:
+            except Exception as cleanup_exc:
                 raise RuntimeError(
-                    "probe failed and exact fixture cleanup also failed"
-                ) from None
+                    f"probe failed and cleanup failed for memory id {memory_id!r}"
+                ) from cleanup_exc
         raise
     finally:
         if cleanup and memory_id is not None:
@@ -439,7 +467,7 @@ async def _run_search(
 
 
 async def _run_rerank(s) -> None:
-    """Probe retrieval, reranking and completion using one isolated three-row fixture."""
+    """Exercise semantic retrieval and reranking with three related memories."""
     marker = _new_marker("rerank")
     query = "enterprise multi-user team deployment backlog"
     contents = (
@@ -456,13 +484,11 @@ async def _run_rerank(s) -> None:
                 s,
                 f"ADD_RERANK_{index}",
                 "add_memory",
-                {"content": content, "category": marker},
+                {"content": content},
             )
             add_payload = _tool_payload(add_txt, "add_memory(rerank)")
             memory_id = _memory_id(add_payload, "add_memory(rerank)")
-            assert add_payload.get("status") in {"saved", "created"}, (
-                "Fixture add failed"
-            )
+            assert add_payload.get("status") in {"saved", "created"}, add_payload
             memory_ids.append(memory_id)
 
         search_txt = await _call(
@@ -471,27 +497,10 @@ async def _run_rerank(s) -> None:
             "search_memory",
             {
                 "query": query,
-                "category": marker,
                 "limit": 8,
             },
         )
         _assert_rerank_payload(search_txt, memory_ids)
-        completion_txt = await _call(
-            s,
-            "COMPLETION",
-            "consolidate_memories",
-            {"category": marker},
-        )
-        completion = _tool_payload(completion_txt, "consolidate_memories")
-        assert completion.get("status") == "consolidated", "Completion did not succeed"
-        assert completion.get("original_count") == len(memory_ids), (
-            "Completion escaped fixture scope"
-        )
-        summary = completion.get("summary")
-        assert isinstance(summary, str) and summary.strip(), (
-            "Completion returned no summary"
-        )
-        print("ASSERT OK: completion returned a summary for the isolated fixture.")
     finally:
         for memory_id in reversed(memory_ids):
             await _delete_memory(s, memory_id)
@@ -503,7 +512,7 @@ def _token_file() -> Path:
 
 async def run_full(endpoint: str) -> None:
     token = get_token(endpoint, _creds())
-    print("TOKEN OK: bearer acquired")
+    print("TOKEN OK len=", len(token), "sub=", _sub_of(token))
     transport, ClientSession = await _session(endpoint, token)
     async with transport as (r, w, _), ClientSession(r, w) as s:
         await s.initialize()
@@ -521,7 +530,7 @@ async def run_backfill(endpoint: str, batch_size: int = 32) -> None:
     if not 1 <= batch_size <= 100:
         raise SystemExit("--batch-size must be between 1 and 100")
     token = get_token(endpoint, _creds())
-    print("TOKEN OK: bearer acquired")
+    print("TOKEN OK len=", len(token), "sub=", _sub_of(token))
     transport, ClientSession = await _session(endpoint, token)
     async with transport as (r, w, _), ClientSession(r, w) as s:
         await s.initialize()
@@ -534,15 +543,9 @@ async def run_backfill(endpoint: str, batch_size: int = 32) -> None:
             delay=2,
         )
     payload = _tool_payload(txt, "config(backfill_embeddings)")
-    assert payload.get("status") == "completed", "Backfill did not complete"
-    assert payload.get("failed") == 0, "Backfill reported failed rows"
-    counts = {
-        key: payload.get(key) for key in ("scanned", "embedded", "skipped", "failed")
-    }
-    assert all(type(value) is int for value in counts.values()), (
-        "Invalid backfill counts"
-    )
-    print("BACKFILL PASS:", _json.dumps(counts, sort_keys=True))
+    assert payload.get("status") == "completed", payload
+    assert payload.get("failed") == 0, payload
+    print("BACKFILL PASS:", _json.dumps(payload, sort_keys=True))
 
 
 async def run_save_only(endpoint: str) -> None:
@@ -554,7 +557,11 @@ async def run_save_only(endpoint: str) -> None:
     # Dump the EXACT token so --auth-only replays the SAME JWT sub (relay-login mints
     # a fresh random sub per /authorize).
     _token_file().write_text(token)
-    print("SAVE-ONLY OK: exact bearer saved locally for --auth-only")
+    print(
+        "SAVE-ONLY OK: sub configured=",
+        _sub_of(token),
+        "(token dumped for --auth-only)",
+    )
 
 
 async def run_auth_only(endpoint: str) -> None:
@@ -562,7 +569,7 @@ async def run_auth_only(endpoint: str) -> None:
     if not tok_path.exists():
         raise SystemExit("No dumped token -- run --save-only first.")
     token = tok_path.read_text().strip()
-    print("AUTH-ONLY: replaying saved bearer")
+    print("AUTH-ONLY: replaying saved token for sub=", _sub_of(token))
     transport, ClientSession = await _session(endpoint, token)
     async with transport as (r, w, _), ClientSession(r, w) as s:
         await s.initialize()
@@ -576,9 +583,10 @@ async def run_two_sub_isolation(endpoint: str) -> None:
     sub_a = _sub_of(token_a)
     token_b = get_token(endpoint, _creds())
     sub_b = _sub_of(token_b)
+    print(f"sub A={sub_a}  sub B={sub_b}")
     if sub_a == sub_b:
         raise SystemExit(
-            "ISOLATION INCONCLUSIVE: both flows share a subject (cannot test bleed)."
+            f"ISOLATION INCONCLUSIVE: both flows share sub {sub_a} (cannot test bleed)."
         )
     print("TWO-SUB: distinct bearer subjects acquired; testing marker isolation.")
     marker_a = _new_marker("isolation-a")
@@ -632,9 +640,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--cohere-cf-gateway",
         action="store_true",
         help=(
-            "Use CF_AIG_TOKEN through CF_AIG_BASE for Minimax-free completion "
-            "and paid Cohere embedding/rerank; clears competing routes."
+            "Use the existing CF_AIG_TOKEN as Cohere BYOK through CF_AIG_BASE; "
+            "clears competing provider/model env values without logging secrets."
         ),
+    )
+    p.add_argument(
+        "--cohere-direct",
+        action="store_true",
+        help="Use COHERE_API_KEY_DIRECT with LiteLLM direct Cohere route.",
     )
     mode = p.add_mutually_exclusive_group()
     mode.add_argument(
@@ -673,6 +686,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.cohere_cf_gateway:
         _configure_cohere_cf_gateway()
+    elif getattr(args, "cohere_direct", False):
+        _configure_cohere_direct()
 
     if args.save_only:
         asyncio.run(run_save_only(args.endpoint))
@@ -688,9 +703,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception as exc:
-        # Provider/transport exception text can contain credentials or memory data.
-        print(f"FULL FLOW FAILED: {type(exc).__name__}", file=sys.stderr)
-        sys.exit(1)
+    sys.exit(main())

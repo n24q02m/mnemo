@@ -192,41 +192,6 @@ def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _clear_provider_environment(monkeypatch):
-    """Keep unit tests independent of workstation and CI provider secrets."""
-    for key in (
-        "API_KEYS",
-        "EMBEDDING_MODELS",
-        "RERANK_MODELS",
-        "LLM_MODELS",
-        "MEMORY_DB_BACKEND",
-        "SYNC_ENABLED",
-        "SYNC_S3_BUCKET",
-        "PUBLIC_URL",
-        "OPENAI_API_KEY",
-        "OPENAI_API_BASE",
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_API_BASE",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_BASE",
-        "XAI_API_KEY",
-        "XAI_API_BASE",
-        "JINA_AI_API_KEY",
-        "JINA_AI_API_BASE",
-        "COHERE_API_KEY",
-        "COHERE_API_BASE",
-        "GEMINI_API_KEY",
-        "GEMINI_API_BASE",
-    ):
-        monkeypatch.delenv(key, raising=False)
-
-    from mnemo_mcp.config import settings
-
-    settings.sync_enabled = True
-    settings.sync_s3_bucket = ""
-
-
-@pytest.fixture(autouse=True)
 def _set_credential_state_configured():
     """Set credential state to CONFIGURED for all tests.
 

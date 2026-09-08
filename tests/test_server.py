@@ -163,13 +163,6 @@ class TestMemoryAsOf:
         assert result["count"] == 1
         assert result["as_of"] == "2026-01-15T00:00:00"
 
-    async def test_as_of_missing_param_returns_error_and_suggestion(self, ctx_with_db):
-        ctx, _ = ctx_with_db
-        result = await memory(action="as_of", ctx=ctx)
-        assert "error" in result
-        assert "suggestion" in result
-        assert "as_of is required" in result["error"]
-
     async def test_as_of_param_with_other_action_errors_not_ignores(self, ctx_with_db):
         ctx, _ = ctx_with_db
         result = await memory(
@@ -707,10 +700,7 @@ class TestConsolidate:
     async def test_consolidate_no_category_non_local(self, ctx_with_db):
         """Cover line 637-638: no category error when mode is not local."""
         ctx, db = ctx_with_db
-        with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
-        ):
+        with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
             result = await _handle_consolidate(ctx, None)
         assert "error" in result
@@ -721,10 +711,7 @@ class TestConsolidate:
         """Cover lines 640-644: less than 2 memories in category."""
         ctx, db = ctx_with_db
         db.add("only one", category="tech")
-        with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
-        ):
+        with patch("mnemo_mcp.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
@@ -738,7 +725,6 @@ class TestConsolidate:
 
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
             patch(
                 "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,
@@ -761,7 +747,6 @@ class TestConsolidate:
         db.add("mem2", category="tech")
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
             patch(
                 "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,

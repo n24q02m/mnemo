@@ -12,9 +12,9 @@ Phase 3 additions:
   ``{old_fact_id, confidence}`` objects (consumed by
   :mod:`mnemo_mcp.temporal.supersede`). Old callers that ignore the field
   see no behavioural change.
-* Dispatch flows through :func:`mnemo_mcp.llm.call_llm`: authenticated subjects
-  use their own relay model, endpoint and key; local single-user calls retain
-  environment-based provider detection.
+* Dispatch flows through :func:`mnemo_mcp.llm.call_llm` so the auto-
+  detected provider (Gemini > OpenAI > Anthropic > xAI) is honoured
+  uniformly with the rest of Phase 1 / Phase 2.
 """
 
 from __future__ import annotations

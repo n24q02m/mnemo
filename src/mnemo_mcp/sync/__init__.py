@@ -104,28 +104,34 @@ def register(name: str, backend: SyncBackend) -> None:
 
 
 def resolve_active_backend() -> str:
-    """Resolve ``disabled``, ``s3`` or ``gdrive`` for this deployment.
+    """Return the active sync backend (``"s3"`` or ``"gdrive"``) per deployment.
 
-    Cloudflare D1 + Vectorize is already durable, so external sync is disabled
-    even when stale bucket/client settings remain. ``SYNC_ENABLED=false`` is
-    also a hard off switch. Otherwise S3 bucket configuration takes precedence
-    over the local Google Drive OAuth flow.
+    XOR selection per the 2026-05-14 Test B clarification:
+
+    * **S3** when ``SYNC_S3_BUCKET`` is set via env var OR via the pydantic
+      ``settings.sync_s3_bucket`` field. Indicates Method 2/3 (HTTP / Docker
+      deploy) where the operator wires S3 credentials at container spawn.
+    * **GDrive** otherwise. Indicates Method 1 (local-relay / uvx) where
+      end-users authorise their Google account via the relay form.
+
+    Pure function — no side effects, safe to call from lifespan startup,
+    scheduler loop, MCP tool handlers, anywhere. The env var takes
+    precedence over the pydantic field so an operator can override a
+    persisted setting without rewriting ``config.enc``.
     """
-    import os
+    import os as _os
 
-    settings = _gdrive_module.settings
-    configured_bucket = settings.sync_s3_bucket
-    bucket_from_settings = (
-        configured_bucket.strip() if isinstance(configured_bucket, str) else ""
-    )
-
-    if (
-        os.environ.get("MEMORY_DB_BACKEND", "").strip().lower() == "cf-d1"
-        or not settings.sync_enabled
-    ):
-        return "disabled"
-    if os.environ.get("SYNC_S3_BUCKET", "").strip() or bucket_from_settings:
+    if _os.environ.get("SYNC_S3_BUCKET", "").strip():
         return "s3"
+    try:
+        from mnemo_mcp.config import settings as _settings
+
+        if (_settings.sync_s3_bucket or "").strip():
+            return "s3"
+    except Exception:
+        # Settings import / instantiation failure is non-fatal — fall
+        # through to the gdrive default so the server still starts.
+        pass
     return "gdrive"
 
 
@@ -144,11 +150,8 @@ def get(name: str) -> SyncBackend:
       sees a helpful "configure SYNC_S3_BUCKET" message instead of a
       cryptic boto3 NoCredentialsError later).
     """
-    active = resolve_active_backend()
-    if active == "disabled":
-        raise KeyError("External sync is disabled for this deployment")
     if name == "auto":
-        name = active
+        name = resolve_active_backend()
     if name == "gdrive" and "gdrive" not in _REGISTRY:
         _REGISTRY["gdrive"] = GDriveBackend()
     if name == "s3" and "s3" not in _REGISTRY:
@@ -234,9 +237,6 @@ async def _passport_sync_loop(db, interval: int) -> None:
             continue
 
         backend_name = resolve_active_backend()
-        if backend_name == "disabled":
-            logger.info("Passport sync scheduler stopped: external sync disabled")
-            return
 
         async with _PASSPORT_SYNC_LOCK:
             try:
@@ -254,9 +254,6 @@ def start_passport_scheduler(db, interval: int | None = None) -> bool:
     """
     global _PASSPORT_SYNC_TASK
     from mnemo_mcp.config import settings as _settings
-
-    if resolve_active_backend() == "disabled":
-        return False
 
     if interval is None:
         interval = int(_settings.sync_interval or 0)

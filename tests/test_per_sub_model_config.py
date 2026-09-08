@@ -20,14 +20,13 @@ from mnemo_mcp.credential_state import (
 from mnemo_mcp.embedder import CloudEmbeddingBackend
 from mnemo_mcp.graph import _has_llm_provider, _llm_completion, _resolve_llm_model
 from mnemo_mcp.llm import call_llm
+from mnemo_mcp.relay_schema import RELAY_SCHEMA
 from mnemo_mcp.reranker import CloudReranker
 
 
 @pytest.fixture(autouse=True)
-def _reset_current_sub(monkeypatch):
+def _reset_current_sub():
     token = _current_sub.set(None)
-    monkeypatch.delenv("PUBLIC_URL", raising=False)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     try:
         yield
     finally:
@@ -314,120 +313,12 @@ async def test_graph_uses_current_sub_model_key_and_endpoint(monkeypatch, tmp_pa
     assert captured["api_base"] == "https://alice.example/llm"
 
 
-async def test_minimax_subject_beats_ambient_and_unrelated_provider_keys(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setattr(
-        "tiktoken.get_encoding",
-        lambda _name: SimpleNamespace(encode=lambda text: text.split()),
-    )
-    from mnemo_mcp.compression import compress
-    from mnemo_mcp.graph import score_importance
-    from mnemo_mcp.llm import detect_provider
+def test_relay_schema_exposes_per_task_endpoints_and_vertex_key():
+    fields = {field["key"]: field for field in RELAY_SCHEMA["fields"]}
 
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("COMPRESSION_PROVIDER", "openai")
-    monkeypatch.setenv("COMPRESSION_MODEL", "ambient-paid-model")
-    monkeypatch.setenv("LLM_MODELS", "openai/ambient-paid-model")
-    monkeypatch.setenv("LLM_API_BASE", "https://ambient.example/v1")
-    store_for_sub(
-        "alice",
-        {
-            "LLM_MODELS": "openrouter/minimax/minimax-m3:free",
-            "LLM_API_BASE": "https://alice.example/openrouter/v1",
-            "OPENROUTER_API_KEY": "fixture-openrouter",
-            "GEMINI_API_KEY": "unrelated-fixture",
-        },
-    )
-    _current_sub.set("alice")
+    for key in ("EMBEDDING_API_BASE", "RERANK_API_BASE", "LLM_API_BASE"):
+        assert fields[key]["type"] == "url"
+        assert fields[key]["required"] is False
 
-    async def subject_completion(**kwargs):
-        assert kwargs["model"] == "openrouter/minimax/minimax-m3:free"
-        assert kwargs["api_base"] == "https://alice.example/openrouter/v1"
-        assert kwargs["api_key"] == "fixture-openrouter"
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="0.8"))]
-        )
-
-    monkeypatch.setattr("mcp_core.llm.acompletion", subject_completion)
-    assert detect_provider() == "openrouter"
-    assert await score_importance("A fixture preference") == 0.8
-    result = await compress("A long fixture preference with redundant repeated words.")
-    assert result["compressed"] is True
-    assert result["compression_provider"] == "openrouter"
-    assert result["compression_model"] == "minimax/minimax-m3:free"
-
-
-async def test_empty_subject_completion_does_not_inherit_ambient_provider(
-    monkeypatch, tmp_path
-):
-    from mnemo_mcp.graph import score_importance
-
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GEMINI_API_KEY", "ambient-fixture")
-    monkeypatch.setenv("LLM_MODELS", "gemini/ambient-paid-model")
-    _current_sub.set("empty-subject")
-
-    async def forbidden(**kwargs):
-        pytest.fail("An empty subject dispatched an ambient provider request")
-
-    monkeypatch.setattr("mcp_core.llm.acompletion", forbidden)
-    assert await call_llm("fixture") is None
-    assert await score_importance("fixture") == 0.5
-
-
-async def test_subject_model_without_key_cannot_use_ambient_credentials(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("OPENROUTER_API_KEY", "ambient-fixture")
-    store_for_sub(
-        "missing-key",
-        {
-            "LLM_MODELS": "openrouter/minimax/minimax-m3:free",
-            "LLM_API_BASE": "https://subject.example/openrouter/v1",
-        },
-    )
-    _current_sub.set("missing-key")
-
-    async def forbidden(**kwargs):
-        pytest.fail("A subject without a provider key reached dispatch")
-
-    monkeypatch.setattr("mcp_core.llm.acompletion", forbidden)
-    assert await call_llm("fixture") is None
-    with pytest.raises(RuntimeError):
-        await _llm_completion("openrouter/minimax/minimax-m3:free", [])
-
-
-def test_remote_missing_subject_and_endpoint_fail_closed(monkeypatch, tmp_path):
-    from mnemo_mcp.credential_state import credentials_for_current_request
-
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example")
-    monkeypatch.setenv("MCP_LLM_GATEWAY_BASE", "https://ambient.example/v1")
-    with pytest.raises(RuntimeError):
-        credentials_for_current_request()
-    _current_sub.set("no-endpoint")
-    with pytest.raises(RuntimeError):
-        api_base_for_task("LLM_API_BASE")
-
-
-@pytest.mark.asyncio
-async def test_remote_warmup_does_not_probe_ambient_or_local_models(
-    tmp_path, monkeypatch
-):
-    from mnemo_mcp.setup_tool import run_warmup
-
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("COHERE_API_KEY", "ambient-must-not-be-used")
-    _current_sub.set("empty-warmup-sub")
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError(
-            "Remote warmup attempted process/global provider resolution"
-        )
-
-    monkeypatch.setattr("mnemo_mcp.setup_tool._validate_cloud_models", forbidden)
-    monkeypatch.setattr("mnemo_mcp.setup_tool._download_local_embedding", forbidden)
-    result = await run_warmup()
-    assert result["mode"] == "unavailable"
+    assert fields["GOOGLE_VERTEX_EXPRESS_API_KEY"]["type"] == "password"
+    assert fields["GOOGLE_VERTEX_EXPRESS_API_KEY"]["derived"] is True

@@ -114,44 +114,6 @@ async def run_warmup() -> dict:
         "steps": [{"step": str, "status": str, ...}, ...],
     }
     """
-    from mnemo_mcp.credential_state import (
-        api_base_for_task,
-        api_key_for_model,
-        get_current_sub,
-        model_for_task,
-    )
-
-    if get_current_sub() is not None:
-        from mnemo_mcp.embedder import CloudEmbeddingBackend
-
-        model = model_for_task("embedding")
-        key = api_key_for_model(model) if model else None
-        if not model or not key:
-            return {"status": "ok", "mode": "unavailable", "steps": []}
-        backend = CloudEmbeddingBackend(
-            model, api_key=key, api_base=api_base_for_task("EMBEDDING_API_BASE")
-        )
-        dims = await asyncio.to_thread(backend.check_available)
-        if dims <= 0:
-            return {
-                "status": "error",
-                "mode": "unavailable",
-                "steps": [{"step": "cloud_embedding", "status": "error"}],
-            }
-        return {
-            "status": "ok",
-            "mode": "cloud",
-            "steps": [
-                {
-                    "step": "cloud_embedding",
-                    "status": "ok",
-                    "model": model,
-                    "dims": dims,
-                }
-            ],
-            "embedding": {"model": model, "dims": dims},
-        }
-
     steps = []
     local_disabled = getattr(settings, "disable_local_embed", False) is True
 
@@ -229,15 +191,8 @@ async def run_setup_sync(
 
     Returns a structured dict with setup results.
     """
-    from mnemo_mcp.sync import resolve_active_backend, setup_google_auth
+    from mnemo_mcp.sync import setup_google_auth
     from mnemo_mcp.token_store import get_token_path
-
-    if resolve_active_backend() != "gdrive":
-        return {
-            "status": "disabled",
-            "provider": "google_drive",
-            "message": "Google Drive sync is not active for this deployment.",
-        }
 
     effective_id = client_id or settings.google_drive_client_id
     if not effective_id:

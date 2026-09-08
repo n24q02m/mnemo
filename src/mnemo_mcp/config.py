@@ -327,7 +327,6 @@ class Settings(BaseSettings):
                 "GEMINI_API_KEY",
                 "GOOGLE_API_KEY",
                 "OPENAI_API_KEY",
-                "OPENROUTER_API_KEY",
                 "COHERE_API_KEY",
                 "CO_API_KEY",
                 "XAI_API_KEY",

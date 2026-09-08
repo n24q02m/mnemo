@@ -25,10 +25,8 @@ profile:
 - Cloudflare **D1** owns memory rows and FTS5 search.
 - Cloudflare **Vectorize** owns dense vectors.
 - Cloudflare **KV** owns encrypted per-user credentials and session state.
-- `MEMORY_DB_BACKEND=cf-d1` disables external sync, even when stale bucket
-  or Google client settings remain. `SYNC_ENABLED=false` is a second hard
-  off switch for non-CF deployments too. Startup, relay/device-code setup,
-  direct Google auth, manual sync and the passport scheduler use this rule.
+- `SYNC_ENABLED=false` keeps the legacy database-file Google Drive sync path
+  disabled.
 
 Do not treat a historical Drive `memories.db` or export as a complete inventory
 of current production memories. Any Drive cleanup is a separate exact-root,
@@ -47,14 +45,11 @@ multi-mirror semantics: operator picks ONE backend per deployment.
 
 Resolution rule (`sync.resolve_active_backend`):
 
-- `MEMORY_DB_BACKEND=cf-d1` or `SYNC_ENABLED=false` → **disabled**.
-  Google OAuth is not requested and no external sync task is started.
-  Explicit `sync_now` / `import_passport` requests return `status="disabled"`.
 - `SYNC_S3_BUCKET` is set (env var OR pydantic `settings.sync_s3_bucket`) →
   active backend = **S3**. GDrive Device Code OAuth is **disabled** at
   startup; the relay form does NOT prompt for a Google account.
-- Otherwise, with sync enabled → active backend = **GDrive**. The relay
-  form drives the Device Code flow for the end-user's Google account.
+- Otherwise → active backend = **GDrive**. The relay form drives the
+  Device Code flow for the end-user's Google account.
 
 Env var takes precedence over the pydantic field so an operator can
 override a persisted bucket from `config.enc` without rewriting it.

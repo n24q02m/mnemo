@@ -20,7 +20,6 @@ CLOUD_KEYS = [
     "JINA_AI_API_KEY",
     "GEMINI_API_KEY",
     "OPENAI_API_KEY",
-    "OPENROUTER_API_KEY",
     "COHERE_API_KEY",
     "GOOGLE_VERTEX_EXPRESS_API_KEY",
 ]
@@ -159,14 +158,6 @@ async def _handle_post_config_setup(
 
     apply_config(config)
 
-    from mnemo_mcp.sync import resolve_active_backend
-
-    if resolve_active_backend() != "gdrive":
-        await _send_relay_message(
-            relay_url, session.session_id, "complete", "Setup complete!"
-        )
-        return True
-
     # Notify relay page: config saved (info, NOT complete — GDrive OAuth follows)
     await _send_relay_message(
         relay_url,
@@ -192,11 +183,6 @@ async def _handle_post_config_setup(
 async def _setup_gdrive_sync(relay_url: str, session_id: str) -> bool:
     """Handle Google Drive OAuth setup if a client ID is configured."""
     from mnemo_mcp.config import settings as _settings
-    from mnemo_mcp.sync import resolve_active_backend
-
-    if resolve_active_backend() != "gdrive":
-        logger.info("GDrive setup skipped: not the active sync backend")
-        return True
 
     if not _settings.google_drive_client_id:
         return False
