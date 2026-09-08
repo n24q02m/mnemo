@@ -11,6 +11,9 @@ deployment-mode decision (env-driven, not user-input):
   / ENDPOINT) + SYNC_PASSPHRASE via docker env → server detects S3
   mode at startup, **disables GDrive flow entirely**, sends encrypted
   bundles to S3-compatible storage.
+- **Cloudflare D1 + Vectorize**: ``MEMORY_DB_BACKEND=cf-d1`` disables
+  external sync and Google Drive OAuth, even with stale bucket/client settings.
+  ``SYNC_ENABLED=false`` also disables both external backends.
 
 The two backends are mutually exclusive at deployment level. See
 docs/passport.md for the full operator runbook.
@@ -20,19 +23,9 @@ from __future__ import annotations
 
 from typing import Any
 
-_EMBEDDING_SUGGESTED = [
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "openai/text-embedding-3-large",
-    "cohere/embed-multilingual-v3.0",
-]
-_RERANK_SUGGESTED = ["jina_ai/jina-reranker-v3", "cohere/rerank-v3.5"]
-_LLM_SUGGESTED = [
-    "gemini/gemini-3-flash-preview",
-    "openai/gpt-5.4-mini-2026-03-17",
-    "anthropic/claude-haiku-4-5",
-    "xai/grok-4-fast",
-]
+_EMBEDDING_SUGGESTED = ["cohere/embed-v4.0"]
+_RERANK_SUGGESTED = ["cohere/rerank-v4.0-fast"]
+_LLM_SUGGESTED = ["openrouter/minimax/minimax-m3:free"]
 
 
 def _key_field(key: str, label: str, ph: str, url: str) -> dict[str, Any]:
@@ -112,7 +105,7 @@ RELAY_SCHEMA: dict[str, Any] = {
         _api_base_field(
             "LLM_API_BASE",
             "LLM endpoint",
-            "Custom endpoint / CF AI Gateway for graph/importance LLM calls.",
+            "Custom endpoint / CF AI Gateway for completion. OpenRouter: {gw}/openrouter/v1",
         ),
         _key_field(
             "JINA_AI_API_KEY", "Jina AI API Key", "jina_...", "https://jina.ai/api-key"
@@ -128,6 +121,12 @@ RELAY_SCHEMA: dict[str, Any] = {
             "OpenAI API Key",
             "sk-...",
             "https://platform.openai.com/api-keys",
+        ),
+        _key_field(
+            "OPENROUTER_API_KEY",
+            "OpenRouter API Key",
+            "OpenRouter API key",
+            "https://openrouter.ai/settings/keys",
         ),
         _key_field(
             "COHERE_API_KEY",
@@ -167,9 +166,10 @@ RELAY_SCHEMA: dict[str, Any] = {
         },
         {
             "label": "Passport Sync (operator-config)",
-            "priority": "S3 (env) XOR Google Drive (default)",
+            "priority": "Disabled on CF D1; otherwise S3 XOR Google Drive",
             "description": (
-                "Mutually exclusive: deployment sets SYNC_S3_BUCKET + "
+                "Cloudflare D1 disables external sync and Google Drive OAuth. "
+                "Otherwise mutually exclusive: deployment sets SYNC_S3_BUCKET + "
                 "SYNC_PASSPHRASE env at docker spawn -> S3 mode with "
                 "encrypted bundles (AES-256-GCM + Argon2id). No S3 env "
                 "-> Google Drive Device Code OAuth via this relay. See "

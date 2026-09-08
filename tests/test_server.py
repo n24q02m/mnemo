@@ -700,7 +700,10 @@ class TestConsolidate:
     async def test_consolidate_no_category_non_local(self, ctx_with_db):
         """Cover line 637-638: no category error when mode is not local."""
         ctx, db = ctx_with_db
-        with patch("mnemo_mcp.server.settings") as mock_settings:
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
+        ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             result = await _handle_consolidate(ctx, None)
         assert "error" in result
@@ -711,7 +714,10 @@ class TestConsolidate:
         """Cover lines 640-644: less than 2 memories in category."""
         ctx, db = ctx_with_db
         db.add("only one", category="tech")
-        with patch("mnemo_mcp.server.settings") as mock_settings:
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
+        ):
             mock_settings.resolve_provider_mode.return_value = "sdk"
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
@@ -725,6 +731,7 @@ class TestConsolidate:
 
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
             patch(
                 "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,
@@ -747,6 +754,7 @@ class TestConsolidate:
         db.add("mem2", category="tech")
         with (
             patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
             patch(
                 "mnemo_mcp.graph._llm_completion",
                 new_callable=AsyncMock,

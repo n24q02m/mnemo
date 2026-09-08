@@ -131,15 +131,12 @@ def test_call_llm_graceful_skip_no_provider() -> None:
 
 
 def test_call_llm_unknown_explicit_provider_returns_none() -> None:
-    """Explicit but unsupported provider returns None when litellm raises."""
-    mock = AsyncMock(side_effect=Exception("bogus provider"))
-    with (
-        patch("mcp_core.llm.acompletion", mock),
-        patch.object(llm.logger, "warning") as warn,
-    ):
+    """Unsupported explicit providers return None without dispatching a request."""
+    mock = AsyncMock()
+    with patch("mcp_core.llm.acompletion", mock):
         result = asyncio.run(llm.call_llm("hello", provider="bogus"))
     assert result is None
-    assert warn.called
+    mock.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

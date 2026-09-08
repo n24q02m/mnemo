@@ -20,6 +20,36 @@ Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
 > raw passphrase is held in process memory only; only the
 > Argon2id-derived hash lands in `config.enc`.
 
+On Cloudflare D1 (`MEMORY_DB_BACKEND=cf-d1`), external sync is disabled
+regardless of stale Google/S3 settings. `sync`, `setup_sync`, `sync_now`
+and `import_passport` return `status="disabled"` without provider access.
+`SYNC_ENABLED=false` applies the same off switch on non-CF deployments.
+
+### Remote model routing
+
+Each authenticated subject saves model, endpoint and provider key per task
+through the relay. Remote calls never inherit another subject or process-wide
+model, endpoint or key; a configured cloud task without its subject endpoint
+fails closed. Empty completion configuration disables enrichment. Local
+single-user mode retains explicit environment configuration and local
+Fastretrieval embedding/reranking.
+Hosted `warmup` probes only the current subject's configured embedding route;
+it never downloads a local model or tests process-wide provider credentials.
+
+For the managed gateway route, select:
+
+| Task | Model | Subject endpoint |
+|---|---|---|
+| Completion (graph, importance, compression) | `openrouter/minimax/minimax-m3:free` | `LLM_API_BASE={gateway}/openrouter/v1` |
+| Embedding | `cohere/embed-v4.0` | `EMBEDDING_API_BASE={gateway}/cohere/v2/embed` |
+| Rerank | `cohere/rerank-v4.0-fast` | `RERANK_API_BASE={gateway}/cohere` |
+
+Store `OPENROUTER_API_KEY` and `COHERE_API_KEY` in the subject relay, not Worker
+environment variables. Cohere calls are paid and require an explicit bounded
+spend authorization. Completion uses only the selected free model; a provider
+error does not select a paid fallback. `COMPRESSION_PROVIDER` and
+`COMPRESSION_MODEL` environment overrides apply only to local single-user mode.
+
 ### `status` - Show current configuration
 
 Returns database stats, the resolved embedding identity, dimensions, availability, and sync status.
@@ -100,7 +130,7 @@ locally so no extra env vars are needed for sync.
 **Parameters:** None (requires `GOOGLE_DRIVE_CLIENT_ID` env var)
 
 **Returns:**
-- `status`: "authenticated" or "error"
+- `status`: "authenticated", "disabled" or "error"
 - `provider`: "google_drive"
 - `token_path`: Path to saved token file
 - `next_steps`: Env vars to set in MCP config
@@ -226,7 +256,7 @@ written to `sync_overrides`.
 
 **Parameters:**
 - `key` (optional): backend name (`"s3"` or `"gdrive"`). Defaults to the
-  first entry of `SYNC_BACKEND` env.
+  deployment resolver; CF D1 and `SYNC_ENABLED=false` disable external sync.
 
 **Returns:**
 - `status`: `"imported"` or `"no_passport"`.
@@ -259,7 +289,8 @@ Configure via environment variables before starting the server:
 | `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (fastretrieval ONNX/GGUF), or empty (auto) |
 | `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
 | `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
-| `SYNC_ENABLED` | `true` | Enable Google Drive sync |
+| `SYNC_ENABLED` | `true` | Enable external sync; CF D1 always disables it |
+| `MEMORY_DB_BACKEND` | `sqlite` | `cf-d1` uses D1/Vectorize and suppresses external sync/OAuth |
 | `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID for Google Drive |
 | `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
 | `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |

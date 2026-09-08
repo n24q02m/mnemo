@@ -143,6 +143,10 @@ async def _init_embedding_backend(
     Running this as a background task lets the MCP server accept connections
     immediately instead of blocking on model download or cloud API validation.
     """
+    if os.environ.get("PUBLIC_URL"):
+        logger.info("Embedding: resolved per subject; skipping process-wide probe")
+        return
+
     from mnemo_mcp.credential_state import CredentialState, get_state
     from mnemo_mcp.embedder import init_backend
 
@@ -215,6 +219,10 @@ async def _init_reranker_backend(mode: str) -> None:
     LOCAL: local-only path.
     CONFIGURED: cloud-only path -- no silent local fallback.
     """
+    if os.environ.get("PUBLIC_URL"):
+        logger.info("Reranking: resolved per subject; skipping process-wide probe")
+        return
+
     from mnemo_mcp.credential_state import CredentialState, get_state
     from mnemo_mcp.reranker import clear_reranker, init_reranker
 
@@ -328,32 +336,23 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
 
-    # 4. Resolve sync mode (XOR per deployment) + start backend-specific init.
-    #
-    # Per the 2026-05-14 Test B design: operator picks ONE backend at deploy
-    # time. SYNC_S3_BUCKET set -> S3 (Method 2/3 docker); otherwise -> GDrive
-    # (Method 1 local-relay). See ``docs/passport.md``.
-    if not settings.sync_enabled:
-        logger.info("Sync mode: disabled (legacy Google Drive sync is off)")
+    # D1 + Vectorize is durable already; the same resolver gates setup,
+    # background sync and explicit sync operations.
+    from mnemo_mcp.sync import resolve_active_backend
+
+    sync_mode = resolve_active_backend()
+    if sync_mode != "gdrive":
+        logger.info(f"Sync mode: {sync_mode} — GDrive auto-init skipped")
     else:
-        from mnemo_mcp.sync import resolve_active_backend
+        logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
+        if settings.google_drive_client_id:
+            from mnemo_mcp.sync import start_auto_sync
 
-        sync_mode = resolve_active_backend()
-        if sync_mode == "s3":
-            logger.info("Sync mode: s3 (S3 operator-config) — GDrive auto-init skipped")
-        else:
-            logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
-            # Legacy GDrive DB-file copy path (Phase 1) — kept for backward
-            # compat with existing GDrive users. Phase 2 passport bundles still
-            # flow through the scheduler regardless of this background task.
-            if settings.google_drive_client_id:
-                from mnemo_mcp.sync import start_auto_sync
-
-                start_auto_sync(db)
-                logger.info(
-                    f"Sync: Google Drive/{settings.sync_folder} "
-                    f"(interval={settings.sync_interval}s)"
-                )
+            start_auto_sync(db)
+            logger.info(
+                f"Sync: Google Drive/{settings.sync_folder} "
+                f"(interval={settings.sync_interval}s)"
+            )
 
     # Shared context -- embedding_model starts as None (not ready yet).
     # Background task updates it in-place once the backend is validated.
@@ -420,7 +419,7 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
                 "JWT sub is required for Cloudflare D1 requests; refusing an "
                 "unscoped backend."
             )
-        request_model = model_for_task("embedding") or lc.get("embedding_model")
+        request_model = model_for_task("embedding")
         db = db.clone_for_sub(sub, embedding_model=request_model)
     return db, lc["embedding_model"], lc["embedding_dims"]
 
@@ -1121,7 +1120,9 @@ async def _handle_stats(ctx: Context | None) -> dict[str, typing.Any]:
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
-    s["sync_enabled"] = settings.sync_enabled
+    from mnemo_mcp.sync import resolve_active_backend
+
+    s["sync_enabled"] = resolve_active_backend() != "disabled"
     s["sync_folder"] = settings.sync_folder
     return s
 
@@ -1456,8 +1457,7 @@ async def _handle_consolidate(
     db, _, _ = _get_ctx(ctx)
     from mnemo_mcp.graph import _has_llm_provider
 
-    mode = settings.resolve_provider_mode()
-    if mode == "local" and not _has_llm_provider():
+    if not _has_llm_provider():
         return {
             "error": "Consolidation requires LLM (SDK mode with API keys)",
             "suggestion": "Run the setup flow or provide API keys via environment variables (e.g. GEMINI_API_KEY).",
@@ -2179,6 +2179,9 @@ async def _handle_config_backfill(
 
 
 async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
+    from mnemo_mcp.sync import resolve_active_backend
+
+    sync_backend = resolve_active_backend()
     db, embedding_model, embedding_dims = _get_ctx(ctx)
     embedding_model, _ = _get_request_embedding(ctx, embedding_model, embedding_dims)
     s = await asyncio.to_thread(db.stats)
@@ -2199,8 +2202,8 @@ async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
             "available": embedding_model is not None,
         },
         "sync": {
-            "enabled": settings.sync_enabled,
-            "provider": "google_drive",
+            "enabled": sync_backend != "disabled",
+            "provider": "google_drive" if sync_backend == "gdrive" else sync_backend,
             "folder": settings.sync_folder,
             "interval": settings.sync_interval,
         },
@@ -2468,14 +2471,7 @@ def _resolve_sync_passphrase() -> str | None:
 
 
 def _resolve_default_backend() -> str:
-    """Return the active sync backend per the deployment-mode XOR.
-
-    Delegates to :func:`mnemo_mcp.sync.resolve_active_backend` which checks
-    ``SYNC_S3_BUCKET`` (env > pydantic field). The legacy
-    ``settings.sync_backend`` comma-separated multi-backend value is
-    ignored — operator picks ONE backend at deploy time (Method 1 GDrive
-    via relay vs Method 2/3 S3 via docker env). See ``docs/passport.md``.
-    """
+    """Return the deployment's active sync backend, including ``disabled``."""
     from mnemo_mcp.sync import resolve_active_backend
 
     return resolve_active_backend()
@@ -2485,6 +2481,8 @@ async def _handle_config_sync_now(
     ctx: Context | None, backend: str | None
 ) -> dict[str, typing.Any]:
     """``config(action="sync_now")`` - delta push (or full-pull-push on gap)."""
+    if _resolve_default_backend() == "disabled":
+        return {"status": "disabled", "message": "External sync is disabled"}
     db, _, _ = _get_ctx(ctx)
     passphrase = _resolve_sync_passphrase()
     if not passphrase:
@@ -2547,6 +2545,8 @@ async def _handle_config_import_passport(
     ctx: Context | None, source: str | None
 ) -> dict[str, typing.Any]:
     """``config(action="import_passport", from="s3"|"gdrive")``."""
+    if _resolve_default_backend() == "disabled":
+        return {"status": "disabled", "message": "External sync is disabled"}
     db, _, _ = _get_ctx(ctx)
     passphrase = _resolve_sync_passphrase()
     if not passphrase:
