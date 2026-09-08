@@ -163,6 +163,13 @@ class TestMemoryAsOf:
         assert result["count"] == 1
         assert result["as_of"] == "2026-01-15T00:00:00"
 
+    async def test_as_of_missing_param_returns_error_and_suggestion(self, ctx_with_db):
+        ctx, _ = ctx_with_db
+        result = await memory(action="as_of", ctx=ctx)
+        assert "error" in result
+        assert "suggestion" in result
+        assert "as_of is required" in result["error"]
+
     async def test_as_of_param_with_other_action_errors_not_ignores(self, ctx_with_db):
         ctx, _ = ctx_with_db
         result = await memory(

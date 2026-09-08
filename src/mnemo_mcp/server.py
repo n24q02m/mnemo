@@ -1412,6 +1412,13 @@ async def _handle_as_of(
     """
     db, _, _ = _get_ctx(ctx)
 
+    if not as_of:
+        return {
+            "error": "as_of is required for action='as_of'",
+            "example": "action='as_of', as_of='2026-01-15T00:00:00'",
+            "suggestion": "Provide the 'as_of' parameter as an ISO timestamp.",
+        }
+
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
