@@ -19,6 +19,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import sqlite_vec
 from loguru import logger
@@ -170,6 +171,13 @@ def _now_iso() -> str:
 MAX_CONTENT_LENGTH = 5000
 # Maximum tags allowed in a search filter to prevent complexity attacks.
 MAX_TAGS_FILTER = 50
+
+# Wave B (spec §4.2): the only visibility values a memory row may carry.
+_VALID_VISIBILITIES = frozenset({"private", "team", "org"})
+
+
+if TYPE_CHECKING:
+    from mnemo_mcp.enterprise.identity import PrincipalContext
 
 
 def _build_fts_queries(query: str) -> list[str]:
@@ -686,6 +694,10 @@ class MemoryDB:
         tags: list[str] | None = None,
         source: str | None = None,
         embedding: list[float] | None = None,
+        *,
+        tenant_id: str | None = None,
+        owner_sub: str | None = None,
+        visibility: str = "private",
     ) -> str:
         """Add a new memory.
 
@@ -699,6 +711,8 @@ class MemoryDB:
             raise ValueError(
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
+        if visibility not in _VALID_VISIBILITIES:
+            raise ValueError(f"Invalid visibility {visibility!r}")
 
         memory_id = uuid.uuid4().hex
         now = _now_iso()
@@ -709,9 +723,22 @@ class MemoryDB:
 
         self._conn.execute(
             """INSERT INTO memories (id, content, category, tags, source,
-               created_at, updated_at, access_count, last_accessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-            (memory_id, content, category, tags_json, source, now, now, now),
+               created_at, updated_at, access_count, last_accessed,
+               tenant_id, owner_sub, visibility)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+            (
+                memory_id,
+                content,
+                category,
+                tags_json,
+                source,
+                now,
+                now,
+                now,
+                tenant_id or "local",
+                owner_sub,
+                visibility,
+            ),
         )
 
         # Store embedding if provided
@@ -738,6 +765,9 @@ class MemoryDB:
         text_raw: str | None = None,
         compressed: bool = False,
         compression_provider: str | None = None,
+        tenant_id: str | None = None,
+        owner_sub: str | None = None,
+        visibility: str = "private",
     ) -> str:
         """Add a new memory with an explicit ``context_type``.
 
@@ -777,6 +807,8 @@ class MemoryDB:
             raise ValueError(
                 f"Content length {len(content)} exceeds limit of {MAX_CONTENT_LENGTH}"
             )
+        if visibility not in _VALID_VISIBILITIES:
+            raise ValueError(f"Invalid visibility {visibility!r}")
 
         memory_id = uuid.uuid4().hex
         now = _now_iso()
@@ -793,8 +825,9 @@ class MemoryDB:
                 """INSERT INTO memories (id, content, category, tags, source,
                    created_at, updated_at, access_count, last_accessed,
                    context_type, importance,
-                   text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
+                   text_raw, compressed, compression_provider,
+                   tenant_id, owner_sub, visibility)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
@@ -809,6 +842,9 @@ class MemoryDB:
                     text_raw,
                     compressed_int,
                     compression_provider,
+                    tenant_id or "local",
+                    owner_sub,
+                    visibility,
                 ),
             )
         else:
@@ -816,8 +852,9 @@ class MemoryDB:
                 """INSERT INTO memories (id, content, category, tags, source,
                    created_at, updated_at, access_count, last_accessed,
                    context_type,
-                   text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+                   text_raw, compressed, compression_provider,
+                   tenant_id, owner_sub, visibility)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
@@ -831,6 +868,9 @@ class MemoryDB:
                     text_raw,
                     compressed_int,
                     compression_provider,
+                    tenant_id or "local",
+                    owner_sub,
+                    visibility,
                 ),
             )
 
@@ -927,6 +967,8 @@ class MemoryDB:
         min_importance: float = 0.0,
         include_archived: bool = False,
         candidate_pool: int | None = None,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
     ) -> list[dict]:
         """Search memories with hybrid scoring.
 
@@ -969,14 +1011,15 @@ class MemoryDB:
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
 
-        filter_kwargs = {
+        filter_kwargs: dict = {
             "context_type": context_type,
             "since": since,
             "until": until,
             "min_importance": min_importance,
             "include_archived": include_archived,
+            "principal": principal,
+            "sub": sub,
         }
-
         # 1. FTS5 search (over a wider candidate pool for downstream rerank).
         # Spec section 4.2: rerank tops at ~50 candidates -> top-N. Caller can
         # override via ``candidate_pool`` when it knows the rerank budget.
@@ -1064,6 +1107,52 @@ class MemoryDB:
 
         return top
 
+    def _build_rbac_sql(
+        self,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
+    ) -> tuple[str, list]:
+        """Build the Wave B tenant/visibility fragment (spec §4.2).
+
+        ``None`` principal ⇒ ``("", [])``: local mode is byte-for-byte
+        unchanged and the new tables stay unread. With a principal, rows
+        must belong to the principal's tenant AND satisfy one visibility
+        arm: own private rows, team rows when the principal sits on any
+        team of the tenant, org rows when actively org-membered. Membership
+        rides EXISTS subqueries so the whole read stays a single statement.
+
+        ``sub`` is the Cloudflare per-sub scope (D1 ``memories`` carries a
+        ``sub`` column the SQLite table does not have). The CF backend
+        passes it so a compound query that trips ``_scope_sql``'s
+        already-scoped detection still carries its own tenant predicate;
+        SQLite callers leave it ``None``.
+        """
+        if principal is None:
+            return "", []
+        fragments = ["AND m.tenant_id = ?"]
+        params: list = [principal.tenant_id]
+        if sub is not None:
+            fragments.append("AND m.sub = ?")
+            params.append(sub)
+        fragments.append(
+            "AND ((m.visibility = 'private' AND m.owner_sub = ?)"
+            " OR (m.visibility = 'team' AND EXISTS (SELECT 1 FROM team_members tm"
+            " JOIN teams t ON t.id = tm.team_id"
+            " WHERE tm.sub = ? AND t.tenant_id = ?))"
+            " OR (m.visibility = 'org' AND EXISTS (SELECT 1 FROM org_members om"
+            " WHERE om.tenant_id = ? AND om.sub = ? AND om.status = 'active')))"
+        )
+        params.extend(
+            [
+                principal.subject,
+                principal.subject,
+                principal.tenant_id,
+                principal.tenant_id,
+                principal.subject,
+            ]
+        )
+        return " " + " ".join(fragments), params
+
     def _build_filter_sql(
         self,
         *,
@@ -1072,6 +1161,8 @@ class MemoryDB:
         until: str | None = None,
         min_importance: float = 0.0,
         include_archived: bool = False,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
     ) -> tuple[str, list]:
         """Build the shared WHERE-tail used by FTS + vec search paths.
 
@@ -1083,6 +1174,9 @@ class MemoryDB:
         Bitemporal (mem_003): always excludes superseded/soft-deleted rows
         (``valid_to IS NOT NULL``) -- neither FTS nor vec search should ever
         surface a historical version, regardless of ``include_archived``.
+
+        Wave B: ``principal`` appends the tenant/visibility tail from
+        :meth:`_build_rbac_sql` (``None`` ⇒ no-op, local mode unchanged).
         """
         fragments = ["AND m.valid_to IS NULL"]
         params: list = []
@@ -1100,6 +1194,10 @@ class MemoryDB:
             params.append(float(min_importance))
         if not include_archived:
             fragments.append("AND m.archived_at IS NULL")
+        rbac_sql, rbac_params = self._build_rbac_sql(principal, sub)
+        if rbac_sql:
+            fragments.append(rbac_sql)
+            params.extend(rbac_params)
 
         return " " + " ".join(fragments) if fragments else "", params
 
@@ -1115,12 +1213,17 @@ class MemoryDB:
         until: str | None = None,
         min_importance: float = 0.0,
         include_archived: bool = False,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
     ) -> dict[str, dict]:
         """Execute FTS5 search with tiered queries and BM25 column weights.
 
         Combines PHRASE, AND, and OR tiers into a single UNION ALL query
         with a CTE to select only the highest-priority tier with matches,
         eliminating N+1 query overhead from the tiered fallback loop.
+
+        Wave B: ``principal`` threads into :meth:`_build_filter_sql`
+        (``None`` ⇒ no-op, local mode unchanged).
         """
         results: dict[str, dict] = {}
         fts_queries = _build_fts_queries(query)
@@ -1147,6 +1250,8 @@ class MemoryDB:
             until=until,
             min_importance=min_importance,
             include_archived=include_archived,
+            principal=principal,
+            sub=sub,
         )
         if extra_sql:
             filter_fragments.append(extra_sql)
@@ -1348,6 +1453,8 @@ class MemoryDB:
         offset: int = 0,
         *,
         include_archived: bool = False,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
     ) -> list[dict]:
         """List memories with optional category filter.
 
@@ -1355,9 +1462,10 @@ class MemoryDB:
         (``archived_at IS NOT NULL``). Pass ``include_archived=True`` to see
         them — symmetric with :meth:`search` semantics.
 
-        Bitemporal (mem_003): always excludes superseded/soft-deleted rows
-        (``valid_to IS NOT NULL``), independent of ``include_archived`` --
         archival and supersession are orthogonal states.
+
+        Wave B: ``principal`` appends the tenant/visibility tail from
+        :meth:`_build_rbac_sql` (``None`` ⇒ no-op, local mode unchanged).
         """
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
@@ -1365,48 +1473,59 @@ class MemoryDB:
         if category:
             if include_archived:
                 sql = (
-                    "SELECT * FROM memories "
-                    "WHERE category = ? AND valid_to IS NULL "
-                    "ORDER BY updated_at DESC "
-                    "LIMIT ? OFFSET ?"
+                    "SELECT m.* FROM memories m "
+                    "WHERE m.category = ? AND m.valid_to IS NULL "
                 )
             else:
                 sql = (
-                    "SELECT * FROM memories "
-                    "WHERE category = ? AND archived_at IS NULL AND valid_to IS NULL "
-                    "ORDER BY updated_at DESC "
-                    "LIMIT ? OFFSET ?"
+                    "SELECT m.* FROM memories m "
+                    "WHERE m.category = ? AND m.archived_at IS NULL"
+                    " AND m.valid_to IS NULL "
                 )
-            rows = self._conn.execute(sql, (category, limit, offset)).fetchall()
+            params: list = [category]
         else:
             if include_archived:
-                sql = (
-                    "SELECT * FROM memories "
-                    "WHERE valid_to IS NULL "
-                    "ORDER BY updated_at DESC "
-                    "LIMIT ? OFFSET ?"
-                )
+                sql = "SELECT m.* FROM memories m WHERE m.valid_to IS NULL "
             else:
                 sql = (
-                    "SELECT * FROM memories "
-                    "WHERE archived_at IS NULL AND valid_to IS NULL "
-                    "ORDER BY updated_at DESC "
-                    "LIMIT ? OFFSET ?"
+                    "SELECT m.* FROM memories m "
+                    "WHERE m.archived_at IS NULL AND m.valid_to IS NULL "
                 )
-            rows = self._conn.execute(sql, (limit, offset)).fetchall()
+            params = []
+        rbac_sql, rbac_params = self._build_rbac_sql(principal, sub)
+        if rbac_sql:
+            sql += rbac_sql + " "
+            params.extend(rbac_params)
+        sql += "ORDER BY m.updated_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = self._conn.execute(sql, params).fetchall()
 
         return [dict(r) for r in rows]
 
-    def get(self, memory_id: str) -> dict | None:
+    def get(
+        self,
+        memory_id: str,
+        *,
+        principal: "PrincipalContext | None" = None,
+        sub: str | None = None,
+    ) -> dict | None:
         """Get a single memory by ID.
 
         Bitemporal (mem_003): only returns the row when it is still current
         (``valid_to IS NULL``). A superseded/soft-deleted id returns None --
         callers must switch to the id returned by :meth:`update`.
+
+        Wave B: ``principal`` appends the tenant/visibility tail from
+        :meth:`_build_rbac_sql`, so a cross-tenant id reads as not-found
+        (no error leaks row existence). ``None`` ⇒ legacy behavior.
         """
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL", (memory_id,)
-        ).fetchone()
+        sql = "SELECT m.* FROM memories m WHERE m.id = ? AND m.valid_to IS NULL"
+        params: list = [memory_id]
+        rbac_sql, rbac_params = self._build_rbac_sql(principal, sub)
+        if rbac_sql:
+            sql += rbac_sql
+            params.extend(rbac_params)
+        row = self._conn.execute(sql, params).fetchone()
         return dict(row) if row else None
 
     def update(
@@ -1944,13 +2063,23 @@ class MemoryDB:
 
         return merged
 
-    def check_duplicate(self, content: str, threshold: float = 0.9) -> dict | None:
-        """Check if similar memory exists. Returns match info or None."""
+    def check_duplicate(
+        self,
+        content: str,
+        threshold: float = 0.9,
+        *,
+        principal: "PrincipalContext | None" = None,
+    ) -> dict | None:
+        """Check if similar memory exists. Returns match info or None.
+
+        Wave B: ``principal`` scopes the probe to rows the caller may see,
+        so the dedup hint cannot oracle cross-tenant content.
+        """
         words = content.split()[:10]
         query = " ".join(words)
         if not query.strip():
             return None
-        results = self.search(query=query, limit=3)
+        results = self.search(query=query, limit=3, principal=principal)
 
         if not results:
             return None

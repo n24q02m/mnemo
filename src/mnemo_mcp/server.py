@@ -671,6 +671,66 @@ async def _embed(
         raise
 
 
+def _enterprise_principal():
+    """Return the request principal, or ``None`` in local mode.
+
+    Wave B: the middleware only pins a ``PrincipalContext`` when
+    ``MNEMO_ENTERPRISE`` is on and the verified claims parse, so a ``None``
+    here means legacy single-user behavior — every enforcement site below
+    treats ``None`` as no-op.
+    """
+    from mnemo_mcp.enterprise.identity import get_current_principal
+
+    return get_current_principal()
+
+
+def _request_sub():
+    """Cloudflare per-request sub scope, or ``None`` on plain SQLite."""
+    from mnemo_mcp.credential_state import get_current_sub
+
+    return get_current_sub()
+
+
+def _audit_decision(
+    db, principal, *, operation, resource_type, resource_id, decision, reason
+):
+    """Append an authz audit event when the audit key is configured.
+
+    Synchronous (single short transaction, like every other ``db.*`` call —
+    handlers run it via ``asyncio.to_thread``). A missing key only drops the
+    event with a warning; the allow/deny itself never depends on audit.
+    """
+    from datetime import UTC, datetime
+
+    key = settings.audit_hash_key
+    if not key:
+        logger.warning(f"[AUDIT] dropping {operation} event: audit key unset")
+        return None
+    return db.append_audit_event(
+        {
+            "tenant_id": principal.tenant_id,
+            "actor_sub": principal.subject,
+            "actor_roles": sorted(principal.roles),
+            "operation": operation,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "decision": decision,
+            "details": {"reason": reason},
+            "occurred_at": datetime.now(UTC).isoformat(),
+        },
+        key=key.encode("utf-8"),
+        key_id=settings.audit_key_id,
+    )
+
+
+def _deny(action: str):
+    """Generic deny payload — names the action, never row content."""
+    return {
+        "error": f"not authorized to {action}",
+        "suggestion": "Ask a tenant admin for access, or check the memory_id.",
+    }
+
+
 async def _handle_add(
     ctx: Context | None,
     content: str | None,
@@ -689,11 +749,39 @@ async def _handle_add(
             "suggestion": "Provide the 'content' parameter to save a new memory.",
         }
 
+    principal = _enterprise_principal()
+
+    if principal is not None:
+        from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
+
+        decision = AuthorizationService().check(
+            principal,
+            "memory.write_own",
+            ResourceRef(
+                type="tenant", id=principal.tenant_id, tenant_id=principal.tenant_id
+            ),
+        )
+        if not decision.allowed:
+            await asyncio.to_thread(
+                _audit_decision,
+                db,
+                principal,
+                operation="memory.write_own",
+                resource_type="memory",
+                resource_id="new",
+                decision="deny",
+                reason=decision.reason,
+            )
+            return _deny("add memories in this tenant")
+
     # Dedup check before insert
     dedup_warning = None
     try:
         dedup_result = await asyncio.to_thread(
-            db.check_duplicate, content, settings.dedup_threshold
+            db.check_duplicate,
+            content,
+            settings.dedup_threshold,
+            principal=principal,
         )
         if dedup_result and dedup_result.get("duplicate"):
             dedup_warning = dedup_result
@@ -709,12 +797,19 @@ async def _handle_add(
         backend=embedding_backend,
     )
     try:
+        add_kwargs: dict = {}
+        if principal is not None:
+            add_kwargs = {
+                "tenant_id": principal.tenant_id,
+                "owner_sub": principal.subject,
+            }
         memory_id = await asyncio.to_thread(
             db.add,
             content=content,
             category=category or "general",
             tags=tags,
             embedding=embedding,
+            **add_kwargs,
         )
     except ValueError as e:
         msg = str(e)
@@ -868,6 +963,8 @@ async def _handle_search(
         min_importance=min_importance,
         include_archived=include_archived,
         candidate_pool=rerank_pool,
+        principal=_enterprise_principal(),
+        sub=_request_sub(),
     )
 
     reranked = False
@@ -956,6 +1053,8 @@ async def _handle_list(
         db.list_memories,
         category=category,
         limit=limit,
+        principal=_enterprise_principal(),
+        sub=_request_sub(),
     )
     response: dict = {
         "count": len(results),
@@ -995,6 +1094,43 @@ async def _handle_update(
             "example": "action='update', memory_id='abc123', content='updated content'",
             "suggestion": "Provide the 'memory_id' parameter to update a specific memory.",
         }
+    principal = _enterprise_principal()
+    if principal is not None:
+        from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
+
+        row = await asyncio.to_thread(
+            db.get, memory_id, principal=principal, sub=_request_sub()
+        )
+        if row is None:
+            return {
+                "error": f"Memory {memory_id} not found",
+                "suggestion": "Verify the memory_id using action='search' or action='list'.",
+            }
+        action = (
+            "memory.write_own"
+            if row.get("owner_sub") == principal.subject
+            else "memory.write_shared"
+        )
+        resource = ResourceRef(
+            type="memory",
+            id=memory_id,
+            tenant_id=row.get("tenant_id") or "local",
+            owner_sub=row.get("owner_sub"),
+            visibility=row.get("visibility") or "private",
+        )
+        decision = AuthorizationService().check(principal, action, resource)
+        if not decision.allowed:
+            await asyncio.to_thread(
+                _audit_decision,
+                db,
+                principal,
+                operation=action,
+                resource_type="memory",
+                resource_id=memory_id,
+                decision="deny",
+                reason=decision.reason,
+            )
+            return _deny("update this memory")
 
     embedding = None
     if content:
@@ -1004,7 +1140,6 @@ async def _handle_update(
             embedding_dims,
             backend=embedding_backend,
         )
-
     try:
         new_id = await asyncio.to_thread(
             db.update,
@@ -1057,6 +1192,44 @@ async def _handle_delete(
             "example": "action='delete', memory_id='abc123'",
             "suggestion": "Provide the 'memory_id' parameter to delete a specific memory.",
         }
+
+    principal = _enterprise_principal()
+    if principal is not None:
+        from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
+
+        row = await asyncio.to_thread(
+            db.get, memory_id, principal=principal, sub=_request_sub()
+        )
+        if row is None:
+            return {
+                "error": f"Memory {memory_id} not found",
+                "suggestion": "Verify the memory_id using action='search' or action='list'.",
+            }
+        action = (
+            "memory.write_own"
+            if row.get("owner_sub") == principal.subject
+            else "memory.write_shared"
+        )
+        resource = ResourceRef(
+            type="memory",
+            id=memory_id,
+            tenant_id=row.get("tenant_id") or "local",
+            owner_sub=row.get("owner_sub"),
+            visibility=row.get("visibility") or "private",
+        )
+        decision = AuthorizationService().check(principal, action, resource)
+        if not decision.allowed:
+            await asyncio.to_thread(
+                _audit_decision,
+                db,
+                principal,
+                operation=action,
+                resource_type="memory",
+                resource_id=memory_id,
+                decision="deny",
+                reason=decision.reason,
+            )
+            return _deny("delete this memory")
 
     ok = await asyncio.to_thread(db.delete, memory_id)
     if ok:

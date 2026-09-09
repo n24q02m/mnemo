@@ -105,8 +105,10 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
+if TYPE_CHECKING:
+    from mnemo_mcp.enterprise.identity import PrincipalContext
 from loguru import logger
 from mcp_core.storage.d1 import D1Backend, d1_backend_from_env
 from mcp_core.storage.vectorize import VectorizeBackend, vectorize_backend_from_env
@@ -289,7 +291,11 @@ class _D1Connection:
         if not tables:
             return sql, params_list
 
-        if re.search(r"(?:\b[A-Za-z_]\w*\.)?sub\b", sql, re.IGNORECASE):
+        # Wave B: ``owner_sub`` (mem_006) contains ``sub`` but is NOT the
+        # connection scope — the lookbehind keeps the larger identifier from
+        # suppressing injection, while ``m.sub``/``om.sub``/bare ``sub``
+        # still count as an explicit tenant boundary.
+        if re.search(r"(?<![A-Za-z0-9_])(?:[A-Za-z_]\w*\.)?sub\b", sql, re.IGNORECASE):
             return sql, params_list
 
         if len(tables) != 1:
@@ -511,7 +517,11 @@ class MemoryDBCfBackend:
     # -- Borrowed from MemoryDB -------------------------------------------
     # Pure scoring helpers: they touch only ``self._recency_half_life``.
     _build_filter_sql = MemoryDB._build_filter_sql
+    # Wave B (spec §4.2): the tenant/visibility tail. Borrowed like the
+    # filter builder above — it only formats SQL + params, never touches
+    # ``self._conn``, so the D1 single-statement shape is preserved.
     _calc_recency = MemoryDB._calc_recency
+    _build_rbac_sql = MemoryDB._build_rbac_sql
     _calc_frequency = MemoryDB._calc_frequency
     _compute_hybrid_scores = MemoryDB._compute_hybrid_scores
     rrf_fuse = staticmethod(MemoryDB.rrf_fuse)
@@ -921,8 +931,16 @@ class MemoryDBCfBackend:
         until: str | None = None,
         min_importance: float = 0.0,
         include_archived: bool = False,
+        principal: PrincipalContext | None = None,
+        sub: str | None = None,
     ) -> dict[str, dict]:
-        """Run FTS against the current tenant, preserving duplicate logical ids."""
+        """Run FTS against the current tenant, preserving duplicate logical ids.
+
+        Wave B: ``principal``/``sub`` thread into the borrowed
+        :meth:`_build_filter_sql` exactly like the SQLite path (``None`` ⇒
+        the explicit ``m.sub = ?`` connection scope below is the whole
+        boundary — legacy behavior unchanged).
+        """
         self._conn.clear_error()
         results: dict[str, dict] = {}
         fts_queries = _build_fts_queries(query)
@@ -941,13 +959,14 @@ class MemoryDBCfBackend:
                 "(SELECT value FROM json_each(?)))"
             )
             filter_params.append(json.dumps(tags))
-
         extra_sql, extra_params = self._build_filter_sql(
             context_type=context_type,
             since=since,
             until=until,
             min_importance=min_importance,
             include_archived=include_archived,
+            principal=principal,
+            sub=sub if sub is not None else self.sub,
         )
         if extra_sql:
             filter_fragments.append(extra_sql)
@@ -1124,6 +1143,8 @@ class MemoryDBCfBackend:
         min_importance: float = 0.0,
         include_archived: bool = False,
         candidate_pool: int | None = None,
+        principal: PrincipalContext | None = None,
+        sub: str | None = None,
     ) -> list[dict]:
         """Hybrid FTS5 + Vectorize search. See :meth:`MemoryDB.search`.
 
@@ -1142,13 +1163,14 @@ class MemoryDBCfBackend:
 
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
-
-        filter_kwargs = {
+        filter_kwargs: dict = {
             "context_type": context_type,
             "since": since,
             "until": until,
             "min_importance": min_importance,
             "include_archived": include_archived,
+            "principal": principal,
+            "sub": sub if sub is not None else self.sub,
         }
 
         pool = candidate_pool if candidate_pool is not None else max(limit * 10, 50)
