@@ -76,6 +76,9 @@ MEMORY_COLUMNS: tuple[str, ...] = (
     "valid_from",
     "valid_to",
     "superseded_by",
+    "tenant_id",
+    "owner_sub",
+    "visibility",
 )
 
 # What the importer writes when a JSONL record omits a column. Mirrors the
@@ -99,6 +102,9 @@ _IMPORT_DEFAULTS: dict[str, object] = {
     "valid_from": None,
     "valid_to": None,
     "superseded_by": None,
+    "tenant_id": "local",
+    "owner_sub": None,
+    "visibility": "private",
 }
 
 # `tags` holds a JSON array as TEXT. Emitting it through `json()` makes the

@@ -120,6 +120,9 @@ FULL_ROW: dict[str, object] = {
     "valid_from": "2024-05-06T07:08:09+00:00",
     "valid_to": "2025-06-07T08:09:10+00:00",
     "superseded_by": "fidelity-002",
+    "tenant_id": "acme",
+    "owner_sub": "u9",
+    "visibility": "team",
 }
 
 _JSON_VALUED_COLUMNS = frozenset({"tags"})
