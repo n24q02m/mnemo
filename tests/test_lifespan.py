@@ -29,6 +29,11 @@ _MIGRATION_3 = (
     / "migrations"
     / "0003_vector_state.sql"
 )
+_MIGRATION_5 = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "migrations"
+    / "0005_enterprise_rbac.sql"
+)
 
 
 @pytest.fixture
@@ -319,6 +324,7 @@ class TestStartupLogNamesTheStoreItRead:
         conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
         conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
         conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
+        conn.executescript(_MIGRATION_5.read_text(encoding="utf-8"))
         monkeypatch.setenv("MEMORY_DB_BACKEND", "cf-d1")
         monkeypatch.setattr(
             "mnemo_mcp.db_cf.d1_backend_from_env",

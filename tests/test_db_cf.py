@@ -13,8 +13,8 @@ How the D1 side is exercised
 implements that transport by transcribing ``src/worker.ts``'s ``d1Outbound``
 handler -- ``POST /query`` runs ``prepare(sql).bind(...params).all()`` and
 answers ``Response.json({ results })``; every other route 404s -- against a real
-SQLite database that has ``migrations/0001_init.sql`` and the additive
-``migrations/0002_per_sub_isolation.sql`` applied.
+SQLite database that has the D1 migrations 0001, 0002, 0003, and 0005 applied
+(0004 enterprise_audit stays layered by the enterprise suites that need it).
 
 What that reproduces faithfully: the SQL text and bound parameters actually sent,
 the JSON request/response envelope, rows as JSON objects, one statement per
@@ -63,6 +63,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
 _MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
+_MIGRATION_5 = _REPO_ROOT / "migrations" / "0005_enterprise_rbac.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 
@@ -114,6 +115,7 @@ def d1_conn(tmp_path) -> sqlite3.Connection:
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_5.read_text(encoding="utf-8"))
     return conn
 
 

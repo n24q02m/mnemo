@@ -65,6 +65,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
 _MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
+_MIGRATION_5 = _REPO_ROOT / "migrations" / "0005_enterprise_rbac.sql"
 _WORKER_TS = _REPO_ROOT / "src" / "worker.ts"
 
 # Test vectors are 8-wide for readability. `test_wire_carries_full_width_vector`
@@ -209,6 +210,7 @@ def fake_worker(tmp_path) -> FakeD1Worker:
     conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
     conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_5.read_text(encoding="utf-8"))
     return FakeD1Worker(conn)
 
 

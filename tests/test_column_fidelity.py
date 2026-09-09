@@ -45,6 +45,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
 _MIGRATION_3 = _REPO_ROOT / "migrations" / "0003_vector_state.sql"
+_MIGRATION_5 = _REPO_ROOT / "migrations" / "0005_enterprise_rbac.sql"
 
 
 def _schema_table_info() -> list[tuple]:
@@ -147,6 +148,7 @@ def db_factory(request, tmp_path):
             conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
             conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
             conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
+            conn.executescript(_MIGRATION_5.read_text(encoding="utf-8"))
             db = _cf_db(FakeD1Worker(conn))
         created.append(db)
         return db

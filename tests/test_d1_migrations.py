@@ -27,8 +27,9 @@ from mnemo_mcp.db import MemoryDB
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_4 = _REPO_ROOT / "migrations" / "0004_enterprise_audit.sql"
+_MIGRATION_5 = _REPO_ROOT / "migrations" / "0005_enterprise_rbac.sql"
 
-# Every object the applied D1 migrations (0001 + 0004) are expected to create.
+# Every object the applied D1 migrations (0001 + 0004 + 0005) are expected to create.
 # Written out in full rather than derived, so that adding or dropping DDL
 # forces a deliberate edit here.
 EXPECTED_TABLES = {
@@ -40,6 +41,10 @@ EXPECTED_TABLES = {
     "memory_entity_links",
     "store_meta",
     "enterprise_audit",
+    "tenants",
+    "org_members",
+    "teams",
+    "team_members",
 }
 EXPECTED_INDEXES = {
     "idx_archived_memories_archived_at",
@@ -53,6 +58,8 @@ EXPECTED_INDEXES = {
     "idx_memory_entities_name_type",
     "idx_memory_entity_links_entity_id",
     "idx_enterprise_audit_tenant_time",
+    "idx_memories_tenant_vis",
+    "idx_memories_owner",
 }
 EXPECTED_TRIGGERS = {"memories_ai", "memories_ad", "memories_au"}
 
@@ -89,6 +96,7 @@ def migrated_conn(migration_sql: str) -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.executescript(migration_sql)
     conn.executescript(_MIGRATION_4.read_text(encoding="utf-8"))
+    conn.executescript(_MIGRATION_5.read_text(encoding="utf-8"))
     return conn
 
 
@@ -278,6 +286,44 @@ class TestEnterpriseAuditMigration:
         assert "vec0" not in sql and "sqlite_vec" not in sql
         assert "PRAGMA" not in sql
         assert "BEGIN" not in sql
+
+
+class TestEnterpriseRbacMigration:
+    """migrations/0005_enterprise_rbac.sql pins the Wave B RBAC tables (spec §4.2).
+
+    Table set, memories columns, and indexes must match mem_006 exactly —
+    any SQLite↔D1 drift fails here first.
+    """
+
+    def test_migration_file_exists(self):
+        assert _MIGRATION_5.is_file(), f"missing migration: {_MIGRATION_5}"
+
+    def test_pins_rbac_tables(self):
+        sql = _MIGRATION_5.read_text(encoding="utf-8")
+        assert "CREATE TABLE IF NOT EXISTS tenants" in sql
+        assert "CREATE TABLE IF NOT EXISTS org_members" in sql
+        assert "CREATE TABLE IF NOT EXISTS teams" in sql
+        assert "CREATE TABLE IF NOT EXISTS team_members" in sql
+        assert "PRIMARY KEY (tenant_id, sub)" in sql
+        assert "UNIQUE(tenant_id, name)" in sql
+
+    def test_pins_memories_columns_and_indexes(self):
+        sql = _MIGRATION_5.read_text(encoding="utf-8")
+        assert "ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'local'" in sql
+        assert "ADD COLUMN owner_sub TEXT NULL" in sql
+        assert "ADD COLUMN visibility TEXT NOT NULL" in sql
+        assert "idx_memories_tenant_vis" in sql
+        assert "idx_memories_owner" in sql
+
+    def test_single_statement_no_vec0_or_pragma_or_transaction(self):
+        raw = _MIGRATION_5.read_text(encoding="utf-8")
+        sql = _strip_sql_comments(raw)
+        assert "vec0" not in sql and "sqlite_vec" not in sql
+        assert "PRAGMA" not in sql
+        assert "BEGIN" not in sql
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        # 4 CREATE TABLE + 3 ALTER TABLE + 2 CREATE INDEX, one write each.
+        assert len(statements) == 9, f"expected 9 statements, got {len(statements)}"
 
 
 def test_wrangler_config_points_at_migrations_dir():

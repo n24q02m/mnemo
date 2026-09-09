@@ -39,7 +39,11 @@ _MIGRATION_4 = (
 
 @pytest.fixture
 def cf_backend(d1_conn, fake_worker) -> MemoryDBCfBackend:
+    # 0004 (enterprise_audit) is layered here; 0005 (RBAC) already rides the
+    # shared d1_conn lineage from tests/test_db_cf.py.
     d1_conn.executescript(_MIGRATION_4.read_text(encoding="utf-8"))
+    cols = {r[1] for r in d1_conn.execute("PRAGMA table_info(memories)")}
+    assert {"tenant_id", "owner_sub", "visibility"} <= cols
     return MemoryDBCfBackend(D1Backend(base_url="http://d1.internal", http=fake_worker))
 
 
