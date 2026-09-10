@@ -1131,6 +1131,38 @@ async def _handle_update(
                 reason=decision.reason,
             )
             return _deny("update this memory")
+        if action == "memory.write_shared":
+            # Admin/owner lifecycle on another member's row: allowed, audited.
+            await asyncio.to_thread(
+                _audit_decision,
+                db,
+                principal,
+                operation=action,
+                resource_type="memory",
+                resource_id=memory_id,
+                decision="allow",
+                reason=decision.reason,
+            )
+        elif resource.visibility == "team":
+            # Own team row, but the seat may be gone: shared-write v1
+            # needs a live team membership, read from the DB.
+            from mnemo_mcp.enterprise.membership import member_teams
+
+            seats = await asyncio.to_thread(
+                member_teams, db, principal.subject, principal.tenant_id
+            )
+            if not seats:
+                await asyncio.to_thread(
+                    _audit_decision,
+                    db,
+                    principal,
+                    operation=action,
+                    resource_type="memory",
+                    resource_id=memory_id,
+                    decision="deny",
+                    reason="no live team seat",
+                )
+                return _deny("update this memory")
 
     embedding = None
     if content:

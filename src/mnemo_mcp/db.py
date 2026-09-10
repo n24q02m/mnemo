@@ -1140,7 +1140,7 @@ class MemoryDB:
             " JOIN teams t ON t.id = tm.team_id"
             " WHERE tm.sub = ? AND t.tenant_id = ?))"
             " OR (m.visibility = 'org' AND EXISTS (SELECT 1 FROM org_members om"
-            " WHERE om.tenant_id = ? AND om.sub = ? AND om.status = 'active')))"
+            " WHERE om.tenant_id = ? AND om.sub = ? AND om.status = 'active'))"
         )
         params.extend(
             [
@@ -1151,6 +1151,14 @@ class MemoryDB:
                 principal.subject,
             ]
         )
+        if principal.roles & {"owner", "admin"}:
+            # Owner/admin lifecycle (spec §4.2): the whole tenant is visible
+            # for administration — otherwise an admin could never resolve
+            # another member's shared row to audit or fix it. Write
+            # authorization still routes through authz.check.
+            fragments.append(" OR m.tenant_id = ?")
+            params.append(principal.tenant_id)
+        fragments.append(")")
         return " " + " ".join(fragments), params
 
     def _build_filter_sql(
