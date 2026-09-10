@@ -1177,26 +1177,10 @@ async def _handle_update(
                 decision="allow",
                 reason=decision.reason,
             )
-        elif resource.visibility == "team":
-            # Own team row, but the seat may be gone: shared-write v1
-            # needs a live team membership, read from the DB.
-            from mnemo_mcp.enterprise.membership import member_teams
-
-            seats = await asyncio.to_thread(
-                member_teams, db, principal.subject, principal.tenant_id
-            )
-            if not seats:
-                await asyncio.to_thread(
-                    _audit_decision,
-                    db,
-                    principal,
-                    operation=action,
-                    resource_type="memory",
-                    resource_id=memory_id,
-                    decision="deny",
-                    reason="no live team seat",
-                )
-                return _deny("update this memory")
+        # Own team rows need no second seat check here: the read filter that
+        # resolved ``row`` already gates team visibility on a live
+        # ``team_members`` seat (DB-authoritative). A revoked seat makes the
+        # row read as not-found before this write gate runs.
 
     embedding = None
     if content:
