@@ -1291,9 +1291,7 @@ class MemoryDB:
                 )
 
                 imp = mem.get("importance")
-                importance = max(0.0, min(1.0, float(imp))) if imp else 0.0
-
-                mem["score"] = base * (1.0 + importance)
+                mem["score"] = base * (1.0 + float(imp)) if imp else base
                 scored.append(mem)
         else:
             for mem in results.values():
@@ -1312,9 +1310,7 @@ class MemoryDB:
                 )
 
                 imp = mem.get("importance")
-                importance = max(0.0, min(1.0, float(imp))) if imp else 0.0
-
-                mem["score"] = base * (1.0 + importance)
+                mem["score"] = base * (1.0 + float(imp)) if imp else base
                 scored.append(mem)
 
         scored.sort(key=lambda m: m["score"], reverse=True)
