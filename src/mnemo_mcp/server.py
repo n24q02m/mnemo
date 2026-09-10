@@ -25,7 +25,7 @@ from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
 from mnemo_mcp.credential_state import _current_sub
-from mnemo_mcp.db import MemoryDB
+from mnemo_mcp.db import MemoryDB, _now_iso
 from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
 from mnemo_mcp.secure_file import write_owner_only
 
@@ -684,6 +684,33 @@ def _enterprise_principal():
     return get_current_principal()
 
 
+async def _require_active_member(db, principal):
+    """Deprovision gate (spec §4.2): a disabled org seat is denied early.
+
+    Runs right after the principal exists, before any row work. Returns the
+    deny payload, or ``None`` when the seat is active (or local mode, or the
+    membership row is absent — config gate, DB only tightens).
+    """
+    from mnemo_mcp.enterprise.membership import member_status
+
+    status = await asyncio.to_thread(
+        member_status, db, principal.subject, principal.tenant_id
+    )
+    if status == "disabled":
+        await asyncio.to_thread(
+            _audit_decision,
+            db,
+            principal,
+            operation="auth.failure",
+            resource_type="tenant",
+            resource_id=principal.tenant_id,
+            decision="deny",
+            reason="membership disabled (deprovisioned)",
+        )
+        return _deny("use this tenant (membership disabled)")
+    return None
+
+
 def _request_sub():
     """Cloudflare per-request sub scope, or ``None`` on plain SQLite."""
     from mnemo_mcp.credential_state import get_current_sub
@@ -750,8 +777,11 @@ async def _handle_add(
         }
 
     principal = _enterprise_principal()
-
     if principal is not None:
+        denied = await _require_active_member(db, principal)
+        if denied is not None:
+            return denied
+
         from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
 
         decision = AuthorizationService().check(
@@ -1096,6 +1126,10 @@ async def _handle_update(
         }
     principal = _enterprise_principal()
     if principal is not None:
+        denied = await _require_active_member(db, principal)
+        if denied is not None:
+            return denied
+
         from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
 
         row = await asyncio.to_thread(
@@ -1227,6 +1261,10 @@ async def _handle_delete(
 
     principal = _enterprise_principal()
     if principal is not None:
+        denied = await _require_active_member(db, principal)
+        if denied is not None:
+            return denied
+
         from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
 
         row = await asyncio.to_thread(
@@ -1270,6 +1308,101 @@ async def _handle_delete(
         "error": f"Memory {memory_id} not found",
         "suggestion": "Verify the memory_id using action='search' or action='list'.",
     }
+
+
+async def _handle_transfer(
+    ctx: Context | None,
+    memory_id: str | None,
+    new_owner_sub: str | None,
+) -> dict[str, typing.Any]:
+    """Admin lifecycle: move ``owner_sub`` of one memory (spec §4.2).
+
+    Deliberately NOT an MCP tool: internal seam for the admin surface and
+    tests. One guarded UPDATE statement; every attempt (allow or deny) is
+    audited as ``admin.transfer``.
+    """
+    db, _, _ = _get_ctx(ctx)
+    if not memory_id or not new_owner_sub:
+        return {
+            "error": "memory_id and new_owner_sub are required for transfer",
+            "suggestion": "Provide both the memory_id and the new owner's subject.",
+        }
+
+    principal = _enterprise_principal()
+    if principal is not None:
+        from mnemo_mcp.enterprise.authz import AuthorizationService, ResourceRef
+
+        resource = ResourceRef(
+            type="memory", id=memory_id, tenant_id=principal.tenant_id
+        )
+        decision = AuthorizationService().check(principal, "admin.transfer", resource)
+        if not decision.allowed:
+            await asyncio.to_thread(
+                _audit_decision,
+                db,
+                principal,
+                operation="admin.transfer",
+                resource_type="memory",
+                resource_id=memory_id,
+                decision="deny",
+                reason=decision.reason,
+            )
+            return _deny("transfer ownership of this memory")
+
+        row = await asyncio.to_thread(
+            db.get, memory_id, principal=principal, sub=_request_sub()
+        )
+        if row is None:
+            return {
+                "error": f"Memory {memory_id} not found",
+                "suggestion": "Verify the memory_id using action='search' or action='list'.",
+            }
+        member_rows = await asyncio.to_thread(
+            db._conn.execute,
+            "SELECT 1 FROM org_members WHERE tenant_id = ? AND sub = ?"
+            " AND status = 'active'",
+            (principal.tenant_id, new_owner_sub),
+        )
+        if member_rows.fetchone() is None:
+            return {
+                "error": f"new_owner_sub {new_owner_sub!r} is not an active"
+                " member of this tenant",
+            }
+
+        def _do_transfer() -> bool:
+            cur = db._conn.execute(
+                "UPDATE memories SET owner_sub = ?, updated_at = ?"
+                " WHERE id = ? AND tenant_id = ? AND valid_to IS NULL",
+                (
+                    new_owner_sub,
+                    _now_iso(),
+                    memory_id,
+                    principal.tenant_id,
+                ),
+            )
+            db._conn.commit()
+            return cur.rowcount > 0
+
+        moved = await asyncio.to_thread(_do_transfer)
+        if not moved:
+            return {
+                "error": f"Memory {memory_id} not found",
+                "suggestion": "Verify the memory_id using action='search' or action='list'.",
+            }
+        await asyncio.to_thread(
+            _audit_decision,
+            db,
+            principal,
+            operation="admin.transfer",
+            resource_type="memory",
+            resource_id=memory_id,
+            decision="allow",
+            reason=f"owner_sub -> {new_owner_sub}",
+        )
+        return {"status": "transferred", "id": memory_id, "owner_sub": new_owner_sub}
+
+    # Local mode: no principal, no lifecycle semantics.
+    return {"error": "transfer requires an enterprise principal"}
 
 
 async def _handle_export(ctx: Context | None) -> dict[str, typing.Any]:
