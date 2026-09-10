@@ -47,3 +47,7 @@ file before opening anything against this repository.
 ## 2026-08-01 - Missing Suggestion in as_of Action
 **Learning:** Found an opportunity to improve Developer Experience (DX). The `memory(action="as_of")` call lacked an explicit check for the `as_of` parameter and threw a raw unhelpful error or skipped downstream. Added an explicit validation step returning a structured error and suggestion.
 **Action:** When adding validation checks for API endpoints in purely backend MCP servers, ensure they return a structured dictionary containing both an `error` message and a `suggestion` for actionable recovery.
+
+## 2026-09-04 - Saturated Error Surface Skip
+**Learning:** Reviewed `src/mnemo_mcp/server.py` for missing `suggestion` keys in JSON error responses. All error paths (including invalid configurations, topics, actions, and temporal/graph queries) already return actionable suggestions or apply fuzzy matching via `difflib.get_close_matches`. There is no missing DX surface to improve today.
+**Action:** Record a skip in the journal and stop without creating a PR, as instructed for repositories with no UI when the API response surface is completely healthy.
