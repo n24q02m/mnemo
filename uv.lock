@@ -1133,7 +1133,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
-    { name = "mcp", extras = ["cli"], specifier = "<2" },
+    { name = "mcp", extras = ["cli"], specifier = "<3" },
     { name = "n24q02m-mcp-core", extras = ["llm"], specifier = "==1.23.2" },
     { name = "pydantic" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
