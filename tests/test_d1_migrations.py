@@ -86,7 +86,7 @@ def migration_sql() -> str:
 @pytest.fixture(scope="module")
 def migrated_conn(migration_sql: str) -> sqlite3.Connection:
     """A blank in-memory SQLite database with the migrations applied."""
-    conn = sqlite3.connect(":memory:")
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
     conn.executescript(migration_sql)
     conn.executescript(_MIGRATION_4.read_text(encoding="utf-8"))
     return conn
@@ -181,7 +181,7 @@ class TestFtsTriggersKeepIndexInSync:
 
     @pytest.fixture
     def conn(self, migration_sql: str) -> sqlite3.Connection:
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
         conn.executescript(migration_sql)
         return conn
 

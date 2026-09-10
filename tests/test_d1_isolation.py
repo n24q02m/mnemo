@@ -53,7 +53,9 @@ def _make_backend(
 
 def test_fresh_upgrade_schema_is_scoped_and_0001_stays_legacy(tmp_path):
     """A fresh 0001 database becomes scoped only through the additive upgrade."""
-    conn = sqlite3.connect(tmp_path / "fresh.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "fresh.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
@@ -80,7 +82,9 @@ def test_fresh_upgrade_schema_is_scoped_and_0001_stays_legacy(tmp_path):
 
 def test_upgrade_preserves_0001_rows_under_default_sub(tmp_path):
     """Rows present before 0002 remain readable and are explicitly default-scoped."""
-    conn = sqlite3.connect(tmp_path / "upgrade.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "upgrade.sqlite", isolation_level=None, check_same_thread=False
+    )
     conn.executescript(_MIGRATION_1.read_text(encoding="utf-8"))
     conn.execute(
         "INSERT INTO memories (id, content, created_at, updated_at, last_accessed) "
@@ -96,7 +100,9 @@ def test_upgrade_preserves_0001_rows_under_default_sub(tmp_path):
 
 def test_d1_backend_cannot_read_another_subs_rows(tmp_path):
     """D1 reads and Vectorize candidates are both restricted to the request sub."""
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
     vectors = FakeVectorizeWorker()
     sub_a = _make_backend(conn, vectors, "sub-a")
@@ -142,7 +148,9 @@ def test_d1_backend_cannot_read_another_subs_rows(tmp_path):
 
 def test_d1_vector_search_rejects_foreign_vector_id_with_matching_metadata(tmp_path):
     """A matching Vectorize tenant filter cannot authorize a foreign ID prefix."""
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
     vectors = FakeVectorizeWorker()
     db = _make_backend(conn, vectors, "sub-a")
@@ -174,7 +182,9 @@ def test_d1_related_memory_ids_stay_within_sub(tmp_path):
         upsert_entities,
     )
 
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
     sub_a = _make_backend(conn, FakeVectorizeWorker(), "sub-a")
     sub_b = _make_backend(conn, FakeVectorizeWorker(), "sub-b")
@@ -228,7 +238,9 @@ def test_d1_related_memory_ids_stay_within_sub(tmp_path):
 
 def test_server_binds_request_sub_to_a_fresh_backend(monkeypatch, tmp_path):
     """The HTTP request context, not Worker comments, chooses the D1 scope."""
-    conn = sqlite3.connect(tmp_path / "d1.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "d1.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
     base = _make_backend(conn, FakeVectorizeWorker(), "default")
     ctx = SimpleNamespace(
@@ -258,7 +270,9 @@ def test_temporal_graph_updates_use_the_d1_query_only_route(tmp_path):
     """Bitemporal edge backfills stay on the Worker's supported /query route."""
     from mnemo_mcp.temporal.store import store_kg_with_memory_id
 
-    conn = sqlite3.connect(tmp_path / "temporal.sqlite", isolation_level=None)
+    conn = sqlite3.connect(
+        tmp_path / "temporal.sqlite", isolation_level=None, check_same_thread=False
+    )
     _apply_migrations(conn)
     worker = FakeD1Worker(conn)
     from mcp_core.storage.d1 import D1Backend

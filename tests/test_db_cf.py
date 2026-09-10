@@ -637,7 +637,9 @@ class TestFailLoud:
     """Nothing here may report success, emptiness, or zero for a failure."""
 
     def test_missing_schema_fails_at_open(self, tmp_path):
-        blank = sqlite3.connect(tmp_path / "blank.sqlite", isolation_level=None)
+        blank = sqlite3.connect(
+            tmp_path / "blank.sqlite", isolation_level=None, check_same_thread=False
+        )
         with pytest.raises(RuntimeError, match="migrations apply"):
             _cf_db(FakeD1Worker(blank))
 

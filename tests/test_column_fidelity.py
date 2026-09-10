@@ -140,7 +140,11 @@ def db_factory(request, tmp_path):
         if request.param == "sqlite":
             db = MemoryDB(tmp_path / f"memories-{n}.db", embedding_dims=0)
         else:
-            conn = sqlite3.connect(tmp_path / f"d1-{n}.sqlite", isolation_level=None)
+            conn = sqlite3.connect(
+                tmp_path / f"d1-{n}.sqlite",
+                isolation_level=None,
+                check_same_thread=False,
+            )
             conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
             conn.executescript(_MIGRATION_2.read_text(encoding="utf-8"))
             conn.executescript(_MIGRATION_3.read_text(encoding="utf-8"))
