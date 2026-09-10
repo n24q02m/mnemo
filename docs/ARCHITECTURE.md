@@ -215,6 +215,66 @@ Migrations are idempotent: re-running `alembic upgrade head` on a current
 schema is a no-op. Backup-before-migrate is mandatory; the server refuses
 to upgrade when the backup write fails.
 
+## Enterprise RBAC (Wave B, spec §4.2)
+
+When `MNEMO_ENTERPRISE` is on, requests carry a verified
+`PrincipalContext` (subject / tenant / roles / teams) pinned by the
+auth_scope middleware; with it off every enforcement point below is a
+no-op and behavior is byte-for-byte legacy (pinned by
+`tests/enterprise/test_local_invariance.py`).
+
+### Schema
+
+Alembic `mem_006_enterprise_rbac` (D1 mirror: `migrations/0005_enterprise_rbac.sql`):
+
+- `tenants(id, name, settings, created_at)`
+- `org_members(tenant_id, sub, role owner|admin|member|auditor, status active|disabled, ...)`
+- `teams(id, tenant_id, name UNIQUE(tenant_id, name))` + `team_members(team_id, sub)`
+- `memories` gains `tenant_id TEXT NOT NULL DEFAULT 'local'`,
+  `owner_sub TEXT NULL`, `visibility CHECK IN ('private','team','org')`
+  plus `idx_memories_tenant_vis` and `idx_memories_owner`.
+
+Backfill semantic: rows that predate the migration read as
+`tenant_id='local'`, `owner_sub=NULL`, `visibility='private'` — the
+virtual "local owner" — so local-mode semantics do not change.
+Backups taken by `MemoryDB.__init__` remain the SQLite recovery path.
+
+### Enforcement points
+
+| Path | Mechanism |
+|---|---|
+| Reads (search / list / get / dedup probe) | `MemoryDB._build_rbac_sql` appends a tenant + visibility arm; borrowed verbatim by `MemoryDBCfBackend` so D1 stays single-statement. Owner/admin gain a whole-tenant arm (lifecycle reads). |
+| Writes (add / capture) | `owner_sub`/`tenant_id` pinned from the principal, never from arguments. |
+| Update / delete | Row resolved under the read filter first; own rows check `memory.write_own`, other members' rows `memory.write_shared` (admin/owner, audited allow/deny). Own team rows additionally require a live `team_members` seat. |
+| Every request | `_require_active_member`: `org_members.status='disabled'` (deprovision) is denied early with an `auth.failure` audit event. |
+| D1 connection scope | `_D1Connection._scope_sql` injects `sub = ?`; the Wave B `owner_sub` identifier no longer suppresses that injection. |
+
+Cross-tenant access is always an empty result, never an error, so row
+existence does not leak. Authz decisions are appended to the Wave A
+`enterprise_audit` hash chain when `MNEMO_AUDIT_HASH_KEY` is set; a
+missing key drops the event with a warning and never flips a decision.
+
+### Shared-write v1 (deliberately narrow)
+
+A member may write into team/org scope only rows they created
+(`owner_sub` = self); editing another member's shared row is the
+admin/owner lifecycle and is audited. Team visibility additionally
+requires a live team seat read from the database, not from claims.
+
+### Transfer + deprovision
+
+`server._handle_transfer` (internal seam, admin/owner only) moves
+`owner_sub` in one guarded UPDATE and audits `admin.transfer`; the new
+owner must be an active member. Deprovisioning is a single UPDATE of
+`org_members.status='disabled'`; the next request from that subject is
+denied before any row work. Sessions die naturally with JWT TTL (§4.3).
+
+### D1 recovery
+
+Recovery for D1 is a scoped physical export taken **before** applying
+`0005_enterprise_rbac.sql` (the pattern used 2026-08-12): export
+per-sub `memories` rows, apply the migration, re-import on failure.
+
 ## Trust model
 
 This plugin implements **TC-Local** (machine-bound, single trust principal).
