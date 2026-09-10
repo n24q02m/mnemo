@@ -262,3 +262,63 @@ async def test_transfer_local_mode_refused(tmp_path):
     result = await server_module._handle_transfer(ctx, "v1", "boss")
     db.close()
     assert "enterprise principal" in result["error"]
+
+
+# -- server.py 1310: transfer with missing args --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_transfer_missing_args_rejected(tmp_path):
+    from mnemo_mcp import server as server_module
+
+    db = MemoryDB(tmp_path / "m.db", embedding_dims=0)
+    _seed(db)
+    ctx = _ctx(db)
+    token = set_current_principal(_principal("boss", ("admin",)))
+    try:
+        result = await server_module._handle_transfer(ctx, None, None)
+    finally:
+        reset_current_principal(token)
+    db.close()
+    assert "required for transfer" in result["error"]
+
+
+# -- server.py 1340: admin transfer of a missing id ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_transfer_missing_row_reports_not_found(tmp_path, monkeypatch):
+    from mnemo_mcp import server as server_module
+
+    monkeypatch.setattr(server_module.settings, "audit_hash_key", AUDIT_KEY)
+    db = MemoryDB(tmp_path / "m.db", embedding_dims=0)
+    _seed(db)
+    ctx = _ctx(db)
+    token = set_current_principal(_principal("boss", ("admin",)))
+    try:
+        result = await server_module._handle_transfer(ctx, "ghost", "u1")
+    finally:
+        reset_current_principal(token)
+    db.close()
+    assert result["error"] == "Memory ghost not found"
+
+
+# -- server.py 1350: transfer target must be an active tenant member ------------
+
+
+@pytest.mark.asyncio
+async def test_transfer_nonmember_target_rejected(tmp_path, monkeypatch):
+    from mnemo_mcp import server as server_module
+
+    monkeypatch.setattr(server_module.settings, "audit_hash_key", AUDIT_KEY)
+    db = MemoryDB(tmp_path / "m.db", embedding_dims=0)
+    _seed(db)
+    _seed_memory(db, "v1", owner="u1")
+    ctx = _ctx(db)
+    token = set_current_principal(_principal("boss", ("admin",)))
+    try:
+        result = await server_module._handle_transfer(ctx, "v1", "outsider")
+    finally:
+        reset_current_principal(token)
+    db.close()
+    assert "not an active member" in result["error"]
