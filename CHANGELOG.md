@@ -2,6 +2,170 @@
 
 <!-- version list -->
 
+## v2.11.0 (2026-09-11)
+
+### Bug Fixes
+
+- Mn1 eval uses per-case stores, honest subject-scoping leak probes
+  ([#1203](https://github.com/n24q02m/mnemo-mcp/pull/1203),
+  [`0416dba`](https://github.com/n24q02m/mnemo-mcp/commit/0416dbaa5042fadacbf09985370fc5283ba1012b))
+
+- Mn3 wave1 recreates idx_memories_subject after the 0002 rebuild
+  ([#1207](https://github.com/n24q02m/mnemo-mcp/pull/1207),
+  [`b9f875a`](https://github.com/n24q02m/mnemo-mcp/commit/b9f875af61a3e20f5b392e4292a0ea502308e976))
+
+- Mn3 wave2 subject-aware fetch at the operations tier
+  ([#1208](https://github.com/n24q02m/mnemo-mcp/pull/1208),
+  [`49d357a`](https://github.com/n24q02m/mnemo-mcp/commit/49d357a4f806a599a928364ca4eded2103989f75))
+
+- Mn3 wave3 subject-isolation e2e equivalence cases
+  ([#1208](https://github.com/n24q02m/mnemo-mcp/pull/1208),
+  [`49d357a`](https://github.com/n24q02m/mnemo-mcp/commit/49d357a4f806a599a928364ca4eded2103989f75))
+
+- Optimize importance parsing in hybrid scores loop
+  ([#1193](https://github.com/n24q02m/mnemo-mcp/pull/1193),
+  [`0f96775`](https://github.com/n24q02m/mnemo-mcp/commit/0f96775a27b76d552c268528b4b44a81545eab29))
+
+- Restore mn4 eval accuracy and paid_calls asserts
+  ([#1209](https://github.com/n24q02m/mnemo-mcp/pull/1209),
+  [`2383e01`](https://github.com/n24q02m/mnemo-mcp/commit/2383e01579cc37157307c496ba70d1890e2d92c4))
+
+- **deps**: Lock file maintenance ([#1201](https://github.com/n24q02m/mnemo-mcp/pull/1201),
+  [`14a8834`](https://github.com/n24q02m/mnemo-mcp/commit/14a88349a9a8e45677031b3a8db6edf6ef02af32))
+
+- **deps**: Lock file maintenance ([#1196](https://github.com/n24q02m/mnemo-mcp/pull/1196),
+  [`a309c1d`](https://github.com/n24q02m/mnemo-mcp/commit/a309c1df126a674381fd43268cda62e737606c53))
+
+- **deps**: Lock file maintenance ([#1190](https://github.com/n24q02m/mnemo-mcp/pull/1190),
+  [`84a132b`](https://github.com/n24q02m/mnemo-mcp/commit/84a132b07829b52ad761ebb785d00d6821f99e62))
+
+- **deps**: Lock file maintenance ([#1187](https://github.com/n24q02m/mnemo-mcp/pull/1187),
+  [`10ae293`](https://github.com/n24q02m/mnemo-mcp/commit/10ae293ca802d465b285ef8bac895672baea873b))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260831.1
+  ([#1185](https://github.com/n24q02m/mnemo-mcp/pull/1185),
+  [`b768aa0`](https://github.com/n24q02m/mnemo-mcp/commit/b768aa0e2bdeb24fae5b8c8ba08b5ac291421562))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260903.1
+  ([#1197](https://github.com/n24q02m/mnemo-mcp/pull/1197),
+  [`75fa35f`](https://github.com/n24q02m/mnemo-mcp/commit/75fa35ffe77898bbc4e1849245ab4d46ea56ae05))
+
+- **deps**: Update dawidd6/action-send-mail action to v20
+  ([#1195](https://github.com/n24q02m/mnemo-mcp/pull/1195),
+  [`36e3084`](https://github.com/n24q02m/mnemo-mcp/commit/36e308456067b184d6cffa026adda81c59e1a66a))
+
+- **deps**: Update mcp to v2 ([#1181](https://github.com/n24q02m/mnemo-mcp/pull/1181),
+  [`7bb27b8`](https://github.com/n24q02m/mnemo-mcp/commit/7bb27b82470541ce0ca5be48e52e817f7feeecb8))
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.6.0
+  ([#1178](https://github.com/n24q02m/mnemo-mcp/pull/1178),
+  [`ef2cc9d`](https://github.com/n24q02m/mnemo-mcp/commit/ef2cc9ddf92c0c308a4164b0d644e896801c6b5b))
+
+- **deps**: Update non-major dev dependencies
+  ([#1194](https://github.com/n24q02m/mnemo-mcp/pull/1194),
+  [`90121e4`](https://github.com/n24q02m/mnemo-mcp/commit/90121e4e8a9f8eede5bd180e535106b5c49f48d6))
+
+- **deps**: Update non-major dev dependencies
+  ([#1180](https://github.com/n24q02m/mnemo-mcp/pull/1180),
+  [`c86aeab`](https://github.com/n24q02m/mnemo-mcp/commit/c86aeabac3d8ae2193f220cc4293ff7120360137))
+
+- **deps**: Update patch dependencies ([#1179](https://github.com/n24q02m/mnemo-mcp/pull/1179),
+  [`cdcd5d2`](https://github.com/n24q02m/mnemo-mcp/commit/cdcd5d232640265c76c6adde07328c7a57077cdf))
+
+- **deps**: Update vitest to v5 ([#1186](https://github.com/n24q02m/mnemo-mcp/pull/1186),
+  [`2d154fd`](https://github.com/n24q02m/mnemo-mcp/commit/2d154fddc35244d444bdcfd5b6f297312fba6820))
+
+### Continuous Integration
+
+- Wire unified merge=release ladder (push staging=beta, main=stable)
+  ([`e6d0e80`](https://github.com/n24q02m/mnemo-mcp/commit/e6d0e80075999df79f5da15e0f8f1e92bbd082b8))
+
+### Documentation
+
+- Record absence of actionable UX surface ([#1177](https://github.com/n24q02m/mnemo-mcp/pull/1177),
+  [`e6f745d`](https://github.com/n24q02m/mnemo-mcp/commit/e6f745db168ace4f30b48beaf078e5ff2d4cd1b5))
+
+- Update palette journal recording saturated DX surface
+  ([#1177](https://github.com/n24q02m/mnemo-mcp/pull/1177),
+  [`e6f745d`](https://github.com/n24q02m/mnemo-mcp/commit/e6f745db168ace4f30b48beaf078e5ff2d4cd1b5))
+
+### Features
+
+- Add suggestion when as_of parameter is missing
+  ([`0e91dd6`](https://github.com/n24q02m/mnemo-mcp/commit/0e91dd6309b93bfe8b4a4ba220157dbd08bc34da))
+
+- Bolt optimization for hybrid scoring ([#1199](https://github.com/n24q02m/mnemo-mcp/pull/1199),
+  [`11d2934`](https://github.com/n24q02m/mnemo-mcp/commit/11d2934d5d131eb14ba2e2137e8aa3a35f348276))
+
+- Bolt: Optimize importance parsing in hybrid scores loop
+  ([#1193](https://github.com/n24q02m/mnemo-mcp/pull/1193),
+  [`0f96775`](https://github.com/n24q02m/mnemo-mcp/commit/0f96775a27b76d552c268528b4b44a81545eab29))
+
+- Bolt: Remove redundant boundary enforcements in hybrid scoring loop
+  ([#1199](https://github.com/n24q02m/mnemo-mcp/pull/1199),
+  [`11d2934`](https://github.com/n24q02m/mnemo-mcp/commit/11d2934d5d131eb14ba2e2137e8aa3a35f348276))
+
+- MN-1 eval baseline - VN/EN corpus + deterministic scoring runner (13 cases, dims=0, zero paid
+  calls) ([#1202](https://github.com/n24q02m/mnemo-mcp/pull/1202),
+  [`f09be71`](https://github.com/n24q02m/mnemo-mcp/commit/f09be719da332bc76ecb1fc72e19d06449652c18))
+
+- Mn2 memory defense - deterministic secret/PII redaction at persistence and egress
+  ([#1205](https://github.com/n24q02m/mnemo-mcp/pull/1205),
+  [`c985b9b`](https://github.com/n24q02m/mnemo-mcp/commit/c985b9b08db0d1e6cb1089ddbc6c645182b873c3))
+
+- Mn3 wave1 per-subject recall enforcement at storage tier
+  ([#1207](https://github.com/n24q02m/mnemo-mcp/pull/1207),
+  [`b9f875a`](https://github.com/n24q02m/mnemo-mcp/commit/b9f875af61a3e20f5b392e4292a0ea502308e976))
+
+- Mn3 wave1 per-subject recall enforcement at storage tier
+  ([#1206](https://github.com/n24q02m/mnemo-mcp/pull/1206),
+  [`1544324`](https://github.com/n24q02m/mnemo-mcp/commit/1544324b3915ba333c4127190670870d98e2974c))
+
+- Mn4 bounded cited reflect over retrieval (dry)
+  ([#1209](https://github.com/n24q02m/mnemo-mcp/pull/1209),
+  [`2383e01`](https://github.com/n24q02m/mnemo-mcp/commit/2383e01579cc37157307c496ba70d1890e2d92c4))
+
+- Mn4 bounded cited reflect over retrieval, dry tier
+  ([#1209](https://github.com/n24q02m/mnemo-mcp/pull/1209),
+  [`2383e01`](https://github.com/n24q02m/mnemo-mcp/commit/2383e01579cc37157307c496ba70d1890e2d92c4))
+
+- Mn5 standing questions - materialized pages with staleness (dry)
+  ([#1210](https://github.com/n24q02m/mnemo-mcp/pull/1210),
+  [`cad10e2`](https://github.com/n24q02m/mnemo-mcp/commit/cad10e2564ad84fdf259a89310593526b892fdb9))
+
+- Mnemo pilot P0 - domain core + CLI/MCP equivalence gate (TOOL-1)
+  ([#1200](https://github.com/n24q02m/mnemo-mcp/pull/1200),
+  [`7bf1a15`](https://github.com/n24q02m/mnemo-mcp/commit/7bf1a15665e0c43a2c9a3637227b41e8ed28dc9a))
+
+- Optimize hybrid score computation loop
+  ([`0b02ffb`](https://github.com/n24q02m/mnemo-mcp/commit/0b02ffb33b1f2fa30697ce447957900553bfc878))
+
+- Optimize importance parsing in hybrid scores loop
+  ([#1193](https://github.com/n24q02m/mnemo-mcp/pull/1193),
+  [`0f96775`](https://github.com/n24q02m/mnemo-mcp/commit/0f96775a27b76d552c268528b4b44a81545eab29))
+
+- Remove redundant boundary enforcements in hybrid scoring loop
+  ([#1199](https://github.com/n24q02m/mnemo-mcp/pull/1199),
+  [`11d2934`](https://github.com/n24q02m/mnemo-mcp/commit/11d2934d5d131eb14ba2e2137e8aa3a35f348276))
+
+- Update palette journal recording saturated DX surface
+  ([#1182](https://github.com/n24q02m/mnemo-mcp/pull/1182),
+  [`348d1aa`](https://github.com/n24q02m/mnemo-mcp/commit/348d1aad1738cd56d3502e6b97497d7b8eef281c))
+
+- Update palette journal recording saturated DX surface
+  ([#1177](https://github.com/n24q02m/mnemo-mcp/pull/1177),
+  [`e6f745d`](https://github.com/n24q02m/mnemo-mcp/commit/e6f745db168ace4f30b48beaf078e5ff2d4cd1b5))
+
+- **mnemo**: Reconcile request-scoped routing
+  ([`3f902f5`](https://github.com/n24q02m/mnemo-mcp/commit/3f902f530b8924b80cc29c0cb77e6d13583addc4))
+
+### Testing
+
+- Mn1 eval restores durable honesty asserts (scoping flag, per-case stores, zero cost, category set)
+  ([#1204](https://github.com/n24q02m/mnemo-mcp/pull/1204),
+  [`b21fbc2`](https://github.com/n24q02m/mnemo-mcp/commit/b21fbc25e4a6fe8393403a118c0b204bb9718a7b))
+
+
 ## v2.10.1 (2026-09-02)
 
 ### Bug Fixes
