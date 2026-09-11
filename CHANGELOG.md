@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.11.2 (2026-09-11)
+
+### Bug Fixes
+
+- Pin better-semantic-release action to v1.6.1
+  ([#1211](https://github.com/n24q02m/mnemo-mcp/pull/1211),
+  [`86590cd`](https://github.com/n24q02m/mnemo-mcp/commit/86590cddd06c19cc3f713553f2c0d465fdc6f34f))
+
+### Chores
+
+- Pin BSR action to v1.6.1 stable (6e688489)
+  ([#1211](https://github.com/n24q02m/mnemo-mcp/pull/1211),
+  [`86590cd`](https://github.com/n24q02m/mnemo-mcp/commit/86590cddd06c19cc3f713553f2c0d465fdc6f34f))
+
+- Retrigger checks after title fix ([#1211](https://github.com/n24q02m/mnemo-mcp/pull/1211),
+  [`86590cd`](https://github.com/n24q02m/mnemo-mcp/commit/86590cddd06c19cc3f713553f2c0d465fdc6f34f))
+
+
 ## v2.11.1 (2026-09-11)
 
 ### Bug Fixes
