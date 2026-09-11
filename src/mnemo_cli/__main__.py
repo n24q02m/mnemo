@@ -23,7 +23,7 @@ def _serialize(envelope: dict) -> str:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mnemo-pilot",
-        description="Mnemo pilot CLI (capture/recall/fetch) over the shared domain core",
+        description="Mnemo pilot CLI (capture/recall/reflect/fetch) over the shared domain core",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -42,6 +42,11 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_recall)
     p_recall.add_argument("query")
     p_recall.add_argument("--k", type=int, default=5)
+
+    p_reflect = sub.add_parser("reflect", help="Bounded cited reflect over retrieval")
+    add_common(p_reflect)
+    p_reflect.add_argument("query")
+    p_reflect.add_argument("--k", type=int, default=5)
 
     p_fetch = sub.add_parser("fetch", help="Fetch one memory by id")
     add_common(p_fetch)
@@ -67,6 +72,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "recall":
             envelope = operations.recall(store, args.subject, args.query, k=args.k)
+        elif args.command == "reflect":
+            envelope = operations.reflect(store, args.subject, args.query, k=args.k)
         else:
             envelope = operations.fetch(store, args.subject, args.memory_id)
     finally:

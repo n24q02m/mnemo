@@ -1,0 +1,126 @@
+{
+  "name": "mn4-eval-reflect",
+  "version": 1,
+  "known_gaps": [
+    "reflect is extractive-only in the dry tier: the answer is the best-matching stored content verbatim, never generated prose",
+    "no update/delete op: corrections remain supersede-by-new-capture",
+    "bounded-provider composition behind the Provider Spend Gate is not exercised here (dry: zero model calls by construction)"
+  ],
+  "cases": [
+    {
+      "id": "mn4-cite-en-deploy",
+      "lang": "en",
+      "category": "citation_answer",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "deploy checklist for pilot", "tags": ["ops"]}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "deploy checklist", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "deploy checklist for pilot"}
+    },
+    {
+      "id": "mn4-cite-vi-meeting",
+      "lang": "vi",
+      "category": "citation_answer",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "ghi chú họp ngày mai lúc 9 giờ với nhóm pilot"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "họp ngày mai", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "họp ngày mai lúc 9 giờ"}
+    },
+    {
+      "id": "mn4-cite-picks-best-match",
+      "lang": "en",
+      "category": "citation_answer",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "random note about gardening"}},
+        {"op": "capture", "subject": "alice", "args": {"content": "oncall rotation: alice covers monday"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "oncall rotation monday", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "oncall rotation: alice covers monday"}
+    },
+    {
+      "id": "mn4-abstain-empty-store",
+      "lang": "en",
+      "category": "abstention",
+      "setup": [],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "anything at all", "k": 5}},
+      "expect": {"type": "reflect_abstains", "reason": "no_retrieval_support"}
+    },
+    {
+      "id": "mn4-abstain-no-lexical-overlap",
+      "lang": "vi",
+      "category": "abstention",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "ghi chú họp ngày mai"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "xyzzy unrelated query", "k": 5}},
+      "expect": {"type": "reflect_abstains", "reason": "no_retrieval_support"}
+    },
+    {
+      "id": "mn4-scope-bob-abstains",
+      "lang": "en",
+      "category": "subject_scope",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "alice deploy checklist"}}
+      ],
+      "probe": {"op": "reflect", "subject": "bob", "args": {"query": "deploy checklist", "k": 5}},
+      "expect": {"type": "reflect_abstains", "reason": "no_retrieval_support"}
+    },
+    {
+      "id": "mn4-scope-alice-answers",
+      "lang": "en",
+      "category": "subject_scope",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "alice deploy checklist"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "deploy checklist", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "alice deploy checklist"}
+    },
+    {
+      "id": "mn4-scope-legacy-invisible-to-scoped",
+      "lang": "en",
+      "category": "subject_scope",
+      "setup": [
+        {"op": "capture", "subject": null, "args": {"content": "legacy blob without subject"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "legacy blob", "k": 5}},
+      "expect": {"type": "reflect_abstains", "reason": "no_retrieval_support"}
+    },
+    {
+      "id": "mn4-scope-null-sees-legacy",
+      "lang": "en",
+      "category": "subject_scope",
+      "setup": [
+        {"op": "capture", "subject": null, "args": {"content": "legacy blob without subject"}}
+      ],
+      "probe": {"op": "reflect", "subject": null, "args": {"query": "legacy blob", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "legacy blob without subject"}
+    },
+    {
+      "id": "mn4-redaction-secret-masked",
+      "lang": "en",
+      "category": "redaction_egress",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "oncall email alice@example.com handles incidents"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "oncall email", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "[REDACTED:email]"}
+    },
+    {
+      "id": "mn4-validation-empty-query",
+      "lang": "en",
+      "category": "validation",
+      "setup": [],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "   "}},
+      "expect": {"type": "error_code", "code": "VALIDATION"}
+    },
+    {
+      "id": "mn4-validation-k-below-one",
+      "lang": "en",
+      "category": "validation",
+      "setup": [],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "query", "k": 0}},
+      "expect": {"type": "error_code", "code": "VALIDATION"}
+    }
+  ]
+}

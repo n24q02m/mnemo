@@ -35,3 +35,8 @@ def pilot_recall(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dic
 def pilot_fetch(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:
     """MCP tool ``pilot_fetch``: args dict in, envelope out."""
     return operations.fetch(db, subject, args.get("memory_id", ""))
+
+
+def pilot_reflect(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:
+    """MCP tool ``pilot_reflect``: args dict in, envelope out."""
+    return operations.reflect(db, subject, args.get("query", ""), k=args.get("k", 5))

@@ -1,0 +1,19 @@
+{
+  "corpus": "mn4-eval-reflect",
+  "corpus_version": 1,
+  "deterministic": true,
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "per_case_stores": true,
+  "total_cases": 12,
+  "passed": 12,
+  "failed_cases": [],
+  "accuracy": 1.0,
+  "latency_ms_mean": 0.826,
+  "latency_ms_p95": 1.145,
+  "known_gaps": [
+    "reflect is extractive-only in the dry tier: the answer is the best-matching stored content verbatim, never generated prose",
+    "no update/delete op: corrections remain supersede-by-new-capture",
+    "bounded-provider composition behind the Provider Spend Gate is not exercised here (dry: zero model calls by construction)"
+  ]
+}

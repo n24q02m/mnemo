@@ -108,6 +108,72 @@ def fetch(
     return results.ok({"subject": subject, "memory": memory, "redactions": kinds})
 
 
+_MAX_REFLECT_K = 10
+
+
+def reflect(
+    store: StoragePort,
+    subject: str | None,
+    query: str,
+    k: int = 5,
+) -> dict[str, Any]:
+    """Bounded cited reflect (P4, dry).
+
+    The answer is composed ONLY from retrieval results (extractive: the best
+    match's redacted content is returned verbatim as ``answer``). When
+    retrieval has no support the envelope abstains explicitly. Zero model
+    calls are made, and the cost receipt is always present so the caller can
+    audit boundedness. Reflect never writes back.
+    """
+    if not query or not query.strip():
+        return results.err(results.VALIDATION, "query is required")
+    if k < 1:
+        return results.err(results.VALIDATION, "k must be >= 1")
+    try:
+        rows = store.search(
+            query.strip(), limit=min(k, _MAX_REFLECT_K), subject=subject
+        )
+    except sqlite3.Error as exc:
+        return results.err(results.STORAGE, f"reflect retrieval failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    citations, redactions = _redact_rows(
+        [
+            {
+                "id": row.get("id"),
+                "subject": row.get("subject"),
+                "content": row.get("content"),
+                "score": row.get("score"),
+            }
+            for row in rows
+        ]
+    )
+    receipt = {"model_calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    if not citations:
+        return results.ok(
+            {
+                "subject": subject,
+                "answer": None,
+                "abstained": True,
+                "reason": "no_retrieval_support",
+                "citations": [],
+                "redactions": [],
+                "cost": receipt,
+            }
+        )
+    best = citations[0]
+    return results.ok(
+        {
+            "subject": subject,
+            "answer": best["content"],
+            "abstained": False,
+            "citations": citations,
+            "redactions": redactions,
+            "cost": receipt,
+        }
+    )
+
+
 def _redact_row(row: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Egress defense: redact stored content before it leaves the core."""
     content = row.get("content") if isinstance(row, dict) else None
