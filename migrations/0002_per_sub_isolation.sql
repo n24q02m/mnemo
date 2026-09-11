@@ -164,6 +164,9 @@ CREATE INDEX idx_memories_sub_accessed
 CREATE INDEX idx_memories_sub_category_updated
     ON memories(sub, category, updated_at DESC);
 
+CREATE INDEX idx_memories_subject
+    ON memories(subject);
+
 CREATE INDEX idx_archived_memories_sub_archived_at
     ON archived_memories(sub, archived_at DESC);
 

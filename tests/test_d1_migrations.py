@@ -126,6 +126,28 @@ class TestMigrationApplies:
     def test_creates_expected_indexes(self, migrated_conn: sqlite3.Connection):
         assert _objects(migrated_conn, "index") == EXPECTED_INDEXES
 
+    def test_full_chain_keeps_subject_column_and_index(self):
+        """0002 rebuilds ``memories`` with a hardcoded column list, so anything
+        0001 adds can be silently dropped (and its index dropped with the
+        table) by the rebuild. This pins the MN-3 subject column and index
+        against the FULL production chain -- the ``migrated_conn`` fixture
+        above applies only 0001+0004 and cannot see a 0002 drop.
+        """
+        conn = sqlite3.connect(":memory:")
+        for path in (
+            _MIGRATION,
+            _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql",
+            _REPO_ROOT / "migrations" / "0003_vector_state.sql",
+            _MIGRATION_4,
+        ):
+            conn.executescript(path.read_text(encoding="utf-8"))
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(memories)")}
+        assert "subject" in columns, "0002 rebuild dropped the subject column"
+        indexes = _objects(conn, "index")
+        assert "idx_memories_subject" in indexes, (
+            "0002 rebuild dropped idx_memories_subject"
+        )
+
     def test_creates_expected_triggers(self, migrated_conn: sqlite3.Connection):
         assert _objects(migrated_conn, "trigger") == EXPECTED_TRIGGERS
 
