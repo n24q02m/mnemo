@@ -103,7 +103,8 @@ CREATE TABLE IF NOT EXISTS memories (
     commit_sha TEXT,
     valid_from DATETIME,
     valid_to DATETIME,
-    superseded_by TEXT
+    superseded_by TEXT,
+    subject TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_category
@@ -112,6 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_memories_updated
     ON memories(updated_at);
 CREATE INDEX IF NOT EXISTS idx_memories_accessed
     ON memories(last_accessed);
+
+CREATE INDEX IF NOT EXISTS idx_memories_subject
+    ON memories(subject);
 
 -- Compound index that lets list_memories pagination
 -- (WHERE category = ? ORDER BY updated_at DESC) skip a sort.

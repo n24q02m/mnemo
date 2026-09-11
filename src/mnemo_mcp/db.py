@@ -76,6 +76,7 @@ MEMORY_COLUMNS: tuple[str, ...] = (
     "valid_from",
     "valid_to",
     "superseded_by",
+    "subject",
 )
 
 # What the importer writes when a JSONL record omits a column. Mirrors the
@@ -99,6 +100,7 @@ _IMPORT_DEFAULTS: dict[str, object] = {
     "valid_from": None,
     "valid_to": None,
     "superseded_by": None,
+    "subject": None,
 }
 
 # `tags` holds a JSON array as TEXT. Emitting it through `json()` makes the
@@ -679,6 +681,7 @@ class MemoryDB:
         category: str = "general",
         tags: list[str] | None = None,
         source: str | None = None,
+        subject: str | None = None,
         embedding: list[float] | None = None,
     ) -> str:
         """Add a new memory.
@@ -703,9 +706,9 @@ class MemoryDB:
 
         self._conn.execute(
             """INSERT INTO memories (id, content, category, tags, source,
-               created_at, updated_at, access_count, last_accessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-            (memory_id, content, category, tags_json, source, now, now, now),
+               subject, created_at, updated_at, access_count, last_accessed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+            (memory_id, content, category, tags_json, source, subject, now, now, now),
         )
 
         # Store embedding if provided
@@ -726,6 +729,7 @@ class MemoryDB:
         category: str = "general",
         tags: list[str] | None = None,
         source: str | None = None,
+        subject: str | None = None,
         embedding: list[float] | None = None,
         importance: float | None = None,
         *,
@@ -785,16 +789,17 @@ class MemoryDB:
             importance = max(0.0, min(1.0, importance))
             self._conn.execute(
                 """INSERT INTO memories (id, content, category, tags, source,
-                   created_at, updated_at, access_count, last_accessed,
+                   subject, created_at, updated_at, access_count, last_accessed,
                    context_type, importance,
                    text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
                     category,
                     tags_json,
                     source,
+                    subject,
                     now,
                     now,
                     now,
@@ -808,16 +813,17 @@ class MemoryDB:
         else:
             self._conn.execute(
                 """INSERT INTO memories (id, content, category, tags, source,
-                   created_at, updated_at, access_count, last_accessed,
+                   subject, created_at, updated_at, access_count, last_accessed,
                    context_type,
                    text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
                 (
                     memory_id,
                     content,
                     category,
                     tags_json,
                     source,
+                    subject,
                     now,
                     now,
                     now,
@@ -921,6 +927,7 @@ class MemoryDB:
         min_importance: float = 0.0,
         include_archived: bool = False,
         candidate_pool: int | None = None,
+        subject: str | None = None,
     ) -> list[dict]:
         """Search memories with hybrid scoring.
 
@@ -969,6 +976,7 @@ class MemoryDB:
             "until": until,
             "min_importance": min_importance,
             "include_archived": include_archived,
+            "subject": subject,
         }
 
         # 1. FTS5 search (over a wider candidate pool for downstream rerank).
@@ -1066,6 +1074,7 @@ class MemoryDB:
         until: str | None = None,
         min_importance: float = 0.0,
         include_archived: bool = False,
+        subject: str | None = None,
     ) -> tuple[str, list]:
         """Build the shared WHERE-tail used by FTS + vec search paths.
 
@@ -1094,6 +1103,12 @@ class MemoryDB:
             params.append(float(min_importance))
         if not include_archived:
             fragments.append("AND m.archived_at IS NULL")
+        if subject is not None:
+            # MN-3 enforcement: scoped recall sees only its subject's rows.
+            # NULL-subject (legacy/unattributed) rows stay invisible here;
+            # subject=None keeps the unfiltered legacy view.
+            fragments.append("AND m.subject = ?")
+            params.append(subject)
 
         return " " + " ".join(fragments) if fragments else "", params
 
@@ -1109,6 +1124,7 @@ class MemoryDB:
         until: str | None = None,
         min_importance: float = 0.0,
         include_archived: bool = False,
+        subject: str | None = None,
     ) -> dict[str, dict]:
         """Execute FTS5 search with tiered queries and BM25 column weights.
 
@@ -1141,6 +1157,7 @@ class MemoryDB:
             until=until,
             min_importance=min_importance,
             include_archived=include_archived,
+            subject=subject,
         )
         if extra_sql:
             filter_fragments.append(extra_sql)

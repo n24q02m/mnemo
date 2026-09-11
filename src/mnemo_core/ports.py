@@ -19,6 +19,7 @@ class StoragePort(Protocol):
         category: str = "general",
         tags: list[str] | None = None,
         source: str | None = None,
+        subject: str | None = None,
         embedding: list[float] | None = None,
     ) -> str: ...
 
@@ -29,6 +30,8 @@ class StoragePort(Protocol):
         category: str | None = None,
         tags: list[str] | None = None,
         limit: int = 5,
+        *,
+        subject: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def get(self, memory_id: str) -> dict[str, Any] | None: ...

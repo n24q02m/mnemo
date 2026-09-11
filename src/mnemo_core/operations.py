@@ -41,6 +41,7 @@ def capture(
             category=category,
             tags=tags,
             source=source,
+            subject=subject,
         )
     except ValueError as exc:
         return results.err(results.VALIDATION, str(exc))
@@ -71,7 +72,7 @@ def recall(
     if k < 1:
         return results.err(results.VALIDATION, "k must be >= 1")
     try:
-        rows = store.search(query, limit=k)
+        rows = store.search(query, limit=k, subject=subject)
     except sqlite3.Error as exc:
         return results.err(results.STORAGE, f"recall failed: {exc}")
     except Exception as exc:  # noqa: BLE001 - taxonomy boundary

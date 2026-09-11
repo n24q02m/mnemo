@@ -38,10 +38,10 @@ def test_baseline_all_cases_pass(tmp_path: Path) -> None:
     assert report["cost_usd"] == 0.0
     assert report["per_case_stores"] is True
     assert set(report["categories"]) == EXPECTED_CATEGORIES
-    # Load-bearing honesty pin: the pilot recall passes no subject to the
-    # storage search, so the runner must keep recording the leak, not
-    # silently certify isolation.
-    assert report["subject_scoping_enforced"] is False
+    # Load-bearing honesty pin: since MN-3, scoped recall filters subject
+    # at the storage tier; the runner must keep recording enforcement, and
+    # a regression that drops the subject filter flips this back to False.
+    assert report["subject_scoping_enforced"] is True
 
 
 def test_isolation_probe_records_leak_informationally(tmp_path: Path) -> None:

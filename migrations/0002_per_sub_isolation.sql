@@ -31,6 +31,7 @@ CREATE TABLE memories_v2 (
     valid_from DATETIME,
     valid_to DATETIME,
     superseded_by TEXT,
+    subject TEXT,
     PRIMARY KEY (sub, id)
 );
 
@@ -38,13 +39,13 @@ INSERT INTO memories_v2 (
     sub, id, content, category, tags, source, created_at, updated_at,
     access_count, last_accessed, importance, context_type, archived_at,
     text_raw, compressed, compression_provider, commit_sha, valid_from,
-    valid_to, superseded_by
+    valid_to, superseded_by, subject
 )
 SELECT
     'default', id, content, category, tags, source, created_at, updated_at,
     access_count, last_accessed, importance, context_type, archived_at,
     text_raw, compressed, compression_provider, commit_sha, valid_from,
-    valid_to, superseded_by
+    valid_to, superseded_by, subject
 FROM memories;
 
 CREATE TABLE archived_memories_v2 (

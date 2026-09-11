@@ -120,6 +120,7 @@ FULL_ROW: dict[str, object] = {
     "valid_from": "2024-05-06T07:08:09+00:00",
     "valid_to": "2025-06-07T08:09:10+00:00",
     "superseded_by": "fidelity-002",
+    "subject": "fidelity-subject",
 }
 
 _JSON_VALUED_COLUMNS = frozenset({"tags"})
@@ -338,7 +339,9 @@ class TestD1StatementSizing:
         )
 
     def test_widest_statement_stays_within_the_cap(self):
-        widest = db_cf_module._IMPORT_ROWS_PER_STATEMENT * len(db_module.MEMORY_COLUMNS)
+        widest = db_cf_module._IMPORT_ROWS_PER_STATEMENT * (
+            len(db_module.MEMORY_COLUMNS) + 1
+        )
         assert widest <= D1_MAX_BOUND_PARAMS, (
             f"{db_cf_module._IMPORT_ROWS_PER_STATEMENT} rows x "
             f"{len(db_module.MEMORY_COLUMNS)} columns = {widest} bound parameters, over "

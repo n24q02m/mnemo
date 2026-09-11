@@ -5,7 +5,7 @@
   "known_gaps": [
     "negation: FTS5 matches negated mentions inside content (e.g. 'khong dung docker' still matches 'docker'); semantic negation handling is a later MN phase, not scored here",
     "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core",
-    "subject scoping: recall passes no subject to the storage search (operations.recall -> store.search(query, limit)), so cross-subject rows leak into matches; leak probes record this informationally (subject_scoping_enforced) and it is not scored",
+    "subject scoping (MN-3 enforced): scoped recall filters subject = ? at the storage tier; rows with NULL subject (legacy/unattributed) are invisible to scoped probes; subject=None recall keeps the unfiltered legacy view; leak probes verify enforcement (subject_scoping_enforced)",
     "no update/delete op in the pilot core: corrections are supersede-by-new-capture; hard deletion is not expressible at this tier (missing_fetch_taxonomy only pins the NOT_FOUND envelope)"
   ],
   "cases": [

@@ -79,15 +79,20 @@ def test_capture_redacts_before_persistence(store: MemoryDB) -> None:
 
 
 def test_recall_egress_redacts_legacy_rows(store: MemoryDB) -> None:
-    """A secret inserted into the store via another path still never leaves."""
+    """Legacy NULL-subject rows never leave: scoped recall cannot even see
+    them (MN-3), and the unfiltered legacy view still redacts secrets."""
     operations.capture(store, "alice", "innocuous note")
     raw = "legacy blob with ghp_abcdefghijklmnopqrstuvwxyzabcdefghij inside"
     store.add(content=raw, category="general")
 
-    env = operations.recall(store, "alice", "legacy blob")
-    assert env["ok"] is True
-    assert env["data"]["redactions"] == ["github_pat"]
-    assert all("ghp_" not in m["content"] for m in env["data"]["matches"])
+    scoped = operations.recall(store, "alice", "legacy blob")
+    assert scoped["ok"] is True
+    assert scoped["data"]["matches"] == []
+
+    legacy_view = operations.recall(store, None, "legacy blob")
+    assert legacy_view["ok"] is True
+    assert legacy_view["data"]["redactions"] == ["github_pat"]
+    assert all("ghp_" not in m["content"] for m in legacy_view["data"]["matches"])
 
 
 def test_redaction_never_breaks_error_taxonomy(store: MemoryDB) -> None:

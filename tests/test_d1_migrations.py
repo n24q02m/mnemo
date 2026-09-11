@@ -47,6 +47,7 @@ EXPECTED_INDEXES = {
     "idx_memories_category",
     "idx_memories_category_updated",
     "idx_memories_updated",
+    "idx_memories_subject",
     "idx_memory_edges_source",
     "idx_memory_edges_target",
     "idx_memory_edges_unique",

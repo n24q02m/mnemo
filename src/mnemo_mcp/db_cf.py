@@ -172,12 +172,14 @@ REQUIRED_TABLES = (
 _IMPORT_COLUMNS = MEMORY_COLUMNS
 
 # Rows per multi-row INSERT, sized so one statement stays inside D1's cap of 100
-# bound parameters. This divides rather than assumes: at the current 19 columns
-# it yields 5 rows (95 params). It cannot reach 0 -- that would need more than
+# bound parameters. This divides rather than assumes: at the current 20 columns
+# it yields 4 rows (84 params including the per-row `sub` tenant value that
+# `_scope_sql` prepends to every statement -- that prefix is part of the wire
+# width and must be budgeted). It cannot reach 0 -- that would need more than
 # `D1_MAX_BOUND_PARAMS` columns in `memories`, i.e. a table 100+ columns wide,
 # at which point a single row could not be inserted in one statement at all.
 # `tests/test_column_fidelity.py` asserts both the floor and the cap.
-_IMPORT_ROWS_PER_STATEMENT = D1_MAX_BOUND_PARAMS // len(_IMPORT_COLUMNS)
+_IMPORT_ROWS_PER_STATEMENT = D1_MAX_BOUND_PARAMS // (len(_IMPORT_COLUMNS) + 1)
 
 _NO_VECTOR_INDEX = (
     "This store was opened with embedding_dims=0, so no Cloudflare Vectorize "
