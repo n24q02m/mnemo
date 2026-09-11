@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mnemo_core import operations
+from mnemo_core import operations, standing
 from mnemo_mcp.db import MemoryDB
 
 
@@ -40,3 +40,26 @@ def pilot_fetch(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict
 def pilot_reflect(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:
     """MCP tool ``pilot_reflect``: args dict in, envelope out."""
     return operations.reflect(db, subject, args.get("query", ""), k=args.get("k", 5))
+
+
+def pilot_standing_refresh(
+    db: MemoryDB, subject: str | None, args: dict[str, Any]
+) -> dict:
+    """MCP tool ``pilot_standing_refresh``: args dict in, envelope out."""
+    return standing.standing_refresh(
+        db, subject, args.get("key", ""), args.get("question", ""), k=args.get("k", 5)
+    )
+
+
+def pilot_standing_read(
+    db: MemoryDB, subject: str | None, args: dict[str, Any]
+) -> dict:
+    """MCP tool ``pilot_standing_read``: args dict in, envelope out."""
+    return standing.standing_read(db, subject, args.get("key", ""))
+
+
+def pilot_standing_invalidate(
+    db: MemoryDB, subject: str | None, args: dict[str, Any]
+) -> dict:
+    """MCP tool ``pilot_standing_invalidate``: args dict in, envelope out."""
+    return standing.standing_invalidate(db, subject, args.get("key", ""))

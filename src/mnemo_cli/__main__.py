@@ -12,7 +12,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from mnemo_core import operations, results
+from mnemo_core import operations, results, standing
 from mnemo_mcp.db import MemoryDB
 
 
@@ -52,6 +52,27 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_fetch)
     p_fetch.add_argument("memory_id")
 
+    p_sref = sub.add_parser(
+        "standing-refresh", help="Materialize a standing page via reflect"
+    )
+    add_common(p_sref)
+    p_sref.add_argument("key")
+    p_sref.add_argument("question")
+    p_sref.add_argument("--k", type=int, default=5)
+
+    p_sread = sub.add_parser(
+        "standing-read", help="Cheap read of a standing page with staleness"
+    )
+    add_common(p_sread)
+    p_sread.add_argument("key")
+
+    p_sinv = sub.add_parser(
+        "standing-invalidate", help="Materialize a tombstone standing page"
+    )
+    add_common(p_sinv)
+    p_sinv.add_argument("key")
+    p_sinv.add_argument("--question", default="")
+
     return parser
 
 
@@ -74,6 +95,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             envelope = operations.recall(store, args.subject, args.query, k=args.k)
         elif args.command == "reflect":
             envelope = operations.reflect(store, args.subject, args.query, k=args.k)
+        elif args.command == "standing-refresh":
+            envelope = standing.standing_refresh(
+                store, args.subject, args.key, args.question, k=args.k
+            )
+        elif args.command == "standing-read":
+            envelope = standing.standing_read(store, args.subject, args.key)
+        elif args.command == "standing-invalidate":
+            envelope = standing.standing_invalidate(
+                store,
+                args.subject,
+                args.key,
+                question=args.question,
+            )
         else:
             envelope = operations.fetch(store, args.subject, args.memory_id)
     finally:

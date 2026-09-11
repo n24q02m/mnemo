@@ -89,6 +89,46 @@ SCENARIOS: list[tuple[str, dict[str, Any]]] = [
             "seed": [{"content": "deploy checklist for pilot", "tags": ["ops"]}],
         },
     ),
+    ("standing-refresh", {"key": "   "}),  # VALIDATION
+    ("standing-refresh", {"key": "dp", "question": "deploy checklist"}),  # abstain page
+    (
+        "standing-refresh",
+        {
+            "key": "dp",
+            "question": "deploy checklist",
+            "seed": [
+                {"content": "deploy checklist for pilot", "tags": ["ops"]},
+                {"op": "standing-refresh", "key": "dp", "question": "deploy checklist"},
+            ],
+        },
+    ),  # supersede: second refresh over the first
+    ("standing-read", {"key": "ghost"}),  # NOT_FOUND
+    (
+        "standing-read",
+        {
+            "key": "dp",
+            "seed": [
+                {"content": "deploy checklist for pilot", "tags": ["ops"]},
+                {"op": "standing-refresh", "key": "dp", "question": "deploy checklist"},
+            ],
+        },
+    ),
+    ("standing-invalidate", {"key": "   "}),  # VALIDATION
+    (
+        "standing-read",
+        {
+            "key": "dp",
+            "seed": [
+                {"content": "deploy checklist for pilot", "tags": ["ops"]},
+                {"op": "standing-refresh", "key": "dp", "question": "deploy checklist"},
+                {
+                    "op": "standing-invalidate",
+                    "key": "dp",
+                    "question": "deploy checklist",
+                },
+            ],
+        },
+    ),  # tombstone
 ]
 
 _HANDLERS = {
@@ -96,7 +136,36 @@ _HANDLERS = {
     "recall": pilot_tools.pilot_recall,
     "fetch": pilot_tools.pilot_fetch,
     "reflect": pilot_tools.pilot_reflect,
+    "standing-refresh": pilot_tools.pilot_standing_refresh,
+    "standing-read": pilot_tools.pilot_standing_read,
+    "standing-invalidate": pilot_tools.pilot_standing_invalidate,
 }
+
+
+def _seed_cli_args(seed: dict[str, Any], cli_db: Path) -> list[str]:
+    """CLI argv for one seed op (options belong to each subparser)."""
+    op = seed.get("op", "capture")
+    base = ["--db", str(cli_db), "--subject", "alice"]
+    if op == "capture":
+        argv = ["capture", *base, seed["content"]]
+        if "tags" in seed:
+            argv += ["--tags", ",".join(seed["tags"])]
+        return argv
+    if op == "standing-refresh":
+        return ["standing-refresh", *base, seed["key"], seed["question"]]
+    if op == "standing-invalidate":
+        return ["standing-invalidate", *base, seed["key"]]
+    raise ValueError(f"unsupported seed op: {op}")
+
+
+def _seed_mcp_env(seed: dict[str, Any], mcp_store: MemoryDB) -> dict:
+    op = seed.get("op", "capture")
+    handler = {
+        "capture": pilot_tools.pilot_capture,
+        "standing-refresh": pilot_tools.pilot_standing_refresh,
+        "standing-invalidate": pilot_tools.pilot_standing_invalidate,
+    }[op]
+    return handler(mcp_store, "alice", seed)
 
 
 def test_cli_and_mcp_envelopes_are_byte_equal(
@@ -110,17 +179,9 @@ def test_cli_and_mcp_envelopes_are_byte_equal(
         mcp_store = MemoryDB(tmp_path / f"mcp-{i}.db", embedding_dims=0)
         cli_args: list[str] = ["--db", str(cli_db), "--subject", "alice"]
         for seed in args.get("seed", []):
-            seed_args = [
-                "capture",
-                "--db",
-                str(cli_db),
-                "--subject",
-                "alice",
-                seed["content"],
-            ]
-            seed_out, seed_code = _run_cli(seed_args, capsys)
+            seed_out, seed_code = _run_cli(_seed_cli_args(seed, cli_db), capsys)
             assert seed_code == 0, seed_out
-            mcp_seed = pilot_tools.pilot_capture(mcp_store, "alice", seed)
+            mcp_seed = _seed_mcp_env(seed, mcp_store)
             assert mcp_seed["ok"] is True, mcp_seed
         if op == "capture":
             cli_args += [args["content"]]
@@ -132,6 +193,15 @@ def test_cli_and_mcp_envelopes_are_byte_equal(
             cli_args += [args["query"], "--k", str(args.get("k", 5))]
         elif op == "reflect":
             cli_args += [args["query"], "--k", str(args.get("k", 5))]
+        elif op == "standing-refresh":
+            cli_args += [
+                args["key"],
+                args.get("question", ""),
+                "--k",
+                str(args.get("k", 5)),
+            ]
+        elif op in ("standing-read", "standing-invalidate"):
+            cli_args += [args["key"]]
         else:
             cli_args += [args["memory_id"]]
 

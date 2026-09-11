@@ -1,0 +1,19 @@
+{
+  "corpus": "mn5-eval-standing",
+  "corpus_version": 1,
+  "deterministic": true,
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "per_case_stores": true,
+  "total_cases": 8,
+  "passed": 8,
+  "failed_cases": [],
+  "accuracy": 1.0,
+  "latency_ms_mean": 0.744,
+  "latency_ms_p95": 1.082,
+  "known_gaps": [
+    "pages are materialized from the dry extractive reflect tier; no generated prose answers",
+    "staleness is computed on read against pinned source hashes; there is no scheduled re-validation",
+    "the pilot tier has no delete op: invalidation is a tombstone page and supersede is newest-wins"
+  ]
+}

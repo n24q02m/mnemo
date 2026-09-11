@@ -1,0 +1,97 @@
+{
+  "name": "mn5-eval-standing",
+  "version": 1,
+  "known_gaps": [
+    "pages are materialized from the dry extractive reflect tier; no generated prose answers",
+    "staleness is computed on read against pinned source hashes; there is no scheduled re-validation",
+    "the pilot tier has no delete op: invalidation is a tombstone page and supersede is newest-wins"
+  ],
+  "cases": [
+    {
+      "id": "mn5-materialize-and-read-fresh",
+      "lang": "en",
+      "category": "materialize_read",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "deploy checklist for pilot"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "deploy-page", "question": "deploy checklist"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "deploy-page"}},
+      "expect": {"type": "standing_fresh", "answer_contains": "deploy checklist"}
+    },
+    {
+      "id": "mn5-materialize-vi",
+      "lang": "vi",
+      "category": "materialize_read",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "ghi chú họp ngày mai lúc 9 giờ"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "hop-page", "question": "họp ngày mai"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "hop-page"}},
+      "expect": {"type": "standing_fresh", "answer_contains": "họp ngày mai"}
+    },
+    {
+      "id": "mn5-read-missing-page",
+      "lang": "en",
+      "category": "abstention",
+      "setup": [],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "ghost"}},
+      "expect": {"type": "error_code", "code": "NOT_FOUND"}
+    },
+    {
+      "id": "mn5-scope-bob-cannot-read-alice-page",
+      "lang": "en",
+      "category": "subject_scope",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "alice deploy checklist"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "dp", "question": "deploy checklist"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "bob", "args": {"key": "dp"}},
+      "expect": {"type": "error_code", "code": "NOT_FOUND"}
+    },
+    {
+      "id": "mn5-source-missing-verdicts-stale",
+      "lang": "en",
+      "category": "staleness",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "oncall rotation alice monday"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "oncall-page", "question": "oncall rotation"}},
+        {"op": "hard_delete_sources", "subject": "alice", "args": {}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "oncall-page"}},
+      "expect": {"type": "standing_stale", "reason": "stale:source_missing"}
+    },
+    {
+      "id": "mn5-tombstone-invalidates",
+      "lang": "en",
+      "category": "invalidation",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "deploy checklist for pilot"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "dp", "question": "deploy checklist"}},
+        {"op": "standing_invalidate", "subject": "alice", "args": {"key": "dp", "question": "deploy checklist"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "dp"}},
+      "expect": {"type": "standing_tombstone"}
+    },
+    {
+      "id": "mn5-supersede-newest-wins",
+      "lang": "en",
+      "category": "invalidation",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "deploy checklist v1"}},
+        {"op": "capture", "subject": "alice", "args": {"content": "deploy checklist v2 rollout"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "dp", "question": "deploy checklist v1"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "dp", "question": "checklist v2 rollout"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "dp"}},
+      "expect": {"type": "standing_fresh", "answer_contains": "deploy checklist v2 rollout"}
+    },
+    {
+      "id": "mn5-validation-empty-key",
+      "lang": "en",
+      "category": "validation",
+      "setup": [],
+      "probe": {"op": "standing_refresh", "subject": "alice", "args": {"key": "  ", "question": "q"}},
+      "expect": {"type": "error_code", "code": "VALIDATION"}
+    }
+  ]
+}
