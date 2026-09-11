@@ -7,8 +7,8 @@
   "total_cases": 13,
   "passed": 13,
   "accuracy": 1.0,
-  "latency_ms_p50": 0.807,
-  "latency_ms_p95": 0.978,
+  "latency_ms_p50": 0.986,
+  "latency_ms_p95": 1.264,
   "cost_usd": 0.0,
   "subject_scoping_enforced": false,
   "known_gaps": [

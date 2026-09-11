@@ -1,0 +1,16 @@
+{
+  "eval": "mn2-defense",
+  "deterministic": true,
+  "paid_calls": 0,
+  "per_case_stores": true,
+  "total_cases": 23,
+  "passed": 23,
+  "accuracy": 1.0,
+  "tp_cases": 6,
+  "tp_passed": 6,
+  "fp_cases": 17,
+  "fp_violations": [],
+  "probe_latency_ms": 0.121,
+  "cost_usd": 0.0,
+  "failed_cases": []
+}
