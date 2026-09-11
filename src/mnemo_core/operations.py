@@ -97,7 +97,7 @@ def fetch(
     if not memory_id:
         return results.err(results.VALIDATION, "memory_id is required")
     try:
-        row = store.get(memory_id)
+        row = store.get(memory_id, subject=subject)
     except sqlite3.Error as exc:
         return results.err(results.STORAGE, f"fetch failed: {exc}")
     except Exception as exc:  # noqa: BLE001 - taxonomy boundary

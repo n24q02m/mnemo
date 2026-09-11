@@ -309,6 +309,17 @@ class TestBackendParity:
         with pytest.raises(ValueError, match="exceeds limit"):
             either_db.add("x" * 5001)
 
+    def test_scoped_get_enforces_subject_contract(self, either_db):
+        """MN-3 wave 2: get() subject scoping behaves identically on both
+        backends -- own subject returns the row, a foreign subject and the
+        NULL-subject legacy row are invisible, and subject=None sees all."""
+        mid = either_db.add("owned note", subject="alice")
+        legacy_mid = either_db.add("legacy note")
+        assert either_db.get(mid, subject="alice")["content"] == "owned note"
+        assert either_db.get(mid, subject="bob") is None
+        assert either_db.get(legacy_mid, subject="alice") is None
+        assert either_db.get(legacy_mid)["content"] == "legacy note"
+
     def test_search_finds_by_full_text(self, either_db):
         ids = _seed(either_db)
         hits = either_db.search("programming language")

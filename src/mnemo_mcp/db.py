@@ -1404,16 +1404,24 @@ class MemoryDB:
 
         return [dict(r) for r in rows]
 
-    def get(self, memory_id: str) -> dict | None:
+    def get(self, memory_id: str, subject: str | None = None) -> dict | None:
         """Get a single memory by ID.
 
         Bitemporal (mem_003): only returns the row when it is still current
         (``valid_to IS NULL``). A superseded/soft-deleted id returns None --
         callers must switch to the id returned by :meth:`update`.
+
+        MN-3 subject contract (same semantics as search): ``subject=None``
+        is the unfiltered legacy view; a named subject sees only rows whose
+        subject matches -- rows captured with a NULL subject (legacy or
+        unattributed) are invisible to a scoped fetch.
         """
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL", (memory_id,)
-        ).fetchone()
+        sql = "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL"
+        params: list = [memory_id]
+        if subject is not None:
+            sql += " AND subject = ?"
+            params.append(subject)
+        row = self._conn.execute(sql, tuple(params)).fetchone()
         return dict(row) if row else None
 
     def update(

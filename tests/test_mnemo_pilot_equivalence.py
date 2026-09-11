@@ -11,6 +11,7 @@ strings — any other difference fails the gate.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -18,18 +19,25 @@ from typing import Any
 import pytest
 
 from mnemo_cli.__main__ import main as cli_main
+from mnemo_core import operations, results
 from mnemo_mcp import pilot_tools
 from mnemo_mcp.db import MemoryDB
+
+_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
 def _canonical(envelope: dict) -> str:
     """Canonical form with volatile fields (fresh ids, timestamps) masked.
 
     Each surface runs against its own store file, so freshly generated ids
-    can never match; the equivalence property is byte-equality modulo those.
+    can never match -- including ids embedded inside message strings (e.g.
+    "memory '<id>' not found"); the equivalence property is byte-equality
+    modulo those.
     """
 
     def scrub(obj: object) -> object:
+        if isinstance(obj, str):
+            return _ID_RE.sub("<id>", obj)
         if isinstance(obj, dict):
             return {
                 k: (
@@ -38,7 +46,12 @@ def _canonical(envelope: dict) -> str:
                     else (
                         "<ts>"
                         if k in ("created_at", "updated_at", "last_accessed")
-                        else scrub(v)
+                        # Hybrid score folds in recency, which is derived from
+                        # the store-local capture clock: two identical seeds
+                        # capture microseconds apart, so full precision is
+                        # clock noise, not a surface difference. Scorer math
+                        # itself is covered by the retrieval suites.
+                        else ("<score>" if k == "score" else scrub(v))
                     )
                 )
                 for k, v in obj.items()
@@ -145,6 +158,87 @@ def test_happy_capture_recall_round_trip_both_surfaces(
     recalled = pilot_tools.pilot_recall(mcp_store, "bob", {"query": "gamma release"})
     assert recalled["ok"] is True
     assert recalled["data"]["matches"] == []
+
+
+def test_subject_isolation_envelopes_are_byte_equal_both_surfaces(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """MN-3 wave 3: the subject contract observes identical envelopes on the
+    CLI and MCP surfaces. Both stores start from the same seeded state (one
+    alice row, one legacy NULL-subject row); every recall/fetch subject case
+    must produce byte-equal envelopes across surfaces.
+    """
+    cli_db = tmp_path / "iso-cli.db"
+    mcp_store = MemoryDB(tmp_path / "iso-mcp.db", embedding_dims=0)
+    cli_seed = MemoryDB(cli_db, embedding_dims=0)
+    operations.capture(cli_seed, "alice", "alice deploy checklist")
+    cli_seed.add(content="legacy blob", category="general")
+    cli_seed.close()
+    operations.capture(mcp_store, "alice", "alice deploy checklist")
+    mcp_store.add(content="legacy blob", category="general")
+
+    recall_cases = [
+        ("alice", {"query": "deploy checklist", "k": 5}),
+        ("bob", {"query": "deploy checklist", "k": 5}),
+        ("alice", {"query": "legacy blob", "k": 5}),
+        (None, {"query": "legacy blob", "k": 5}),
+    ]
+    for i, (subject, mcp_args) in enumerate(recall_cases):
+        cli_args = ["recall", "--db", str(cli_db)]
+        if subject is not None:
+            cli_args += ["--subject", subject]
+        cli_args += [str(mcp_args["query"]), "--k", str(mcp_args["k"])]
+        cli_out, cli_code = _run_cli(cli_args, capsys)
+        cli_env = json.loads(cli_out)
+        mcp_env = _HANDLERS["recall"](mcp_store, subject, mcp_args)
+        assert _canonical(cli_env) == _canonical(mcp_env), f"recall case {i}"
+        assert (cli_env["ok"] is True) == (cli_code == 0)
+
+    # Each store holds its own rows (ids differ per surface); resolve the
+    # equivalent target id per surface, then compare canonical envelopes --
+    # _canonical masks ids, so surface equality still holds.
+    def _target_id(store: MemoryDB, subject: str | None, query: str) -> str:
+        matches = operations.recall(store, subject, query)["data"]["matches"]
+        assert matches, "seed row missing"
+        return matches[0]["id"]
+
+    # Resolve both surfaces' target ids up front and symmetrically: search
+    # bumps access stats, so an asymmetric lookup order would itself shift
+    # the access_count the later fetch envelopes expose.
+    cli_prober = MemoryDB(cli_db, embedding_dims=0)
+    cli_alice = _target_id(cli_prober, "alice", "deploy checklist")
+    cli_legacy = _target_id(cli_prober, None, "legacy blob")
+    cli_prober.close()
+    mcp_alice = _target_id(mcp_store, "alice", "deploy checklist")
+    mcp_legacy = _target_id(mcp_store, None, "legacy blob")
+
+    fetch_cases = [
+        # (query naming the row, subject, expected error code or None)
+        ("deploy checklist", "bob", results.NOT_FOUND),
+        ("legacy blob", "alice", results.NOT_FOUND),
+        ("deploy checklist", "alice", None),
+        ("legacy blob", None, None),
+    ]
+    for j, (query, subject, want_code) in enumerate(fetch_cases):
+        if query.startswith("deploy"):
+            cli_id, mcp_id = cli_alice, mcp_alice
+        else:
+            cli_id, mcp_id = cli_legacy, mcp_legacy
+        cli_args = ["fetch", "--db", str(cli_db)]
+        if subject is not None:
+            cli_args += ["--subject", subject]
+        cli_args += [cli_id]
+        cli_out, cli_code = _run_cli(cli_args, capsys)
+        cli_env = json.loads(cli_out)
+        mcp_env = _HANDLERS["fetch"](mcp_store, subject, {"memory_id": mcp_id})
+        assert _canonical(cli_env) == _canonical(mcp_env), f"fetch case {j}"
+        if want_code is None:
+            assert cli_env["ok"] is True and mcp_env["ok"] is True
+        else:
+            assert cli_env["error"]["code"] == want_code
+            assert mcp_env["error"]["code"] == want_code
+    mcp_store.close()
 
 
 @pytest.fixture
