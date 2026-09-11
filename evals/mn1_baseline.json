@@ -1,0 +1,54 @@
+{
+  "corpus": "mn1-eval-baseline",
+  "corpus_version": "1.0.0",
+  "deterministic": true,
+  "paid_calls": 0,
+  "total_cases": 13,
+  "passed": 13,
+  "accuracy": 1.0,
+  "latency_ms_p50": 0.603,
+  "latency_ms_p95": 1.493,
+  "cost_usd": 0.0,
+  "known_gaps": [
+    "negation: FTS5 matches negated mentions inside content (e.g. 'khong dung docker' still matches 'docker'); semantic negation handling is a later MN phase, not scored here",
+    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core"
+  ],
+  "categories": {
+    "abstention": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0
+    },
+    "correction_supersede": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0
+    },
+    "deletion_taxonomy": {
+      "cases": 1,
+      "passed": 1,
+      "accuracy": 1.0
+    },
+    "isolation": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0
+    },
+    "round_trip": {
+      "cases": 3,
+      "passed": 3,
+      "accuracy": 1.0
+    },
+    "time_token": {
+      "cases": 2,
+      "passed": 2,
+      "accuracy": 1.0
+    },
+    "validation": {
+      "cases": 1,
+      "passed": 1,
+      "accuracy": 1.0
+    }
+  },
+  "failed_cases": []
+}

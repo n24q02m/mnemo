@@ -1,0 +1,143 @@
+{
+  "name": "mn1-eval-baseline",
+  "version": "1.0.0",
+  "description": "MN-1 eval baseline corpus (VN/EN) for the mnemo pilot domain core (TOOL-1). Deterministic, offline, dims=0 (FTS5), zero paid calls. Categories only assert semantics the pilot surface (capture/recall/fetch) genuinely has; documented known-gaps are recorded unscored.",
+  "known_gaps": [
+    "negation: FTS5 matches negated mentions inside content (e.g. 'khong dung docker' still matches 'docker'); semantic negation handling is a later MN phase, not scored here",
+    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core"
+  ],
+  "cases": [
+    {
+      "id": "roundtrip-en-01",
+      "category": "round_trip",
+      "lang": "en",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "mnemo pilot stores memories in sqlite FTS5", "tags": ["ops"], "category": "general"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "FTS5", "k": 5}},
+      "expect": {"type": "contains", "needle": "FTS5"}
+    },
+    {
+      "id": "roundtrip-vi-01",
+      "category": "round_trip",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "binh", "args": {"content": "he thong luu tru su co su dung sqlite FTS5 de tim kiem", "tags": ["ops"], "category": "general"}}
+      ],
+      "probe": {"op": "recall", "subject": "binh", "args": {"query": "FTS5", "k": 5}},
+      "expect": {"type": "contains", "needle": "FTS5"}
+    },
+    {
+      "id": "roundtrip-vi-02-diacritics",
+      "category": "round_trip",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "binh", "args": {"content": "lich trien khai production vao thu hai", "tags": ["release"], "category": "schedule"}}
+      ],
+      "probe": {"op": "recall", "subject": "binh", "args": {"query": "trien khai", "k": 5}},
+      "expect": {"type": "contains", "needle": "trien khai"}
+    },
+    {
+      "id": "isolation-en-01",
+      "category": "isolation",
+      "lang": "en",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "alice prefers the us-east-1 region", "tags": ["infra"]}},
+        {"op": "capture", "subject": "carol", "args": {"content": "carol prefers the eu-central-1 region", "tags": ["infra"]}}
+      ],
+      "probe": {"op": "recall", "subject": "carol", "args": {"query": "region", "k": 5}},
+      "expect": {"type": "contains", "needle": "eu-central-1"}
+    },
+    {
+      "id": "isolation-vi-01",
+      "category": "isolation",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "binh", "args": {"content": "binh quan ly kho du lieu postgres", "tags": ["db"]}},
+        {"op": "capture", "subject": "mai", "args": {"content": "mai quan ly kho du lieu clickhouse", "tags": ["db"]}}
+      ],
+      "probe": {"op": "recall", "subject": "mai", "args": {"query": "quan ly", "k": 5}},
+      "expect": {"type": "contains", "needle": "clickhouse"}
+    },
+    {
+      "id": "abstention-en-01",
+      "category": "abstention",
+      "lang": "en",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "quarterly billing export runs on the first monday", "tags": ["billing"]}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "kubernetes cluster autoscaling", "k": 5}},
+      "expect": {"type": "absent_all"}
+    },
+    {
+      "id": "abstention-vi-01",
+      "category": "abstention",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "binh", "args": {"content": "bao cao doanh thu hang tuan gui vao sang thu sau", "tags": ["report"]}}
+      ],
+      "probe": {"op": "recall", "subject": "binh", "args": {"query": "cau hinh firewall", "k": 5}},
+      "expect": {"type": "absent_all"}
+    },
+    {
+      "id": "supersede-en-01",
+      "category": "correction_supersede",
+      "lang": "en",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "staging database host is db-staging-01"}},
+        {"op": "capture", "subject": "alice", "args": {"content": "UPDATE: staging database host is now db-staging-02 (supersedes db-staging-01)"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "staging database host", "k": 5}},
+      "expect": {"type": "contains", "needle": "db-staging-02"}
+    },
+    {
+      "id": "supersede-vi-01",
+      "category": "correction_supersede",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "mai", "args": {"content": "tai khoan reporting la report-bot-01"}},
+        {"op": "capture", "subject": "mai", "args": {"content": "CAP NHAT: tai khoan reporting gio la report-bot-02 (thay the report-bot-01)"}}
+      ],
+      "probe": {"op": "recall", "subject": "mai", "args": {"query": "tai khoan reporting", "k": 5}},
+      "expect": {"type": "contains", "needle": "report-bot-02"}
+    },
+    {
+      "id": "time-token-en-01",
+      "category": "time_token",
+      "lang": "en",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "production cutover is scheduled for 2026-10-01", "tags": ["release"]}},
+        {"op": "capture", "subject": "alice", "args": {"content": "team offsite is scheduled for 2026-11-20", "tags": ["team"]}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "2026-10-01", "k": 5}},
+      "expect": {"type": "contains", "needle": "cutover"}
+    },
+    {
+      "id": "time-token-vi-01",
+      "category": "time_token",
+      "lang": "vi",
+      "setup": [
+        {"op": "capture", "subject": "binh", "args": {"content": "han chot nop bao cao la 2026-12-15", "tags": ["report"]}},
+        {"op": "capture", "subject": "binh", "args": {"content": "buoi onboarding nhan vien moi vao 2026-09-30", "tags": ["hr"]}}
+      ],
+      "probe": {"op": "recall", "subject": "binh", "args": {"query": "2026-12-15", "k": 5}},
+      "expect": {"type": "contains", "needle": "bao cao"}
+    },
+    {
+      "id": "fetch-missing-vi-01",
+      "category": "deletion_taxonomy",
+      "lang": "vi",
+      "setup": [],
+      "probe": {"op": "fetch", "subject": "binh", "args": {"memory_id": "does-not-exist"}},
+      "expect": {"type": "error_code", "code": "NOT_FOUND"}
+    },
+    {
+      "id": "validation-empty-en-01",
+      "category": "validation",
+      "lang": "en",
+      "setup": [],
+      "probe": {"op": "capture", "subject": "alice", "args": {"content": "   "}},
+      "expect": {"type": "error_code", "code": "VALIDATION"}
+    }
+  ]
+}
