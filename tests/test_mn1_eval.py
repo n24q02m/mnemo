@@ -34,6 +34,14 @@ def test_baseline_all_cases_pass(tmp_path: Path) -> None:
     assert report["total_cases"] >= 12
     assert report["failed_cases"] == [], f"failed: {report['failed_cases']}"
     assert report["accuracy"] == 1.0
+    assert report["paid_calls"] == 0
+    assert report["cost_usd"] == 0.0
+    assert report["per_case_stores"] is True
+    assert set(report["categories"]) == EXPECTED_CATEGORIES
+    # Load-bearing honesty pin: the pilot recall passes no subject to the
+    # storage search, so the runner must keep recording the leak, not
+    # silently certify isolation.
+    assert report["subject_scoping_enforced"] is False
 
 
 def test_isolation_probe_records_leak_informationally(tmp_path: Path) -> None:
