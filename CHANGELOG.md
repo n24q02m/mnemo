@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.12.0 (2026-09-11)
+
+### Features
+
+- Mn6 multilingual + public domain eval, hosted-runner timeout fix
+  ([#1216](https://github.com/n24q02m/mnemo-mcp/pull/1216),
+  [`f1d3465`](https://github.com/n24q02m/mnemo-mcp/commit/f1d3465c961978699cdb0106a3e9760c72a9e8af))
+
+
 ## v2.11.2 (2026-09-11)
 
 ### Bug Fixes
