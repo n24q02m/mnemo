@@ -1,0 +1,19 @@
+{
+  "corpus": "mn6-eval-multilingual",
+  "corpus_version": 1,
+  "deterministic": true,
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "per_case_stores": true,
+  "total_cases": 10,
+  "passed": 10,
+  "failed_cases": [],
+  "accuracy": 1.0,
+  "latency_ms_mean": 0.718,
+  "latency_ms_p95": 0.838,
+  "known_gaps": [
+    "FTS5 diacritic folding is asymmetric: multi-word non-diacritic queries match diacritic content, but a single non-diacritic token does not match its diacritic form (pinned as absent_all, not scored as failure)",
+    "retrieval is lexical (FTS5); no semantic fallback without embeddings in the dry tier",
+    "public domain access is subject=None (legacy/unscoped rows) through the same scoped surfaces; no HTTP/SDK surface - CLI/API per P6"
+  ]
+}

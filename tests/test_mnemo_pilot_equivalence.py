@@ -89,6 +89,18 @@ SCENARIOS: list[tuple[str, dict[str, Any]]] = [
             "seed": [{"content": "deploy checklist for pilot", "tags": ["ops"]}],
         },
     ),
+    (
+        "capture",
+        {"content": "Hồ Gươm nằm ở quận Hoàn Kiếm, Hà Nội", "tags": ["vi"]},
+    ),
+    ("recall", {"query": "Hồ Gươm", "k": 5}),
+    (
+        "reflect",
+        {
+            "query": "họp ngày mai",
+            "seed": [{"content": "ghi chú họp ngày mai lúc 9 giờ"}],
+        },
+    ),
     ("standing-refresh", {"key": "   "}),  # VALIDATION
     ("standing-refresh", {"key": "dp", "question": "deploy checklist"}),  # abstain page
     (

@@ -1,0 +1,112 @@
+{
+  "name": "mn6-eval-multilingual",
+  "version": 1,
+  "known_gaps": [
+    "FTS5 diacritic folding is asymmetric: multi-word non-diacritic queries match diacritic content, but a single non-diacritic token does not match its diacritic form (pinned as absent_all, not scored as failure)",
+    "retrieval is lexical (FTS5); no semantic fallback without embeddings in the dry tier",
+    "public domain access is subject=None (legacy/unscoped rows) through the same scoped surfaces; no HTTP/SDK surface - CLI/API per P6"
+  ],
+  "cases": [
+    {
+      "id": "mn6-vi-roundtrip-diacritics",
+      "lang": "vi",
+      "category": "vi_roundtrip",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "Hồ Gươm nằm ở quận Hoàn Kiếm, Hà Nội"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "Hồ Gươm", "k": 5}},
+      "expect": {"type": "contains", "needle": "Hoàn Kiếm"}
+    },
+    {
+      "id": "mn6-vi-entity-native",
+      "lang": "vi",
+      "category": "vi_roundtrip",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "Nguyễn Du viết Truyện Kiều đầu thế kỷ 19"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "Nguyễn Du", "k": 5}},
+      "expect": {"type": "contains", "needle": "Truyện Kiều"}
+    },
+    {
+      "id": "mn6-vi-query-no-diacritics-two-words",
+      "lang": "vi",
+      "category": "diacritic_folding",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "Hồ Gươm nằm ở quận Hoàn Kiếm, Hà Nội"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "ho guom", "k": 5}},
+      "expect": {"type": "contains", "needle": "Hồ Gươm"}
+    },
+    {
+      "id": "mn6-vi-single-token-no-diacritics",
+      "lang": "vi",
+      "category": "diacritic_folding",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "Nguyễn Du viết Truyện Kiều"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "kieu", "k": 5}},
+      "expect": {"type": "absent_all"}
+    },
+    {
+      "id": "mn6-mixed-vi-en-content",
+      "lang": "vi",
+      "category": "vi_roundtrip",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "Deploy checklist server Hà Nội: backup DB trước khi restart"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "checklist Hà Nội", "k": 5}},
+      "expect": {"type": "contains", "needle": "backup DB"}
+    },
+    {
+      "id": "mn6-vi-reflect-extractive",
+      "lang": "vi",
+      "category": "vi_reflect",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "ghi chú họp ngày mai lúc 9 giờ với nhóm pilot"}}
+      ],
+      "probe": {"op": "reflect", "subject": "alice", "args": {"query": "họp ngày mai", "k": 5}},
+      "expect": {"type": "reflect_answer_contains", "needle": "họp ngày mai lúc 9 giờ"}
+    },
+    {
+      "id": "mn6-vi-standing-page",
+      "lang": "vi",
+      "category": "vi_standing",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "mật khẩu wifi văn phòng là chuột đồng câu hỏi bảo mật"}},
+        {"op": "standing_refresh", "subject": "alice", "args": {"key": "wifi-page", "question": "wifi văn phòng"}}
+      ],
+      "probe": {"op": "standing_read", "subject": "alice", "args": {"key": "wifi-page"}},
+      "expect": {"type": "standing_fresh", "answer_contains": "mật khẩu wifi"}
+    },
+    {
+      "id": "mn6-vi-subject-isolation",
+      "lang": "vi",
+      "category": "public_domain",
+      "setup": [
+        {"op": "capture", "subject": "alice", "args": {"content": "ghi chú riêng của alice về hợp đồng"}}
+      ],
+      "probe": {"op": "recall", "subject": "bob", "args": {"query": "hợp đồng", "k": 5}},
+      "expect": {"type": "absent_all"}
+    },
+    {
+      "id": "mn6-public-domain-null-subject-visible-unscoped",
+      "lang": "vi",
+      "category": "public_domain",
+      "setup": [
+        {"op": "capture", "subject": null, "args": {"content": "thông báo công khai: bảo trì hệ thống chủ nhật"}}
+      ],
+      "probe": {"op": "recall", "subject": null, "args": {"query": "bảo trì công khai", "k": 5}},
+      "expect": {"type": "contains", "needle": "bảo trì hệ thống"}
+    },
+    {
+      "id": "mn6-public-domain-invisible-to-scoped",
+      "lang": "vi",
+      "category": "public_domain",
+      "setup": [
+        {"op": "capture", "subject": null, "args": {"content": "thông báo công khai: bảo trì hệ thống chủ nhật"}}
+      ],
+      "probe": {"op": "recall", "subject": "alice", "args": {"query": "bảo trì", "k": 5}},
+      "expect": {"type": "absent_all"}
+    }
+  ]
+}

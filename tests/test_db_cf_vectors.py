@@ -61,6 +61,12 @@ from mnemo_mcp.db_cf import (
 )
 from mnemo_mcp.exceptions import EmbeddingModelMismatch
 
+# Hosted-runner intervention (2026-09-11): the migration-executescript
+# fixtures (``fake_worker``) hit the global 30s per-test budget on
+# GitHub windows runners repeatedly while local runs finish in seconds.
+# Give every test in this file its own larger budget.
+pytestmark = pytest.mark.timeout(120)
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _MIGRATION = _REPO_ROOT / "migrations" / "0001_init.sql"
 _MIGRATION_2 = _REPO_ROOT / "migrations" / "0002_per_sub_isolation.sql"
