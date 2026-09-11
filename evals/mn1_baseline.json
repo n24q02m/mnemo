@@ -3,15 +3,19 @@
   "corpus_version": "1.0.0",
   "deterministic": true,
   "paid_calls": 0,
+  "per_case_stores": true,
   "total_cases": 13,
   "passed": 13,
   "accuracy": 1.0,
-  "latency_ms_p50": 0.603,
-  "latency_ms_p95": 1.493,
+  "latency_ms_p50": 0.807,
+  "latency_ms_p95": 0.978,
   "cost_usd": 0.0,
+  "subject_scoping_enforced": false,
   "known_gaps": [
     "negation: FTS5 matches negated mentions inside content (e.g. 'khong dung docker' still matches 'docker'); semantic negation handling is a later MN phase, not scored here",
-    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core"
+    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core",
+    "subject scoping: recall passes no subject to the storage search (operations.recall -> store.search(query, limit)), so cross-subject rows leak into matches; leak probes record this informationally (subject_scoping_enforced) and it is not scored",
+    "no update/delete op in the pilot core: corrections are supersede-by-new-capture; hard deletion is not expressible at this tier (missing_fetch_taxonomy only pins the NOT_FOUND envelope)"
   ],
   "categories": {
     "abstention": {
@@ -24,14 +28,14 @@
       "passed": 2,
       "accuracy": 1.0
     },
-    "deletion_taxonomy": {
-      "cases": 1,
-      "passed": 1,
-      "accuracy": 1.0
-    },
-    "isolation": {
+    "isolation_leak_probe": {
       "cases": 2,
       "passed": 2,
+      "accuracy": 1.0
+    },
+    "missing_fetch_taxonomy": {
+      "cases": 1,
+      "passed": 1,
       "accuracy": 1.0
     },
     "round_trip": {

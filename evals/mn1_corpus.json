@@ -4,7 +4,9 @@
   "description": "MN-1 eval baseline corpus (VN/EN) for the mnemo pilot domain core (TOOL-1). Deterministic, offline, dims=0 (FTS5), zero paid calls. Categories only assert semantics the pilot surface (capture/recall/fetch) genuinely has; documented known-gaps are recorded unscored.",
   "known_gaps": [
     "negation: FTS5 matches negated mentions inside content (e.g. 'khong dung docker' still matches 'docker'); semantic negation handling is a later MN phase, not scored here",
-    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core"
+    "temporal ordering: dates are content tokens only; no time-aware ranking exists in the pilot core",
+    "subject scoping: recall passes no subject to the storage search (operations.recall -> store.search(query, limit)), so cross-subject rows leak into matches; leak probes record this informationally (subject_scoping_enforced) and it is not scored",
+    "no update/delete op in the pilot core: corrections are supersede-by-new-capture; hard deletion is not expressible at this tier (missing_fetch_taxonomy only pins the NOT_FOUND envelope)"
   ],
   "cases": [
     {
@@ -32,32 +34,32 @@
       "category": "round_trip",
       "lang": "vi",
       "setup": [
-        {"op": "capture", "subject": "binh", "args": {"content": "lich trien khai production vao thu hai", "tags": ["release"], "category": "schedule"}}
+        {"op": "capture", "subject": "binh", "args": {"content": "lịch triển khai production vào thứ hai", "tags": ["release"], "category": "schedule"}}
       ],
-      "probe": {"op": "recall", "subject": "binh", "args": {"query": "trien khai", "k": 5}},
-      "expect": {"type": "contains", "needle": "trien khai"}
+      "probe": {"op": "recall", "subject": "binh", "args": {"query": "triển khai", "k": 5}},
+      "expect": {"type": "contains", "needle": "triển khai"}
     },
     {
       "id": "isolation-en-01",
-      "category": "isolation",
+      "category": "isolation_leak_probe",
       "lang": "en",
       "setup": [
         {"op": "capture", "subject": "alice", "args": {"content": "alice prefers the us-east-1 region", "tags": ["infra"]}},
         {"op": "capture", "subject": "carol", "args": {"content": "carol prefers the eu-central-1 region", "tags": ["infra"]}}
       ],
       "probe": {"op": "recall", "subject": "carol", "args": {"query": "region", "k": 5}},
-      "expect": {"type": "contains", "needle": "eu-central-1"}
+      "expect": {"type": "contains_with_leak_probe", "needle": "eu-central-1", "must_not": "us-east-1"}
     },
     {
       "id": "isolation-vi-01",
-      "category": "isolation",
+      "category": "isolation_leak_probe",
       "lang": "vi",
       "setup": [
         {"op": "capture", "subject": "binh", "args": {"content": "binh quan ly kho du lieu postgres", "tags": ["db"]}},
         {"op": "capture", "subject": "mai", "args": {"content": "mai quan ly kho du lieu clickhouse", "tags": ["db"]}}
       ],
       "probe": {"op": "recall", "subject": "mai", "args": {"query": "quan ly", "k": 5}},
-      "expect": {"type": "contains", "needle": "clickhouse"}
+      "expect": {"type": "contains_with_leak_probe", "needle": "clickhouse", "must_not": "postgres"}
     },
     {
       "id": "abstention-en-01",
@@ -125,7 +127,7 @@
     },
     {
       "id": "fetch-missing-vi-01",
-      "category": "deletion_taxonomy",
+      "category": "missing_fetch_taxonomy",
       "lang": "vi",
       "setup": [],
       "probe": {"op": "fetch", "subject": "binh", "args": {"memory_id": "does-not-exist"}},
