@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v2.11.1 (2026-09-11)
+
+### Bug Fixes
+
+- **deps**: Update non-major dev dependencies
+  ([#1214](https://github.com/n24q02m/mnemo-mcp/pull/1214),
+  [`073819f`](https://github.com/n24q02m/mnemo-mcp/commit/073819f8c935e2b955955e3bedc885bb3cfcbdba))
+
+### Chores
+
+- Empty commit to verify merge=release ladder main channel
+  ([`a20578c`](https://github.com/n24q02m/mnemo-mcp/commit/a20578c145b49adc12b8f73de1bc5d952b8f99f5))
+
+
 ## v2.11.0 (2026-09-11)
 
 ### Bug Fixes
