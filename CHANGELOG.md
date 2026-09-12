@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.12.1 (2026-09-12)
+
+### Bug Fixes
+
+- Record standing-pages-in-recall known gap in mn5 corpus
+  ([#1217](https://github.com/n24q02m/mnemo-mcp/pull/1217),
+  [`a0e40c0`](https://github.com/n24q02m/mnemo-mcp/commit/a0e40c02010829b07985b297b91fa3f669ca1647))
+
+
 ## v2.12.0 (2026-09-11)
 
 ### Features
