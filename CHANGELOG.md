@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v2.13.0 (2026-09-12)
+
+### Chores
+
+- **rulesets**: Align IaC with repo-bootstrap template
+  ([`f615547`](https://github.com/n24q02m/mnemo-mcp/commit/f6155477bf6f4d33fafc62ca952d5d17627667ca))
+
+### Features
+
+- Mn4 paid reflect - bounded provider, hard cap, cost receipts
+  ([#1218](https://github.com/n24q02m/mnemo-mcp/pull/1218),
+  [`2312dcd`](https://github.com/n24q02m/mnemo-mcp/commit/2312dcd813daaf7932860c908d54868dc6ae7649))
+
+
 ## v2.12.1 (2026-09-12)
 
 ### Bug Fixes
