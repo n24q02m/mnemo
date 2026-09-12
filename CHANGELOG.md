@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.13.1 (2026-09-12)
+
+### Bug Fixes
+
+- Align reflect default model with the pinned manifest chain
+  ([#1219](https://github.com/n24q02m/mnemo-mcp/pull/1219),
+  [`6067dfa`](https://github.com/n24q02m/mnemo-mcp/commit/6067dfadd65cd1d6b9ebd22fc082e28f7028e404))
+
+
 ## v2.13.0 (2026-09-12)
 
 ### Chores
