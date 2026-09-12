@@ -47,6 +47,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_reflect)
     p_reflect.add_argument("query")
     p_reflect.add_argument("--k", type=int, default=5)
+    p_reflect.add_argument(
+        "--paid",
+        action="store_true",
+        help="Route the answer through a bounded completion provider "
+        "(gateway key from CF_AIG_BASE/CF_AIG_TOKEN or OPENROUTER_API_KEY; "
+        "hard-capped)",
+    )
 
     p_fetch = sub.add_parser("fetch", help="Fetch one memory by id")
     add_common(p_fetch)
@@ -91,10 +98,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 category=args.category,
                 source=args.source,
             )
+        elif args.command == "reflect":
+            provider = None
+            if getattr(args, "paid", False):
+                import os
+
+                from mnemo_mcp.providers import BoundedReflectProvider
+
+                api_base = os.getenv("CF_AIG_BASE")
+                api_key = os.getenv("CF_AIG_TOKEN") or os.getenv("OPENROUTER_API_KEY")
+                if not api_key:
+                    envelope = results.err(
+                        results.AUTH_DENIED,
+                        "--paid requires CF_AIG_TOKEN or OPENROUTER_API_KEY",
+                    )
+                else:
+                    provider = BoundedReflectProvider(
+                        model=os.getenv(
+                            "MNEMO_REFLECT_MODEL", "cohere/command-r-08-2024"
+                        ),
+                        api_key=api_key,
+                        api_base=api_base,
+                        cap_usd=float(os.getenv("MNEMO_REFLECT_CAP_USD", "5.00")),
+                    )
+            if provider is not None or not getattr(args, "paid", False):
+                envelope = operations.reflect(
+                    store, args.subject, args.query, k=args.k, provider=provider
+                )
         elif args.command == "recall":
             envelope = operations.recall(store, args.subject, args.query, k=args.k)
-        elif args.command == "reflect":
-            envelope = operations.reflect(store, args.subject, args.query, k=args.k)
         elif args.command == "standing-refresh":
             envelope = standing.standing_refresh(
                 store, args.subject, args.key, args.question, k=args.k

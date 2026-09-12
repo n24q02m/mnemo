@@ -5,9 +5,7 @@ mnemo_mcp's :class:`~mnemo_mcp.db.MemoryDB` (satisfied structurally).
 Surfaces never talk to storage directly — they call operations.
 """
 
-from __future__ import annotations
-
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
 
 
 class StoragePort(Protocol):
@@ -39,3 +37,29 @@ class StoragePort(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def close(self) -> None: ...
+
+
+class ProviderAnswer(TypedDict):
+    """What a reflect provider must return for one bounded call."""
+
+    text: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class ReflectPort(Protocol):
+    """Bounded generation provider for reflect (P4 paid path).
+
+    Implementations receive ONLY already-redacted citations and the query;
+    they must honor the caller's spend cap and report token usage so the
+    core can build a cost receipt.
+    """
+
+    def synthesize(
+        self, query: str, citations: list[dict[str, Any]]
+    ) -> ProviderAnswer: ...
+
+
+class CapExceeded(RuntimeError):
+    """Raised by a ReflectPort when the session spend cap is exhausted."""

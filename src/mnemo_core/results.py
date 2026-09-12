@@ -14,6 +14,7 @@ VALIDATION = "VALIDATION"
 NOT_FOUND = "NOT_FOUND"
 AUTH_DENIED = "AUTH_DENIED"
 STORAGE = "STORAGE"
+CAP = "CAP"
 INTERNAL = "INTERNAL"
 
 _EXIT_CODES: dict[str, int] = {
@@ -21,6 +22,7 @@ _EXIT_CODES: dict[str, int] = {
     NOT_FOUND: 3,
     AUTH_DENIED: 4,
     STORAGE: 5,
+    CAP: 6,
     INTERNAL: 1,
 }
 

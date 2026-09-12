@@ -16,7 +16,7 @@ from typing import Any
 
 from mnemo_core import results
 from mnemo_core.defense import redact
-from mnemo_core.ports import StoragePort
+from mnemo_core.ports import CapExceeded, ReflectPort, StoragePort
 
 # Mirrors mnemo_mcp.db.MAX_CONTENT_LENGTH (validated at the DB layer too);
 # re-declared here so VALIDATION mapping does not depend on the adapter.
@@ -116,14 +116,20 @@ def reflect(
     subject: str | None,
     query: str,
     k: int = 5,
+    provider: ReflectPort | None = None,
 ) -> dict[str, Any]:
-    """Bounded cited reflect (P4, dry).
+    """Bounded cited reflect (P4).
 
-    The answer is composed ONLY from retrieval results (extractive: the best
-    match's redacted content is returned verbatim as ``answer``). When
-    retrieval has no support the envelope abstains explicitly. Zero model
-    calls are made, and the cost receipt is always present so the caller can
-    audit boundedness. Reflect never writes back.
+    Dry path (``provider is None``, default): the answer is composed ONLY
+    from retrieval results (extractive: the best match's redacted content is
+    returned verbatim as ``answer``). Zero model calls.
+
+    Paid path (``provider`` given): the redacted citations and the query are
+    handed to the provider and its completion becomes ``answer``. The provider
+    is invoked ONLY when retrieval has support — an abstention makes no call.
+    Citations never carry unredacted content across the boundary in either
+    path. Reflect never writes back. The cost receipt is always present so
+    the caller can audit boundedness.
     """
     if not query or not query.strip():
         return results.err(results.VALIDATION, "query is required")
@@ -148,7 +154,11 @@ def reflect(
             for row in rows
         ]
     )
-    receipt = {"model_calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    receipt: dict[str, Any] = {
+        "model_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+    }
     if not citations:
         return results.ok(
             {
@@ -161,11 +171,42 @@ def reflect(
                 "cost": receipt,
             }
         )
-    best = citations[0]
+    if provider is None:
+        return results.ok(
+            {
+                "subject": subject,
+                "answer": citations[0]["content"],
+                "abstained": False,
+                "citations": citations,
+                "redactions": redactions,
+                "cost": receipt,
+            }
+        )
+    try:
+        answer = provider.synthesize(query.strip(), citations)
+    except CapExceeded as exc:
+        return results.err(results.CAP, str(exc))
+    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, f"provider failed: {exc}")
+    receipt.update(
+        {
+            "model_calls": 1,
+            "prompt_tokens": answer["prompt_tokens"],
+            "completion_tokens": answer["completion_tokens"],
+            "model": answer["model"],
+            "est_cost_usd": round(
+                provider.estimate_cost(
+                    answer["prompt_tokens"], answer["completion_tokens"]
+                ),
+                6,
+            ),
+            "session_spent_usd": round(provider.spent_usd, 6),
+        }
+    )
     return results.ok(
         {
             "subject": subject,
-            "answer": best["content"],
+            "answer": answer["text"],
             "abstained": False,
             "citations": citations,
             "redactions": redactions,

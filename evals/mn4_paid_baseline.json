@@ -1,0 +1,170 @@
+{
+  "tier": "mn4-paid",
+  "model": "cohere/command-r-08-2024",
+  "hard_cap_usd": 5.0,
+  "deterministic": true,
+  "paid_calls": 6,
+  "session_spent_usd": 0.00121,
+  "accuracy": 1.0,
+  "failed_cases": [],
+  "latency_ms": {
+    "p50": 1227.5,
+    "p95": 26116.9
+  },
+  "cases": [
+    {
+      "id": "mn4-cite-en-deploy",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] deploy checklist for pilot",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 36,
+        "completion_tokens": 7,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.00016,
+        "session_spent_usd": 0.00016
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-cite-vi-meeting",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] ghi chú họp ngày mai lúc 9 giờ với nhóm pilot",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 45,
+        "completion_tokens": 15,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.000263,
+        "session_spent_usd": 0.000423
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-cite-picks-best-match",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] oncall rotation: alice covers monday",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 43,
+        "completion_tokens": 11,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.000218,
+        "session_spent_usd": 0.00064
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-abstain-empty-store",
+      "verdict": "pass",
+      "abstained": true,
+      "answer_preview": "",
+      "cost": {
+        "model_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-abstain-no-lexical-overlap",
+      "verdict": "pass",
+      "abstained": true,
+      "answer_preview": "",
+      "cost": {
+        "model_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-scope-bob-abstains",
+      "verdict": "pass",
+      "abstained": true,
+      "answer_preview": "",
+      "cost": {
+        "model_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-scope-alice-answers",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] alice deploy checklist",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 35,
+        "completion_tokens": 6,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.000147,
+        "session_spent_usd": 0.000788
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-scope-legacy-invisible-to-scoped",
+      "verdict": "pass",
+      "abstained": true,
+      "answer_preview": "",
+      "cost": {
+        "model_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-scope-null-sees-legacy",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] legacy blob without subject",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 36,
+        "completion_tokens": 7,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.00016,
+        "session_spent_usd": 0.000947
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-redaction-secret-masked",
+      "verdict": "pass",
+      "abstained": false,
+      "answer_preview": "[1] oncall email [REDACTED:email] handles incidents",
+      "cost": {
+        "model_calls": 1,
+        "prompt_tokens": 45,
+        "completion_tokens": 15,
+        "model": "cohere/command-r-08-2024",
+        "est_cost_usd": 0.000263,
+        "session_spent_usd": 0.00121
+      },
+      "detail": ""
+    },
+    {
+      "id": "mn4-validation-empty-query",
+      "verdict": "pass",
+      "abstained": null,
+      "answer_preview": "",
+      "cost": null,
+      "detail": "error:VALIDATION"
+    },
+    {
+      "id": "mn4-validation-k-below-one",
+      "verdict": "pass",
+      "abstained": null,
+      "answer_preview": "",
+      "cost": null,
+      "detail": "error:VALIDATION"
+    }
+  ]
+}
