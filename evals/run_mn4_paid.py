@@ -1,7 +1,9 @@
 """MN-4 paid eval runner: bounded cited reflect through a real provider.
 
 Runs the MN-4 corpus with a live ``BoundedReflectProvider`` (Cohere
-command-r7b-12-2024 via the Cloudflare AI Gateway OpenRouter route) and
+the manifest-pinned free chain (default ``openrouter/minimax/minimax-m3:free``)
+via the Cloudflare AI Gateway OpenRouter route; paid Cohere comparisons run with
+``MNEMO_REFLECT_MODEL=cohere/command-r-08-2024`` overrides) and
 scores the corpus contract on the PAID path:
 
 - ``reflect_answer_contains``: exactly one model call, complete receipt, and
@@ -30,7 +32,7 @@ from mnemo_mcp.providers import BoundedReflectProvider
 
 CORPUS_PATH = Path(__file__).parent / "mn4_reflect_corpus.json"
 REPORT_PATH = Path(__file__).parent / "mn4_paid_baseline.json"
-MODEL = os.getenv("MNEMO_REFLECT_MODEL", "cohere/command-r7b-12-2024")
+MODEL = os.getenv("MNEMO_REFLECT_MODEL", "openrouter/minimax/minimax-m3:free")
 
 
 def _provider() -> BoundedReflectProvider:

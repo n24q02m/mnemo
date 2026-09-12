@@ -115,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else:
                     provider = BoundedReflectProvider(
                         model=os.getenv(
-                            "MNEMO_REFLECT_MODEL", "cohere/command-r-08-2024"
+                            "MNEMO_REFLECT_MODEL", "openrouter/minimax/minimax-m3:free"
                         ),
                         api_key=api_key,
                         api_base=api_base,
