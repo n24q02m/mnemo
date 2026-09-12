@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.13.3 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Update boto3 to >=1.43.89 ([#1213](https://github.com/n24q02m/mnemo-mcp/pull/1213),
+  [`c66dec9`](https://github.com/n24q02m/mnemo-mcp/commit/c66dec97248f489378ac03379c12cad5d31269eb))
+
+
 ## v2.13.2 (2026-09-12)
 
 ### Bug Fixes
