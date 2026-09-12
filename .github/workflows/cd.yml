@@ -15,7 +15,7 @@ on:
           - stable
 
 env:
-  # Unified release ladder: push to staging = beta, push to main = stable.
+# Release lane: merge to main auto-publishes stable; beta only via manual dispatch (release_type=beta).
   RELEASE_TYPE: ${{ github.event_name == 'push' && 'stable' || inputs.release_type }}
 
 permissions:
