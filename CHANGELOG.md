@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.13.2 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Update dawidd6/action-send-mail action to v21
+  ([#1215](https://github.com/n24q02m/mnemo-mcp/pull/1215),
+  [`423ee2c`](https://github.com/n24q02m/mnemo-mcp/commit/423ee2cb7540e7e6fa84dfa9c3a1e7663c3d653b))
+
+
 ## v2.13.1 (2026-09-12)
 
 ### Bug Fixes
