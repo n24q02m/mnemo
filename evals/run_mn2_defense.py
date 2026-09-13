@@ -36,6 +36,11 @@ POSITIVE_CASES = [
     },
     {"id": "tp-email", "kind": "email", "secret": "mai.nguyen@example.com"},
     {"id": "tp-phone", "kind": "vn_phone", "secret": "0912345678"},
+    {
+        "id": "tp-antkey",
+        "kind": "anthropic_key",
+        "secret": "sk-ant-api03-" + "Ab09_-xY3zQ" * 9 + "Lm4Np",
+    },
 ]
 
 

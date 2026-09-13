@@ -126,3 +126,28 @@ def test_refresh_abstaining_question_materializes_empty_page(store: MemoryDB) ->
     assert read["ok"] is True
     assert read["data"]["staleness"] == "fresh"
     assert read["data"]["answer"] is None
+
+
+def test_recall_excludes_standing_by_default(store: MemoryDB) -> None:
+    """MN-5: standing pages stay out of ordinary recall unless opted in."""
+    from mnemo_core import operations
+
+    operations.capture(
+        store, "alice", "deploy checklist for the pilot rollout", category="general"
+    )
+    standing.standing_refresh(
+        store, "alice", "deploy-page", "how do we deploy the pilot?"
+    )
+
+    default_env = operations.recall(store, "alice", "deploy")
+    assert default_env["ok"]
+    assert all(
+        m.get("category") != "_standing" for m in default_env["data"]["matches"]
+    )
+    assert any("deploy checklist" in m["content"] for m in default_env["data"]["matches"])
+
+    optin_env = operations.recall(store, "alice", "deploy", include_standing=True)
+    assert optin_env["ok"]
+    cats = [m.get("category") for m in optin_env["data"]["matches"]]
+    assert "_standing" in cats
+    assert "general" in cats

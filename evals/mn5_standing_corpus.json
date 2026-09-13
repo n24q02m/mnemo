@@ -5,7 +5,7 @@
     "pages are materialized from the dry extractive reflect tier; no generated prose answers",
     "staleness is computed on read against pinned source hashes; there is no scheduled re-validation",
     "the pilot tier has no delete op: invalidation is a tombstone page and supersede is newest-wins",
-    "standing pages are ordinary memory rows in category _standing: their question/answer text matches ordinary recall search and surfaces in recall matches (no recall-tier category filter yet)"
+    "standing pages are ordinary memory rows in category _standing: their question/answer text matches ordinary recall search and surfaces in recall matches (no recall-tier category filter yet) [RESOLVED 2026-09-13: operations.recall now excludes category=_standing by default; include_standing=True restores the legacy mixed behavior]"
   ],
   "cases": [
     {

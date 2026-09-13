@@ -65,14 +65,23 @@ def recall(
     subject: str | None,
     query: str,
     k: int = 5,
+    include_standing: bool = False,
 ) -> dict[str, Any]:
-    """Search a subject's memories. Returns the recall envelope."""
+    """Search a subject's memories. Returns the recall envelope.
+
+    MN-5: standing pages (``category="_standing"``) are excluded by
+    default — they are materialized reflect answers consumed via
+    ``standing_read``, not ordinary recall hits. Pass
+    ``include_standing=True`` to restore the legacy mixed behavior.
+    """
     if query is None or not query.strip():
         return results.err(results.VALIDATION, "query is required")
     if k < 1:
         return results.err(results.VALIDATION, "k must be >= 1")
     try:
         rows = store.search(query, limit=k, subject=subject)
+        if not include_standing:
+            rows = [row for row in rows if row.get("category") != "_standing"]
     except sqlite3.Error as exc:
         return results.err(results.STORAGE, f"recall failed: {exc}")
     except Exception as exc:  # noqa: BLE001 - taxonomy boundary
