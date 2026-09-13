@@ -39,10 +39,10 @@ jobs:
     name: Semantic Release
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.release.outputs.released }}
-      tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
-      is_prerelease: ${{ steps.release.outputs.is_prerelease }}
+      released: ${{ steps.release.outputs.released || steps.forced.outputs.released }}
+      tag: ${{ steps.release.outputs.tag || steps.forced.outputs.tag }}
+      version: ${{ steps.release.outputs.version || steps.forced.outputs.version }}
+      is_prerelease: ${{ steps.release.outputs.is_prerelease || steps.forced.outputs.is_prerelease }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
