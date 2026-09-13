@@ -36,7 +36,7 @@
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
   },
-  "homepage": "https://github.com/n24q02m/mnemo-mcp",
+  "homepage": "https://github.com/n24q02m/mnemo",
   "mcpServers": {
     "mnemo": {
       "command": "uvx",
