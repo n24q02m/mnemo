@@ -11,8 +11,8 @@ def test_mn2_eval_all_pass_with_zero_false_positives(tmp_path: Path) -> None:
     report = run_eval(tmp_path / "run")
     assert report["failed_cases"] == [], f"TP failures: {report['failed_cases']}"
     assert report["fp_violations"] == [], f"FP violations: {report['fp_violations']}"
-    assert report["tp_cases"] == 6
-    assert report["tp_passed"] == 6
+    assert report["tp_cases"] == 7  # 6 original kinds + anthropic_key
+    assert report["tp_passed"] == 7
     assert report["fp_cases"] >= 13  # every MN-1 corpus content line
     assert report["accuracy"] == 1.0
     assert report["paid_calls"] == 0
