@@ -141,10 +141,10 @@ def test_recall_excludes_standing_by_default(store: MemoryDB) -> None:
 
     default_env = operations.recall(store, "alice", "deploy")
     assert default_env["ok"]
-    assert all(
-        m.get("category") != "_standing" for m in default_env["data"]["matches"]
+    assert all(m.get("category") != "_standing" for m in default_env["data"]["matches"])
+    assert any(
+        "deploy checklist" in m["content"] for m in default_env["data"]["matches"]
     )
-    assert any("deploy checklist" in m["content"] for m in default_env["data"]["matches"])
 
     optin_env = operations.recall(store, "alice", "deploy", include_standing=True)
     assert optin_env["ok"]
