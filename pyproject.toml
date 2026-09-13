@@ -87,6 +87,7 @@ dev = [
 [project.scripts]
 mnemo-mcp = "mnemo_mcp.cli:main"
 mnemo-pilot = "mnemo_cli.__main__:main"
+mnemo = "mnemo_cli.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/mnemo-mcp"
