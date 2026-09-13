@@ -3,7 +3,7 @@
   "name": "io.github.n24q02m/mnemo-mcp",
   "description": "Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.",
   "repository": {
-    "url": "https://github.com/n24q02m/mnemo-mcp.git",
+    "url": "https://github.com/n24q02m/mnemo.git",
     "source": "github"
   },
   "version": "2.15.1",
