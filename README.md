@@ -246,7 +246,31 @@ uv run mnemo-mcp
 
 ## CLI
 
-The `mnemo-mcp` console script both starts the server and exposes a few one-shot operator subcommands. A bare invocation (or any `--`-prefixed flag) starts the server; a leading subcommand runs an action and exits.
+The package ships two distinct console scripts:
+
+- **`mnemo`** -- CLI-first memory surface (primary for scripts/agents; it never
+  starts a server): `capture`, `recall`, `reflect`, `fetch`, and the
+  `standing-*` family operate directly on a SQLite memory DB.
+  `mnemo-pilot` is a legacy alias of the same entry point.
+- **`mnemo-mcp`** -- the MCP server plus one-shot operator subcommands. A bare
+  invocation (or any `--`-prefixed flag) starts the server; a leading
+  subcommand runs an action and exits.
+
+CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
+prints a JSON envelope, and exits with a taxonomy-mapped code):
+
+```bash
+uvx --from mnemo-mcp mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
+
+mnemo capture --db ./mem.db "keep PyPI name mnemo-mcp; repo is mnemo" --tags decision --category decision
+mnemo recall --db ./mem.db "release ladder" --k 5        # search a subject's memories
+mnemo reflect --db ./mem.db "why keep the alias?" --k 5  # bounded cited reflect over retrieval
+mnemo fetch --db ./mem.db <memory_id>                    # fetch one memory by id
+mnemo standing-refresh --db ./mem.db onboarding "how do releases cut?" --k 5   # materialize a standing page
+mnemo standing-read --db ./mem.db onboarding             # cheap read with staleness info
+```
+
+Server operator CLI (`mnemo-mcp`):
 
 ```bash
 mnemo-mcp                       # start the stdio server (default transport)
