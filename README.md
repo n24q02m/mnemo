@@ -5,6 +5,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 **Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
+[![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
@@ -50,6 +51,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 ## Table of contents
 
 - [Features](#features)
+- [Quick install](#quick-install)
 - [Status](#status)
 - [Documentation](#documentation)
 - [Smithery](#smithery)
@@ -92,6 +94,44 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - **LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.9 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
 - **Encrypted passport sync** -- AES-256-GCM bundles + Argon2id KDF, S3 (R2 / B2 / MinIO) and Google Drive backends, delta-sync with last-write-wins per row (see [docs/passport.md](docs/passport.md)). Bootstrap via the `passport-bootstrap` skill.
 - **Temporal knowledge graph** -- Bitemporal columns (`valid_from` / `valid_to` / `superseded_by`) on every memory + entity-resolution dedup (embedding KNN at default 0.85 cosine threshold) + audit trail (`memory_audit` table with prev/new state hashes) + new actions (`entity_search` / `entity_graph` / `history`) + opt-in `KG_AUTO_ENABLED` auto-extract on capture. **BREAKING** for clients that called `memory.get` expecting historical-inclusive results: pass `as_of` for time-travel; default now filters to current-state (`valid_to IS NULL`).
+
+## Quick install
+
+```bash
+# Method 1 (default): plugin install via Claude Code
+/plugin marketplace add n24q02m/claude-plugins
+/plugin install mnemo-mcp@n24q02m-plugins
+
+# Method 2 (CLI): direct uvx invocation
+claude mcp add mnemo -- uvx mnemo-mcp
+
+# Method 3 (remote): point a client at an HTTP deployment
+claude mcp add --transport http mnemo https://<your-host>/mcp
+```
+
+Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) page for full steps):
+
+| Client | Install |
+|---|---|
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` |
+| Claude Code (stdio) | `claude mcp add mnemo -- uvx mnemo-mcp` |
+| Codex | register stdio command `uvx mnemo-mcp` under `mcp_servers` in `~/.codex/config.toml` |
+| Gemini CLI | add the `mcpServers` JSON below to `~/.gemini/settings.json` |
+| Cursor / Windsurf | add the `mcpServers` JSON below via the client's MCP settings (`mcp.json`) |
+| Any client (HTTP self-host) | point the client at `https://<your-host>/mcp` (Streamable HTTP, OAuth-gated) |
+
+Example stdio config (zero-config local defaults):
+
+```json
+{
+  "mcpServers": {
+    "mnemo": {
+      "command": "uvx",
+      "args": ["mnemo-mcp"]
+    }
+  }
+}
+```
 
 ## Comparison vs. peers
 
@@ -283,9 +323,10 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
 6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
    Save each subject's models, endpoints and provider keys there, not in Worker
    environment variables. The managed route uses Minimax-free completion and
-   paid Cohere embedding/reranking through Cloudflare AI Gateway; see the
+   paid Cohere embedding/reranking through Cloudflare AI Gateway -- obtain the
+   required budget authorization before exercising the paid tiers (Provider
+   Spend Gate); see the
    [per-task configuration](src/mnemo_mcp/docs/config.md#remote-model-routing).
-
 Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
 `MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
 keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
@@ -302,6 +343,17 @@ On Cloudflare deployments, **Cloudflare D1 + Vectorize + KV** is the sole produc
 - **KV** (`MCP_STORAGE_BACKEND=cf-kv`): Encrypted per-user credential and session store.
 - **Sync boundary**: `MEMORY_DB_BACKEND=cf-d1` disables Google Drive OAuth and all external sync paths even if `SYNC_ENABLED` is toggled on or stale S3/Google settings remain. `SYNC_ENABLED=false` independently disables sync on non-CF deployments.
 - **Local & self-host bootstrap**: Local stdio (`~/.mnemo-mcp/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
+
+### Deployment (maintained instance)
+
+Every tagged release deploys automatically: the CD `deploy-cf` job checks out
+the released tag, builds the http-slim image, pushes it to the Cloudflare-managed
+registry as immutable `:<release-tag>`, deploys the Worker, and gates on a canary
+health check -- a release is live at exactly its own version. A beta dispatch
+redeploys the beta; a stable dispatch is maintainer-gated. Manual `wrangler deploy`
+against the maintained instance is not permitted: it would break the
+release-tag ↔ live-image correspondence. Self-hosting on your own Cloudflare
+account (the button above) is unaffected.
 
 ## Trust Model
 
