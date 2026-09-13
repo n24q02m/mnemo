@@ -34,6 +34,11 @@ SAMPLES = [
     ),
     ("email", "contact mai.nguyen@example.com for access", "[REDACTED:email]"),
     ("phone", "goi so 0912345678 truoc 5h chieu", "[REDACTED:vn_phone]"),
+    (
+        "antkey",
+        "anthropic key sk-ant-api03-" + "Ab09_-" * 16 + "xZ leaked",
+        "[REDACTED:anthropic_key]",
+    ),
 ]
 
 
@@ -126,3 +131,17 @@ def test_overlapping_spans_collapse_to_outermost() -> None:
 def test_phone_pattern_ignores_token_interiors() -> None:
     assert scan("id0123456789x and ref=0987654321a") == []
     assert scan("call 0912345678 now")[0]["kind"] == "vn_phone"
+
+
+def test_anthropic_key_false_positive_probes() -> None:
+    """Benign near-misses must NOT trigger the anthropic_key pattern."""
+    probes = [
+        "docs placeholder: sk-ant-api03-YOUR_KEY_HERE",  # short body
+        "bare prefix sk-ant-api03- with no key body",
+        "openai key sk-proj-" + "a" * 60,  # different vendor prefix
+        "slug sk-ant-api03-changelog-entry-2026",  # short slug, not a key
+        "quote: keys look like sk-ant-api03-<base62>",  # template text
+    ]
+    for text in probes:
+        findings = scan(text)
+        assert all(f["kind"] != "anthropic_key" for f in findings), text
