@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.13.5 (2026-09-13)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.24.1 ([#1221](https://github.com/n24q02m/mnemo-mcp/pull/1221),
+  [`946a3e9`](https://github.com/n24q02m/mnemo-mcp/commit/946a3e93d9c2351bbc4eaa1f02c4a619bdb65e6c))
+
+
 ## v2.13.4 (2026-09-13)
 
 ### Bug Fixes
