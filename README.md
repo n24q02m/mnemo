@@ -1,12 +1,14 @@
 # Mnemo MCP Server
 
+> **Renamed (2026-09-13):** repo is now `mnemo` — CLI-first (`mnemo` command). PyPI package stays `mnemo-mcp`; MCP server remains a secondary surface.
+
 mcp-name: io.github.n24q02m/mnemo-mcp
 
 **Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
 [![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
-[![CI](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
 [![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
@@ -38,7 +40,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
 | [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
 | [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
-| [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
+| [mnemo-mcp](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval) | Multi-model retrieval runtime for ONNX/GGUF embeddings and reranking | Library |
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
@@ -236,7 +238,7 @@ Plugin trinity (Claude Code marketplace install):
 ## Build from Source
 
 ```bash
-git clone https://github.com/n24q02m/mnemo-mcp.git
+git clone https://github.com/n24q02m/mnemo.git
 cd mnemo-mcp
 uv sync
 uv run mnemo-mcp
@@ -282,13 +284,13 @@ Cloudflare-managed registry.
 
 ## Deploy to Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/mnemo-mcp)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/mnemo)
 
 Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectorize + KV).
 
 **Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
 
-1. `git clone https://github.com/n24q02m/mnemo-mcp && cd mnemo-mcp`
+1. `git clone https://github.com/n24q02m/mnemo && cd mnemo-mcp`
 2. `wrangler login`
 3. Provision the storage bindings mnemo uses -- the memories database, the embedding
    index, and the encrypted credential store:
