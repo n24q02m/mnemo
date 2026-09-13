@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v2.15.3 (2026-09-13)
+
+### Bug Fixes
+
+- Release job outputs add forced-path fallback (parity with wet cd.yml; publish_existing_tag
+  recovery previously produced empty released and skipped deploy-cf/PyPI/registry/marketplace)
+  ([#1229](https://github.com/n24q02m/mnemo/pull/1229),
+  [`18947b6`](https://github.com/n24q02m/mnemo/commit/18947b618a4e565e878a22989b249b7953e26fe7))
+
+### Continuous Integration
+
+- Gate deploy-cf behind CF_DEPLOY_ENABLED var (token removed as off-manifest); note paused
+  maintained instance in README
+  ([`0e9e4ae`](https://github.com/n24q02m/mnemo/commit/0e9e4ae2b0df161ae8fdba4cd3f418c0913f97de))
+
+### Documentation
+
+- **readme**: Split CLI docs into mnemo CLI-first surface and mnemo-mcp operator CLI
+  ([`8f7c54f`](https://github.com/n24q02m/mnemo/commit/8f7c54fa47a9bc1137cd003c5f3fb7bb6800c1fc))
+
+
 ## v2.15.2 (2026-09-13)
 
 ### Bug Fixes
