@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v2.15.2 (2026-09-13)
+
+### Bug Fixes
+
+- Point server.json + plugin metadata at renamed repo mnemo
+  ([`c0a5aeb`](https://github.com/n24q02m/mnemo/commit/c0a5aebcab5aa5dac6077994fb1895f0e8460403))
+
+### Continuous Integration
+
+- **cd**: Add publish_existing_tag recovery dispatch (port from wet) so a rename-blocked PyPI
+  publish can be replayed without a new release
+  ([`c1dc448`](https://github.com/n24q02m/mnemo/commit/c1dc44835c97ac76d5966f2912b2d925f089e45f))
+
+
 ## v2.15.1 (2026-09-13)
 
 ### Bug Fixes
