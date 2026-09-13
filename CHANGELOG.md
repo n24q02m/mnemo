@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v2.15.0 (2026-09-13)
+
+### Documentation
+
+- Add mode badge, quick install matrix, deployment note, and provider spend-gate wording
+  ([`e7b0f92`](https://github.com/n24q02m/mnemo/commit/e7b0f9225a2d94af68a014299f8c90aab6d56376))
+
+### Features
+
+- CLI-first — add 'mnemo' command alias, repo renamed mnemo-mcp -> mnemo (TOOL-2 L2, PyPI package
+  unchanged)
+  ([`978ffd9`](https://github.com/n24q02m/mnemo/commit/978ffd969758836e33a7205a0cfbc79db968e20d))
+
+
 ## v2.14.0 (2026-09-13)
 
 ### Code Style
