@@ -312,6 +312,13 @@ Cloudflare-managed registry.
 
 Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectorize + KV).
 
+> **Paused 2026-09-13 (maintained instance only):** the CF deploy token was
+> removed from the account as off-manifest (process violation), so the CD
+> `deploy-cf` job no-ops behind the `CF_DEPLOY_ENABLED` repo variable. The
+> maintained instance freezes at its last deployed release until a token is
+> re-established via the documented process and the variable is set to
+> `true`. Self-hosting on your own account (below) is unaffected.
+
 **Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
 
 1. `git clone https://github.com/n24q02m/mnemo && cd mnemo-mcp`
