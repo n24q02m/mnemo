@@ -23,6 +23,13 @@ from typing import Any
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("aws_access_key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("github_pat", re.compile(r"gh[pousr]_[0-9A-Za-z]{36,255}")),
+    (
+        "anthropic_key",
+        # sk-ant-apiNN- / sk-ant-adminNN- + long base62-ish body. Bounded
+        # below at 40 chars so docs placeholders ("sk-ant-api03-YOUR_KEY",
+        # bare "sk-ant-api03-") never match.
+        re.compile(r"sk-ant-(?:api|admin)\d{2,}-[A-Za-z0-9_-]{40,}"),
+    ),
     ("slack_token", re.compile(r"xox[abprs]-[0-9A-Za-z-]{10,}")),
     ("bearer_token", re.compile(r"(?i)bearer\s+[a-z0-9._-]{20,}")),
     (
