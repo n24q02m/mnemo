@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v2.15.4 (2026-09-13)
+
+### Bug Fixes
+
+- Registry publish tolerates duplicate version on recovery dispatch (mcp registry rejects re-publish
+  of an already-published version with 400 cannot publish duplicate version; idempotent recovery
+  keeps deploy-cf + PyPI green) ([#1233](https://github.com/n24q02m/mnemo/pull/1233),
+  [`d63f99d`](https://github.com/n24q02m/mnemo/commit/d63f99d6ba1a8b565e427bc3d3933cc7d8887bec))
+
+- **deps**: Lock file maintenance ([#1232](https://github.com/n24q02m/mnemo/pull/1232),
+  [`d42d6da`](https://github.com/n24q02m/mnemo/commit/d42d6dab16c5880a0bb1a0c254e867145cd40c14))
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260906.1
+  ([#1231](https://github.com/n24q02m/mnemo/pull/1231),
+  [`3c450ac`](https://github.com/n24q02m/mnemo/commit/3c450ac905b7c430cc79711ead4b89ee979452c9))
+
+
 ## v2.15.3 (2026-09-13)
 
 ### Bug Fixes
