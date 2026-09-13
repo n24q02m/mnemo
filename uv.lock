@@ -1086,7 +1086,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.13.2"
+version = "2.13.3"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1134,7 +1134,7 @@ requires-dist = [
     { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"], specifier = "<3" },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = "==1.23.2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = "==1.24.1" },
     { name = "pydantic" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
     { name = "pygments", specifier = ">=2.21.0" },
@@ -1226,7 +1226,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.23.2"
+version = "1.24.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -1236,15 +1236,16 @@ dependencies = [
     { name = "httpcore" },
     { name = "httpx" },
     { name = "loguru" },
+    { name = "mcp" },
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/6a/a53c1da697af2e7392d133715965ff1cf7ba4771a857d7c000526a962854/n24q02m_mcp_core-1.23.2.tar.gz", hash = "sha256:ffe32ed36e83015333632837e266746b097344654151aeea18444a24ab663997", size = 368487, upload-time = "2026-08-31T11:13:19.028Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/a4/62ba0f28ef9337a4d47331ae4e24338436afa5137574e925989f10153407/n24q02m_mcp_core-1.24.1.tar.gz", hash = "sha256:87af606b58ef28d4c9c8d9ba18d96b30a38e8e352735227817bb63f66ffd3f5d", size = 366278, upload-time = "2026-09-12T06:55:27.895Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/6e/4008a61ea2b40ece60d5551ea46cf27d8d0da64083743e71677ea59d2673/n24q02m_mcp_core-1.23.2-py3-none-any.whl", hash = "sha256:8e8d611129e15f7e81133355429c153c1fd05d2604b4286edf850d0642c0720d", size = 198270, upload-time = "2026-08-31T11:13:17.745Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/b5/5a3ae939e04690e4b2aa268413d2bd75a8a7cff7c822df437e61bc32fac5/n24q02m_mcp_core-1.24.1-py3-none-any.whl", hash = "sha256:87be920bef86b933d36c0684d2e6a863857ab874e522f2dd572d349a4df27813", size = 198401, upload-time = "2026-09-12T06:55:26.627Z" },
 ]
 
 [package.optional-dependencies]
