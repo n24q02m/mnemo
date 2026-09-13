@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v2.13.4 (2026-09-13)
+
+### Bug Fixes
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260905.1
+  ([#1223](https://github.com/n24q02m/mnemo-mcp/pull/1223),
+  [`c3b107f`](https://github.com/n24q02m/mnemo-mcp/commit/c3b107f60b82374e9a36bb8b1127a0a335ee551b))
+
+### Chores
+
+- **release**: Fix stale two-branch comment (single-main lane)
+  ([`15caf35`](https://github.com/n24q02m/mnemo-mcp/commit/15caf35658e6619f43c5854b35d4af7697bb571d))
+
+- **release**: Single-main release lane (staging branch retired)
+  ([`606d7f7`](https://github.com/n24q02m/mnemo-mcp/commit/606d7f7813fe5532773ddc4692fe348b8ad3837d))
+
+
 ## v2.13.3 (2026-09-12)
 
 ### Bug Fixes
