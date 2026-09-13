@@ -2,6 +2,26 @@
 
 <!-- version list -->
 
+## v2.14.0 (2026-09-13)
+
+### Code Style
+
+- Ruff format ([#1227](https://github.com/n24q02m/mnemo-mcp/pull/1227),
+  [`7c88f8e`](https://github.com/n24q02m/mnemo-mcp/commit/7c88f8ee30d426b9c9859b2dc1468394555662fe))
+
+### Features
+
+- **pilot**: Sk-ant key defense pattern + MN-5 standing recall filter
+  ([#1227](https://github.com/n24q02m/mnemo-mcp/pull/1227),
+  [`7c88f8e`](https://github.com/n24q02m/mnemo-mcp/commit/7c88f8ee30d426b9c9859b2dc1468394555662fe))
+
+### Testing
+
+- **mn2**: Update tp_cases pin 6->7 for anthropic_key addition
+  ([#1227](https://github.com/n24q02m/mnemo-mcp/pull/1227),
+  [`7c88f8e`](https://github.com/n24q02m/mnemo-mcp/commit/7c88f8ee30d426b9c9859b2dc1468394555662fe))
+
+
 ## v2.13.5 (2026-09-13)
 
 ### Bug Fixes
