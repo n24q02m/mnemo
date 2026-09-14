@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.15.6 (2026-09-14)
+
+### Bug Fixes
+
+- **deps**: Update @cloudflare/workers-types to ^5.20260907.1
+  ([#1235](https://github.com/n24q02m/mnemo/pull/1235),
+  [`f793698`](https://github.com/n24q02m/mnemo/commit/f793698c9015bfcdab8b4470fb4d96dbbc4c46f8))
+
+
 ## v2.15.5 (2026-09-14)
 
 ### Bug Fixes
