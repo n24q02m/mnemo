@@ -1086,7 +1086,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.15.6"
+version = "2.15.7"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1125,11 +1125,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.19.1" },
+    { name = "alembic", specifier = ">=1.20.0" },
     { name = "boto3", specifier = ">=1.43.89" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastmcp", specifier = ">=3.4.7,<4" },
-    { name = "fastretrieval", specifier = ">=1.2.0,<2" },
+    { name = "fastretrieval", specifier = ">=1.6.2,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
