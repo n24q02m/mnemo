@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.15.7 (2026-09-15)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1236](https://github.com/n24q02m/mnemo/pull/1236),
+  [`ccfce98`](https://github.com/n24q02m/mnemo/commit/ccfce98ce2759d0d56ede8782e4e8236ae52a62c))
+
+
 ## v2.15.6 (2026-09-14)
 
 ### Bug Fixes
