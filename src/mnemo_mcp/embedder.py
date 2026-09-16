@@ -115,15 +115,22 @@ def _is_unsupported_param(exc: Exception, param: str) -> bool:
     """Check if an exception indicates an unsupported parameter.
 
     Detects errors like "does not support parameters: {'dimensions': ...}"
-    or "output_dimension is not supported for this model".
+    or "output_dimension is not supported for this model", plus provider
+    cap rejections such as "dimensions ≤1024" / "dimensions must be at most
+    1024" (Jina v5 small caps at 1024 while the CF deployment requests the
+    1536 storage width — F2 layer 2, 2026-09-16).
     Uses stem matching (e.g. "dimension" matches "dimensions", "output_dimension").
     """
     msg = str(exc).lower()
     # Use the stem (without trailing 's') for broader matching
     stem = param.lower().rstrip("s")
-    return (
-        "not support" in msg or "unsupported" in msg or "not a valid" in msg
-    ) and stem in msg
+    if stem not in msg:
+        return False
+    if "not support" in msg or "unsupported" in msg or "not a valid" in msg:
+        return True
+    # Cap-style rejections: "dimensions ≤1024", "must be at most 1024",
+    # "maximum of", "cannot exceed", "<= 1024".
+    return any(marker in msg for marker in ("≤", "<=", "at most", "maximum", "exceed"))
 
 
 # ---------------------------------------------------------------------------
