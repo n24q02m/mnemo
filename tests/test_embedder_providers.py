@@ -140,6 +140,15 @@ class TestIsUnsupportedParam:
         exc = Exception("dimensions must be at most 1024 for this model")
         assert _is_unsupported_param(exc, "dimensions") is True
 
+    def test_dimensions_less_than_or_equal_rejection(self):
+        # Jina v5 small's actual wording, observed live 2026-09-17.
+        exc = Exception(
+            "litellm.BadRequestError: Jina_aiException - Validation error: "
+            "'body -> jina-embeddings-v5-text-small -> dimensions' Input should "
+            "be less than or equal to 1024"
+        )
+        assert _is_unsupported_param(exc, "dimensions") is True
+
     def test_cap_phrase_without_param_stem_is_not_matched(self):
         exc = Exception("rate limit exceeded, retry later")
         assert _is_unsupported_param(exc, "dimensions") is False
