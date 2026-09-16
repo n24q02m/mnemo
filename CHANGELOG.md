@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.15.8 (2026-09-16)
+
+### Bug Fixes
+
+- **deps**: Update non-major dev dependencies ([#1237](https://github.com/n24q02m/mnemo/pull/1237),
+  [`efeb98a`](https://github.com/n24q02m/mnemo/commit/efeb98a729043bd79b0ab50cacb2626c88aa386e))
+
+
 ## v2.15.7 (2026-09-15)
 
 ### Bug Fixes
