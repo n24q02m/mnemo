@@ -135,6 +135,12 @@ addopts = "-m 'not integration and not live and not full and not e2e'"
 [tool.ty]
 rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore" }
 
+# Local worktree checkouts are not part of the source tree; without this the
+# pre-commit ty hook lints stale copies under .worktrees/ and fails on
+# diagnostics that were fixed long ago in the real tree.
+[tool.ty.src]
+exclude = [".worktrees/**"]
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [".claude-plugin/plugin.json:version", "server.json:version"]

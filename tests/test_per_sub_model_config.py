@@ -412,6 +412,35 @@ def test_remote_missing_subject_and_endpoint_fail_closed(monkeypatch, tmp_path):
         api_base_for_task("LLM_API_BASE")
 
 
+def test_embedding_api_base_falls_back_to_deployment_default(monkeypatch, tmp_path):
+    """A sub whose bucket predates the endpoint field resolves the
+    deployment-level EMBEDDING_API_BASE env (F2 fix, 2026-09-17); other
+    *_API_BASE keys keep failing closed."""
+    from mnemo_mcp.credential_state import store_for_sub
+
+    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example")
+    monkeypatch.setenv("EMBEDDING_API_BASE", "https://gateway.example/jina/v1")
+    store_for_sub("legacy-sub", {"JINA_AI_API_KEY": "k"})
+    token = _current_sub.set("legacy-sub")
+    try:
+        assert api_base_for_task("EMBEDDING_API_BASE") == (
+            "https://gateway.example/jina/v1"
+        )
+        with pytest.raises(RuntimeError):
+            api_base_for_task("RERANK_API_BASE")
+    finally:
+        _current_sub.reset(token)
+
+    # Bucket value still wins over the env default.
+    store_for_sub("explicit-sub", {"EMBEDDING_API_BASE": "https://sub.example/embed"})
+    token = _current_sub.set("explicit-sub")
+    try:
+        assert api_base_for_task("EMBEDDING_API_BASE") == ("https://sub.example/embed")
+    finally:
+        _current_sub.reset(token)
+
+
 @pytest.mark.asyncio
 async def test_remote_warmup_does_not_probe_ambient_or_local_models(
     tmp_path, monkeypatch

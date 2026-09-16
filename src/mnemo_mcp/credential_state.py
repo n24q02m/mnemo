@@ -178,14 +178,23 @@ def api_key_for_model(model: str) -> str | None:
 def api_base_for_task(env_key: str) -> str | None:
     """Resolve a task endpoint for the current request.
 
-    The multi-user path never falls back to process-global env, so two
-    concurrent subjects cannot share a gateway URL. Single-user/stdio keeps
+    The multi-user path reads the subject's per-sub bucket first, so two
+    concurrent subjects cannot share a gateway URL. When the bucket lacks the
+    key, ``EMBEDDING_API_BASE`` alone falls back to the process env var: the
+    deployment's canonical embedding endpoint is an operator-level default
+    (set via Worker var/secret -> container env), not subject state — without
+    it every sub saved before the relay form gained the endpoint field fails
+    with "EMBEDDING_API_BASE is required for the current subject" (F2,
+    2026-09-16). ``RERANK_API_BASE``/``LLM_API_BASE`` keep failing closed:
+    no deployment default is provisioned for them. Single-user/stdio keeps
     the existing env-driven behavior because mcp-core does not know Mnemo's
     ``*_API_BASE`` names by itself.
     """
     if get_current_sub() is None:
         return os.environ.get(env_key) or None
     api_base = credentials_for_current_request().get(env_key)
+    if not api_base and env_key == "EMBEDDING_API_BASE":
+        api_base = os.environ.get(env_key)
     if not api_base:
         raise RuntimeError(f"{env_key} is required for the current subject")
     return api_base

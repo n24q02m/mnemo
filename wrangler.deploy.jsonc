@@ -33,7 +33,11 @@
     "MCP_VECTORIZE_IDX": "mnemo-memory-vectors-1536",
     // Models, endpoints and provider keys belong to the authenticated subject.
     "SYNC_ENABLED": "false",
-    "EMBEDDING_DIMS": "1536"
+    "EMBEDDING_DIMS": "1536",
+    // Deployment-level default embedding endpoint (CF AI Gateway Jina route);
+    // subjects whose relay bucket predates the endpoint field resolve this
+    // instead of failing closed (F2 fix, 2026-09-17).
+    "EMBEDDING_API_BASE": "https://gateway.ai.cloudflare.com/v1/53feac446e497b886f384c9f8a58132b/llm-main/custom-jina/v1"
   },
   "observability": { "enabled": true }
 }
