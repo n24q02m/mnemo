@@ -40,7 +40,12 @@
     // The D1 store may contain vectors stamped by the pre-CF 768-width Jina
     // deployment. Clear the stale Vectorize ledger and re-stamp on cutover;
     // the next authenticated embed pass rebuilds vectors at the active width.
-    "REINDEX_ON_MODEL_CHANGE": "true"
+    "REINDEX_ON_MODEL_CHANGE": "true",
+    // Deployment-level default embedding endpoint (CF AI Gateway Jina route).
+    // Subjects whose relay bucket predates the endpoint field resolve this
+    // instead of failing closed (F2 fix, 2026-09-17). Rendered from the
+    // EMBEDDING_API_BASE repo secret.
+    "EMBEDDING_API_BASE": "${EMBEDDING_API_BASE}"
     // Model, endpoint, and provider key are selected per authenticated
     // subject through the relay; keep no model/provider lock in Worker vars.
   },

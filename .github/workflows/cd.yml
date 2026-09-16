@@ -311,5 +311,6 @@ jobs:
           CF_D1_ID: ${{ secrets.CF_D1_ID }}
           CF_VECTORIZE_ID: ${{ secrets.CF_VECTORIZE_ID }}
           PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
           IMAGE_TAG: ${{ needs.release.outputs.version }}
         run: python scripts/deploy_cf.py --from-template --tag "${IMAGE_TAG}"

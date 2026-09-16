@@ -59,6 +59,7 @@ def test_committed_template_renders_to_valid_json(monkeypatch):
         "CF_D1_ID": "d1id",
         "CF_VECTORIZE_ID": "vecidx",
         "PUBLIC_URL": "https://wet.n24q02m.com",
+        "EMBEDDING_API_BASE": "https://gateway.example/jina/v1",
     }.items():
         monkeypatch.setenv(k, v)
     tpl = _SCRIPT.parent.parent / "wrangler.deploy.template.jsonc"
