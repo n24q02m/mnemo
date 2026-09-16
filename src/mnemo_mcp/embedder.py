@@ -129,8 +129,12 @@ def _is_unsupported_param(exc: Exception, param: str) -> bool:
     if "not support" in msg or "unsupported" in msg or "not a valid" in msg:
         return True
     # Cap-style rejections: "dimensions ≤1024", "must be at most 1024",
-    # "maximum of", "cannot exceed", "<= 1024".
-    return any(marker in msg for marker in ("≤", "<=", "at most", "maximum", "exceed"))
+    # "maximum of", "cannot exceed", "<= 1024", "less than or equal to 1024"
+    # (Jina v5 small's actual wording, observed live 2026-09-17).
+    return any(
+        marker in msg
+        for marker in ("≤", "<=", "at most", "maximum", "exceed", "less than")
+    )
 
 
 # ---------------------------------------------------------------------------
