@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v2.15.9 (2026-09-16)
+
+### Bug Fixes
+
+- **embedding**: Deployment-level EMBEDDING_API_BASE default + dims-cap recovery
+  ([#1240](https://github.com/n24q02m/mnemo/pull/1240),
+  [`6077dbb`](https://github.com/n24q02m/mnemo/commit/6077dbb1188a92a13b32daafc67fad563547f067))
+
+
+## v2.15.8 (2026-09-16)
+
+### Bug Fixes
+
+- **deps**: Update non-major dev dependencies ([#1237](https://github.com/n24q02m/mnemo/pull/1237),
+  [`efeb98a`](https://github.com/n24q02m/mnemo/commit/efeb98a729043bd79b0ab50cacb2626c88aa386e))
+
+
 ## v2.15.7 (2026-09-15)
 
 ### Bug Fixes
