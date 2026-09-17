@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.15.12 (2026-09-17)
+
+### Bug Fixes
+
+- **deps**: Update minor dependencies ([#1224](https://github.com/n24q02m/mnemo/pull/1224),
+  [`9024bf6`](https://github.com/n24q02m/mnemo/commit/9024bf64038f6290f1be148abc6c93303942ae48))
+
+### Continuous Integration
+
+- Consolidate workflows into ci.yml + cd.yml, drop opencode
+  ([`674aef8`](https://github.com/n24q02m/mnemo/commit/674aef8e8186001a6a18ef9b8cfdf74a8c66465d))
+
+
 ## v2.15.11 (2026-09-16)
 
 ### Bug Fixes
