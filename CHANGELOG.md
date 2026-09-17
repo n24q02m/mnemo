@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.15.13 (2026-09-17)
+
+### Bug Fixes
+
+- **deps**: Update dawidd6/action-send-mail action to v22
+  ([#1238](https://github.com/n24q02m/mnemo/pull/1238),
+  [`6142133`](https://github.com/n24q02m/mnemo/commit/61421337c8915e90379915012e64e41516ed3711))
+
+
 ## v2.15.12 (2026-09-17)
 
 ### Bug Fixes
