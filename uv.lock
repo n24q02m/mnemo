@@ -533,7 +533,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.6.2"
+version = "1.6.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -544,9 +544,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/15/bd76dee887c6fb125fb6c9a8c4f1b5d3952fe0a8eb442c8f691957bb3774/fastretrieval-1.6.2.tar.gz", hash = "sha256:6d21b7ceca77a3969f349423d0ce53de5c0e7d9ed68d79de295580f25bb3b4dd", size = 329435, upload-time = "2026-09-14T07:02:10.922Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/a4/16bd460aa907d0fa4b57e9608bfbae41523f7848f9618e975bc325744efe/fastretrieval-1.6.4.tar.gz", hash = "sha256:acccab5532714e85111f9dffa50e406b8df5611902b12673ff38b8af0c5b0340", size = 328126, upload-time = "2026-09-17T14:23:36.937Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/64/c03fc6805e1e7927c0c684f2bf8bbd8de3b7f86f582c6fde55e210379397/fastretrieval-1.6.2-py3-none-any.whl", hash = "sha256:adee6d85b1e4984384a716b6e2e8ae4cdfb3be461798f5e86a3f99198244d013", size = 146317, upload-time = "2026-09-14T07:02:09.353Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/bd/7c0ef53e8f6edecc21333e559c163c243229e853f874523ba4e935893ee1/fastretrieval-1.6.4-py3-none-any.whl", hash = "sha256:8a3bbc71c839b5a99ce323f65443034f22d90e03522a9a0af271493063520216", size = 146453, upload-time = "2026-09-17T14:23:35.122Z" },
 ]
 
 [[package]]
@@ -724,7 +724,7 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.31.0"
+version = "1.32.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -737,9 +737,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/f0/61159db90b5cd275d55516fe27920828e7d3be4053fdbdb27c3f70e5f1ef/huggingface_hub-1.31.0.tar.gz", hash = "sha256:f8e9e710a210613fa5d0f26bba6da05ef4aef9fba5a0f23f508f5ac4d08b6f90", size = 968039, upload-time = "2026-09-10T10:27:22.724Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/0f/e83fdd856da8fca26bf78d71709ebd120432a0ce535e72b9597cab1eb5bf/huggingface_hub-1.32.0.tar.gz", hash = "sha256:ed70a45498abe86039df7c2f4e5f7575de524be908d3840e8f828d5525eafd6a", size = 1038662, upload-time = "2026-09-17T10:27:48.049Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/7f/3f886a625043b77312b80da2f2bf00b5ecbf5a73061af1aa0259cd258c9d/huggingface_hub-1.31.0-py3-none-any.whl", hash = "sha256:9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667", size = 798313, upload-time = "2026-09-10T10:27:20.798Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/cf/d98dd561d6d0d7b7d7a64d1563f8aaaa7c235daee41c1c9bcc3da62420ed/huggingface_hub-1.32.0-py3-none-any.whl", hash = "sha256:b0c7c80561969d9cdacdd55fce67ba9584cca0b9d4ea80957a3a5c1445fac5c8", size = 842906, upload-time = "2026-09-17T10:27:46.102Z" },
 ]
 
 [[package]]
@@ -1086,7 +1086,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.15.9"
+version = "2.15.13"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1125,11 +1125,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.19.1" },
-    { name = "boto3", specifier = ">=1.43.89" },
+    { name = "alembic", specifier = ">=1.20.0" },
+    { name = "boto3", specifier = ">=1.43.91" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastmcp", specifier = ">=3.4.7,<4" },
-    { name = "fastretrieval", specifier = ">=1.2.0,<2" },
+    { name = "fastretrieval", specifier = ">=1.6.4,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.19" },
     { name = "loguru" },
@@ -1141,7 +1141,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlite-vec" },
     { name = "tiktoken", specifier = ">=0.14.0" },
-    { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "urllib3", specifier = ">=2.8.0" },
 ]
 
 [package.metadata.requires-dev]
