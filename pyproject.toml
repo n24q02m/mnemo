@@ -1,6 +1,6 @@
 [project]
 name = "mnemo-mcp"
-version = "2.15.7"
+version = "2.15.12"
 description = "Open-source MCP Server for persistent AI memory with embedded sync"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -134,6 +134,12 @@ addopts = "-m 'not integration and not live and not full and not e2e'"
 
 [tool.ty]
 rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore" }
+
+# Local worktree checkouts are not part of the source tree; without this the
+# pre-commit ty hook lints stale copies under .worktrees/ and fails on
+# diagnostics that were fixed long ago in the real tree.
+[tool.ty.src]
+exclude = [".worktrees/**"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

@@ -2,6 +2,57 @@
 
 <!-- version list -->
 
+## v2.15.12 (2026-09-17)
+
+### Bug Fixes
+
+- **deps**: Update minor dependencies ([#1224](https://github.com/n24q02m/mnemo/pull/1224),
+  [`9024bf6`](https://github.com/n24q02m/mnemo/commit/9024bf64038f6290f1be148abc6c93303942ae48))
+
+### Continuous Integration
+
+- Consolidate workflows into ci.yml + cd.yml, drop opencode
+  ([`674aef8`](https://github.com/n24q02m/mnemo/commit/674aef8e8186001a6a18ef9b8cfdf74a8c66465d))
+
+
+## v2.15.11 (2026-09-16)
+
+### Bug Fixes
+
+- **embedding**: Deployment-level EMBEDDING_API_BASE default + dims-cap recovery
+  ([#1241](https://github.com/n24q02m/mnemo/pull/1241),
+  [`2a788e3`](https://github.com/n24q02m/mnemo/commit/2a788e31b8e99108f5722c3c9d8f4853f01dcaed))
+
+- **embedding**: Match 'less than or equal to' dims-cap wording
+  ([#1241](https://github.com/n24q02m/mnemo/pull/1241),
+  [`2a788e3`](https://github.com/n24q02m/mnemo/commit/2a788e31b8e99108f5722c3c9d8f4853f01dcaed))
+
+
+## v2.15.10 (2026-09-16)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1239](https://github.com/n24q02m/mnemo/pull/1239),
+  [`a28c8dc`](https://github.com/n24q02m/mnemo/commit/a28c8dc2712e2b72ea8f0afe575e14ff818f25f6))
+
+
+## v2.15.9 (2026-09-16)
+
+### Bug Fixes
+
+- **embedding**: Deployment-level EMBEDDING_API_BASE default + dims-cap recovery
+  ([#1240](https://github.com/n24q02m/mnemo/pull/1240),
+  [`6077dbb`](https://github.com/n24q02m/mnemo/commit/6077dbb1188a92a13b32daafc67fad563547f067))
+
+
+## v2.15.8 (2026-09-16)
+
+### Bug Fixes
+
+- **deps**: Update non-major dev dependencies ([#1237](https://github.com/n24q02m/mnemo/pull/1237),
+  [`efeb98a`](https://github.com/n24q02m/mnemo/commit/efeb98a729043bd79b0ab50cacb2626c88aa386e))
+
+
 ## v2.15.7 (2026-09-15)
 
 ### Bug Fixes

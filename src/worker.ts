@@ -40,6 +40,10 @@ export interface Env {
   MCP_VECTORIZE_BASE_URL: string
   MCP_VECTORIZE_IDX: string
   EMBEDDING_DIMS: string
+  // Deployment-level default embedding endpoint (CF AI Gateway). Forwarded
+  // into the container so subjects whose relay bucket predates the endpoint
+  // field still resolve a base (F2 fix, 2026-09-17).
+  EMBEDDING_API_BASE: string
   REINDEX_ON_MODEL_CHANGE: string
   SYNC_ENABLED: string
   RECENCY_HALF_LIFE_DAYS: string
@@ -65,7 +69,7 @@ export interface Env {
 export const CONTAINER_ENV_KEYS = [
   'MCP_STORAGE_BACKEND', 'MCP_KV_BASE_URL', 'MEMORY_DB_BACKEND',
   'MCP_D1_BASE_URL', 'MCP_VECTORIZE_BASE_URL', 'MCP_VECTORIZE_IDX',
-  'EMBEDDING_DIMS', 'REINDEX_ON_MODEL_CHANGE', 'RECENCY_HALF_LIFE_DAYS',
+  'EMBEDDING_DIMS', 'EMBEDDING_API_BASE', 'REINDEX_ON_MODEL_CHANGE', 'RECENCY_HALF_LIFE_DAYS',
     // Cloudflare is the post-cutover store; never start the legacy GDrive
     // background sync task in the container.
     'SYNC_ENABLED',

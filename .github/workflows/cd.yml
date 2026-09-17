@@ -180,7 +180,7 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.tag }}
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - run: uv build
 
@@ -302,7 +302,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Deploy to Cloudflare (build http-slim + push + deploy + canary)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_DEPLOY_TOKEN }}
@@ -311,5 +311,6 @@ jobs:
           CF_D1_ID: ${{ secrets.CF_D1_ID }}
           CF_VECTORIZE_ID: ${{ secrets.CF_VECTORIZE_ID }}
           PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
           IMAGE_TAG: ${{ needs.release.outputs.version }}
         run: python scripts/deploy_cf.py --from-template --tag "${IMAGE_TAG}"
