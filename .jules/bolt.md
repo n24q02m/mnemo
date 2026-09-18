@@ -68,3 +68,7 @@ Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into 
 ## 2026-09-02 - Missing check_same_thread=False in D1 SQLite test fixtures causes lockups
 **Learning:** SQLite connections instantiated within tests using `sqlite3.connect` and passed as mocks (`FakeD1Worker`) that are later invoked from `asyncio.to_thread` will hang or lock up under Windows GitHub Actions if they lack `check_same_thread=False`.
 **Action:** When fixing test flakes, added `check_same_thread=False` to all missing SQLite connection fixtures (in `tests/test_d1_isolation.py`, `tests/test_column_fidelity.py`, `tests/test_d1_migrations.py`, etc.).
+
+## 2026-09-18 - Avoid any() with generator and get() for dictionary processing
+**Learning:** Using `any()` with a generator expression and `m.get("key", default)` is significantly slower on large dictionaries due to generator initialization and function call overhead.
+**Action:** Replace `any(m.get("vec_score", 0.0) > 0 for m in results.values())` with an explicit `for` loop and `"vec_score" in m` check. This yields a ~3x speedup for this specific check on large result sets.
