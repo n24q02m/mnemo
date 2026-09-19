@@ -1269,7 +1269,11 @@ class MemoryDB:
         scored = []
         recency_cache = {}
         freq_cache = {}
-        has_vec = any(m.get("vec_score", 0.0) > 0 for m in results.values())
+        has_vec = False
+        for m in results.values():
+            if m.get("vec_score", 0.0) > 0:
+                has_vec = True
+                break
 
         if has_vec:
             k = 60
