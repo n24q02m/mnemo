@@ -1256,11 +1256,14 @@ class MemoryDB:
         Returns:
             List of ``(id, fused_score)`` sorted by score descending.
         """
-        scores: dict[str, float] = {}
-        for rank, mid in enumerate(fts_results, start=1):
-            scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+        scores: dict[str, float] = {
+            mid: 1.0 / (k + rank) for rank, mid in enumerate(fts_results, start=1)
+        }
         for rank, mid in enumerate(vec_results, start=1):
-            scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank)
+            if mid in scores:
+                scores[mid] += 1.0 / (k + rank)
+            else:
+                scores[mid] = 1.0 / (k + rank)
         return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
 
     def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
@@ -1269,7 +1272,12 @@ class MemoryDB:
         scored = []
         recency_cache = {}
         freq_cache = {}
-        has_vec = any(m.get("vec_score", 0.0) > 0 for m in results.values())
+
+        has_vec = False
+        for m in results.values():
+            if "vec_score" in m and m["vec_score"] > 0:
+                has_vec = True
+                break
 
         if has_vec:
             k = 60
