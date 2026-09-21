@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v2.15.15 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.7.0
+  ([#1251](https://github.com/n24q02m/mnemo/pull/1251),
+  [`e56aded`](https://github.com/n24q02m/mnemo/commit/e56aded7b12a5b3527a2203c90d116a2ca532809))
+
+- **deps**: Update non-major dev dependencies ([#1253](https://github.com/n24q02m/mnemo/pull/1253),
+  [`3f76735`](https://github.com/n24q02m/mnemo/commit/3f76735ed6a697b152a81745c482b2684c5f96fb))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 2325bb2
+  ([#1249](https://github.com/n24q02m/mnemo/pull/1249),
+  [`0671644`](https://github.com/n24q02m/mnemo/commit/0671644dfeee75114b928b51979c89f509c81b8b))
+
+
 ## v2.15.14 (2026-09-21)
 
 ### Bug Fixes
