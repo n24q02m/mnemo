@@ -533,7 +533,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.7.1"
+version = "1.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -544,9 +544,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/47/c5242daee7fdae4ae73824a1f8ba82f4e123b9a195d2c9c84a7097d61540/fastretrieval-1.7.1.tar.gz", hash = "sha256:7b669efdd2456bce9053cbfb37506e56f1350e370e319281ec08db83d36f3790", size = 328322, upload-time = "2026-09-19T02:22:59.046Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/b3/a272fbd74fd82e7424813882f597a0b9978630e1da2d5b37d9a768c4d6e0/fastretrieval-1.7.2.tar.gz", hash = "sha256:cabf33cbeea3b59a0e1b8b75db89c221136c501b1fe0c150989acd43fc53df6e", size = 329636, upload-time = "2026-09-21T04:44:03.601Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/f7/47c46172df4fb08bd6fc7a1eb1679bf50440130884e24a436a5c0f373289/fastretrieval-1.7.1-py3-none-any.whl", hash = "sha256:63a6ebb1c9fee8e26889e11fec21797368b6b610b681a3d7fba20d315005def1", size = 146480, upload-time = "2026-09-19T02:22:57.496Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/89/cf75b666e338141f4971d952b309ae4922964c22379dd1b24df81d9dbaba/fastretrieval-1.7.2-py3-none-any.whl", hash = "sha256:317ef9dd57df3e40bb98f4a75480c47d725248be9cbb999eaef93c6200eabf61", size = 146613, upload-time = "2026-09-21T04:44:01.873Z" },
 ]
 
 [[package]]
@@ -1086,7 +1086,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.15.13"
+version = "2.15.15"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1125,13 +1125,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.19.1" },
+    { name = "alembic", specifier = ">=1.20.0" },
     { name = "boto3", specifier = ">=1.43.89" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastmcp", specifier = ">=3.4.7,<4" },
-    { name = "fastretrieval", specifier = ">=1.2.0,<2" },
+    { name = "fastretrieval", specifier = ">=1.7.2,<2" },
     { name = "httpx" },
-    { name = "idna", specifier = ">=3.19" },
+    { name = "idna", specifier = ">=3.20" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"], specifier = "<3" },
     { name = "n24q02m-mcp-core", extras = ["llm"], specifier = "==1.24.6" },
@@ -1141,7 +1141,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlite-vec" },
     { name = "tiktoken", specifier = ">=0.14.0" },
-    { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "urllib3", specifier = ">=2.8.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1155,7 +1155,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff" },
-    { name = "syrupy", specifier = ">=6.0.0" },
+    { name = "syrupy", specifier = ">=6.1.1" },
     { name = "ty" },
 ]
 
