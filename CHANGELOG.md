@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.15.16 (2026-09-21)
+
+### Bug Fixes
+
+- **deps**: Update patch dependencies ([#1250](https://github.com/n24q02m/mnemo/pull/1250),
+  [`27ed2e6`](https://github.com/n24q02m/mnemo/commit/27ed2e675be8ed01ccca8421b1ff44f4532bea35))
+
+
 ## v2.15.15 (2026-09-21)
 
 ### Bug Fixes
