@@ -1281,21 +1281,24 @@ class MemoryDB:
 
         if has_vec:
             k = 60
-            all_ids = list(results.keys())
-            len_all_ids = len(all_ids)
             fts_ranked = sorted(
-                all_ids, key=lambda x: results[x].get("fts_score", 0.0), reverse=True
+                results.keys(),
+                key=lambda x: results[x].get("fts_score", 0.0),
+                reverse=True,
             )
             vec_ranked = sorted(
-                all_ids, key=lambda x: results[x].get("vec_score", 0.0), reverse=True
+                results.keys(),
+                key=lambda x: results[x].get("vec_score", 0.0),
+                reverse=True,
             )
-            fts_rank = {cid: i + 1 for i, cid in enumerate(fts_ranked)}
-            vec_rank = {cid: i + 1 for i, cid in enumerate(vec_ranked)}
+            scores: dict[str, float] = {
+                mid: 1.0 / (k + rank) for rank, mid in enumerate(fts_ranked, start=1)
+            }
+            for rank, mid in enumerate(vec_ranked, start=1):
+                scores[mid] += 1.0 / (k + rank)
 
             for mid, mem in results.items():
-                fr = fts_rank.get(mid, len_all_ids)
-                vr = vec_rank.get(mid, len_all_ids)
-                rrf = 1.0 / (k + fr) + 1.0 / (k + vr)
+                rrf = scores[mid]
 
                 updated_at = mem.get("updated_at", "")
                 if updated_at not in recency_cache:
