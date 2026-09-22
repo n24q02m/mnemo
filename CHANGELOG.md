@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.16.0 (2026-09-22)
+
+### Features
+
+- ⚡ bolt: optimize RRF ranking loop ([#1258](https://github.com/n24q02m/mnemo/pull/1258),
+  [`b174370`](https://github.com/n24q02m/mnemo/commit/b1743704a30c1e69efaa25c885ebe53cc589f99e))
+
+
 ## v2.15.16 (2026-09-21)
 
 ### Bug Fixes
