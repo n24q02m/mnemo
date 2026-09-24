@@ -182,6 +182,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS hosted runners build CPython without
+        # --enable-loadable-sqlite-extensions, so the sqlite-vec test modules
+        # skip (~20 tests) and the vec-only source paths go uncovered. That
+        # pins the darwin lane at ~94.5-94.7% against the shared 95% gate --
+        # observed transient FAILs at 94.58%/94.73% that rerun green. Give the
+        # mac lane its own floor instead of weakening the gate for everyone.
+        include:
+          - os: ubuntu-latest
+            cov_fail_under: "95"
+          - os: windows-latest
+            cov_fail_under: "95"
+          - os: macos-latest
+            cov_fail_under: "94"
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -216,7 +229,7 @@ jobs:
         run: uv run --no-sync ty check
 
       - name: Run tests with coverage
-        run: uv run --no-sync pytest --tb=short --cov=mnemo_mcp --cov-report=xml
+        run: uv run --no-sync pytest --tb=short --cov=mnemo_mcp --cov-report=xml --cov-fail-under=${{ matrix.cov_fail_under }}
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
