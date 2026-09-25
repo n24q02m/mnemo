@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.16.1 (2026-09-25)
+
+### Bug Fixes
+
+- **deps**: Update non-major dev dependencies ([#1266](https://github.com/n24q02m/mnemo/pull/1266),
+  [`68b88c0`](https://github.com/n24q02m/mnemo/commit/68b88c0194157b31248bfe2c68f0ce7600af0469))
+
+### Continuous Integration
+
+- Per-OS coverage floor - macos 94 (sqlite-vec skips), others 95
+  ([`8fc9a9f`](https://github.com/n24q02m/mnemo/commit/8fc9a9fdaee14157245a2e3b483d391047268a4b))
+
+
 ## v2.16.0 (2026-09-22)
 
 ### Features
