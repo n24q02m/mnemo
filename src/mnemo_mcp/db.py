@@ -1291,51 +1291,51 @@ class MemoryDB:
                 key=lambda x: results[x].get("vec_score", 0.0),
                 reverse=True,
             )
+
+            k_mult = (k + 1) / 2.0 * 0.7
             scores: dict[str, float] = {
-                mid: 1.0 / (k + rank) for rank, mid in enumerate(fts_ranked, start=1)
+                mid: (1.0 / (k + rank)) * k_mult
+                for rank, mid in enumerate(fts_ranked, start=1)
             }
             for rank, mid in enumerate(vec_ranked, start=1):
-                scores[mid] += 1.0 / (k + rank)
+                scores[mid] += (1.0 / (k + rank)) * k_mult
 
             for mid, mem in results.items():
-                rrf = scores[mid]
-
                 updated_at = mem.get("updated_at", "")
-                if updated_at not in recency_cache:
-                    recency_cache[updated_at] = self._calc_recency(updated_at, now)
+                r_val = recency_cache.get(updated_at)
+                if r_val is None:
+                    r_val = self._calc_recency(updated_at, now) * 0.2
+                    recency_cache[updated_at] = r_val
 
                 ac = mem.get("access_count", 0)
-                if ac not in freq_cache:
-                    freq_cache[ac] = self._calc_frequency(ac)
+                f_val = freq_cache.get(ac)
+                if f_val is None:
+                    f_val = self._calc_frequency(ac) * 0.1
+                    freq_cache[ac] = f_val
 
-                rrf_norm = rrf * (k + 1) / 2.0
                 # Phase 1 retrieval polish: temporal decay multiplied into the
                 # base, then importance boost ``score *= (1 + importance)``
                 # so highly-rated memories outrank equal-relevance peers.
-                base = (
-                    rrf_norm * 0.7
-                    + recency_cache[updated_at] * 0.2
-                    + freq_cache[ac] * 0.1
-                )
+                base = scores[mid] + r_val + f_val
 
                 imp = mem.get("importance")
                 mem["score"] = base * (1.0 + float(imp)) if imp else base
                 scored.append(mem)
         else:
             for mem in results.values():
-                fts = mem.get("fts_score", 0.0)
-
                 updated_at = mem.get("updated_at", "")
-                if updated_at not in recency_cache:
-                    recency_cache[updated_at] = self._calc_recency(updated_at, now)
+                r_val = recency_cache.get(updated_at)
+                if r_val is None:
+                    r_val = self._calc_recency(updated_at, now) * 0.3
+                    recency_cache[updated_at] = r_val
 
                 ac = mem.get("access_count", 0)
-                if ac not in freq_cache:
-                    freq_cache[ac] = self._calc_frequency(ac)
+                f_val = freq_cache.get(ac)
+                if f_val is None:
+                    f_val = self._calc_frequency(ac) * 0.1
+                    freq_cache[ac] = f_val
 
-                base = (
-                    fts * 0.6 + recency_cache[updated_at] * 0.3 + freq_cache[ac] * 0.1
-                )
+                base = mem.get("fts_score", 0.0) * 0.6 + r_val + f_val
 
                 imp = mem.get("importance")
                 mem["score"] = base * (1.0 + float(imp)) if imp else base
