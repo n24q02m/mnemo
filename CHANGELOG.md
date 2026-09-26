@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.18.0 (2026-09-26)
+
+### Features
+
+- **graph**: Live jev-score importance with robust parsing
+  ([`066d9cb`](https://github.com/n24q02m/mnemo/commit/066d9cb7d2652e76d2d82aeb58dcad5de7f87b3b))
+
+
 ## v2.17.4 (2026-09-26)
 
 ### Bug Fixes
