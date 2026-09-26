@@ -7,7 +7,6 @@ candidate exception.
 """
 
 import json
-import os
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +20,6 @@ from mnemo_mcp.server import (
     _format_memory,
     _json,
     config,
-    main,
     memory,
     stats_resource,
 )
@@ -286,6 +284,7 @@ class TestConfigSync:
 
     async def test_config_backfill_skips_empty_page(self):
         """Blank-content rows are skipped without spending an embed call."""
+
         class LegacyDB:
             def __init__(self):
                 self.calls = 0
@@ -629,9 +628,7 @@ class TestWarmupInitEmbeddingBackend:
 
         with (
             patch("mnemo_mcp.server.cell_configured", return_value=True),
-            patch(
-                "mnemo_mcp.embedder.init_backend", return_value=backend
-            ) as mock_init,
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend) as mock_init,
         ):
             ctx: dict = {"embedding_model": None, "embedding_dims": 768}
             await _init_embedding_backend(ctx)
@@ -650,9 +647,7 @@ class TestWarmupInitEmbeddingBackend:
             patch("mnemo_mcp.server.cell_configured", return_value=False),
             patch("mnemo_mcp.server.settings") as mock_settings,
             patch("mnemo_mcp.server._maybe_register_custom_embed"),
-            patch(
-                "mnemo_mcp.embedder.init_backend", return_value=backend
-            ) as mock_init,
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend) as mock_init,
         ):
             mock_settings.disable_local_embed = False
             mock_settings.resolve_embedding_dims.return_value = 0

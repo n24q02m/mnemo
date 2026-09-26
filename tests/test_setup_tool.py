@@ -184,7 +184,6 @@ class TestRunWarmup:
     """
 
     def test_cell_probe_success(self, monkeypatch):
-        from types import SimpleNamespace
 
         monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
         monkeypatch.setattr(

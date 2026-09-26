@@ -15,9 +15,8 @@ import os
 import socket
 import sys
 import typing
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from importlib import resources as pkg_resources
 from importlib.metadata import version as _pkgver
 
 from loguru import logger
@@ -34,7 +33,6 @@ from mnemo_mcp.runtime import (
     db_path_for_namespace,
     hull_settings,
     model_cell,
-    provider_client,
 )
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
@@ -936,9 +934,6 @@ async def _handle_import(
 
 async def _handle_stats(ctx: Context | None) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
-
-    embedding_backend = get_backend()
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
@@ -1854,6 +1849,71 @@ async def config(
             return resp
 
 
+async def _handle_memory_compress(
+    ctx: Context | None, memory_id: str | None
+) -> dict[str, typing.Any]:
+    """``memory(action="compress", memory_id=...)`` - manual compression.
+
+    Reruns the LLM compression pipeline against an existing row whose
+    ``content`` is currently uncompressed. Updates ``content`` +
+    ``text_raw`` + ``compressed`` + ``compression_provider`` in place.
+    Useful for back-filling rows captured before COMPRESSION_ENABLED
+    was true.
+    """
+    db, _, _ = _get_ctx(ctx)
+    if not memory_id:
+        return {
+            "error": "memory_id required for compress",
+            "suggestion": "Pass memory_id from search/list results.",
+        }
+
+    row = await asyncio.to_thread(db.get, memory_id)
+    if not row:
+        return {
+            "error": f"Memory {memory_id} not found",
+            "suggestion": "Verify the memory_id using action='search' or action='list'.",
+        }
+    if row.get("compressed"):
+        return {
+            "status": "already_compressed",
+            "id": memory_id,
+            "compression_provider": row.get("compression_provider"),
+        }
+
+    from mnemo_mcp.compression import compress
+
+    result = await compress(row["content"])
+    if not result["compressed"]:
+        return {
+            "status": "skipped",
+            "id": memory_id,
+            "reason": "no LLM provider available or compression disabled",
+        }
+
+    from datetime import UTC, datetime
+
+    cursor = db._conn.cursor()
+    cursor.execute(
+        "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
+        "compression_provider = ?, updated_at = ? WHERE id = ?",
+        (
+            result["text"],
+            result["text_raw"],
+            result["compression_provider"],
+            datetime.now(UTC).isoformat(),
+            memory_id,
+        ),
+    )
+    db._conn.commit()
+    return {
+        "status": "compressed",
+        "id": memory_id,
+        "compression_provider": result["compression_provider"],
+        "tokens_in": result["tokens_in"],
+        "tokens_out": result["tokens_out"],
+    }
+
+
 async def _handle_config_backfill(
     ctx: Context | None,
     batch_size: int | None,
@@ -1969,9 +2029,6 @@ async def _handle_config_backfill(
 
 async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
-
-    embedding_backend = get_backend()
     s = await asyncio.to_thread(db.stats)
     return {
         "database": {
@@ -1986,7 +2043,8 @@ async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
             "available": embedding_model is not None,
         },
         "provider_cells": {
-            task: cell_configured(task) for task in ("embed", "rerank", "chat", "jev_score")
+            task: cell_configured(task)
+            for task in ("embed", "rerank", "chat", "jev_score")
         },
         "auth_mode": hull_settings().server.auth,
     }
@@ -2149,8 +2207,6 @@ def build_http_app(settings=None):
     from starlette.applications import Starlette
     from starlette.routing import Mount
 
-    from mnemo_mcp.runtime import build_authenticator
-
     inner = mcp.streamable_http_app()
     authenticator = build_authenticator(settings)
 
@@ -2190,7 +2246,6 @@ def run_server_blocking(
     refused — an unauthenticated listener must never leave localhost.
     """
     import uvicorn
-
     from hull_core.lifecycle.lock import LifecycleLock
 
     from mnemo_mcp.runtime import hull_settings
@@ -2198,9 +2253,7 @@ def run_server_blocking(
     hs = hull_settings()
     bind_host = host or os.getenv("MNEMO_HOST") or hs.server.host
     bind_port = int(
-        port
-        if port is not None
-        else (os.getenv("MNEMO_PORT") or hs.server.port)
+        port if port is not None else (os.getenv("MNEMO_PORT") or hs.server.port)
     )
 
     if hs.server.auth == "open" and not _is_loopback_host(bind_host):

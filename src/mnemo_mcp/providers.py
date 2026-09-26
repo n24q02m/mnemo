@@ -17,6 +17,7 @@ from typing import Any
 
 from mnemo_core.ports import CapExceeded, ProviderAnswer, ReflectPort
 
+
 def _count_tokens(text: str) -> int:
     """tiktoken cl100k_base estimate (same encoding the compression pipeline uses)."""
     import tiktoken
@@ -111,7 +112,8 @@ class BoundedReflectProvider(ReflectPort):
 
             if self.model and self._api_key:
                 cell = ModelCell(
-                    task="chat", model=self.model,
+                    task="chat",
+                    model=self.model,
                     api_key=self._api_key,
                     base_url=self._api_base or model_cell("chat").base_url,
                 )

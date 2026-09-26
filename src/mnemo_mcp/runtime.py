@@ -63,9 +63,7 @@ def hull_settings() -> HullSettings:
     """Load ``~/.mnemo/config.toml`` (cached per file mtime; tests can reset)."""
     config_dir = mnemo_config_dir()
     path = config_dir / "config.toml"
-    return _cached_settings(
-        config_dir, path.stat().st_mtime if path.is_file() else 0.0
-    )
+    return _cached_settings(config_dir, path.stat().st_mtime if path.is_file() else 0.0)
 
 
 def reset_settings_cache() -> None:

@@ -8,10 +8,9 @@ Targets: Qwen3EmbedBackend._get_model,
 embed_texts inner function, query role, check_available result empty.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from mnemo_mcp.embedder import Qwen3EmbedBackend, _is_retryable
-
 
 # ---------------------------------------------------------------------------
 # Qwen3EmbedBackend._get_model

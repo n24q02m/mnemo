@@ -82,10 +82,7 @@ class CloudReranker:
     ) -> list[tuple[int, float]]:
         """Single cloud path via the hull client (runs inside a worker thread)."""
         results = _run_async(self._client.rerank(query, documents, top_n=top_n))
-        return [
-            (int(r["index"]), float(r["relevance_score"]))
-            for r in results
-        ]
+        return [(int(r["index"]), float(r["relevance_score"])) for r in results]
 
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
