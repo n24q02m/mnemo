@@ -1,9 +1,28 @@
+"""Tests for mnemo_mcp.server._embed -- degrade-vs-raise error taxonomy.
+
+The legacy provider SDK is gone with the de-host; ``_is_retryable`` classifies
+on the exception's message, so the stand-ins here are plain exception classes
+whose str() hits those patterns (one shaped like a re-wrapped connection
+error, one rate-limit shaped).
+"""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from litellm.exceptions import APIConnectionError, RateLimitError
 
 from mnemo_mcp.server import _embed
+
+
+class _ClientConnectionError(Exception):
+    """Stand-in for a client layer re-wrapping a permanent 4xx (synthetic 500)."""
+
+    status_code = 500
+
+
+class _ClientRateLimitError(Exception):
+    """Stand-in for a client rate-limit error (message carries 'rate limit')."""
+
+    status_code = 429
 
 
 @pytest.mark.asyncio
@@ -47,8 +66,8 @@ async def test_embed_transient_error_degrades_to_none():
     correct graceful degradation.
     """
     mock_backend = AsyncMock()
-    mock_backend.embed_single.side_effect = RateLimitError(
-        message="rate limit exceeded", llm_provider="cohere", model="embed-v4.0"
+    mock_backend.embed_single.side_effect = _ClientRateLimitError(
+        "rate limit exceeded"
     )
 
     with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
@@ -62,12 +81,10 @@ async def test_embed_permanent_error_raises_loudly():
     silently swallowed into None -- every embed would fail, so surface it loudly.
     """
     mock_backend = AsyncMock()
-    mock_backend.embed_single.side_effect = APIConnectionError(
-        message="AuthenticationError - invalid api key",
-        llm_provider="cohere",
-        model="embed-v4.0",
+    mock_backend.embed_single.side_effect = _ClientConnectionError(
+        "AuthenticationError - invalid api key"
     )
 
     with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
-        with pytest.raises(APIConnectionError):
+        with pytest.raises(_ClientConnectionError):
             await _embed("text", "model", 768)

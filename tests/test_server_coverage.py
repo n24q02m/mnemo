@@ -27,13 +27,21 @@ from mnemo_mcp.server import (
 )
 
 
-def test_cloudflare_default_embedding_width_matches_vectorize_contract(monkeypatch):
-    """CF D1/Vectorize uses the relay Cohere 1536-width contract by default."""
+def test_default_embedding_width_is_stable_across_removed_backends(monkeypatch):
+    """Legacy backend env selectors are inert; the width contract is 1024.
+
+    De-host rework: the CF D1/Vectorize 1536-width branch is gone; fresh
+    stores default to DEFAULT_EMBEDDING_DIMS regardless of stale env vars.
+    """
     monkeypatch.setenv("MEMORY_DB_BACKEND", "cf-d1")
-    assert _default_embedding_dims() == 1536
+    with patch("mnemo_mcp.server.settings") as mock_settings:
+        mock_settings.resolve_embedding_dims.return_value = 0
+        assert _default_embedding_dims() == 1024
 
     monkeypatch.setenv("MEMORY_DB_BACKEND", "sqlite")
-    assert _default_embedding_dims() == 768
+    with patch("mnemo_mcp.server.settings") as mock_settings:
+        mock_settings.resolve_embedding_dims.return_value = 0
+        assert _default_embedding_dims() == 1024
 
 
 @pytest.fixture
@@ -197,24 +205,6 @@ class TestFormatMemory:
 
 
 class TestConfigSync:
-    async def test_config_sync_action(self, ctx_with_db):
-        """Config sync action triggers sync_full."""
-        ctx, db = ctx_with_db
-        mock_result = {"status": "ok", "pull": None, "push": None}
-
-        with patch(
-            "mnemo_mcp.sync.sync_full", new_callable=AsyncMock, return_value=mock_result
-        ):
-            result = await config(action="sync", ctx=ctx)
-            assert result["status"] == "ok"
-
-    async def test_config_set_sync_interval(self, ctx_with_db):
-        """Config set sync_interval updates the setting."""
-        ctx, _ = ctx_with_db
-        result = await config(action="set", key="sync_interval", value="120", ctx=ctx)
-        assert result["status"] == "updated"
-        assert result["key"] == "sync_interval"
-
     async def test_config_set_log_level(self, ctx_with_db):
         """Config set log_level updates logger configuration."""
         ctx, _ = ctx_with_db
@@ -244,14 +234,11 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": db,
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
 
-        with patch(
-            "mnemo_mcp.server._get_request_embedding",
-            return_value=("cohere/embed-v4.0", backend),
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=backend):
             result = await config(action="backfill_embeddings", batch_size=2, ctx=ctx)
 
         assert result == {
@@ -282,12 +269,10 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": MagicMock(),
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
-        with patch(
-            "mnemo_mcp.server._get_request_embedding", return_value=(None, None)
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=None):
             result = await config(action="backfill_embeddings", ctx=ctx)
         assert result == {
             "status": "unavailable",
@@ -299,7 +284,8 @@ class TestConfigSync:
             "failed": 0,
         }
 
-    async def test_config_backfill_skips_empty_page_and_uses_legacy_adapter(self):
+    async def test_config_backfill_skips_empty_page(self):
+        """Blank-content rows are skipped without spending an embed call."""
         class LegacyDB:
             def __init__(self):
                 self.calls = 0
@@ -318,13 +304,10 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": db,
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
-        with patch(
-            "mnemo_mcp.server._get_request_embedding",
-            return_value=("cohere/embed-v4.0", backend),
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=backend):
             result = await config(action="backfill_embeddings", batch_size=2, ctx=ctx)
 
         assert result["status"] == "completed"
@@ -346,13 +329,10 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": db,
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
-        with patch(
-            "mnemo_mcp.server._get_request_embedding",
-            return_value=("cohere/embed-v4.0", backend),
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=backend):
             result = await config(action="backfill_embeddings", batch_size=2, ctx=ctx)
 
         assert result["status"] == "completed"
@@ -370,13 +350,10 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": db,
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
-        with patch(
-            "mnemo_mcp.server._get_request_embedding",
-            return_value=("cohere/embed-v4.0", backend),
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=backend):
             result = await config(action="backfill_embeddings", batch_size=2, ctx=ctx)
             assert result["status"] == "partial"
             assert result["failed"] == 2
@@ -404,13 +381,10 @@ class TestConfigSync:
         ctx = MagicMock()
         ctx.request_context.lifespan_context = {
             "db": db,
-            "embedding_model": None,
+            "embedding_model": "cohere/embed-v4.0",
             "embedding_dims": 1536,
         }
-        with patch(
-            "mnemo_mcp.server._get_request_embedding",
-            return_value=("cohere/embed-v4.0", backend),
-        ):
+        with patch("mnemo_mcp.embedder.get_backend", return_value=backend):
             result = await config(action="backfill_embeddings", batch_size=2, ctx=ctx)
         assert result["status"] == "partial"
         assert result["failed"] == 1
@@ -429,152 +403,108 @@ class TestResources:
         result = json.loads(await stats_resource(ctx=ctx))
         assert result["total_memories"] == 1
         assert "embedding_model" in result
-        assert "sync_enabled" in result
 
 
-# ---------------------------------------------------------------------------
-# main function
-# ---------------------------------------------------------------------------
-
-
-class TestMainFunction:
-    def test_main_calls_mcp_run(self):
-        """main() in stdio mode runs FastMCP stdio server directly (no bridge)."""
-        from mnemo_mcp import server as server_mod
-
-        with (
-            patch("mnemo_mcp.server.logger") as mock_logger,
-            patch.object(server_mod.mcp, "run") as mock_run,
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
-        ):
-            mock_settings.log_level = "INFO"
-            main()
-            mock_logger.remove.assert_called_once()
-            mock_logger.add.assert_called_once()
-            mock_run.assert_called_once_with(transport="stdio")
-
+# De-host note: the old TestMainFunction pinned stdio-mode main(); main() now
+# only resolves MNEMO_HOST/PORT and delegates to run_server_blocking (covered
+# in tests/test_main.py).
 
 # ---------------------------------------------------------------------------
 # _init_embedding_backend — candidate exception path
 # ---------------------------------------------------------------------------
 
 
-class TestInitEmbeddingBackendCandidate:
-    @patch("mnemo_mcp.credential_state.get_state")
-    @patch("mnemo_mcp.server.settings")
+class TestInitEmbeddingBackend:
+    """Cell-first _init_embedding_backend: cloud probe, local leg, FTS5 mode."""
+
     async def test_embedding_backend_disabled_without_local_or_cloud_model(
-        self, mock_settings, mock_get_state
+        self,
     ):
-        """DISABLE_LOCAL_EMBED with no cloud chain stays in FTS5 mode."""
-        from mnemo_mcp.credential_state import CredentialState
+        """DISABLE_LOCAL_EMBED with no embed cell stays in FTS5 mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_get_state.return_value = CredentialState.CONFIGURED
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "unavailable"
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-        await _init_embedding_backend("sdk", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.embedder.init_backend") as mock_init,
+        ):
+            mock_settings.disable_local_embed = True
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
         assert ctx == {"embedding_model": None, "embedding_dims": 768}
+        mock_init.assert_not_called()
 
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_candidate_exception_continues(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When a candidate raises exception, continues to next (no local fallback)."""
+    async def test_cell_probe_exception_stays_fts5_only(self):
+        """A raising cloud probe surfaces an error and keeps FTS5-only mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        embedding_chain = [
-            "jina_ai/jina-embeddings-v5-text-small",
-            "gemini/gemini-embedding-001",
-            "text-embedding-3-large",
-            "embed-multilingual-v3.0",
-        ]
-        mock_settings.embedding_chain.return_value = embedding_chain
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "cloud"
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch(
+                "mnemo_mcp.embedder.init_backend",
+                side_effect=Exception("API Error"),
+            ),
+            patch("mnemo_mcp.server.logger") as mock_logger,
+        ):
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
-        # All candidates raise exception
-        mock_init.side_effect = Exception("API Error")
+        assert ctx == {"embedding_model": None, "embedding_dims": 768}
+        mock_logger.error.assert_called()
 
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-        await _init_embedding_backend("sdk", ctx)
-
-        # Should have tried all cloud candidates only -- no local fallback
-        assert mock_init.call_count == len(embedding_chain)
-
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_backend_zero_dims(
-        self, mock_settings, mock_init, _mock_thread, _mock_register
-    ):
-        """When local backend check_available returns 0, logs error."""
+    async def test_local_backend_zero_dims(self):
+        """Local check_available == 0 logs the error and keeps FTS5 mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        backend = MagicMock()
+        backend.check_available.return_value = 0
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 0  # Not available
-        mock_init.return_value = mock_backend
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend),
+            patch("mnemo_mcp.server.logger") as mock_logger,
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-        await _init_embedding_backend("local", ctx)
-
-        # Model should remain None since local returned 0 dims
         assert ctx["embedding_model"] is None
+        mock_logger.error.assert_called_with("Local embedding model not available")
 
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_backend_preserves_configured_dimensions(
-        self, mock_settings, mock_init, _mock_thread, _mock_register
-    ):
+    async def test_local_backend_preserves_configured_dimensions(self):
         """A configured storage width is retained after native model probing."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 384
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        backend = MagicMock()
+        backend.check_available.return_value = 1024
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 1024
-        mock_init.return_value = mock_backend
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-        await _init_embedding_backend("local", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend),
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 384}
+            await _init_embedding_backend(ctx)
 
         assert ctx == {"embedding_model": "local/m", "embedding_dims": 384}
 
 
 class TestCustomEmbeddingRegistration:
     def test_custom_embed_uses_default_dimension_when_unconfigured(self):
-        """A BYO model with no width configured receives the historical default."""
+        """A BYO model with no width configured receives the default width."""
         from mnemo_mcp.server import _maybe_register_custom_embed
 
         with (
+            patch("mnemo_mcp.server._supported_model_ids", return_value={"known"}),
             patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("fastretrieval.CustomModelSpec") as mock_spec,
+            patch("mnemo_mcp.server._register_embed_spec") as mock_spec,
         ):
             mock_settings.local_embedding_dim = 0
             mock_settings.resolve_embedding_dims.return_value = 0
@@ -588,29 +518,35 @@ class TestCustomEmbeddingRegistration:
             model_id="org/custom-embed",
             hf="org/custom-embed",
             model_file=None,
-            dim=768,
+            dim=1024,
             pooling="mean",
             normalization=True,
         )
-        mock_spec.return_value.register.assert_called_once_with()
 
 
-async def test_remote_startup_does_not_probe_process_providers_or_local_models(
-    monkeypatch,
-):
+async def test_ambient_env_keys_do_not_initialize_backends(monkeypatch):
+    """Ambient provider env vars are inert: no cell, no init -- FTS5-only.
+
+    De-host rework: remote startup has no dedicated branch anymore; the pin
+    is that COHERE_API_KEY alone initializes nothing.
+    """
     from mnemo_mcp.server import _init_embedding_backend, _init_reranker_backend
 
-    monkeypatch.setenv("PUBLIC_URL", "https://mnemo.example")
     monkeypatch.setenv("COHERE_API_KEY", "ambient-must-not-be-used")
 
     def forbidden(*args, **kwargs):
-        pytest.fail("Remote startup initialized a process-wide provider/model")
+        pytest.fail("Startup initialized a process-wide provider/model")
 
     monkeypatch.setattr("mnemo_mcp.embedder.init_backend", forbidden)
     monkeypatch.setattr("mnemo_mcp.reranker.init_reranker", forbidden)
+    monkeypatch.setattr("mnemo_mcp.server.cell_configured", lambda task: False)
+    monkeypatch.setattr(
+        "mnemo_mcp.server.settings",
+        MagicMock(disable_local_embed=True, rerank_enabled=False),
+    )
     context = {"embedding_model": None, "embedding_dims": 1536}
-    await _init_embedding_backend("local", context)
-    await _init_reranker_backend("local")
+    await _init_embedding_backend(context)
+    await _init_reranker_backend()
     assert context["embedding_model"] is None
 
 
@@ -634,231 +570,141 @@ class TestMemoryLimitClamping:
         # Should not crash, limit is clamped
         assert isinstance(result["results"], list)
 
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_backend_init_fails(
-        self, mock_settings, mock_init, _mock_thread, _mock_register
-    ):
+    async def test_local_backend_init_fails(self):
         """When local backend init raises exception, logs error."""
-
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
-
-        # Have init_backend throw an exception
-        mock_init.side_effect = Exception("init failed test error")
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-
-        with patch("mnemo_mcp.server.logger") as mock_logger:
-            await _init_embedding_backend("local", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch(
+                "mnemo_mcp.embedder.init_backend",
+                side_effect=Exception("init failed test error"),
+            ),
+            patch("mnemo_mcp.server.logger") as mock_logger,
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
             mock_logger.error.assert_called_with(
                 "Local embedding init failed: init failed test error"
             )
 
-        # Model should remain None
         assert ctx["embedding_model"] is None
 
 
 class TestWarmupInitEmbeddingBackend:
-    """Tests for _init_embedding_backend in server.py (background init).
+    """Background-init paths of _init_embedding_backend (cell + local leg).
 
-    Must patch "mnemo_mcp.server.settings" (not config.settings) because
-    server.py imports settings at module level. Also must patch
-    asyncio.to_thread to avoid threading issues in tests.
+    De-host rework: the multi-candidate cloud chain is gone; the single
+    ``[models.embed]`` cell is probed, then the local ONNX leg.
     """
 
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_explicit_model_success(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When explicit model works, ctx is updated in-place."""
-        from unittest.mock import MagicMock
-
+    async def test_cell_probe_success_updates_ctx(self):
+        """A healthy cell sets the cell model and keeps the stored width."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = ["gemini/model"]
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "cloud"
+        backend = MagicMock()
+        backend.check_available = AsyncMock(return_value=3072)
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 3072
-        mock_init.return_value = mock_backend
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch("mnemo_mcp.server.model_cell") as mock_model_cell,
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend),
+        ):
+            mock_model_cell.return_value.model = "cell-model"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
-        ctx: dict = {
-            "embedding_model": None,
-            "embedding_dims": 768,
-        }
+        assert ctx == {"embedding_model": "cell-model", "embedding_dims": 768}
 
-        await _init_embedding_backend("sdk", ctx)
-
-        assert ctx["embedding_model"] == "gemini/model"
-        assert ctx["embedding_dims"] == 768  # DEFAULT_EMBEDDING_DIMS
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_auto_detect_candidates(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """Auto-detect iterates through the embedding chain."""
-        from unittest.mock import MagicMock
-
+    async def test_cell_probe_zero_dims_no_local_fallback(self):
+        """Configured-but-dead cell: FTS5-only, no silent local download."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = [
-            "jina_ai/jina-embeddings-v5-text-small",
-            "gemini/gemini-embedding-001",
-        ]
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "cloud"
+        backend = MagicMock()
+        backend.check_available = AsyncMock(return_value=0)
 
-        # First candidate fails, second succeeds
-        backend_fail = MagicMock()
-        backend_fail.check_available.return_value = 0
-        backend_ok = MagicMock()
-        backend_ok.check_available.return_value = 768
-        mock_init.side_effect = [backend_fail, backend_ok]
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch(
+                "mnemo_mcp.embedder.init_backend", return_value=backend
+            ) as mock_init,
+        ):
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-
-        await _init_embedding_backend("sdk", ctx)
-
-        assert ctx["embedding_model"] is not None
-        assert ctx["embedding_dims"] == 768
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_unavailable_no_local_fallback(
-        self, mock_settings, mock_init, _mock_thread
-    ):
-        """When cloud model not available, no local fallback in CONFIGURED state."""
-        from unittest.mock import MagicMock
-
-        from mnemo_mcp.server import _init_embedding_backend
-
-        mock_settings.embedding_chain.return_value = ["model"]
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "cloud"
-
-        # Cloud returns 0 dims (not available)
-        cloud_backend = MagicMock()
-        cloud_backend.check_available.return_value = 0
-        mock_init.return_value = cloud_backend
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-
-        await _init_embedding_backend("sdk", ctx)
-
-        # No local fallback -- model stays None
         assert ctx["embedding_model"] is None
-        # Only cloud was tried (1 call)
-        assert mock_init.call_count == 1
+        mock_init.assert_called_once_with("cloud")
 
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_direct_local_backend(
-        self, mock_settings, mock_init, _mock_thread, _mock_register
-    ):
-        """When backend_type is "local", skips cloud entirely."""
-        from unittest.mock import MagicMock
-
+    async def test_direct_local_backend(self):
+        """No embed cell -> local ONNX init with the resolved model id."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        backend = MagicMock()
+        backend.check_available.return_value = 1024
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 1024
-        mock_init.return_value = mock_backend
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-
-        await _init_embedding_backend("local", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch(
+                "mnemo_mcp.embedder.init_backend", return_value=backend
+            ) as mock_init,
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_embedding_dims.return_value = 0
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 0}
+            await _init_embedding_backend(ctx)
 
         mock_init.assert_called_once_with("local", "local/m")
-        assert ctx["embedding_model"] == "local/m"
+        assert ctx == {"embedding_model": "local/m", "embedding_dims": 1024}
 
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_backend_failure_logs_error(
-        self, mock_settings, mock_init, _mock_thread, _mock_register
-    ):
-        """When local backend also fails, ctx stays with None model."""
-        from unittest.mock import MagicMock
-
+    async def test_local_backend_check_available_failure_logs_error(self):
+        """check_available raising during local init leaves FTS5 mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
+        backend = MagicMock()
+        backend.check_available.side_effect = Exception("import error")
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.side_effect = Exception("import error")
-        mock_init.return_value = mock_backend
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-
-        await _init_embedding_backend("local", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch("mnemo_mcp.embedder.init_backend", return_value=backend),
+            patch("mnemo_mcp.server.logger") as mock_logger,
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
         assert ctx["embedding_model"] is None
+        mock_logger.error.assert_called_with(
+            "Local embedding init failed: import error"
+        )
 
-    @patch("mnemo_mcp.server._maybe_register_custom_embed")
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.logger")
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_backend_init_raises_exception(
-        self, mock_settings, mock_init, mock_logger, _mock_thread, _mock_register
-    ):
-        """When init_backend raises exception, logs error and ctx stays None."""
+    async def test_local_backend_init_raises_exception(self):
+        """init_backend raising logs the same guarded error path."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        mock_settings.embedding_chain.return_value = []
-        mock_settings.resolve_embedding_dims.return_value = 0
-        mock_settings.resolve_embedding_backend.return_value = "local"
-        mock_settings.resolve_local_embedding_model.return_value = "local/m"
-
-        mock_init.side_effect = Exception("Init Backend Failed")
-
-        ctx: dict = {"embedding_model": None, "embedding_dims": 768}
-        await _init_embedding_backend("local", ctx)
+        with (
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server._maybe_register_custom_embed"),
+            patch(
+                "mnemo_mcp.embedder.init_backend",
+                side_effect=Exception("Init Backend Failed"),
+            ),
+            patch("mnemo_mcp.server.logger") as mock_logger,
+        ):
+            mock_settings.disable_local_embed = False
+            mock_settings.resolve_local_embedding_model.return_value = "local/m"
+            ctx: dict = {"embedding_model": None, "embedding_dims": 768}
+            await _init_embedding_backend(ctx)
 
         assert ctx["embedding_model"] is None
         mock_logger.error.assert_called_with(

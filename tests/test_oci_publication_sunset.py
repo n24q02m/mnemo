@@ -23,16 +23,10 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def _job_block(workflow: str, job: str) -> str:
-    match = re.search(
-        rf"(?ms)^  {re.escape(job)}:\n.*?(?=^  [A-Za-z0-9_-]+:|\Z)",
-        workflow,
-    )
-    assert match, f"workflow job {job!r} is missing"
-    return match.group(0)
-
-
-def test_release_graph_has_no_public_oci_jobs_and_keeps_cf_deploy_independent():
+def test_release_graph_has_no_public_oci_or_cf_deploy_jobs():
+    """Release chain publishes PyPI/registry/marketplace only; the de-host
+    removed the Cloudflare image deploy entirely, so no deploy-cf job and no
+    registry docker steps may reappear."""
     workflow = _read(".github/workflows/cd.yml")
 
     for marker in (
@@ -60,12 +54,10 @@ def test_release_graph_has_no_public_oci_jobs_and_keeps_cf_deploy_independent():
         workflow,
     )
 
-    deploy_cf = _job_block(workflow, "deploy-cf")
-    assert re.search(r"(?m)^    needs: \[release\]\n", deploy_cf)
-    assert "registry.cloudflare.com" not in deploy_cf
-    assert "scripts/deploy_cf.py" in deploy_cf
-    assert "docker/setup-buildx-action" in deploy_cf
-    assert "docker/login-action" not in deploy_cf
+    # The Cloudflare image deploy is gone with the de-host.
+    assert not re.search(r"(?m)^  deploy-cf:\n", workflow)
+    assert "registry.cloudflare.com" not in workflow
+    assert "scripts/deploy_cf.py" not in workflow
 
 
 def test_registry_metadata_publishes_only_the_pypi_package():
@@ -77,17 +69,19 @@ def test_registry_metadata_publishes_only_the_pypi_package():
     assert all(package.get("runtimeHint") == "uvx" for package in packages)
 
 
-def test_public_docs_drop_image_aliases_but_keep_source_and_cf_paths():
+def test_public_docs_drop_image_aliases_but_keep_local_build_guidance():
     readme = _read("README.md")
     passport = _read("docs/passport.md")
-    wrangler = _read("wrangler.jsonc")
-    worker = _read("src/worker.ts")
     agents = _read("AGENTS.md")
     claude = _read("CLAUDE.md")
     contributing = _read("CONTRIBUTING.md")
 
-    for text in (readme, passport, wrangler, worker, agents, claude, contributing):
+    for text in (readme, passport, agents, claude, contributing):
         assert all(reference not in text for reference in PUBLIC_IMAGE_REFS)
+
+    # The CF deployment artifacts are gone with the de-host.
+    assert not (ROOT / "wrangler.jsonc").exists()
+    assert not (ROOT / "src" / "worker.ts").exists()
 
     assert "[![Docker]" not in readme
     assert "Public OCI image publication is discontinued" in readme
@@ -97,11 +91,8 @@ def test_public_docs_drop_image_aliases_but_keep_source_and_cf_paths():
     assert "docker build --target http -t mnemo-mcp:local ." in passport
     assert "mnemo-mcp:local --http" in passport
 
-    assert "registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:local" in wrangler
-    assert re.search(r"registry\.cloudflare\.com", worker)
     expected_release_claim = (
         "PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace"
     )
     assert expected_release_claim in agents
     assert expected_release_claim in claude
-    assert "Builds and pushes the Cloudflare internal image" in contributing

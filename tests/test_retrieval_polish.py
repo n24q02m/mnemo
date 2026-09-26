@@ -184,23 +184,12 @@ def test_build_default_rerank_chain_local_first(monkeypatch):
     assert isinstance(chain._backends[0], Qwen3Reranker)
 
 
-def test_build_default_rerank_chain_includes_jina_then_cohere(monkeypatch):
-    monkeypatch.setenv("JINA_AI_API_KEY", "stub-jina")
-    monkeypatch.setenv("COHERE_API_KEY", "stub-cohere")
-
-    chain = build_default_rerank_chain()
-    backends = chain._backends
-
-    # Local first, then Jina, then Cohere — order matters for the cascade.
-    assert isinstance(backends[0], Qwen3Reranker)
-    cloud = [b for b in backends if isinstance(b, CloudReranker)]
-    assert len(cloud) == 2
-    assert "jina" in cloud[0].model.lower()
-    assert "rerank-v4" in cloud[1].model.lower()
-
-
 def test_build_default_rerank_chain_prefer_local_false_swaps_order(monkeypatch):
-    monkeypatch.setenv("JINA_AI_API_KEY", "stub-jina")
+    """With the rerank cell configured, prefer_local=False puts the cell first."""
+    client = MagicMock()
+    client.cell.model = "rerank-via-cell"
+    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+    monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
     chain = build_default_rerank_chain(prefer_local=False)
     backends = chain._backends
 

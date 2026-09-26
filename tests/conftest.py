@@ -1,15 +1,4 @@
-"""Shared test fixtures for Mnemo MCP Server."""
-
-# Force-import fastmcp BEFORE test_security_log_level.py loads its
-# module-level ``patch("importlib.metadata.version")``. Once fastmcp is
-# cached in sys.modules, later imports skip its ``__init__`` (which would
-# otherwise try to resolve its own version via the leaked mock).
-# Coverage + beartype-claw guard: ``key_value.aio`` activates beartype's
-# claw import hook, whose loader lazily imports ``beartype.claw._clawstate``
-# on every get_code. When coverage traces that first self-import, the loader
-# re-enters itself and dies with a partial-initialization ImportError before
-# any test runs. Importing the state module up front (before the hook exists,
-# through the normal loader) caches it in sys.modules and defuses the loop.
+"""Shared test fixtures for Mnemo MCP Server (de-hosted stack, hull-core)."""
 
 # Force-import fastmcp BEFORE test_security_log_level.py loads its
 # module-level ``patch("importlib.metadata.version")``. Once fastmcp is
@@ -26,16 +15,6 @@ import fastmcp  # noqa: F401
 import pytest
 
 from mnemo_mcp.db import MemoryDB
-
-pytest_plugins = ["conftest_e2e"]
-
-# litellm downloads model_prices_and_context_window.json from raw.githubusercontent
-# the first time it is imported. It ships the same file inside the wheel and this
-# env var selects that copy, so the import stops depending on the network. Set at
-# module scope because litellm reads it during ``litellm.__init__``, which the
-# lazy imports in embedder.py can trigger from the first test that runs.
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
-
 
 # ---------------------------------------------------------------------------
 # Outbound network guard
@@ -57,12 +36,10 @@ class OutboundNetworkBlocked(BaseException):
     """A test tried to open a connection that leaves this machine.
 
     Derived from ``BaseException`` -- not ``Exception`` -- for the same reason
-    ``pytest.fail`` is: the leak this guard was written for runs inside two
-    nested ``except Exception`` handlers (``CloudEmbeddingBackend
-    .check_available`` returns 0, ``server._init_embedding_backend`` logs a
-    warning), and an ``Exception`` here is swallowed by both. The test then
-    passes while still having gone to the network, which is the failure mode
-    the guard exists to remove.
+    ``pytest.fail`` is: the leak this guard was written for ran inside nested
+    ``except Exception`` handlers that log a warning and keep going, so an
+    ``Exception`` here was swallowed and the test passed while still having
+    gone to the network.
     """
 
 
@@ -99,16 +76,18 @@ def _is_local_host(host: object) -> bool:
 
 
 def _blocked(host: object, port: object) -> OutboundNetworkBlocked:
+    markers = ",".join(_NETWORK_MARKERS)
     return OutboundNetworkBlocked(
         f"Blocked outbound network access to {_host_text(host)}:{port} "
         "from a unit test.\n"
         "Unit tests must not talk to the internet. Patch the boundary the "
         "call crosses instead -- e.g. patch('mnemo_mcp.embedder.init_backend') "
-        "when a server action initialises an embedding backend, or "
-        "patch('mcp_core.llm.embedding') / patch('mcp_core.llm.aembedding') "
-        "for a direct litellm call. A test that genuinely needs the network "
-        "belongs behind one of the @pytest.mark."
-        f"{{{','.join(_NETWORK_MARKERS)}}} markers."
+        "or patch('mnemo_mcp.embedder._cell_client') for embedding backends, "
+        "patch('mnemo_mcp.reranker.init_reranker') for rerankers, or "
+        "patch('mnemo_mcp.runtime.provider_client') / "
+        "patch('mnemo_mcp.llm._get_client') for provider-cell calls. A test "
+        "that genuinely needs the network belongs behind one of the "
+        f"@pytest.mark.{{{markers}}} markers."
     )
 
 
@@ -116,19 +95,10 @@ def _blocked(host: object, port: object) -> OutboundNetworkBlocked:
 def _block_outbound_network(request, monkeypatch):
     """Fail fast, on every OS, when a unit test reaches the real internet.
 
-    CI run 30755522961 lost its windows-latest job to the 30s pytest-timeout:
-    ``test_server_setup_actions.py::TestSetupComplete::test_refreshes_state``
-    drove ``config(action="setup_complete")`` through
-    ``_init_embedding_backend`` into ``CloudEmbeddingBackend.check_available``,
-    which issued a real HTTPS POST via litellm and then stalled reading the
-    response headers. ``_DEFAULT_EMBEDDING_CHAIN`` in config.py starts at a
-    ``jina_ai/`` model, so no env var is needed for a unit test to leave the
-    box. The same request failed fast on Linux, which is why a missing patch
-    looked like a Windows-only flake for as long as it did.
-
-    Blocking the syscall converts that whole class of leak into an immediate
-    and identical failure everywhere. Loopback stays open on purpose: tests
-    that stand up a local server (relay, OAuth callback) must keep working.
+    Blocking the syscall converts the whole class of network leak into an
+    immediate and identical failure everywhere. Loopback stays open on
+    purpose: tests that stand up a local HTTP server (the hull auth
+    surface) must keep working.
     """
     if any(request.node.get_closest_marker(m) for m in _NETWORK_MARKERS):
         return
@@ -166,88 +136,86 @@ def _block_outbound_network(request, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
 
 
-@pytest.fixture(autouse=True)
-def _never_open_a_real_browser(monkeypatch):
-    """Keep the GDrive device-code path from hijacking the developer's browser.
+# ---------------------------------------------------------------------------
+# Environment / state isolation
+# ---------------------------------------------------------------------------
 
-    ``credential_state._trigger_gdrive_device_code`` calls ``try_open_browser``
-    on the verification URL. Newer mcp-core honours ``MCP_NO_BROWSER``, but the
-    import is lazy and older installs lack that guard, so patch the symbol too.
-    Tests that assert on the launch patch ``mcp_core.try_open_browser``
-    themselves, which shadows this fixture.
+def _settings_env_keys() -> list[str]:
+    """Every env var pydantic-settings would read into ``Settings``."""
+    from mnemo_mcp.config import Settings
+
+    keys = {name.upper() for name in Settings.model_fields}
+    keys.update({"DB_PATH", "MNEMO_DB_PATH"})  # validation aliases
+    return sorted(keys)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_fake_home(tmp_path_factory, monkeypatch):
+    """Redirect ~/ to a per-test tmp dir so instance state never leaks.
+
+    The de-hosted runtime derives everything instance-shaped from
+    ``~/.mnemo/`` (config.toml, memories.db, per-sub stores), so pointing
+    HOME/USERPROFILE at a scratch dir isolates every test from the
+    developer's real mnemo state -- and from parallel pytest workers.
+    Path.home() reads HOME on POSIX and USERPROFILE on Windows.
     """
-    monkeypatch.setenv("MCP_NO_BROWSER", "1")
-    monkeypatch.setattr("mcp_core.try_open_browser", lambda url: False, raising=False)
+    from mnemo_mcp.runtime import reset_settings_cache
 
-
-@pytest.fixture(autouse=True)
-def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
-    """Redirect ~/ to a per-test tmp dir so PerPluginStore writes don't
-    pollute real ~/.mnemo-mcp/ between test runs (or worse, between
-    parallel pytest workers in CI). Path.home() reads HOME on POSIX
-    and USERPROFILE on Windows."""
     fake_home = tmp_path_factory.mktemp("mnemo_test_home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    reset_settings_cache()
+    yield
+    reset_settings_cache()
 
 
 @pytest.fixture(autouse=True)
 def _clear_provider_environment(monkeypatch):
     """Keep unit tests independent of workstation and CI provider secrets."""
     for key in (
-        "API_KEYS",
-        "EMBEDDING_MODELS",
-        "RERANK_MODELS",
-        "LLM_MODELS",
-        "MEMORY_DB_BACKEND",
-        "SYNC_ENABLED",
-        "SYNC_S3_BUCKET",
-        "PUBLIC_URL",
-        "OPENAI_API_KEY",
-        "OPENAI_API_BASE",
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_API_BASE",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_BASE",
-        "XAI_API_KEY",
-        "XAI_API_BASE",
-        "JINA_AI_API_KEY",
-        "JINA_AI_API_BASE",
-        "COHERE_API_KEY",
-        "COHERE_API_BASE",
-        "GEMINI_API_KEY",
-        "GEMINI_API_BASE",
-    ):
+        # hull provider cells (the only provider keys the runtime reads).
+        "HULL_EMBED_API_KEY",
+        "HULL_RERANK_API_KEY",
+        "HULL_CHAT_API_KEY",
+        "HULL_JEV_SCORE_API_KEY",
+    ) + tuple(_settings_env_keys()):
         monkeypatch.delenv(key, raising=False)
 
-    from mnemo_mcp.config import settings
+    from mnemo_mcp.config import Settings, settings
 
-    settings.sync_enabled = True
-    settings.sync_s3_bucket = ""
+    # Reset the singleton so tests that mutate it directly (validate_assignment
+    # fields, no monkeypatch) start from defaults every test.
+    for name, field in Settings.model_fields.items():
+        setattr(settings, name, field.get_default(call_default_factory=True))
 
 
 @pytest.fixture(autouse=True)
-def _set_credential_state_configured():
-    """Set credential state to CONFIGURED for all tests.
+def _reset_module_singletons():
+    """Drop cached runtime singletons between tests.
 
-    Prevents _init_embedding_backend / _init_reranker_backend from skipping
-    in AWAITING_SETUP mode. Also mocks resolve_credential_state so the
-    lifespan startup doesn't reset the state during unit tests.
-    Tests that specifically test credential state should call set_state()
-    themselves and patch resolve_credential_state separately.
+    ``runtime.hull_settings`` is mtime-keyed so it mostly self-heals under the
+    fake HOME, but the embedder/reranker singletons and the cached chat
+    client hold objects built from the previous test's provider cells.
     """
-    from unittest.mock import patch
+    import mnemo_mcp.embedder as embedder_mod
+    import mnemo_mcp.llm as llm_mod
+    import mnemo_mcp.reranker as reranker_mod
+    from mnemo_mcp.server import _sub_db_cache
 
-    from mnemo_mcp.credential_state import CredentialState, set_state
+    embedder_mod._backend = None
+    reranker_mod.clear_reranker()
+    llm_mod.reset_client()
+    _sub_db_cache.clear()
+    yield
+    embedder_mod._backend = None
+    reranker_mod.clear_reranker()
+    llm_mod.reset_client()
+    _sub_db_cache.clear()
 
-    set_state(CredentialState.CONFIGURED)
-    with patch(
-        "mnemo_mcp.credential_state.resolve_credential_state",
-        return_value=CredentialState.CONFIGURED,
-    ):
-        yield
-    set_state(CredentialState.CONFIGURED)
 
+# ---------------------------------------------------------------------------
+# Database fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def tmp_db(tmp_path: Path) -> Generator[MemoryDB]:
@@ -293,14 +261,3 @@ def mock_ctx(tmp_db: MemoryDB):
         "embedding_dims": 0,
     }
     return ctx, tmp_db
-
-
-# --- added 2026-07-24: keep local test runs from hijacking the developer's browser.
-# credential_state/relay flows call mcp_core.try_open_browser(), which opens
-# http://127.0.0.1:<port> in the real browser. Newer mcp-core honours
-# MCP_NO_BROWSER but older installs do not, so patch the symbol too.
-@pytest.fixture(autouse=True)
-def _never_open_a_real_browser_local_guard(monkeypatch):
-    monkeypatch.setenv("MCP_NO_BROWSER", "1")
-    monkeypatch.setenv("SKRET_NO_BROWSER", "1")
-    monkeypatch.setattr("mcp_core.try_open_browser", lambda url: False, raising=False)

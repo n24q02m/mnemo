@@ -1,16 +1,19 @@
-"""Tests for mnemo_mcp.cli -- shared mcp_core CLI builder mount.
+"""Tests for mnemo_mcp.cli -- HTTP MCP server entry point.
 
-Bare invocation and any leading-dash argv start the server unchanged;
-subcommands (auth/warmup) run one-shot operator actions. No network or
-model calls -- run_setup_sync/run_warmup/setup_google_auth are mocked.
+De-host rework: the auth/logout subcommands (Google BYO pairing, Drive token
+store) pinned removed sync machinery and were deleted; unknown flags and
+subcommands now fail through argparse with exit code 2. Live subcommands:
+token-hash, token-verify, warmup, config-init; bare invocation serves HTTP.
 """
 
 import sys
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 
 class TestServeDispatch:
-    """Bare/flag argv route to the server unchanged."""
+    """Bare argv routes to the server; unknown flags die in argparse."""
 
     def test_bare_invocation_starts_server(self):
         from mnemo_mcp import cli
@@ -24,130 +27,23 @@ class TestServeDispatch:
         mock_server_main.assert_called_once()
         assert rc == 0
 
-    def test_http_flag_passes_through_argv_unchanged(self):
+    def test_unknown_flag_is_rejected_by_argparse(self):
+        """There is no --http spawn mode anymore: unknown flags exit rc 2."""
         from mnemo_mcp import cli
 
         with (
             patch.object(sys, "argv", ["mnemo-mcp", "--http"]),
             patch("mnemo_mcp.server.main") as mock_server_main,
+            pytest.raises(SystemExit) as excinfo,
         ):
-            rc = cli.main()
+            cli.main()
 
-        mock_server_main.assert_called_once()
-        assert rc == 0
-
-
-class TestAuthSubcommand:
-    """`mnemo-mcp auth google` -- BYO client resolution + run_setup_sync."""
-
-    def test_half_pair_flags_returns_clean_error(self, capsys):
-        from mnemo_mcp import cli
-
-        with patch.object(
-            sys, "argv", ["mnemo-mcp", "auth", "google", "--client-secret", "shh"]
-        ):
-            rc = cli.main()
-
-        assert rc == 2
-        err = capsys.readouterr().err
-        assert "set both together" in err
-        assert "shh" not in err  # never print the secret value
-
-    def test_happy_path_threads_byo_pair_to_setup_google_auth(self, capsys):
-        """auth google --client-id/--client-secret must reach setup_google_auth.
-
-        mnemo_mcp.config.settings is a module-level singleton resolved at
-        import time, so a prior regression wrote the BYO pair to os.environ
-        (a no-op -- the singleton was already frozen) instead of threading
-        it through run_setup_sync's params. This does NOT blanket-mock
-        run_setup_sync: it lets the real function run (including its
-        missing-credentials check) and only mocks the network-touching
-        setup_google_auth, so the assertion below proves the pair actually
-        reaches that call rather than being silently dropped.
-        """
-        from mnemo_mcp import cli
-
-        with (
-            patch.object(
-                sys,
-                "argv",
-                [
-                    "mnemo-mcp",
-                    "auth",
-                    "google",
-                    "--client-id",
-                    "my-id",
-                    "--client-secret",
-                    "my-secret",
-                ],
-            ),
-            patch(
-                "mnemo_mcp.sync.setup_google_auth",
-                new_callable=AsyncMock,
-                return_value=True,
-            ) as mock_setup_google_auth,
-        ):
-            rc = cli.main()
-
-        mock_setup_google_auth.assert_awaited_once_with(
-            client_id="my-id", client_secret="my-secret"
-        )
-        assert rc == 0
-        assert '"status": "authenticated"' in capsys.readouterr().out
-
-    def test_no_flags_skips_byo_resolution(self, capsys):
-        from mnemo_mcp import cli
-
-        result = {"status": "error", "error": "boom"}
-        with (
-            patch.object(sys, "argv", ["mnemo-mcp", "auth", "google"]),
-            patch(
-                "mnemo_mcp.setup_tool.run_setup_sync",
-                new=AsyncMock(return_value=result),
-            ) as mock_setup,
-        ):
-            rc = cli.main()
-
-        mock_setup.assert_awaited_once_with()
-        assert rc == 1
-
-
-class TestLogoutSubcommand:
-    """`mnemo-mcp logout` -- clears the local Google Drive sync token."""
-
-    def test_clears_saved_token(self, capsys):
-        from mnemo_mcp import cli
-
-        with (
-            patch.object(sys, "argv", ["mnemo-mcp", "logout"]),
-            patch(
-                "mnemo_mcp.token_store.load_token", return_value={"refresh_token": "x"}
-            ),
-            patch("mnemo_mcp.token_store.delete_token") as mock_delete,
-        ):
-            rc = cli.main()
-
-        mock_delete.assert_called_once_with("google_drive")
-        assert rc == 0
-        assert "cleared" in capsys.readouterr().out.lower()
-
-    def test_nothing_to_clear(self, capsys):
-        from mnemo_mcp import cli
-
-        with (
-            patch.object(sys, "argv", ["mnemo-mcp", "logout"]),
-            patch("mnemo_mcp.token_store.load_token", return_value=None),
-            patch("mnemo_mcp.token_store.delete_token") as mock_delete,
-        ):
-            rc = cli.main()
-
-        mock_delete.assert_not_called()
-        assert rc == 0
-        assert "nothing to log out" in capsys.readouterr().out.lower()
+        assert excinfo.value.code == 2
+        mock_server_main.assert_not_called()
 
 
 class TestUnknownSubcommand:
-    """build_cli's own unrecognized-subcommand handling -- rc 2, no server start."""
+    """argparse rejects unrecognized subcommands -- rc 2, no server start."""
 
     def test_unknown_subcommand_returns_rc_2(self, capsys):
         from mnemo_mcp import cli
@@ -155,12 +51,13 @@ class TestUnknownSubcommand:
         with (
             patch.object(sys, "argv", ["mnemo-mcp", "bogus"]),
             patch("mnemo_mcp.server.main") as mock_server_main,
+            pytest.raises(SystemExit) as excinfo,
         ):
-            rc = cli.main()
+            cli.main()
 
         mock_server_main.assert_not_called()
-        assert rc == 2
-        assert "unknown subcommand" in capsys.readouterr().err
+        assert excinfo.value.code == 2
+        assert "invalid choice" in capsys.readouterr().err
 
 
 class TestWarmupSubcommand:

@@ -1,42 +1,41 @@
-import hashlib
+"""Path-traversal guards for per-sub namespace stores (runtime)."""
 
-from mnemo_mcp.credential_state import _sub_data_dir
-from mnemo_mcp.token_store import _get_token_dir_for_sub
+import pytest
 
-
-def test_credential_state_sub_path_traversal(tmp_path, monkeypatch):
-    monkeypatch.setenv("MNEMO_DATA_DIR", str(tmp_path))
-
-    # Malicious sub
-    malicious_sub = "../../../outside"
-    d = _sub_data_dir(malicious_sub)
-
-    # Verification
-    expected_hash = hashlib.sha256(malicious_sub.encode("utf-8")).hexdigest()
-    assert d == tmp_path / "subs" / expected_hash
-    assert "outside" not in str(d)
-    assert ".." not in str(d)
-    # Check it is truly under the expected base
-    assert str(d).startswith(str(tmp_path / "subs"))
+from mnemo_mcp.runtime import db_path_for_namespace, mnemo_config_dir, validate_namespace
 
 
-def test_token_store_sub_path_traversal(tmp_path, monkeypatch):
-    from mnemo_mcp.config import settings
+@pytest.mark.parametrize(
+    "malicious",
+    [
+        "../../../outside",
+        "..",
+        "../peek",
+        "sub/../../escape",
+        "a/b",
+        "has space",
+        "x" * 65,  # over the 64-char cap
+    ],
+)
+def test_validate_namespace_rejects_traversal(malicious):
+    with pytest.raises(ValueError):
+        validate_namespace(malicious)
 
-    # We must not monkeypatch methods on Pydantic models with validate_assignment=True.
-    # Instead, we set the field that the method depends on.
-    # Settings.get_data_dir() returns Settings.get_db_path().parent.
-    # Settings.get_db_path() returns Path(Settings.db_path) if set.
-    monkeypatch.setattr(settings, "db_path", str(tmp_path / "fake" / "memories.db"))
 
-    # Malicious sub
-    malicious_sub = "../../../outside"
-    d = _get_token_dir_for_sub(malicious_sub)
+def test_validate_namespace_accepts_safe_names():
+    assert validate_namespace("default") == "default"
+    assert validate_namespace("alice") == "alice"
+    assert validate_namespace("team.01_sub-x") == "team.01_sub-x"
 
-    # Verification
-    expected_hash = hashlib.sha256(malicious_sub.encode("utf-8")).hexdigest()
-    # d should be tmp_path / "fake" / "subs" / expected_hash / "tokens"
-    assert d == tmp_path / "fake" / "subs" / expected_hash / "tokens"
-    assert "outside" not in str(d)
-    assert ".." not in str(d)
-    assert str(d).startswith(str(tmp_path / "fake" / "subs"))
+
+def test_db_path_for_namespace_stays_under_config_dir():
+    malicious = "../../../outside"
+    with pytest.raises(ValueError):
+        db_path_for_namespace(malicious)
+
+
+def test_db_path_for_namespace_layout():
+    root = mnemo_config_dir()
+    assert db_path_for_namespace(None) == root / "memories.db"
+    assert db_path_for_namespace("default") == root / "memories.db"
+    assert db_path_for_namespace("alice") == root / "subs" / "alice" / "memories.db"
