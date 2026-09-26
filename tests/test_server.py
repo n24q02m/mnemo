@@ -23,7 +23,6 @@ from mnemo_mcp.server import (
     consolidate_memories,
     delete_memory,
     export_memories,
-    help,
     import_memories,
     list_memories,
     main,
@@ -295,7 +294,6 @@ class TestMemoryStats:
         result = await memory(action="stats", ctx=ctx)
         assert result["total_memories"] == 1
         assert "embedding_model" in result
-        assert "sync_enabled" in result
 
     async def test_stats_empty(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -359,19 +357,14 @@ class TestMemoryArchived:
 
 
 class TestMemoryConsolidate:
-    async def test_consolidate_local_mode_error(self, ctx_with_db):
+    async def test_consolidate_cell_not_configured_error(self, ctx_with_db):
         ctx, db = ctx_with_db
         db.add("mem1", category="tech")
         db.add("mem2", category="tech")
-        # Default mode is local (no API keys)
-        with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=False),
-        ):
-            mock_settings.resolve_provider_mode.return_value = "local"
-            result = await _handle_consolidate(ctx, "tech")
+        # Fake HOME: no [models.chat] cell configured.
+        result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
-        assert "LLM" in result["error"]
+        assert "models.chat" in result["error"]
 
     async def test_consolidate_no_category(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -399,7 +392,8 @@ class TestConfigTool:
         result = await config(action="status", ctx=ctx)
         assert "database" in result
         assert "embedding" in result
-        assert "sync" in result
+        assert "provider_cells" in result
+        assert "auth_mode" in result
         assert "path" in result["database"]
 
     async def test_set_sync_folder_rejected(self, ctx_with_db):
@@ -413,7 +407,8 @@ class TestConfigTool:
         assert "error" in result
         assert "valid_keys" in result
 
-    async def test_set_sync_enabled(self, ctx_with_db):
+    async def test_set_removed_sync_key_rejected(self, ctx_with_db):
+        """Sync keys were cut with the de-host: only log_level is settable."""
         ctx, _ = ctx_with_db
         result = await config(
             action="set",
@@ -421,7 +416,8 @@ class TestConfigTool:
             value="true",
             ctx=ctx,
         )
-        assert result["status"] == "updated"
+        assert "error" in result
+        assert "valid_keys" in result
 
     async def test_set_invalid_key(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -440,13 +436,13 @@ class TestConfigTool:
         ctx, _ = ctx_with_db
         result = await config(
             action="set",
-            key="sync_enable",
+            key="log_leve",
             value="x",
             ctx=ctx,
         )
         assert "error" in result
         assert "suggestion" in result
-        assert "Did you mean 'sync_enabled'?" in result["suggestion"]
+        assert "Did you mean 'log_level'?" in result["suggestion"]
 
     async def test_set_missing_params(self, ctx_with_db):
         ctx, _ = ctx_with_db
@@ -468,29 +464,6 @@ class TestConfigTool:
         result = await config(action="models", ctx=ctx)
         assert "Unknown action 'models'" in result["error"]
         assert "models" not in result["valid_actions"]
-
-
-class TestHelpTool:
-    async def test_memory_topic(self):
-        result = await help(topic="memory")
-        assert "memory" in result.lower()
-        assert len(result) > 100  # Should be substantial docs
-
-    async def test_config_topic(self):
-        result = await help(topic="config")
-        assert "config" in result.lower()
-
-    async def test_invalid_topic(self):
-        result = json.loads(await help(topic="invalid"))
-        assert "error" in result
-        assert "valid_topics" in result
-
-    async def test_none_topic(self):
-        result = json.loads(await help(topic=None))
-        assert "error" in result
-        assert "valid_topics" in result
-        assert "suggestion" in result
-        assert "Available topics are:" in result["suggestion"]
 
 
 class TestNoneActionHandling:
@@ -704,49 +677,38 @@ class TestSearchRerankerAndGraph:
 
 
 class TestConsolidate:
-    async def test_consolidate_no_category_non_local(self, ctx_with_db):
-        """Cover line 637-638: no category error when mode is not local."""
+    async def test_consolidate_no_category_when_cell_ready(self, ctx_with_db):
+        """Cell ready + no category -> explicit category error."""
         ctx, db = ctx_with_db
-        with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
-        ):
-            mock_settings.resolve_provider_mode.return_value = "sdk"
+        with patch("mnemo_mcp.graph._cell_ready", return_value=True):
             result = await _handle_consolidate(ctx, None)
         assert "error" in result
         assert "category is required" in result["error"]
         assert "suggestion" in result
 
     async def test_consolidate_too_few_memories(self, ctx_with_db):
-        """Cover lines 640-644: less than 2 memories in category."""
+        """Cell ready + fewer than 2 memories in category -> error."""
         ctx, db = ctx_with_db
         db.add("only one", category="tech")
-        with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
-        ):
-            mock_settings.resolve_provider_mode.return_value = "sdk"
+        with patch("mnemo_mcp.graph._cell_ready", return_value=True):
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "at least 2" in result["error"]
 
     async def test_consolidate_success(self, ctx_with_db):
-        """Cover lines 646-688: successful consolidation with LLM."""
+        """Cell ready -> consolidation via the chat cell completion."""
         ctx, db = ctx_with_db
         db.add("Python is great", category="tech")
         db.add("Python is awesome", category="tech")
 
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
+            patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value="Python is excellent",
             ),
         ):
-            mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gpt-4o,gemini-flash"
             result = await _handle_consolidate(ctx, "tech")
 
         assert result["status"] == "consolidated"
@@ -755,32 +717,24 @@ class TestConsolidate:
         assert result["summary"] == "Python is excellent"
 
     async def test_consolidate_llm_error(self, ctx_with_db):
-        """Cover lines 689-690: LLM error during consolidation."""
+        """A failing cell completion surfaces the internal-error guard."""
         ctx, db = ctx_with_db
         db.add("mem1", category="tech")
         db.add("mem2", category="tech")
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.graph._has_llm_provider", return_value=True),
+            patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._llm_completion",
+                "mnemo_mcp.graph._cell_completion",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("LLM error"),
             ),
         ):
-            mock_settings.resolve_provider_mode.return_value = "sdk"
-            mock_settings.llm_models = "gpt-4o"
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "Consolidation failed: internal error" in result["error"]
 
 
 class TestConfigSet:
-    async def test_set_sync_interval(self, ctx_with_db):
-        ctx, _ = ctx_with_db
-        result = await config(action="set", key="sync_interval", value="600", ctx=ctx)
-        assert result["status"] == "updated"
-
     async def test_set_log_level(self, ctx_with_db):
         ctx, _ = ctx_with_db
         result = await config(action="set", key="log_level", value="DEBUG", ctx=ctx)
@@ -802,24 +756,9 @@ class TestConfigSet:
         assert "Did you mean 'DEBUG'?" in result["suggestion"]
 
 
-class TestMain:
-    def test_main_invalid_log_level(self):
-        """Cover line 1001: invalid log level falls back to WARNING.
-
-        main() in stdio mode runs FastMCP stdio server directly (no bridge).
-        """
-        from mnemo_mcp import server as server_mod
-
-        with (
-            patch("mnemo_mcp.server.logger"),
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch.object(server_mod.mcp, "run") as mock_run,
-            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
-        ):
-            mock_settings.log_level = "BOGUS"
-            main()
-            mock_run.assert_called_once_with(transport="stdio")
-
+# De-host note: the old test_main_invalid_log_level pinned main()'s stdio-mode
+# log-level fallback; main() now only parses MNEMO_HOST/PORT and delegates to
+# run_server_blocking (covered in tests/test_main.py), so that test is gone.
 
 class TestPrompts:
     def test_save_summary(self):

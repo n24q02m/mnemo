@@ -24,41 +24,27 @@ def test_main_explicit_call():
         mock_main.assert_called_once()
 
 
-def test_cli_http_flag_triggers_run_http():
-    """Passing --http flag should trigger run_http instead of mcp.run."""
-    from mnemo_mcp import server as server_mod
+def test_main_runs_http_server_with_env_binding(monkeypatch):
+    """MNEMO_HOST / MNEMO_PORT override the bind address for the HTTP server."""
+    monkeypatch.setenv("MNEMO_HOST", "0.0.0.0")
+    monkeypatch.setenv("MNEMO_PORT", "8123")
 
-    with (
-        patch.object(sys, "argv", ["mnemo-mcp", "--http"]),
-        patch("mnemo_mcp.server.run_http", new_callable=AsyncMock) as mock_run_http,
-        patch.object(server_mod.mcp, "run") as mock_run_stdio,
-        patch("mnemo_mcp.server.logger"),
-        patch("mnemo_mcp.server.settings") as mock_settings,
-    ):
-        mock_settings.log_level = "INFO"
+    with patch("mnemo_mcp.server.run_server_blocking") as mock_run:
         from mnemo_mcp.server import main
 
         main()
 
-        mock_run_http.assert_called_once()
-        mock_run_stdio.assert_not_called()
+    mock_run.assert_called_once_with(host="0.0.0.0", port=8123)
 
 
-def test_cli_default_stdio():
-    """No flags should trigger mcp.run(transport='stdio')."""
-    from mnemo_mcp import server as server_mod
+def test_main_default_binding(monkeypatch):
+    """No env overrides -> run_server_blocking gets None host/port."""
+    monkeypatch.delenv("MNEMO_HOST", raising=False)
+    monkeypatch.delenv("MNEMO_PORT", raising=False)
 
-    with (
-        patch.object(sys, "argv", ["mnemo-mcp"]),
-        patch("mnemo_mcp.server.run_http", new_callable=AsyncMock) as mock_run_http,
-        patch.object(server_mod.mcp, "run") as mock_run_stdio,
-        patch("mnemo_mcp.server.logger"),
-        patch("mnemo_mcp.server.settings") as mock_settings,
-    ):
-        mock_settings.log_level = "INFO"
+    with patch("mnemo_mcp.server.run_server_blocking") as mock_run:
         from mnemo_mcp.server import main
 
         main()
 
-        mock_run_http.assert_not_called()
-        mock_run_stdio.assert_called_once_with(transport="stdio")
+    mock_run.assert_called_once_with(host=None, port=None)

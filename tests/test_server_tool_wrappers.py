@@ -128,18 +128,12 @@ class TestToolWrappers:
     async def test_consolidate_memories_wrapper_no_llm(
         self, tmp_db: MemoryDB, monkeypatch
     ):
-        # Without LLM provider, consolidate should return error -- but only
-        # when category is provided. Without category it hits earlier guard.
+        # Without a configured [models.chat] cell (fake HOME gives us that),
+        # consolidate returns the cell-configuration error.
         tmp_db.add("about A", category="testcat")
         tmp_db.add("about A2", category="testcat")
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("XAI_API_KEY", raising=False)
-        from mnemo_mcp.config import settings
-
-        monkeypatch.setattr(settings, "api_keys", None)
         ctx = _make_ctx(tmp_db)
         result = await _call(consolidate_memories, category="testcat", ctx=ctx)
         data = result
         assert "error" in data
+        assert "models.chat" in data["error"]

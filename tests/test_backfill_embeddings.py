@@ -7,6 +7,16 @@ from scripts.backfill_embeddings import backfill
 
 
 async def test_server_backfill_passes_document_role_and_aligns_vectors():
+    """The live handler drives the request-scoped backend with role="document".
+
+    CURRENTLY FAILING — EXPOSES A LIVE BUG (reported to Main, src is read-only
+    for this lane): `_handle_config_backfill` unpacks ``_get_ctx`` into
+    ``global_model`` (src/mnemo_mcp/server.py:1873) but its backend guard
+    (line 1878) and result payload (line ~1960) read ``embedding_model``, so
+    every backfill_embeddings call raises NameError before touching the DB.
+    Fix: unpack as ``embedding_model`` (or rename the uses); this test then
+    passes unchanged.
+    """
     db = MagicMock()
     db.rows_without_vectors.side_effect = [
         [
@@ -17,21 +27,17 @@ async def test_server_backfill_passes_document_role_and_aligns_vectors():
     ]
     backend = MagicMock()
     backend.embed_texts = AsyncMock(return_value=[[0.1], [0.2]])
-    ctx = MagicMock()
-    ctx.request_context.lifespan_context = {
-        "db": db,
-        "embedding_model": None,
-        "embedding_dims": 1,
-    }
 
-    with patch(
-        "mnemo_mcp.server._get_request_embedding",
-        return_value=("some-model", backend),
+    with (
+        patch("mnemo_mcp.server._get_ctx", return_value=(db, "some-model", 1)),
+        patch("mnemo_mcp.embedder.get_backend", return_value=backend),
     ):
-        result = await _handle_config_backfill(ctx, batch_size=2)
+        result = await _handle_config_backfill(None, batch_size=2)
 
     assert result["embedded"] == 2
-    backend.embed_texts.assert_awaited_once_with(["alpha", "beta"], 1, role="document")
+    backend.embed_texts.assert_awaited_once_with(
+        ["alpha", "beta"], 1, role="document"
+    )
     assert db.write_vector.call_args_list == [
         call("a", [0.1]),
         call("b", [0.2]),

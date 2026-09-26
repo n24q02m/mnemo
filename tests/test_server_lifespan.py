@@ -1,12 +1,10 @@
-"""Tests for server.py -- lifespan, reranker init, help, config actions.
+"""Tests for server.py -- reranker init, config actions, _enrich_memory.
 
-Targets: _init_reranker_backend (cloud success, cloud fallback to local,
-local fallback, local not available, local init failed),
-lifespan (relay config apply, relay exception),
-config warmup/setup_sync/unknown actions, help unknown topic.
+Targets: _init_reranker_backend (cell success, cell fallback to local,
+disabled, local not available, local init failed), config warmup/unknown
+actions, and the background enrichment error guards.
 """
 
-import json
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,13 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.reranker import get_reranker, init_reranker
-from mnemo_mcp.server import (
-    _enrich_memory,
-    _init_reranker_backend,
-    config,
-    help,
-)
+from mnemo_mcp.reranker import clear_reranker, get_reranker
+from mnemo_mcp.server import _enrich_memory, _init_reranker_backend, config
 
 
 @pytest.fixture
@@ -37,221 +30,191 @@ def ctx_with_db(tmp_path: Path) -> Generator[tuple[MagicMock, MemoryDB]]:
     db.close()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_reranker_singleton():
+    clear_reranker()
+    yield
+    clear_reranker()
+
+
+def _passthrough_to_thread():
+    return patch(
+        "mnemo_mcp.server.asyncio.to_thread",
+        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+    )
+
+
 # ---------------------------------------------------------------------------
 # _init_reranker_backend
 # ---------------------------------------------------------------------------
 
 
 class TestInitRerankerBackend:
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_success(self, mock_settings, _mock_thread):
-        """Cloud reranker initializes successfully."""
-        mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = True
-
-        with patch("mnemo_mcp.reranker.init_reranker", return_value=mock_backend):
-            await _init_reranker_backend("sdk")
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_unavailable_no_local_fallback(
-        self, mock_settings, _mock_thread
-    ):
-        """Cloud reranker not available does NOT fall back to local (CONFIGURED state)."""
-        mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
-
-        cloud_backend = MagicMock()
-        cloud_backend.check_available.return_value = False
-
-        call_count = 0
-
-        def mock_init(backend_type, model=None, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return cloud_backend
-
-        with patch("mnemo_mcp.reranker.init_reranker", side_effect=mock_init):
-            await _init_reranker_backend("sdk")
-
-        # Only the cloud backend should have been tried (no local fallback)
-        assert call_count == 1
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_reranker_exception_no_local_fallback(
-        self, mock_settings, _mock_thread
-    ):
-        """Cloud reranker exception does NOT fall back to local (CONFIGURED state)."""
-        mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.rerank_chain.return_value = ["rerank-v4.0-pro"]
-
-        call_count = 0
-
-        def mock_init(backend_type, model=None, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise Exception("Cloud init failed")
-
-        with patch("mnemo_mcp.reranker.init_reranker", side_effect=mock_init):
-            await _init_reranker_backend("sdk")
-
-        # Only the cloud backend should have been tried (no local fallback)
-        assert call_count == 1
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_reranker_disabled(self, mock_settings, _mock_thread):
-        """Disabled reranker returns early."""
-        mock_settings.resolve_rerank_backend.return_value = ""
-        await _init_reranker_backend("sdk")
-
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_reranker_not_available(self, mock_settings, _mock_thread):
-        """Local reranker returns not available."""
-        mock_settings.resolve_rerank_backend.return_value = "local"
-        mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
-
-        local_backend = MagicMock()
-        local_backend.check_available.return_value = False
-        init_reranker("local", "stale/model")
-
-        with patch("mnemo_mcp.reranker.init_reranker", return_value=local_backend):
-            await _init_reranker_backend("local")
+    async def test_reranker_disabled_returns_early(self):
+        """Disabled reranker clears the singleton and never initializes."""
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.reranker.init_reranker") as mock_init,
+        ):
+            mock_settings.rerank_enabled = False
+            await _init_reranker_backend()
+        mock_init.assert_not_called()
         assert get_reranker() is None
 
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_local_reranker_init_fails(self, mock_settings, _mock_thread):
-        """Local reranker init raises exception."""
-        mock_settings.resolve_rerank_backend.return_value = "local"
-        mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
-
-        with patch(
-            "mnemo_mcp.reranker.init_reranker",
-            side_effect=Exception("ONNX not installed"),
+    async def test_cloud_cell_success(self):
+        """Configured rerank cell + available probe keeps the cloud backend."""
+        cloud_backend = MagicMock()
+        cloud_backend.check_available.return_value = True
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            _passthrough_to_thread(),
+            patch("mnemo_mcp.reranker.init_reranker", return_value=cloud_backend) as mock_init,
         ):
-            # Should not raise
-            await _init_reranker_backend("local")
+            mock_settings.rerank_enabled = True
+            await _init_reranker_backend()
+        mock_init.assert_called_once_with("cloud")
 
-    @patch(
-        "mnemo_mcp.server.asyncio.to_thread",
-        side_effect=lambda fn, *a, **kw: fn(*a, **kw),
-    )
-    @patch("mnemo_mcp.server.settings")
-    async def test_cloud_no_model_no_local_fallback(self, mock_settings, _mock_thread):
-        """Cloud reranker with no model logs error, no local fallback (CONFIGURED state)."""
-        mock_settings.resolve_rerank_backend.return_value = "cloud"
-        mock_settings.rerank_chain.return_value = []
+    async def test_cloud_cell_unavailable_falls_back_to_local(self):
+        """Unavailable rerank cell clears and falls back to the local ONNX leg."""
+        cloud_backend = MagicMock()
+        cloud_backend.check_available.return_value = False
+        local_backend = MagicMock()
+        local_backend.check_available.return_value = True
 
-        with patch("mnemo_mcp.reranker.init_reranker") as mock_init:
-            await _init_reranker_backend("sdk")
-            # No backend should have been initialized (no model + no local fallback)
-            mock_init.assert_not_called()
+        def fake_init(backend_type, model=None, **kwargs):
+            return cloud_backend if backend_type == "cloud" else local_backend
+
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            _passthrough_to_thread(),
+            patch(
+                "mnemo_mcp.server._maybe_register_custom_rerank"
+            ),
+            patch("mnemo_mcp.reranker.init_reranker", side_effect=fake_init) as mock_init,
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = False
+            mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
+            await _init_reranker_backend()
+        assert [c.args[0] for c in mock_init.call_args_list] == ["cloud", "local"]
+
+    async def test_cloud_cell_probe_exception_falls_back_to_local(self):
+        """A raising cell probe is contained and the local leg still runs."""
+        local_backend = MagicMock()
+        local_backend.check_available.return_value = True
+
+        def fake_init(backend_type, model=None, **kwargs):
+            if backend_type == "cloud":
+                raise RuntimeError("cell down")
+            return local_backend
+
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            _passthrough_to_thread(),
+            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
+            patch(
+                "mnemo_mcp.reranker.init_reranker", side_effect=fake_init
+            ) as mock_init,
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = False
+            mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
+            await _init_reranker_backend()  # must not raise
+        # The local leg still ran after the cell probe blew up.
+        assert mock_init.call_args_list[-1].args[0] == "local"
+
+    async def test_local_leg_disabled_when_disable_local_rerank(self):
+        """DISABLE_LOCAL_RERANK with no usable cell initializes nothing."""
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo_mcp.reranker.init_reranker") as mock_init,
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = True
+            await _init_reranker_backend()
+        mock_init.assert_not_called()
+        assert get_reranker() is None
+
+    async def test_local_reranker_not_available(self):
+        """Local reranker that reports unavailable leaves the singleton empty."""
+        local_backend = MagicMock()
+        local_backend.check_available.return_value = False
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            _passthrough_to_thread(),
+            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
+            patch("mnemo_mcp.reranker.init_reranker", return_value=local_backend),
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = False
+            mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
+            await _init_reranker_backend()
+        assert get_reranker() is None
+
+    async def test_local_reranker_init_fails(self):
+        """Local reranker init raising is contained (no crash, empty singleton)."""
+        with (
+            patch("mnemo_mcp.server.settings") as mock_settings,
+            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            _passthrough_to_thread(),
+            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
+            patch(
+                "mnemo_mcp.reranker.init_reranker",
+                side_effect=Exception("ONNX not installed"),
+            ),
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = False
+            mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
+            await _init_reranker_backend()  # must not raise
+        assert get_reranker() is None
 
 
 # ---------------------------------------------------------------------------
-# config -- warmup / setup_sync / unknown actions
+# config -- warmup / unknown actions
 # ---------------------------------------------------------------------------
 
 
 class TestConfigActions:
-    async def test_config_warmup(self, ctx_with_db):
+    async def test_config_warmup(self):
         """Config warmup action calls run_warmup."""
-        ctx, _ = ctx_with_db
         with patch(
             "mnemo_mcp.setup_tool.run_warmup",
             new_callable=AsyncMock,
             return_value={"status": "ok", "warmup": True},
         ):
-            result = await config(action="warmup", ctx=ctx)
+            result = await config(action="warmup")
             assert result["status"] == "ok"
 
-    async def test_config_setup_sync(self, ctx_with_db):
-        """Config setup_sync action calls run_setup_sync."""
-        ctx, _ = ctx_with_db
-        with patch(
-            "mnemo_mcp.setup_tool.run_setup_sync",
-            new_callable=AsyncMock,
-            return_value={"status": "ok", "sync": "configured"},
-        ):
-            result = await config(action="setup_sync", ctx=ctx)
-            assert result["status"] == "ok"
-
-    async def test_config_unknown_action(self, ctx_with_db):
+    async def test_config_unknown_action(self):
         """Config with unknown action returns error with suggestion."""
-        ctx, _ = ctx_with_db
-        result = await config(action="syncc", ctx=ctx)
+        result = await config(action="statuss")
         assert "error" in result
         assert "Unknown action" in result["error"]
-        assert "valid_actions" in result
+        assert result["valid_actions"] == [
+            "backfill_embeddings",
+            "set",
+            "status",
+            "warmup",
+        ]
         assert "suggestion" in result
-        assert "Did you mean 'sync'?" in result["suggestion"]
 
-    async def test_config_unknown_action_no_match(self, ctx_with_db):
-        """Config with completely invalid action returns error with default suggestion."""
-        ctx, _ = ctx_with_db
-        result = await config(action="xyzxyzxyz", ctx=ctx)
-        assert "error" in result
+    async def test_config_unknown_action_no_match(self):
+        """Config with completely invalid action returns the action list."""
+        result = await config(action="xyzxyzxyz")
         assert "Unknown action" in result["error"]
-        assert "suggestion" in result
         assert "Available actions are:" in result["suggestion"]
 
-
-# ---------------------------------------------------------------------------
-# help -- unknown topic
-# ---------------------------------------------------------------------------
-
-
-class TestHelpTool:
-    async def test_help_unknown_topic(self):
-        """Unknown topic returns error with suggestion."""
-        result = json.loads(await help(topic="memoryx"))
-        assert "error" in result
-        assert "Unknown topic" in result["error"]
-        assert "valid_topics" in result
-        assert "suggestion" in result
-        assert "Did you mean 'memory'?" in result["suggestion"]
-
-    async def test_help_no_match(self):
-        """Completely invalid topic returns error with default suggestion."""
-        result = json.loads(await help(topic="xyzxyz"))
-        assert "error" in result
-        assert "valid_topics" in result
-        assert "suggestion" in result
-        assert "Available topics are:" in result["suggestion"]
-
-    async def test_help_setup_redirects_to_config(self):
-        """'setup' topic is redirected to 'config'."""
-        result = await help(topic="setup")
-        # Should return the config doc content (not a JSON error response)
-        # The doc itself may contain the word "error" as regular text,
-        # but a JSON error response would start with '{'
-        assert not result.startswith("{")
-        assert "Config" in result or "config" in result
+    async def test_setup_sync_action_removed(self):
+        """The old setup_sync action is gone with the de-host."""
+        result = await config(action="setup_sync")
+        assert "Unknown action 'setup_sync'" in result["error"]
+        assert "setup_sync" not in result["valid_actions"]
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -74,11 +75,19 @@ async def test_compress_graceful_skip_when_no_provider() -> None:
     assert result["tokens_in"] == result["tokens_out"]
 
 
+def _configure_chat_cell(monkeypatch: pytest.MonkeyPatch, model="test-chat-model"):
+    """Make the fake-HOME environment look like a configured chat cell."""
+    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+    monkeypatch.setattr(
+        "mnemo_mcp.runtime.model_cell", lambda task: SimpleNamespace(model=model)
+    )
+
+
 async def test_compress_returns_compressed_text_when_provider_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With Gemini key + mocked call_llm, compress rewrites text."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    """With the chat cell configured + mocked call_llm, compress rewrites text."""
+    _configure_chat_cell(monkeypatch)
 
     short_compressed = (
         "User: dark mode VS Code (~/.config/Code). "
@@ -86,10 +95,9 @@ async def test_compress_returns_compressed_text_when_provider_available(
         "GEMINI_API_KEY in env. Budget $1500. Email user@example.com."
     )
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        assert provider == "gemini"
+    async def _fake_call(prompt, **kwargs):
         assert "<turn>" in prompt
-        assert temperature == 0.0
+        assert kwargs["temperature"] == 0.0
         return short_compressed
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
@@ -98,8 +106,8 @@ async def test_compress_returns_compressed_text_when_provider_available(
     assert result["compressed"] is True
     assert result["text"] == short_compressed
     assert result["text_raw"] == SAMPLE_TURN
-    assert result["compression_provider"] == "gemini"
-    assert result["compression_model"]
+    assert result["compression_provider"] == "chat-cell"
+    assert result["compression_model"] == "test-chat-model"
     assert result["tokens_out"] < result["tokens_in"]
 
 
@@ -119,55 +127,26 @@ async def test_compress_disabled_via_env(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result["text_raw"] is None
 
 
-async def test_compress_provider_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit provider arg wins over env auto-detection."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+async def test_provider_model_args_ignored_cell_owns_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit provider/model args are accepted for compatibility but the
+    chat cell owns dispatch -- they never reach call_llm."""
+    _configure_chat_cell(monkeypatch)
 
-    captured_provider: dict = {"value": None}
+    captured: dict = {}
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured_provider["value"] = provider
+    async def _fake_call(prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
         return "compressed"
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
-        await compress("text", provider="openai")
+        result = await compress("text", provider="openai", model="gpt-test")
 
-    assert captured_provider["value"] == "openai"
-
-
-async def test_compress_env_provider_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """COMPRESSION_PROVIDER env wins when no explicit arg passed."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-2")
-    monkeypatch.setenv("COMPRESSION_PROVIDER", "openai")
-
-    captured: dict = {"value": None}
-
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured["value"] = provider
-        return "compressed"
-
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
-        await compress("text")
-
-    assert captured["value"] == "openai"
-
-
-async def test_compress_env_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """COMPRESSION_MODEL env passes through to call_llm."""
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
-    monkeypatch.setenv("COMPRESSION_MODEL", "gemini-2.5-flash")
-
-    captured: dict = {"value": None}
-
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
-        captured["value"] = model
-        return "compressed"
-
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
-        await compress("text")
-
-    assert captured["value"] == "gemini-2.5-flash"
+    assert result["compression_provider"] == "chat-cell"
+    assert "provider" not in captured["kwargs"]
+    assert "model" not in captured["kwargs"]
 
 
 async def test_compress_empty_response_degrades_to_skip(
@@ -218,9 +197,9 @@ def test_count_tokens_matches_encoder() -> None:
 async def test_capture_writes_compression_columns_when_provider_active(
     isolated_db: MemoryDB, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    _configure_chat_cell(monkeypatch)
 
-    async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
+    async def _fake_call(prompt, **kwargs):
         return "tight summary keeping facts"
 
     with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
@@ -232,7 +211,7 @@ async def test_capture_writes_compression_columns_when_provider_active(
 
     assert result["deduplicated"] is False
     assert result["compressed"] is True
-    assert result["compression_provider"] == "gemini"
+    assert result["compression_provider"] == "chat-cell"
 
     row = isolated_db._conn.execute(
         "SELECT content, text_raw, compressed, compression_provider "
@@ -244,7 +223,7 @@ async def test_capture_writes_compression_columns_when_provider_active(
         row["text_raw"] == "long verbose original text with the same fact repeated x3"
     )
     assert row["compressed"] == 1
-    assert row["compression_provider"] == "gemini"
+    assert row["compression_provider"] == "chat-cell"
 
 
 async def test_capture_skips_compression_when_no_provider(

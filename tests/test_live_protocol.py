@@ -10,7 +10,6 @@ Usage:
 import asyncio
 import json
 import os
-import subprocess
 import time
 import warnings
 from pathlib import Path
@@ -172,19 +171,6 @@ async def local_mcp_session(tmp_path):
     local_env = _build_local_replay_env(
         tmp_path,
         cache_dir=define_cache_dir(),
-    )
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "python",
-            "-c",
-            "from mcp_core import set_local_mode; set_local_mode('mnemo-mcp')",
-        ],
-        env=local_env,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     server_params = StdioServerParameters(
         command="uv",

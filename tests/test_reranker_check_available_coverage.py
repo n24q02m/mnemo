@@ -71,17 +71,25 @@ class TestFallbackChainRerankerCoverage:
 
 class TestBuildDefaultRerankChain:
     def test_build_prefer_local(self, monkeypatch):
-        monkeypatch.setenv("JINA_AI_API_KEY", "test")
+        client = MagicMock()
+        client.cell.model = "rerank-via-cell"
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
         chain = build_default_rerank_chain(prefer_local=True)
         assert isinstance(chain, FallbackChainReranker)
-        assert len(chain._backends) == 2  # local + jina
+        assert len(chain._backends) == 2  # local first, cell fallback
         assert isinstance(chain._backends[0], Qwen3Reranker)
+        assert isinstance(chain._backends[1], CloudReranker)
 
     def test_build_prefer_cloud(self, monkeypatch):
-        monkeypatch.setenv("COHERE_API_KEY", "test")
+        client = MagicMock()
+        client.cell.model = "rerank-via-cell"
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
         chain = build_default_rerank_chain(prefer_local=False)
         assert isinstance(chain, FallbackChainReranker)
         assert isinstance(chain._backends[0], CloudReranker)
+        assert isinstance(chain._backends[1], Qwen3Reranker)
 
 
 class TestFallbackChainRerankerEdgeCases:

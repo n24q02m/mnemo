@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.server import add_memory, help, mcp, memory, search_memory
+from mnemo_mcp.server import add_memory, mcp, memory, search_memory
 
 _DEPRECATION_TAG = (
     "[DEPRECATED — use the granular tools (add_memory, search_memory, ...) "
@@ -52,14 +52,6 @@ class TestMemoryToolDescriptionDeprecated:
         assert memory_tool.description is not None
         assert "ACTION GUIDE" in memory_tool.description
         assert "action='add'" in memory_tool.description
-
-    async def test_live_help_doc_also_carries_deprecated_tag(self):
-        # The `help(topic="memory")` doc is live tool surface too (an LLM
-        # client can read it instead of/alongside the tool description), so
-        # it must carry the same deprecation notice.
-        doc = await help(topic="memory")
-        assert _DEPRECATION_TAG in doc
-        assert "add_memory" in doc
 
 
 class TestMemoryResponseDeprecationField:

@@ -1,9 +1,17 @@
-"""Tests for mnemo_mcp.setup_tool -- warmup and setup_sync MCP-callable functions."""
+"""Tests for mnemo_mcp.setup_tool -- warmup MCP-callable function.
 
-from unittest.mock import MagicMock, patch
+De-host rework: run_setup_sync (Google Drive auth) is gone; warmup probes the
+``[models.embed]`` provider cell and falls back to the local ONNX download.
+"""
+
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
+
+from mnemo_mcp.setup_tool import run_warmup
 
 
 class TestClearModelCache:
@@ -78,107 +86,6 @@ class TestClearModelCache:
 
         assert setup_tool._resolve_cache_dir() == public_cache
         public_define.assert_called_once_with()
-
-
-class TestValidateCloudModels:
-    """_validate_cloud_models checks cloud embedding availability."""
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_cloud_ready(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["gemini/model-1"]
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 768
-        mock_init.return_value = mock_backend
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is True
-        assert result["model"] == "gemini/model-1"
-        assert result["dims"] == 768
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_cloud_not_ready(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["model-a"]
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 0
-        mock_init.return_value = mock_backend
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is False
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_explicit_model_tried_first(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["explicit/model"]
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 512
-        mock_init.return_value = mock_backend
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is True
-        mock_init.assert_called_once_with("cloud", "explicit/model")
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_cloud_exception_returns_not_ready(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["model-a"]
-
-        mock_init.side_effect = Exception("auth error")
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is False
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_cloud_first_candidate_fails_continues_to_next(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["fail-model", "success-model"]
-
-        mock_backend_success = MagicMock()
-        mock_backend_success.check_available.return_value = 1024
-
-        def side_effect(mode, model):
-            if model == "fail-model":
-                raise Exception("Service unavailable")
-            return mock_backend_success
-
-        mock_init.side_effect = side_effect
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is True
-        assert result["model"] == "success-model"
-        assert result["dims"] == 1024
-
-    @patch("mnemo_mcp.embedder.init_backend")
-    def test_cloud_all_candidates_fail_returns_not_ready(self, mock_init):
-        from mnemo_mcp.setup_tool import _validate_cloud_models
-
-        mock_settings = MagicMock()
-        mock_settings.embedding_chain.return_value = ["fail-1", "fail-2"]
-
-        mock_init.side_effect = Exception("Service unavailable")
-
-        result = _validate_cloud_models(mock_settings)
-
-        assert result["cloud_ready"] is False
 
 
 class TestDownloadLocalEmbedding:
@@ -268,59 +175,96 @@ class TestDownloadLocalEmbedding:
 
 
 class TestRunWarmup:
-    """run_warmup() async function for MCP tool."""
+    """run_warmup() -- cell probe first, local ONNX as the fallback path.
 
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_cloud_embedding_success(self, mock_settings, mock_init):
-        from mnemo_mcp.setup_tool import run_warmup
+    De-host rework: the multi-model cloud chain (``_validate_cloud_models``)
+    and the Google sync setup (``run_setup_sync``) were cut; one
+    ``[models.embed]`` cell is probed, and when the cell is configured a
+    failed probe surfaces ``unavailable`` instead of falling back locally.
+    """
 
-        mock_settings.setup_api_keys.return_value = {"GEMINI_API_KEY": "key"}
-        mock_settings.embedding_chain.return_value = ["gemini/model-1"]
+    def test_cell_probe_success(self, monkeypatch):
+        from types import SimpleNamespace
 
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 768
-        mock_init.return_value = mock_backend
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr(
+            "mnemo_mcp.runtime.model_cell",
+            lambda task: SimpleNamespace(model="cell-model"),
+        )
+        backend = MagicMock()
+        backend.check_available = AsyncMock(return_value=768)
+        mp = patch("mnemo_mcp.embedder.init_backend", return_value=backend)
 
-        result = await run_warmup()
+        with mp:
+            result = asyncio.run(run_warmup())
 
         assert result["status"] == "ok"
         assert result["mode"] == "cloud"
-        assert result["embedding"]["model"] == "gemini/model-1"
-        assert result["embedding"]["dims"] == 768
+        assert result["embedding"] == {"model": "cell-model", "dims": 768}
 
-    @patch("fastretrieval.TextEmbedding")
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_no_api_keys_downloads_local(self, mock_settings, mock_te):
-        from mnemo_mcp.setup_tool import run_warmup
+    def test_cell_probe_failure_returns_unavailable(self, monkeypatch):
+        """A configured cell whose probe reports 0 dims -> unavailable.
 
-        mock_settings.setup_api_keys.return_value = {}
-        mock_settings.resolve_local_embedding_model.return_value = "test/model"
+        No local fallback in this case: the host explicitly configured the
+        cell, so silent local download would mask the misconfiguration.
+        """
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        backend = MagicMock()
+        backend.check_available = AsyncMock(return_value=0)
 
-        mock_model = MagicMock()
-        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
-        mock_te.return_value = mock_model
+        with patch("mnemo_mcp.embedder.init_backend", return_value=backend):
+            result = asyncio.run(run_warmup())
+
+        assert result["status"] == "error"
+        assert result["mode"] == "unavailable"
+        assert result["steps"][0]["step"] == "cloud_embedding"
+        assert result["steps"][0]["status"] == "error"
+
+    def test_cell_probe_exception_returns_unavailable(self, monkeypatch):
+        """init_backend raising surfaces error/unavailable with a warning."""
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+
+        with (
+            patch(
+                "mnemo_mcp.embedder.init_backend",
+                side_effect=Exception("auth error"),
+            ),
+            patch("mnemo_mcp.setup_tool.logger") as mock_logger,
+        ):
+            result = asyncio.run(run_warmup())
+
+        assert result["status"] == "error"
+        assert result["mode"] == "unavailable"
+        mock_logger.warning.assert_called()
+
+    async def test_no_cell_downloads_local(self, monkeypatch):
+        """No embed cell -> local ONNX download path runs."""
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: False)
+        monkeypatch.setattr(
+            "mnemo_mcp.setup_tool._download_local_embedding",
+            MagicMock(
+                return_value={"step": "local_embedding", "status": "ok", "dims": 768}
+            ),
+        )
 
         result = await run_warmup()
 
         assert result["status"] == "ok"
         assert result["mode"] == "local"
-        assert len(result["steps"]) == 1
         assert result["steps"][0]["status"] == "ok"
 
-    @patch("mnemo_mcp.setup_tool._download_local_embedding")
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_local_embedding_disabled_skips_download(
-        self, mock_settings, mock_download
-    ):
-        from mnemo_mcp.setup_tool import run_warmup
+    async def test_local_embedding_disabled_skips_download(self, monkeypatch):
+        """DISABLE_LOCAL_EMBED with no cell -> ok/unavailable, download skipped."""
+        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: False)
+        from mnemo_mcp.config import settings as real_settings
 
-        mock_settings.setup_api_keys.return_value = {}
-        mock_settings.disable_local_embed = True
+        monkeypatch.setattr(real_settings, "disable_local_embed", True)
+        with patch(
+            "mnemo_mcp.setup_tool._download_local_embedding",
+            new=AsyncMock(side_effect=AssertionError("must not download")),
+        ):
+            result = await run_warmup()
 
-        result = await run_warmup()
-
-        mock_download.assert_not_called()
         assert result["status"] == "ok"
         assert result["mode"] == "unavailable"
         local_step = next(
@@ -328,77 +272,3 @@ class TestRunWarmup:
         )
         assert local_step["status"] == "skipped"
         assert "disabled" in local_step["message"].lower()
-
-    @patch("fastretrieval.TextEmbedding")
-    @patch("mnemo_mcp.embedder.init_backend")
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_cloud_fail_falls_back_to_local(
-        self, mock_settings, mock_init, mock_te
-    ):
-        from mnemo_mcp.setup_tool import run_warmup
-
-        mock_settings.setup_api_keys.return_value = {"KEY": "val"}
-        mock_settings.embedding_chain.return_value = ["model-a"]
-        mock_settings.resolve_local_embedding_model.return_value = "local/model"
-
-        mock_backend = MagicMock()
-        mock_backend.check_available.return_value = 0
-        mock_init.return_value = mock_backend
-
-        mock_model = MagicMock()
-        mock_model.embed.return_value = iter([np.array([0.1])])
-        mock_te.return_value = mock_model
-
-        result = await run_warmup()
-
-        assert result["status"] == "ok"
-        assert result["mode"] == "local"
-        # Should have fallback step + local embedding step
-        assert any(s.get("status") == "fallback" for s in result["steps"])
-
-
-class TestRunSetupSync:
-    """run_setup_sync() async function for MCP tool."""
-
-    @patch("mnemo_mcp.token_store.get_token_path")
-    @patch("mnemo_mcp.sync.setup_google_auth", new_callable=MagicMock)
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_success(self, mock_settings, mock_auth, mock_token_path):
-        from unittest.mock import AsyncMock
-
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_settings.google_drive_client_id = "client123"
-        mock_auth.return_value = AsyncMock(return_value=True)()
-        mock_token_path.return_value = "/home/user/.mnemo-mcp/tokens/google_drive.json"
-
-        result = await run_setup_sync()
-
-        assert result["status"] == "authenticated"
-        assert result["provider"] == "google_drive"
-
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_no_client_id(self, mock_settings):
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_settings.google_drive_client_id = ""
-
-        result = await run_setup_sync()
-
-        assert result["status"] == "error"
-        assert "GOOGLE_DRIVE_CLIENT_ID" in result["error"]
-
-    @patch("mnemo_mcp.sync.setup_google_auth", new_callable=MagicMock)
-    @patch("mnemo_mcp.setup_tool.settings")
-    async def test_auth_failure(self, mock_settings, mock_auth):
-        from unittest.mock import AsyncMock
-
-        from mnemo_mcp.setup_tool import run_setup_sync
-
-        mock_settings.google_drive_client_id = "client123"
-        mock_auth.return_value = AsyncMock(return_value=False)()
-
-        result = await run_setup_sync()
-
-        assert result["status"] == "error"
-        assert "failed" in result["error"].lower()

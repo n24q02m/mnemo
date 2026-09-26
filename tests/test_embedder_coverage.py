@@ -1,46 +1,16 @@
 """Additional tests for mnemo_mcp.embedder -- covering uncovered lines.
 
-Targets: CloudEmbeddingBackend with api_base/api_key, Qwen3EmbedBackend._get_model,
+De-host rework: the custom-endpoint/api_key passthrough class pinned removed
+internals (the legacy provider SDK took api_key/api_base per call) and was
+deleted -- the ``[models.embed]`` cell owns base_url, api_key and model now.
+
+Targets: Qwen3EmbedBackend._get_model,
 embed_texts inner function, query role, check_available result empty.
 """
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.embedder import CloudEmbeddingBackend, Qwen3EmbedBackend, _is_retryable
-
-
-def _resp(*vectors):
-    """Build a litellm-shaped embedding response."""
-    return SimpleNamespace(
-        data=[
-            SimpleNamespace(index=i, embedding=list(v)) for i, v in enumerate(vectors)
-        ]
-    )
-
-
-# ---------------------------------------------------------------------------
-# CloudEmbeddingBackend with custom endpoint / api_key
-# ---------------------------------------------------------------------------
-
-
-class TestCloudEmbeddingBackendCustomEndpoint:
-    async def test_passes_api_key(self):
-        """api_key is passed through to aembedding."""
-        mock = AsyncMock(return_value=_resp([0.1]))
-        with patch("mcp_core.llm.aembedding", mock):
-            backend = CloudEmbeddingBackend(api_key="sk-custom")
-            await backend.embed_texts(["test"])
-        assert mock.call_args.kwargs["api_key"] == "sk-custom"
-
-    def test_check_available_with_api_key(self):
-        """check_available passes api_key for validation (sync mirror)."""
-        mock = MagicMock(return_value=_resp([0.1]))
-        with patch("mcp_core.llm.embedding", mock):
-            backend = CloudEmbeddingBackend(api_key="sk-key")
-            dims = backend.check_available()
-        assert dims == 1
-        assert mock.call_args.kwargs["api_key"] == "sk-key"
+from mnemo_mcp.embedder import Qwen3EmbedBackend, _is_retryable
 
 
 # ---------------------------------------------------------------------------
