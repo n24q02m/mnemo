@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.2 (2026-09-26)
+
+### Bug Fixes
+
+- **ci**: Refresh uv.lock after de-host dep cut
+  ([`3406ddb`](https://github.com/n24q02m/mnemo/commit/3406ddb78a9955f3b27fa3eadafeedb7dbd99258))
+
+
 ## v2.17.1 (2026-09-26)
 
 ### Bug Fixes
