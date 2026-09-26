@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.1 (2026-09-26)
+
+### Bug Fixes
+
+- **ci**: Drop empty with: mapping left by de-host edit
+  ([`a9a950e`](https://github.com/n24q02m/mnemo/commit/a9a950e01d1631c4e96ee7d7d5d1ea7d49aad1c4))
+
+
 ## v2.17.0 (2026-09-26)
 
 ### Features
