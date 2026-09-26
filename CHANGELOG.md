@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v2.17.0 (2026-09-26)
+
+### Features
+
+- De-host mnemo onto hull-core
+  ([`e1e439a`](https://github.com/n24q02m/mnemo/commit/e1e439ae6faf3fb9821d203b1fe42e64fee6594c))
+
+### Testing
+
+- Rework suite to the live cell-based surface
+  ([`77b83df`](https://github.com/n24q02m/mnemo/commit/77b83df831d68166e3797b8e7076c0de06d02c8a))
+
+
 ## v2.16.1 (2026-09-25)
 
 ### Bug Fixes
