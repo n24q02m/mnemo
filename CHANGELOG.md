@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.3 (2026-09-26)
+
+### Bug Fixes
+
+- **ci**: Keep uv sources for git-pinned hull-core
+  ([`55cf798`](https://github.com/n24q02m/mnemo/commit/55cf7988e950fa5fa155ea96dd1f7baccca9876d))
+
+
 ## v2.17.2 (2026-09-26)
 
 ### Bug Fixes
