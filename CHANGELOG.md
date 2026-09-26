@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.17.4 (2026-09-26)
+
+### Bug Fixes
+
+- Satisfy ruff check/format and restore compress handler
+  ([`bd0238c`](https://github.com/n24q02m/mnemo/commit/bd0238c486916c9ac905ea9adb365d0e0b7dbd55))
+
+
 ## v2.17.3 (2026-09-26)
 
 ### Bug Fixes
