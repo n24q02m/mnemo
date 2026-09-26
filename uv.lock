@@ -587,7 +587,7 @@ wheels = [
 [[package]]
 name = "hull-core"
 version = "0.1.0"
-source = { git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=5262d54f4f0c1214dcedaef20531da98f9519bdf#5262d54f4f0c1214dcedaef20531da98f9519bdf" }
+source = { git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=14841d05488c801d303b0f3d3cd97426f94a6e1a#14841d05488c801d303b0f3d3cd97426f94a6e1a" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpcore" },
@@ -855,7 +855,7 @@ wheels = [
 
 [[package]]
 name = "mnemo-mcp"
-version = "2.17.1"
+version = "2.17.3"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -891,7 +891,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
     { name = "fastretrieval", specifier = ">=1.7.2,<2" },
     { name = "httpx" },
-    { name = "hull-core", git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=5262d54f4f0c1214dcedaef20531da98f9519bdf" },
+    { name = "hull-core", git = "https://github.com/n24q02m/hull.git?subdirectory=packages%2Fcore-py&rev=14841d05488c801d303b0f3d3cd97426f94a6e1a" },
     { name = "idna", specifier = ">=3.20" },
     { name = "loguru" },
     { name = "mcp", extras = ["cli"], specifier = "<3" },

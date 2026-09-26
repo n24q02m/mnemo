@@ -1,6 +1,7 @@
 """Lightweight knowledge graph: entity extraction + relation management."""
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -20,18 +21,21 @@ async def _cell_completion(
     temperature: float = 0,
     max_tokens: int = 500,
     response_format: dict | None = None,
+    **options,
 ) -> str:
     """Call one task's provider cell (plain OpenAI-spec HTTP via hull-core).
 
     ``task`` selects the cell: ``chat`` for extraction/summarisation,
     ``jev_score`` for importance scoring (spec §4/§7). Returns the response
-    text content.
+    text content. ``options`` passes provider-specific body fields verbatim
+    (e.g. OpenRouter ``reasoning``), the cell still wins on model.
     """
     from mnemo_mcp.runtime import provider_client
 
     kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
     if response_format:
         kwargs["response_format"] = response_format
+    kwargs.update(options)
 
     client = provider_client(task)
     return await client.chat(messages, **kwargs)
@@ -130,10 +134,21 @@ async def score_importance(content: str) -> float:
                 }
             ],
             temperature=0,
-            max_tokens=10,
+            max_tokens=1024,
+            # glm reasoning is mandatory on OpenRouter and eats the budget;
+            # exclude keeps the answer in content instead of null.
+            reasoning={"exclude": True},
         )
 
-        score = float(text.strip())
+        # Reasoning models may wrap the number in prose ("importance: 0.7");
+        # extract the first bare number and clamp. Empty/unparseable text
+        # must NOT silently become a 0.5 score.
+        if not text or not text.strip():
+            raise ValueError("empty completion for importance scoring")
+        match = re.search(r"[+-]?\d*\.\d+|[+-]?\d+", text)
+        if match is None:
+            raise ValueError(f"no numeric score in completion: {text[:80]!r}")
+        score = float(match.group())
         return max(0.0, min(1.0, score))
     except Exception as e:
         logger.debug(f"Importance scoring failed: {e}")
