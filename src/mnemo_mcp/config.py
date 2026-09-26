@@ -1,265 +1,130 @@
-"""Configuration settings for Mnemo MCP Server."""
+"""Instance configuration for product-local settings (de-host 2026-09).
+
+Env-driven (pydantic-settings) product fields only: storage path, local ONNX
+fallbacks, retrieval/consolidation knobs, logging. Everything the HOST owns —
+auth mode + bind + per-task provider cells (embed/rerank/chat/jev_score) —
+lives in ``~/.mnemo/config.toml`` via :mod:`hull_core.config.settings`
+(see :mod:`mnemo_mcp.runtime`).
+"""
+
+from __future__ import annotations
 
 import functools
-import importlib.util
 import os
 from pathlib import Path
 
-from loguru import logger
-from mcp_core.auth import BundledClientSpec, resolve_bundled_client
-from mcp_core.chains import resolve_backend
-from mcp_core.llm.providers import key_env_for_model
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from loguru import logger
 
 
 def _default_data_dir() -> Path:
-    """Get default data directory (~/.mnemo-mcp/)."""
-    return Path.home() / ".mnemo-mcp"
+    """Get default data directory (~/.mnemo/)."""
+    return Path.home() / ".mnemo"
 
 
 @functools.lru_cache(maxsize=1)
 def _detect_gpu() -> bool:
-    """Check if GPU is available via onnxruntime providers."""
-    try:
-        import onnxruntime as ort
+    """Detect GPU availability once (cross-platform, no hard deps)."""
+    try:  # NVIDIA first: pynvml is cheap if present, absent otherwise.
+        import pynvml  # type: ignore[import-not-found]
 
-        providers = ort.get_available_providers()
-        return (
-            "CUDAExecutionProvider" in providers or "DmlExecutionProvider" in providers
-        )
+        pynvml.nvmlInit()
+        return pynvml.nvmlDeviceGetCount() > 0
+    except Exception:
+        pass
+    try:  # Apple Silicon: MPS via torch when installed.
+        import torch  # type: ignore[import-not-found]
+
+        return bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
     except Exception:
         return False
 
 
-@functools.lru_cache(maxsize=1)
 def _has_gguf_support() -> bool:
-    """Check if llama-cpp-python is installed for GGUF models."""
-    return importlib.util.find_spec("llama_cpp") is not None
+    try:
+        import llama_cpp  # type: ignore[import-not-found]
+
+        return True
+    except ImportError:
+        return False
 
 
 def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:
-    """Choose local model variant: GGUF if GPU + llama-cpp, else ONNX."""
+    """Pick GGUF on GPU+llama-cpp, else the ONNX default."""
     if _detect_gpu() and _has_gguf_support():
         return gguf_name
     return onnx_name
 
 
-# Google Drive OAuth client identity (BYO resolver chain: CLI > env pair >
-# bundled default, unless USE_BUNDLED_GOOGLE_CLIENT explicitly disables it).
-# The Desktop/Installed OAuth client_secret is public by design per
-# https://developers.google.com/identity/protocols/oauth2#installed -- hardcoding
-# it here is safe and gives users zero-config sync after relay submit.
-_BUNDLED_GOOGLE_CLIENT_ID = (
-    "147668446467-olf2cf6e49rshqv9quvhq639110oc6hc.apps.googleusercontent.com"
-)
-_BUNDLED_GOOGLE_CLIENT_SECRET = "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"  # gitleaks:allow
-_GOOGLE_CLIENT_SPEC = BundledClientSpec(
-    provider="google-drive",
-    env_id="GOOGLE_DRIVE_CLIENT_ID",
-    env_secret="GOOGLE_DRIVE_CLIENT_SECRET",
-    bundled_id=_BUNDLED_GOOGLE_CLIENT_ID,
-    bundled_secret=_BUNDLED_GOOGLE_CLIENT_SECRET,
-    use_bundled_env="USE_BUNDLED_GOOGLE_CLIENT",
-)
-
-
 class Settings(BaseSettings):
-    """Mnemo MCP Server configuration.
+    """Mnemo MCP Server configuration (product-local fields).
 
     Environment variables:
     - DB_PATH (or MNEMO_DB_PATH): Path to SQLite database
-        (default: ~/.mnemo-mcp/memories.db). Both names are accepted;
+        (default: ~/.mnemo/memories.db). Both names are accepted;
         MNEMO_DB_PATH matches the name used by alembic migrations.
-    - API_KEYS: Provider API keys, supports multiple providers
-        Format: "ENV_VAR:key,ENV_VAR:key,..."
-        Example: "COHERE_API_KEY:co-...,GEMINI_API_KEY:AIza..."
-        Provider is implied by the model prefix; key per litellm convention.
-    - EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS: ordered chains
-        "provider/model,provider/model" (order = litellm fallback). Empty
-        embedding/rerank -> local ONNX; empty LLM -> feature off.
-    - EMBEDDING_DIMS: Embedding dimensions (0 = auto-detect, default 768)
-    - EMBEDDING_MODEL / EMBEDDING_BACKEND: DEPRECATED (folded into the
-        *_MODELS chains; backend inferred). Honored one release with a warning.
-    - SYNC_ENABLED: Enable Google Drive sync (default: true)
-    - SYNC_FOLDER: Google Drive folder name (default: "mnemo-mcp")
-    - SYNC_INTERVAL: Auto-sync interval in seconds (default: 300)
-    - GOOGLE_DRIVE_CLIENT_ID: OAuth client ID for Google Drive sync
-    - GOOGLE_DRIVE_CLIENT_SECRET: OAuth client secret for Google Drive sync
+    - EMBEDDING_DIMS: Embedding storage width (0 = runtime default,
+        1024 -- the native width of the default [models.embed] cell).
+    - DISABLE_LOCAL_EMBED / DISABLE_LOCAL_RERANK: kill the local ONNX
+        fallback legs (embedding/reranking degrade instead of downloading).
+    - COMPRESSION_ENABLED: toggle the LLM compression pipeline.
     """
+
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        case_sensitive=False,
+        validate_assignment=True,
+        populate_by_name=True,
+    )
 
     # Database. Accepts either DB_PATH (runtime, backward-compat) or
     # MNEMO_DB_PATH (the name alembic migrations read in alembic/env.py),
     # so a single env var aligns runtime and migrations.
     db_path: str = Field("", validation_alias=AliasChoices("DB_PATH", "MNEMO_DB_PATH"))
 
-    # Provider API Keys: "ENV_VAR:key,ENV_VAR:key,..."
-    api_keys: str | None = None
-
-    # Per-task model chains "provider/model,provider/model" (order = litellm
-    # fallback). Empty -> local ONNX. Replaces the priority-router auto-detect
-    # and the singular EMBEDDING_MODEL/EMBEDDING_BACKEND (deprecated shims).
-    embedding_models: str = ""
-    rerank_models: str = ""
-
-    # DEPRECATED (2026-06-11, removed next release): singular model + backend
-    # env vars. Folded into the plural *_MODELS chain (with a deprecation
-    # warning); backend is now inferred from the chain (non-empty -> cloud).
-    embedding_model: str = ""
-    embedding_dims: int = 0  # 0 = use server default (768)
-
-    # Safe-by-default vector-store guard. When the active embedding model /
-    # dims differ from what produced the stored vectors, the DB raises
-    # EmbeddingModelMismatch (touching no data). Set this True to instead DROP
-    # the stored vectors + rebuild on the next embed pass (destructive, opt-in).
+    # Embedding storage width; 0 = use the runtime default.
+    embedding_dims: int = 0
     reindex_on_model_change: bool = False
-    embedding_backend: str = (
-        ""  # "cloud" | "local" | "" (auto: API_KEYS->cloud, else local)
-    )
 
-    # Per-capability disable-local toggles (cross-cutting; see mcp_core.chains).
-    # Turn OFF the heavy local qwen3 ONNX fallback (~570MB) WITHOUT pinning a
-    # cloud model. Toggle on + no cloud chain => feature gracefully UNAVAILABLE
-    # (clear status), never silently forced to a provider. Independent per task.
+    # Local ONNX fallback legs.
     disable_local_embed: bool = False  # env DISABLE_LOCAL_EMBED
     disable_local_rerank: bool = False  # env DISABLE_LOCAL_RERANK
-
-    # BYO (bring-your-own) LOCAL model override. When set, the local
-    # embed/rerank backend loads this model id instead of the bundled
-    # Qwen3 reference default. A non-built-in id is registered with fastretrieval via
-    # CustomModelSpec / CustomRerankerSpec (server.py) using the companion
-    # vars below.
     local_embedding_model: str = ""
     local_rerank_model: str = ""
-
-    # Companion vars for registering a custom LOCAL embedding model.
     local_embedding_pooling: str = "MEAN"
-    local_embedding_dim: int = 0  # 0 = use EMBEDDING_DIMS / server default
+    local_embedding_dim: int = 0  # 0 = use EMBEDDING_DIMS / runtime default
     local_embedding_normalize: bool = True
     local_embedding_model_file: str = "onnx/model.onnx"
-    # Companion var for registering a custom LOCAL reranker (BYO ONNX cross-
-    # encoder). A cross-encoder needs no dim/pooling -- just the ONNX file path.
     local_rerank_model_file: str = "onnx/model.onnx"
 
-    # Reranking
+    # Reranker.
     rerank_enabled: bool = True
-    # DEPRECATED (2026-06-11, removed next release): see embedding_* above.
-    rerank_backend: str = ""  # "cloud" | "local" | "" (auto)
-    rerank_model: str = ""
     rerank_top_n: int = 10
-    # Sync (Google Drive API)
-    # GDrive Desktop OAuth client — Google explicitly treats the Desktop/Installed
-    # app client_secret as PUBLIC (per https://developers.google.com/identity/protocols/oauth2#installed).
-    # Hardcoding default keeps parity with wet-mcp so end-users get zero-config sync after relay submit.
-    sync_enabled: bool = True
-    sync_folder: str = "mnemo-mcp"  # Google Drive folder name
-    sync_interval: int = 300  # seconds, 0 = manual only
-    google_drive_client_id: str = Field(
-        default_factory=lambda: resolve_bundled_client(_GOOGLE_CLIENT_SPEC).client_id
-    )
-    google_drive_client_secret: str = Field(
-        default_factory=lambda: (
-            resolve_bundled_client(_GOOGLE_CLIENT_SPEC).client_secret
-        )
-    )
 
-    # Archive
+    # Archive / decay.
     archive_enabled: bool = True
     archive_after_days: int = 90
     archive_importance_threshold: float = 0.3
 
-    # --- Enterprise profile (Wave A; spec 2026-08-25-mnemo-enterprise-design) ---
-    # Master switch. False (default) => stdio/single-user HTTP behavior is
-    # byte-for-byte unchanged; enterprise tables stay empty and unread.
-    enterprise_enabled: bool = Field(
-        False, validation_alias=AliasChoices("MNEMO_ENTERPRISE")
-    )
-    # Trusted external IdP issuers (CSV) — Wave C consumes; declared now so
-    # deploy config lands once.
-    enterprise_issuers: str = Field(
-        "", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ISSUERS")
-    )
-    enterprise_audience: str = Field(
-        "", validation_alias=AliasChoices("MNEMO_ENTERPRISE_AUDIENCE")
-    )
-    # Claim -> role mapping. Unmapped groups fall back to "member".
-    enterprise_role_claim: str = Field(
-        "groups", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ROLE_CLAIM")
-    )
-    enterprise_role_mapping: str = Field(
-        "{}", validation_alias=AliasChoices("MNEMO_ENTERPRISE_ROLE_MAPPING")
-    )
-    enterprise_tenant_claim: str = Field(
-        "tid", validation_alias=AliasChoices("MNEMO_ENTERPRISE_TENANT_CLAIM")
-    )
-    # Audit chain key. Deployed value arrives via skret-injected env (C2) —
-    # never committed. Empty => enterprise audit writes raise at runtime.
-    audit_hash_key: str = Field(
-        "", validation_alias=AliasChoices("MNEMO_AUDIT_HASH_KEY")
-    )
-    audit_key_id: str = Field("k1", validation_alias=AliasChoices("MNEMO_AUDIT_KEY_ID"))
-    audit_retention_days: int = Field(
-        400, validation_alias=AliasChoices("MNEMO_AUDIT_RETENTION_DAYS")
-    )
-
-    # Dedup
+    # Dedup.
     dedup_threshold: float = 0.9
     dedup_warn_threshold: float = 0.7
 
-    # Temporal decay
+    # Recency decay half-life (days) for hybrid scoring.
     recency_half_life_days: int = 7
 
-    # LLM for graph/importance (reuse existing SDK config)
-    llm_models: str = "gemini/gemini-3-flash-preview,openai/gpt-5.4-mini-2026-03-17"
-
-    # Phase 2: LLM compression
+    # LLM compression pipeline (chat cell).
     compression_enabled: bool = True
-    compression_provider: str = ""  # "" = auto-detect via llm.detect_provider
-    compression_model: str = ""  # "" = use llm.get_default_model(provider)
 
-    # DEPRECATED (2026-05-14): backend is auto-resolved from SYNC_S3_BUCKET
-    # presence via :func:`mnemo_mcp.sync.resolve_active_backend` (XOR
-    # between S3 and GDrive per deployment mode). Field kept for backward
-    # compatibility with older ``config.enc`` files / external scripts that
-    # may still set the env var; the value is no longer consulted by the
-    # scheduler / sync_now handlers. Slated for removal post-v2.x.
-    sync_backend: str = "gdrive"
-    sync_s3_bucket: str = ""
-    sync_s3_region: str = "us-east-1"
-    sync_s3_endpoint: str = ""  # custom endpoint for R2 / B2 / MinIO
-    sync_s3_access_key_id: str = ""
-    sync_s3_secret_access_key: str = ""
-    sync_s3_prefix: str = "passport/"
-
-    # Phase 2: passport bundle passphrase (Argon2id-derived hash stored
-    # in encrypted config.enc; raw passphrase NEVER written to disk).
-    sync_passphrase: str = ""  # set ONLY for in-process derivation
-
-    # Phase 3: temporal KG.
-    # KG_AUTO_ENABLED: when True, capture pipeline auto-extracts entities +
-    #   relations via the LLM and persists them via temporal.store.
-    #   Default False so Phase 1/2 callers don't pay the LLM round-trip
-    #   without opt-in. The legacy add()/_enrich_memory background path
-    #   still runs unchanged for backward compat.
+    # Knowledge graph + temporal.
     kg_auto_enabled: bool = False
-    # Entity-resolution cosine threshold (0.85 default per spec §3).
     temporal_entity_resolution_threshold: float = 0.85
-    # Supersession min confidence -- LLM emits {old_fact_id, confidence};
-    # only apply when confidence >= this gate (0.85 default).
     temporal_supersession_threshold: float = 0.85
     temporal_supersession_enabled: bool = True
 
-    # Logging
     log_level: str = "INFO"
-
-    model_config = {
-        "env_prefix": "",
-        "case_sensitive": False,
-        "validate_assignment": True,
-        # Allow init by field name (e.g. Settings(db_path=...)) in addition
-        # to the env aliases declared via validation_alias on db_path.
-        "populate_by_name": True,
-    }
 
     def get_db_path(self) -> Path:
         """Get resolved database path."""
@@ -271,157 +136,8 @@ class Settings(BaseSettings):
         """Get data directory (parent of db file)."""
         return self.get_db_path().parent
 
-    # Env var aliases for provider SDKs
-    _ENV_ALIASES: dict[str, str] = {
-        "GOOGLE_API_KEY": "GEMINI_API_KEY",
-    }
-
-    def setup_api_keys(self) -> dict[str, list[str]]:
-        """Parse API_KEYS and set env vars for provider SDKs.
-
-        Format: "GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
-
-        Also sets aliases (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
-        because Gemini SDK uses GEMINI_API_KEY for gemini/ models.
-
-        Returns:
-            Dict mapping env var name to list of API keys.
-        """
-        if not self.api_keys:
-            return {}
-
-        keys_by_env: dict[str, list[str]] = {}
-
-        for pair in self.api_keys.split(","):
-            pair = pair.strip()
-            if ":" not in pair:
-                continue
-
-            env_var, key = pair.split(":", 1)
-            env_var = env_var.strip()
-            key = key.strip()
-
-            if not key:
-                continue
-
-            keys_by_env.setdefault(env_var, []).append(key)
-
-        # Set first key of each env var (provider SDKs read from env)
-        for env_var, keys in keys_by_env.items():
-            os.environ[env_var] = keys[0]
-            # Set alias if defined (e.g., GOOGLE_API_KEY -> GEMINI_API_KEY)
-            alias = self._ENV_ALIASES.get(env_var)
-            if alias and alias not in os.environ:
-                os.environ[alias] = keys[0]
-
-        return keys_by_env
-
-    def resolve_provider_mode(self) -> str:
-        """Detect provider mode: 'sdk' or 'local'."""
-        if self.api_keys:
-            return "sdk"
-        if any(
-            os.getenv(k)
-            for k in (
-                "JINA_AI_API_KEY",
-                "GEMINI_API_KEY",
-                "GOOGLE_API_KEY",
-                "OPENAI_API_KEY",
-                "OPENROUTER_API_KEY",
-                "COHERE_API_KEY",
-                "CO_API_KEY",
-                "XAI_API_KEY",
-            )
-        ):
-            return "sdk"
-        return "local"
-
-    def setup_providers(self) -> str:
-        """One-time provider configuration. Call once during lifespan startup.
-
-        Returns mode string: 'sdk' or 'local'.
-        """
-        mode = self.resolve_provider_mode()
-
-        if mode == "sdk":
-            self.setup_api_keys()
-            logger.info("SDK direct mode (native provider SDKs)")
-        else:
-            logger.info("Local mode (no cloud API)")
-
-        return mode
-
-    # Explicit provider prefixes so key-availability filtering + litellm
-    # routing are unambiguous (cohere/openai bare names would mis-detect).
-    _DEFAULT_EMBEDDING_CHAIN = (
-        "jina_ai/jina-embeddings-v5-text-small",
-        "gemini/gemini-embedding-001",
-        "openai/text-embedding-3-large",
-        "cohere/embed-multilingual-v3.0",
-    )
-    _DEFAULT_RERANK_CHAIN = (
-        "jina_ai/jina-reranker-v3",
-        "cohere/rerank-v3.5",
-    )
-
-    def _chain(self, primary: str, legacy: str, default: tuple[str, ...]) -> list[str]:
-        if primary:
-            return [m.strip() for m in primary.split(",") if m.strip()]
-        if legacy:
-            logger.warning(
-                "Deprecated singular model env honored; migrate to the plural "
-                "<TASK>_MODELS chain (removed next release): {!r}",
-                legacy,
-            )
-            return [legacy.strip()]
-        # No explicit chain: fall back to the curated default, but ONLY the
-        # models whose provider key is actually configured. If none are (e.g.
-        # an OpenAI-only key with a Jina/Cohere rerank default), the chain is
-        # empty -> the task falls to local ONNX. This keeps "no usable key ->
-        # local-core still runs" (spec §5.4) without a priority-router.
-        return [m for m in default if self._key_available(key_env_for_model(m))]
-
-    def _key_available(self, env_var: str) -> bool:
-        """Whether a provider key is configured via env, bundled api_keys, or alias.
-
-        Mirrors the resolution that ``setup_api_keys`` performs at startup so
-        chain filtering is correct before the env export (and in tests that
-        pass ``api_keys=`` without calling setup).
-        """
-        bundled = self.api_keys or ""
-        if os.getenv(env_var) or env_var in bundled:
-            return True
-        # An alias (e.g. GOOGLE_API_KEY) satisfies its canonical key (GEMINI).
-        for alias, canonical in self._ENV_ALIASES.items():
-            if canonical == env_var and (os.getenv(alias) or alias in bundled):
-                return True
-        return False
-
-    def embedding_chain(self) -> list[str]:
-        return self._chain(
-            self.embedding_models, self.embedding_model, self._DEFAULT_EMBEDDING_CHAIN
-        )
-
-    def rerank_chain(self) -> list[str]:
-        if not self.rerank_enabled:
-            return []
-        return self._chain(
-            self.rerank_models, self.rerank_model, self._DEFAULT_RERANK_CHAIN
-        )
-
-    def embedding_primary(self) -> str | None:
-        chain = self.embedding_chain()
-        return chain[0] if chain else None
-
-    def rerank_primary(self) -> str | None:
-        chain = self.rerank_chain()
-        return chain[0] if chain else None
-
-    def llm_chain(self) -> list[str]:
-        return [m.strip() for m in self.llm_models.split(",") if m.strip()]
-
     def resolve_embedding_dims(self) -> int:
-        """Return explicit EMBEDDING_DIMS or 0 for auto-detect."""
+        """Return explicit EMBEDDING_DIMS or 0 for the runtime default."""
         return self.embedding_dims
 
     def resolve_local_embedding_model(self) -> str:
@@ -432,54 +148,6 @@ class Settings(BaseSettings):
             "n24q02m/Qwen3-Embedding-0.6B-ONNX",
             "n24q02m/Qwen3-Embedding-0.6B-GGUF",
         )
-
-    def resolve_embedding_backend(self) -> str:
-        """Resolve embedding backend: 'cloud', 'local', or 'unavailable'.
-
-        3-way resolution via the shared mcp-core primitive: 'cloud' (non-empty
-        EMBEDDING_MODELS chain), 'local' (empty chain + local leg enabled), or
-        'unavailable' (empty chain + DISABLE_LOCAL_EMBED set -> no local download
-        and no cloud, so embedding is gracefully unavailable, NOT forced). The
-        deprecated EMBEDDING_BACKEND env var is honored for one release.
-        """
-        if self.embedding_backend:
-            logger.warning(
-                "Deprecated EMBEDDING_BACKEND honored; backend is now "
-                "inferred from EMBEDDING_MODELS."
-            )
-            return (
-                "cloud"
-                if self.embedding_backend in ("cloud", "litellm")
-                else self.embedding_backend
-            )
-        return resolve_backend(
-            has_cloud_chain=bool(self.embedding_chain()),
-            local_enabled=not self.disable_local_embed,
-        ).value
-
-    def resolve_rerank_backend(self) -> str:
-        """Resolve reranker backend: 'cloud', 'local', 'unavailable', or '' (disabled).
-
-        '' when rerank_enabled is False. Otherwise 3-way via the shared mcp-core
-        primitive (keyed on RERANK_MODELS + DISABLE_LOCAL_RERANK); the deprecated
-        RERANK_BACKEND env var is honored for one release.
-        """
-        if not self.rerank_enabled:
-            return ""
-        if self.rerank_backend:
-            logger.warning(
-                "Deprecated RERANK_BACKEND honored; backend is now "
-                "inferred from RERANK_MODELS."
-            )
-            return (
-                "cloud"
-                if self.rerank_backend in ("cloud", "litellm")
-                else self.rerank_backend
-            )
-        return resolve_backend(
-            has_cloud_chain=bool(self.rerank_chain()),
-            local_enabled=not self.disable_local_rerank,
-        ).value
 
     def resolve_local_rerank_model(self) -> str:
         """Resolve local reranker model: GGUF if GPU + llama-cpp, else ONNX.

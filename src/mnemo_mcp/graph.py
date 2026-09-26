@@ -7,90 +7,34 @@ from datetime import UTC, datetime
 from loguru import logger
 
 
-def _has_llm_provider() -> bool:
-    """Check if any LLM provider API key is available."""
-    from mnemo_mcp.credential_state import has_llm_provider
+def _cell_ready(task: str) -> bool:
+    """True when the host configured a key for the task's provider cell."""
+    from mnemo_mcp.runtime import cell_configured
 
-    return has_llm_provider()
-
-
-def _resolve_llm_model(settings_obj) -> str:
-    """Resolve the LLM model to use from settings, in litellm ``provider/model`` form.
-
-    ``LLM_MODELS`` accepts ``provider=model`` (=-form) or ``provider/model``
-    (slash form). A bare =-form first entry (no slash) is normalised to slash
-    form so ``_litellm_model`` does not double-prefix it.
-    """
-    from mnemo_mcp.credential_state import get_current_sub, model_chain_for_task
-
-    models = model_chain_for_task("llm", fallback=settings_obj.llm_models)
-    if not models and get_current_sub() is not None:
-        return ""
-    raw = models[0] if models else "gemini/gemini-3-flash-preview"
-    return raw.replace("=", "/", 1)
+    return cell_configured(task)
 
 
-def _litellm_model(model: str) -> str:
-    """Normalise a model string to litellm ``provider/model`` form.
-
-    ``_resolve_llm_model`` may yield ``provider/model`` (slash form) or a bare
-    name. litellm infers the provider from the prefix, so a bare gemini model
-    (e.g. ``gemini-3-flash-preview``) is prefixed with ``gemini/``; any other
-    bare name is left as-is for litellm to route via env keys.
-    """
-    if "/" in model:
-        return model
-    if "gemini" in model.lower():
-        return f"gemini/{model}"
-    return model
-
-
-async def _llm_completion(
-    model: str,
+async def _cell_completion(
+    task: str,
     messages: list[dict],
     temperature: float = 0,
     max_tokens: int = 500,
     response_format: dict | None = None,
 ) -> str:
-    """Call LLM completion via mcp_core.llm (litellm passthrough).
+    """Call one task's provider cell (plain OpenAI-spec HTTP via hull-core).
 
-    litellm infers the provider from the ``provider/model`` prefix and returns
-    OpenAI-shaped responses (``resp.choices[0].message.content``).
-    Returns the response text content.
+    ``task`` selects the cell: ``chat`` for extraction/summarisation,
+    ``jev_score`` for importance scoring (spec §4/§7). Returns the response
+    text content.
     """
-    # Lazy import: litellm costs ~1-2s on first import.
-    from mcp_core.llm import acompletion
-
-    from mnemo_mcp.credential_state import (
-        api_base_for_task,
-        api_key_for_model,
-        get_current_sub,
-        model_for_task,
-    )
+    from mnemo_mcp.runtime import provider_client
 
     kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
     if response_format:
         kwargs["response_format"] = response_format
 
-    litellm_model = _litellm_model(model)
-    if get_current_sub() is not None:
-        configured = model_for_task("llm")
-        if not configured:
-            raise RuntimeError("No completion model configured for current subject")
-        litellm_model = configured.replace("=", "/", 1)
-        api_key = api_key_for_model(litellm_model)
-        if not api_key:
-            raise RuntimeError("No completion key configured for current subject")
-    else:
-        api_key = api_key_for_model(litellm_model)
-    resp = await acompletion(
-        model=litellm_model,
-        messages=messages,
-        api_base=api_base_for_task("LLM_API_BASE"),
-        api_key=api_key,
-        **kwargs,
-    )
-    return resp.choices[0].message.content or ""
+    client = provider_client(task)
+    return await client.chat(messages, **kwargs)
 
 
 async def extract_entities(content: str) -> dict | None:
@@ -98,17 +42,12 @@ async def extract_entities(content: str) -> dict | None:
 
     Returns {"entities": [...], "relations": [...]} or None if LLM unavailable.
     """
-    from mnemo_mcp.config import settings
-
-    mode = settings.resolve_provider_mode()
-    if mode == "local" and not _has_llm_provider():
+    if not _cell_ready("chat"):
         return None
 
     try:
-        model = _resolve_llm_model(settings)
-
-        text = await _llm_completion(
-            model=model,
+        text = await _cell_completion(
+            "chat",
             messages=[
                 {
                     "role": "user",
@@ -171,17 +110,12 @@ async def extract_entities(content: str) -> dict | None:
 
 async def score_importance(content: str) -> float:
     """Score memory importance 0.0-1.0 via LLM. Returns 0.5 if unavailable."""
-    from mnemo_mcp.config import settings
-
-    mode = settings.resolve_provider_mode()
-    if mode == "local" and not _has_llm_provider():
+    if not _cell_ready("jev_score"):
         return 0.5
 
     try:
-        model = _resolve_llm_model(settings)
-
-        text = await _llm_completion(
-            model=model,
+        text = await _cell_completion(
+            "jev_score",
             messages=[
                 {
                     "role": "user",

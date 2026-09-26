@@ -40,30 +40,8 @@ def _resolve_cache_dir() -> Path:
     return define_cache_dir()
 
 
-def _validate_cloud_models(settings_obj) -> dict:
-    """Check if cloud embedding models are valid."""
-    from mnemo_mcp.embedder import init_backend
-
-    candidates = settings_obj.embedding_chain()
-
-    for candidate in candidates:
-        try:
-            backend = init_backend("cloud", candidate)
-            dims = backend.check_available()
-            if dims > 0:
-                return {
-                    "cloud_ready": True,
-                    "model": candidate,
-                    "dims": dims,
-                }
-        except Exception:
-            continue
-
-    return {"cloud_ready": False}
-
-
 def _download_local_embedding(settings_obj) -> dict:
-    """Download and validate local embedding model."""
+    """Download and validate the local embedding model."""
     from fastretrieval import TextEmbedding
 
     local_model = settings_obj.resolve_local_embedding_model()
@@ -103,166 +81,56 @@ def _download_local_embedding(settings_obj) -> dict:
             }
         raise
 
-
 async def run_warmup() -> dict:
-    """Pre-download embedding model and validate setup to avoid first-run delays.
+    """Pre-download/validate the embedding backend to avoid first-run delays.
 
-    Returns a structured dict with warmup results:
-    {
-        "status": "ok" | "error",
-        "mode": "cloud" | "local" | "unavailable",
-        "steps": [{"step": str, "status": str, ...}, ...],
-    }
+    Cloud first: when the ``[models.embed]`` cell has a key, probe it with one
+    ping embed. Otherwise fall back to the local ONNX model (unless
+    ``DISABLE_LOCAL_EMBED`` is set). Returns a structured dict:
+    ``{"status": "ok"|"error", "mode": "cloud"|"local"|"unavailable", "steps": [...]}``.
     """
-    from mnemo_mcp.credential_state import (
-        api_base_for_task,
-        api_key_for_model,
-        get_current_sub,
-        model_for_task,
-    )
+    from mnemo_mcp.config import settings
+    from mnemo_mcp.embedder import init_backend
+    from mnemo_mcp.runtime import cell_configured, model_cell
 
-    if get_current_sub() is not None:
-        from mnemo_mcp.embedder import CloudEmbeddingBackend
-
-        model = model_for_task("embedding")
-        key = api_key_for_model(model) if model else None
-        if not model or not key:
-            return {"status": "ok", "mode": "unavailable", "steps": []}
-        backend = CloudEmbeddingBackend(
-            model, api_key=key, api_base=api_base_for_task("EMBEDDING_API_BASE")
-        )
-        dims = await asyncio.to_thread(backend.check_available)
-        if dims <= 0:
-            return {
-                "status": "error",
-                "mode": "unavailable",
-                "steps": [{"step": "cloud_embedding", "status": "error"}],
-            }
-        return {
-            "status": "ok",
-            "mode": "cloud",
-            "steps": [
-                {
-                    "step": "cloud_embedding",
+    if cell_configured("embed"):
+        try:
+            backend = init_backend("cloud")
+            native_dims = await backend.check_available()
+            if native_dims > 0:
+                return {
                     "status": "ok",
-                    "model": model,
-                    "dims": dims,
+                    "mode": "cloud",
+                    "steps": [
+                        {
+                            "step": "cloud_embedding",
+                            "status": "ok",
+                            "model": model_cell("embed").model,
+                            "dims": native_dims,
+                        }
+                    ],
+                    "embedding": {"model": model_cell("embed").model, "dims": native_dims},
                 }
-            ],
-            "embedding": {"model": model, "dims": dims},
+        except Exception as exc:
+            logger.warning(f"Cloud embed probe failed: {exc}")
+        return {
+            "status": "error",
+            "mode": "unavailable",
+            "steps": [{"step": "cloud_embedding", "status": "error"}],
         }
 
-    steps = []
-    local_disabled = getattr(settings, "disable_local_embed", False) is True
-
-    # 1. Check cloud models if API keys are available
-    keys = settings.setup_api_keys()
-    if keys:
-        cloud_result = await asyncio.to_thread(_validate_cloud_models, settings)
-        if cloud_result["cloud_ready"]:
-            steps.append(
-                {
-                    "step": "cloud_embedding",
-                    "status": "ok",
-                    "model": cloud_result["model"],
-                    "dims": cloud_result["dims"],
-                }
-            )
-            return {
-                "status": "ok",
-                "mode": "cloud",
-                "steps": steps,
-                "embedding": {
-                    "model": cloud_result["model"],
-                    "dims": cloud_result["dims"],
-                },
-            }
-        steps.append(
-            {
-                "step": "cloud_embedding",
-                "status": "fallback",
-                "message": (
-                    "Cloud models not available, local embedding is disabled"
-                    if local_disabled
-                    else "Cloud models not available, falling back to local"
-                ),
-            }
-        )
-
-    if local_disabled:
-        steps.append(
-            {
-                "step": "local_embedding",
-                "status": "skipped",
-                "message": "Local embedding disabled; embedding is unavailable",
-            }
-        )
+    if settings.disable_local_embed:
         return {
             "status": "ok",
             "mode": "unavailable",
-            "steps": steps,
+            "steps": [
+                {
+                    "step": "local_embedding",
+                    "status": "skipped",
+                    "message": "Local embedding disabled; embedding is unavailable",
+                }
+            ],
         }
 
-    # 2. Download local embedding model
     embed_result = await asyncio.to_thread(_download_local_embedding, settings)
-    steps.append(embed_result)
-
-    return {
-        "status": "ok",
-        "mode": "local",
-        "steps": steps,
-    }
-
-
-async def run_setup_sync(
-    client_id: str | None = None,
-    client_secret: str | None = None,
-) -> dict:
-    """Authenticate Google Drive via Device Code OAuth flow.
-
-    ``client_id``/``client_secret`` optionally override the upstream OAuth
-    client identity for this call (BYO client, e.g. from the CLI's ``auth
-    google --client-id/--client-secret`` flags) without mutating the
-    ``mnemo_mcp.config.settings`` singleton -- both default to ``None``,
-    which falls back to ``settings.google_drive_client_id/secret`` exactly
-    as before.
-
-    Returns a structured dict with setup results.
-    """
-    from mnemo_mcp.sync import resolve_active_backend, setup_google_auth
-    from mnemo_mcp.token_store import get_token_path
-
-    if resolve_active_backend() != "gdrive":
-        return {
-            "status": "disabled",
-            "provider": "google_drive",
-            "message": "Google Drive sync is not active for this deployment.",
-        }
-
-    effective_id = client_id or settings.google_drive_client_id
-    if not effective_id:
-        return {
-            "status": "error",
-            "error": "GOOGLE_DRIVE_CLIENT_ID not configured. "
-            "Create an OAuth client ID at console.cloud.google.com/apis/credentials",
-            "suggestion": "Set the GOOGLE_DRIVE_CLIENT_ID environment variable or create one in Google Cloud Console.",
-        }
-
-    success = await setup_google_auth(client_id=client_id, client_secret=client_secret)
-    if not success:
-        return {
-            "status": "error",
-            "error": "Google Drive authentication failed. Please try again.",
-            "suggestion": "Check your client credentials and verify network connectivity.",
-        }
-
-    token_path = get_token_path("google_drive")
-    return {
-        "status": "authenticated",
-        "provider": "google_drive",
-        "token_path": str(token_path),
-        "next_steps": {
-            "SYNC_ENABLED": "true",
-            "GOOGLE_DRIVE_CLIENT_ID": effective_id,
-        },
-    }
+    return {"status": "ok", "mode": "local", "steps": [embed_result]}

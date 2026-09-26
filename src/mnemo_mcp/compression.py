@@ -1,7 +1,7 @@
 """LLM-driven compression pipeline (Phase 2).
 
-Compresses captured turn-style text via the multi-provider LLM dispatch layer
-in :mod:`mnemo_mcp.llm` while preserving every concrete fact / decision /
+Compresses captured turn-style text through the ``[models.chat]`` provider
+cell via :mod:`mnemo_mcp.llm` while preserving every concrete fact / decision /
 identifier so retrieval quality stays unchanged.
 
 Spec reference: ``2026-04-19-mnemo-v2-design.md`` section 4.1 (LLM compression
@@ -13,14 +13,12 @@ Behaviour:
 1. **No provider available** -> graceful skip. Returns the original text with
    ``compressed=False`` and matching ``tokens_in == tokens_out``. The caller
    stores the row as-is and a single warning is logged. No exception raised.
-2. **Provider available** -> calls :func:`mnemo_mcp.llm.call_llm` with a
+2. **Chat cell configured** -> calls :func:`mnemo_mcp.llm.call_llm` with a
    deterministic compression prompt (temperature=0). Tokens counted via
    tiktoken cl100k_base (matches OpenAI / Anthropic Claude estimates closely
    enough for the 3x reduction metric). On empty / failed response -> the
    pipeline degrades to the graceful skip path.
-3. **Local env override** -> ``COMPRESSION_PROVIDER`` and ``COMPRESSION_MODEL``
-   apply only to single-user/local calls. Authenticated subjects use their own
-   completion configuration. ``COMPRESSION_ENABLED=false`` skips the pipeline.
+3. ``COMPRESSION_ENABLED=false`` skips the pipeline entirely.
 
 The module exposes the canonical prompt as :data:`COMPRESSION_PROMPT` so the
 fact-retention benchmark fixture can keep both prompt and ground-truth aligned
@@ -35,7 +33,7 @@ from typing import Final
 import tiktoken
 from loguru import logger
 
-from mnemo_mcp.llm import call_llm, detect_provider, get_default_model
+from mnemo_mcp.llm import call_llm
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -77,32 +75,13 @@ def _env_compression_enabled() -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _resolve_provider(explicit: str | None) -> str | None:
-    """Use the subject's chain remotely; preserve explicit/local env overrides."""
-    from mnemo_mcp.credential_state import get_current_sub
+def _resolve_cell_model() -> str | None:
+    """The chat cell's model id, or None when the cell has no key."""
+    from mnemo_mcp.runtime import cell_configured, model_cell
 
-    if get_current_sub() is not None:
-        return detect_provider()
-    if explicit:
-        return explicit
-    env = os.environ.get("COMPRESSION_PROVIDER", "").strip()
-    if env:
-        return env
-    return detect_provider()
-
-
-def _resolve_model(provider: str, explicit: str | None) -> str:
-    """Use the subject's chain remotely; preserve explicit/local env overrides."""
-    from mnemo_mcp.credential_state import get_current_sub
-
-    if get_current_sub() is not None:
-        return get_default_model(provider)
-    if explicit:
-        return explicit
-    env = os.environ.get("COMPRESSION_MODEL", "").strip()
-    if env:
-        return env
-    return get_default_model(provider)
+    if not cell_configured("chat"):
+        return None
+    return model_cell("chat").model
 
 
 def count_tokens(text: str) -> int:
@@ -154,35 +133,30 @@ async def compress(
         logger.debug("compression: COMPRESSION_ENABLED=false, skipping")
         return skip_payload
 
-    resolved_provider = _resolve_provider(provider)
-    if resolved_provider is None:
+    resolved_model = _resolve_cell_model()
+    if resolved_model is None:
         logger.warning(
-            "compression: no LLM provider available - storing raw text "
-            "(set GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / "
-            "XAI_API_KEY to enable compression)"
+            "compression: [models.chat] cell not configured - storing raw "
+            "text (set api_key or HULL_CHAT_API_KEY to enable compression)"
         )
         return skip_payload
-
-    resolved_model = _resolve_model(resolved_provider, model)
 
     try:
         compressed_text = await call_llm(
             COMPRESSION_PROMPT.format(text=text),
-            provider=resolved_provider,
-            model=resolved_model,
             temperature=0.0,
             max_tokens=max(64, tokens_in // 2),
         )
     except Exception as e:  # pragma: no cover - SDK guard
         logger.warning(
-            f"compression: provider={resolved_provider} model={resolved_model} "
+            f"compression: model={resolved_model} "
             f"failed with {e}; storing raw text"
         )
         return skip_payload
 
     if not compressed_text or not compressed_text.strip():
         logger.warning(
-            f"compression: provider={resolved_provider} returned empty text; "
+            f"compression: model={resolved_model} returned empty text; "
             "storing raw text"
         )
         return skip_payload
@@ -192,7 +166,7 @@ async def compress(
         "text": compressed_text,
         "text_raw": text,
         "compressed": True,
-        "compression_provider": resolved_provider,
+        "compression_provider": "chat-cell",
         "compression_model": resolved_model,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,

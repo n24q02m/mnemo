@@ -12,6 +12,7 @@ import asyncio
 import difflib
 import json
 import os
+import socket
 import sys
 import typing
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -24,35 +25,35 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
 from mnemo_mcp.config import settings
-from mnemo_mcp.credential_state import _current_sub
 from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.db_cf import MemoryDBCfBackend, open_memory_db
-from mnemo_mcp.secure_file import write_owner_only
+from mnemo_mcp.runtime import (
+    DEFAULT_EMBEDDING_DIMS,
+    build_authenticator,
+    cell_configured,
+    current_sub,
+    db_path_for_namespace,
+    hull_settings,
+    model_cell,
+    provider_client,
+)
 
 # Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
 # to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
 __version__ = _pkgver("mnemo-mcp")
 
-# Constant embedding dimensions for sqlite-vec and the Cloudflare Vectorize
-# index. All embeddings are fitted to this size so switching models never
-# breaks the vector table. Override via EMBEDDING_DIMS env var when a backend
-# has an explicit dimension contract.
-_DEFAULT_EMBEDDING_DIMS = 768
-_DEFAULT_CF_EMBEDDING_DIMS = 1536
+# Storage width for sqlite-vec. All embeddings are fitted to this size so
+# switching models never breaks the vector table; the default matches the
+# native width of the default [models.embed] cell (voyage-4-lite). Override
+# via EMBEDDING_DIMS when the host configures a different-width model.
+_DEFAULT_EMBEDDING_DIMS = DEFAULT_EMBEDDING_DIMS
+
+# Per-call wall-clock budget for one embed request (see _embed).
+EMBED_CALL_DEADLINE_S = 45
 
 
 def _default_embedding_dims() -> int:
-    """Return the storage width for the active backend.
-
-    Cohere ``embed-v4.0`` is the relay-managed CF deployment target and its
-    Vectorize index is 1536-dimensional. Keeping the CF default here means
-    removing deployment-level model/dimension locks does not silently revert
-    the D1 ledger and provider request to the old 768-width Jina contract.
-    SQLite/local deployments retain the historical 768 default.
-    """
-    if os.getenv("MEMORY_DB_BACKEND", "").strip().lower() == "cf-d1":
-        return _DEFAULT_CF_EMBEDDING_DIMS
-    return _DEFAULT_EMBEDDING_DIMS
+    """Return the storage width for fresh stores (EMBEDDING_DIMS overrides)."""
+    return settings.resolve_embedding_dims() or _DEFAULT_EMBEDDING_DIMS
 
 
 # --- Lifespan ---
@@ -130,197 +131,139 @@ def _maybe_register_custom_rerank(model_id: str) -> None:
         logger.debug(f"Custom reranker registration skipped: {e}")
 
 
-async def _init_embedding_backend(
-    mode: str,
-    ctx: dict,
-) -> None:
-    """Initialize embedding backend based on credential state.
+async def _init_embedding_backend(ctx: dict) -> None:
+    """Initialize the embedding backend from the host's provider config.
 
-    AWAITING_SETUP: skip (FTS5-only mode until user configures credentials).
-    LOCAL: local-only path (fastretrieval ONNX).
-    CONFIGURED: cloud-only path -- no silent local fallback.
-
-    Running this as a background task lets the MCP server accept connections
-    immediately instead of blocking on model download or cloud API validation.
+    Cloud when the ``[models.embed]`` cell has a key (no silent local
+    fallback -- a broken cell must surface, not quietly switch models);
+    otherwise the local ONNX leg. Neither: FTS5-only mode. Runs as a
+    background task so the server accepts connections immediately.
     """
-    if os.environ.get("PUBLIC_URL"):
-        logger.info("Embedding: resolved per subject; skipping process-wide probe")
-        return
-
-    from mnemo_mcp.credential_state import CredentialState, get_state
     from mnemo_mcp.embedder import init_backend
 
-    cred_state = get_state()
+    embedding_dims = ctx["embedding_dims"]
 
-    if cred_state == CredentialState.AWAITING_SETUP:
-        logger.info("Embedding: skipped (credentials not configured, FTS5 mode)")
-        return
-
-    embedding_chain = settings.embedding_chain()
-    embedding_dims = settings.resolve_embedding_dims()
-    embedding_backend_type = settings.resolve_embedding_backend()
-
-    if embedding_backend_type == "unavailable":
-        logger.info(
-            "Embedding: unavailable (DISABLE_LOCAL_EMBED set + no cloud model configured, FTS5 mode)"
+    if cell_configured("embed"):
+        try:
+            backend = init_backend("cloud")
+            native_dims = await backend.check_available()
+            if native_dims > 0:
+                if embedding_dims == 0:
+                    embedding_dims = _default_embedding_dims()
+                model = model_cell("embed").model
+                logger.info(
+                    f"Embedding: {model} "
+                    f"(native={native_dims}, stored={embedding_dims})"
+                )
+                ctx["embedding_model"] = model
+                ctx["embedding_dims"] = embedding_dims
+                return
+            logger.warning("Embedding cell model not available")
+        except Exception as e:
+            logger.warning(f"Embedding cell probe failed: {e}")
+        logger.error(
+            "Cloud embedding configured but unavailable -- staying FTS5-only. "
+            "Fix the [models.embed] cell or unset its key to use local ONNX."
         )
         return
 
-    if cred_state == CredentialState.LOCAL or embedding_backend_type == "local":
-        # Local-only path
-        local_model = settings.resolve_local_embedding_model()
-        try:
-            await asyncio.to_thread(_maybe_register_custom_embed, local_model)
-            backend = await asyncio.to_thread(init_backend, "local", local_model)
-            native_dims = await asyncio.to_thread(backend.check_available)
-            if native_dims > 0:
-                if embedding_dims == 0:
-                    embedding_dims = _default_embedding_dims()
-                logger.info(
-                    f"Embedding: local {local_model} "
-                    f"(native={native_dims}, stored={embedding_dims})"
-                )
-                ctx["embedding_model"] = local_model
-                ctx["embedding_dims"] = embedding_dims
-            else:
-                logger.error("Local embedding model not available")
-        except Exception as e:
-            logger.error(f"Local embedding init failed: {e}")
+    if settings.disable_local_embed:
+        logger.info(
+            "Embedding: unavailable (DISABLE_LOCAL_EMBED set + no embed cell "
+            "configured, FTS5 mode)"
+        )
         return
 
-    # CONFIGURED + cloud backend -- no local fallback.
-    # Try each model in the chain (litellm fallback order) until one validates.
-    for candidate in embedding_chain:
-        try:
-            backend = await asyncio.to_thread(init_backend, "cloud", candidate)
-            native_dims = await asyncio.to_thread(backend.check_available)
-            if native_dims > 0:
-                if embedding_dims == 0:
-                    embedding_dims = _default_embedding_dims()
-                logger.info(
-                    f"Embedding: {candidate} "
-                    f"(native={native_dims}, stored={embedding_dims})"
-                )
-                ctx["embedding_model"] = candidate
-                ctx["embedding_dims"] = embedding_dims
-                return
-            else:
-                logger.warning(f"Embedding model {candidate} not available")
-        except Exception as e:
-            logger.warning(f"Embedding model {candidate} not available: {e}")
-
-    logger.error("Cloud embedding not available and local fallback is disabled")
+    local_model = settings.resolve_local_embedding_model()
+    try:
+        await asyncio.to_thread(_maybe_register_custom_embed, local_model)
+        backend = await asyncio.to_thread(init_backend, "local", local_model)
+        native_dims = await asyncio.to_thread(backend.check_available)
+        if native_dims > 0:
+            if embedding_dims == 0:
+                embedding_dims = _default_embedding_dims()
+            logger.info(
+                f"Embedding: local {local_model} "
+                f"(native={native_dims}, stored={embedding_dims})"
+            )
+            ctx["embedding_model"] = local_model
+            ctx["embedding_dims"] = embedding_dims
+        else:
+            logger.error("Local embedding model not available")
+    except Exception as e:
+        logger.error(f"Local embedding init failed: {e}")
 
 
-async def _init_reranker_backend(mode: str) -> None:
-    """Initialize reranker backend based on credential state.
-
-    AWAITING_SETUP: skip (search works without reranking).
-    LOCAL: local-only path.
-    CONFIGURED: cloud-only path -- no silent local fallback.
-    """
-    if os.environ.get("PUBLIC_URL"):
-        logger.info("Reranking: resolved per subject; skipping process-wide probe")
-        return
-
-    from mnemo_mcp.credential_state import CredentialState, get_state
+async def _init_reranker_backend() -> None:
+    """Initialize the reranker: rerank cell when configured, else local ONNX."""
     from mnemo_mcp.reranker import clear_reranker, init_reranker
 
     clear_reranker()
 
-    backend_type = settings.resolve_rerank_backend()
-    if not backend_type:
+    if not settings.rerank_enabled:
         logger.debug("Reranking disabled")
         return
 
-    if backend_type == "unavailable":
+    if cell_configured("rerank"):
+        try:
+            backend = await asyncio.to_thread(init_reranker, "cloud")
+            available = await asyncio.to_thread(backend.check_available)
+            if available:
+                logger.info(f"Reranker: {model_cell('rerank').model}")
+                return
+            clear_reranker()
+        except Exception as e:
+            logger.warning(f"Rerank cell probe failed: {e}")
+            clear_reranker()
+        logger.warning(
+            "Rerank cell configured but unavailable -- falling back to local ONNX"
+        )
+
+    if settings.disable_local_rerank:
         logger.info(
-            "Reranker: unavailable (DISABLE_LOCAL_RERANK set + no cloud model configured)"
+            "Reranker: unavailable (DISABLE_LOCAL_RERANK set + no usable rerank cell)"
         )
         return
 
-    cred_state = get_state()
-
-    if cred_state == CredentialState.AWAITING_SETUP:
-        logger.info("Reranker: skipped (credentials not configured)")
-        return
-
-    if cred_state == CredentialState.LOCAL or backend_type == "local":
-        # Local-only path
-        local_model = settings.resolve_local_rerank_model()
-        try:
-            await asyncio.to_thread(_maybe_register_custom_rerank, local_model)
-            backend = await asyncio.to_thread(init_reranker, "local", local_model)
-            available = await asyncio.to_thread(backend.check_available)
-            if available:
-                logger.info(f"Reranker: local {local_model}")
-            else:
-                logger.error("Local reranker not available")
-                clear_reranker()
-        except Exception as e:
-            logger.error(f"Local reranker init failed: {e}")
+    local_model = settings.resolve_local_rerank_model()
+    try:
+        await asyncio.to_thread(_maybe_register_custom_rerank, local_model)
+        backend = await asyncio.to_thread(init_reranker, "local", local_model)
+        available = await asyncio.to_thread(backend.check_available)
+        if available:
+            logger.info(f"Reranker: local {local_model}")
+        else:
+            logger.error("Local reranker not available")
             clear_reranker()
-        return
-
-    # CONFIGURED + cloud backend -- no local fallback.
-    # Try each model in the chain (litellm fallback order) until one validates.
-    if backend_type in ("cloud", "litellm"):
-        for model in settings.rerank_chain():
-            try:
-                backend = await asyncio.to_thread(init_reranker, "cloud", model)
-                available = await asyncio.to_thread(backend.check_available)
-                if available:
-                    logger.info(f"Reranker: {model}")
-                    return
-                clear_reranker()
-            except Exception as e:
-                logger.warning(f"Reranker {model} not available: {e}")
-                clear_reranker()
-        logger.error("Cloud reranker not available and local fallback is disabled")
+    except Exception as e:
+        logger.error(f"Local reranker init failed: {e}")
+        clear_reranker()
 
 
 @asynccontextmanager
 async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
-    """Initialize DB, embeddings, and sync on startup.
+    """Initialize DB and embedding/rerank backends on startup.
 
     Embedding backend init runs as a background task so the server accepts
     connections immediately. Tools gracefully degrade to FTS5-only search
-    until the embedding model is ready.
+    until the embedding model is ready. The host-root store
+    (``~/.mnemo/memories.db``) serves the shared default namespace; mode-3
+    namespaces resolve their own per-sub store lazily in :func:`_get_ctx`.
     """
-    # 0. Non-blocking credential resolution (fast, <10ms)
-    # Replaces the old blocking ensure_config() which waited 300s for relay.
-    # Relay is now triggered lazily on first tool call via _maybe_include_setup_hint().
-    try:
-        from mnemo_mcp.credential_state import resolve_credential_state
-
-        resolve_credential_state()
-    except Exception as e:
-        logger.debug(f"Credential resolution not available: {e}")
-
-    # 1. Setup provider mode (sdk/local)
-    mode = settings.setup_providers()
-
-    # 2. Resolve initial embedding dims (may be refined by background task)
+    # 1. Resolve initial embedding dims (may be refined by background task).
+    # The identity stamped in store_meta guards against silent vector-space
+    # corruption when the model changes.
     embedding_dims = settings.resolve_embedding_dims()
     if embedding_dims == 0:
         embedding_dims = _default_embedding_dims()
 
-    # 3. Initialize database (fast, no network)
-    # Resolve the active embedding-model identity synchronously so the vector
-    # store can guard against silent corruption when the model changes. The
-    # background _init_embedding_backend task only refines availability; the
-    # configured identity (local resolved id, or cloud chain head) is already
-    # known here. dims is the primary guard; the model id is a secondary tag.
-    if settings.resolve_embedding_backend() == "local":
-        embedding_model_identity = settings.resolve_local_embedding_model()
+    if cell_configured("embed"):
+        embedding_model_identity = model_cell("embed").model
     else:
-        embedding_model_identity = settings.embedding_primary() or ""
+        embedding_model_identity = settings.resolve_local_embedding_model()
 
-    db_path = settings.get_db_path()
-    # MEMORY_DB_BACKEND picks the store: the default SQLite file at db_path, or
-    # the Cloudflare D1 database when the Worker sets cf-d1. This is the only
-    # place that choice is made.
-    db = open_memory_db(
+    db_path = db_path_for_namespace("default")
+    db = MemoryDB(
         db_path,
         embedding_dims=embedding_dims,
         recency_half_life_days=settings.recency_half_life_days,
@@ -328,31 +271,10 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         reindex_on_model_change=settings.reindex_on_model_change,
     )
     stats = db.stats()
-    # The store that answered, not the SQLite path the config asked for: the
-    # count beside it comes from whatever open_memory_db selected, so under
-    # cf-d1 db_path names a container file holding none of these memories.
     logger.info(
         f"Database: {stats['db_path']} ({stats['total_memories']} memories, "
         f"vec={'on' if db.vec_enabled else 'off'})"
     )
-
-    # D1 + Vectorize is durable already; the same resolver gates setup,
-    # background sync and explicit sync operations.
-    from mnemo_mcp.sync import resolve_active_backend
-
-    sync_mode = resolve_active_backend()
-    if sync_mode != "gdrive":
-        logger.info(f"Sync mode: {sync_mode} — GDrive auto-init skipped")
-    else:
-        logger.info("Sync mode: gdrive (GDrive user OAuth via relay)")
-        if settings.google_drive_client_id:
-            from mnemo_mcp.sync import start_auto_sync
-
-            start_auto_sync(db)
-            logger.info(
-                f"Sync: Google Drive/{settings.sync_folder} "
-                f"(interval={settings.sync_interval}s)"
-            )
 
     # Shared context -- embedding_model starts as None (not ready yet).
     # Background task updates it in-place once the backend is validated.
@@ -362,13 +284,13 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
         "embedding_dims": embedding_dims,
     }
 
-    # 5. Initialize embedding backend in background (non-blocking).
+    # 2. Initialize embedding backend in background (non-blocking).
     # This avoids blocking the server start on model download (~570 MB)
     # or cloud API validation. Tools degrade to FTS5-only until ready.
-    embedding_task = asyncio.create_task(_init_embedding_backend(mode, ctx))
+    embedding_task = asyncio.create_task(_init_embedding_backend(ctx))
 
-    # 6. Initialize reranker backend in background (non-blocking).
-    reranker_task = asyncio.create_task(_init_reranker_backend(mode))
+    # 3. Initialize reranker backend in background (non-blocking).
+    reranker_task = asyncio.create_task(_init_reranker_backend())
 
     try:
         yield ctx
@@ -382,10 +304,6 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
                 except (asyncio.CancelledError, Exception):
                     pass
 
-        # Cleanup
-        from mnemo_mcp.sync import stop_auto_sync
-
-        stop_auto_sync()
         db.close()
         logger.info("Mnemo MCP Server stopped")
 
@@ -406,129 +324,38 @@ mcp._mcp_server.version = __version__
 # --- Helper ---
 
 
+_sub_db_cache: dict[str, MemoryDB] = {}
+
+
 def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
-    """Extract request-scoped db, model, and dimensions from context."""
-    lc = ctx.request_context.lifespan_context
-    db = lc["db"]
-    if isinstance(db, MemoryDBCfBackend):
-        from mnemo_mcp.credential_state import get_current_sub, model_for_task
+    """Resolve the caller's store, model, and dimensions (per-namespace, Q2).
 
-        sub = get_current_sub()
-        if sub is None:
-            raise RuntimeError(
-                "JWT sub is required for Cloudflare D1 requests; refusing an "
-                "unscoped backend."
-            )
-        request_model = model_for_task("embedding")
-        db = db.clone_for_sub(sub, embedding_model=request_model)
-    return db, lc["embedding_model"], lc["embedding_dims"]
-
-
-def _request_backend_cache(ctx: Context | None, name: str) -> dict:
-    """Return a per-lifespan cache for request-scoped cloud backends."""
-    if ctx is None:
-        return {}
-    lc = ctx.request_context.lifespan_context
-    return lc.setdefault(name, {})
-
-
-def _backend_cache_key(
-    task: str,
-    model: str,
-    api_base: str | None,
-    subject: str,
-) -> tuple[str, str, str | None, str]:
-    """Build a cache key from non-secret request configuration."""
-    return task, model, api_base, subject
-
-
-def _get_request_embedding(
-    ctx: Context | None,
-    global_model: str | None,
-    _global_dims: int,
-):
-    """Resolve the embedding backend for the current authenticated subject.
-
-    The startup singleton is valid for stdio and single-user HTTP. Public
-    multi-user HTTP must instead construct a cloud backend from the current
-    subject's persisted model, endpoint, and key; otherwise one subject would
-    silently use the host process configuration.
+    The lifespan opens the host-root store for the shared default namespace.
+    In multi mode every other namespace gets its own isolated
+    ``~/.mnemo/subs/<namespace>/memories.db`` (cached per process), so two
+    users on one process can never read each other's data.
     """
-    from mnemo_mcp.credential_state import (
-        api_base_for_task,
-        api_key_for_model,
-        get_current_sub,
-        model_for_task,
-    )
-
-    subject = get_current_sub()
-    if subject is None:
-        from mnemo_mcp.embedder import get_backend
-
-        return global_model, get_backend()
-
-    model = model_for_task("embedding")
-    if not model:
-        return None, None
-
-    api_key = api_key_for_model(model)
-    if not api_key:
-        logger.debug("Embedding skipped: no key for current subject's model")
-        return None, None
-
-    api_base = api_base_for_task("EMBEDDING_API_BASE")
-    cache = _request_backend_cache(ctx, "request_embedding_backends")
-    cache_key = _backend_cache_key("embedding", model, api_base, subject)
-    backend = cache.get(cache_key)
-    if backend is None or backend.api_key != api_key:
-        from mnemo_mcp.embedder import CloudEmbeddingBackend
-
-        backend = CloudEmbeddingBackend(
-            model=model,
-            api_base=api_base,
-            api_key=api_key,
-        )
-        cache[cache_key] = backend
-    return model, backend
-
-
-def _get_request_reranker(ctx: Context | None):
-    """Resolve the reranker without crossing authenticated-subject boundaries."""
-    from mnemo_mcp.credential_state import (
-        api_base_for_task,
-        api_key_for_model,
-        get_current_sub,
-        model_for_task,
-    )
-
-    subject = get_current_sub()
-    if subject is None:
-        from mnemo_mcp.reranker import get_reranker
-
-        return get_reranker()
-
-    model = model_for_task("rerank")
-    if not model:
-        return None
-    api_key = api_key_for_model(model)
-    if not api_key:
-        logger.debug("Reranking skipped: no key for current subject's model")
-        return None
-
-    api_base = api_base_for_task("RERANK_API_BASE")
-    cache = _request_backend_cache(ctx, "request_rerankers")
-    cache_key = _backend_cache_key("rerank", model, api_base, subject)
-    backend = cache.get(cache_key)
-    if backend is None or backend.api_key != api_key:
-        from mnemo_mcp.reranker import CloudReranker
-
-        backend = CloudReranker(
-            model=model,
-            api_base=api_base,
-            api_key=api_key,
-        )
-        cache[cache_key] = backend
-    return backend
+    lc = ctx.request_context.lifespan_context
+    db: MemoryDB = lc["db"]
+    namespace = current_sub()
+    if namespace != "default":
+        sub_db = _sub_db_cache.get(namespace)
+        if sub_db is None:
+            embedding_dims = lc["embedding_dims"]
+            if cell_configured("embed"):
+                embedding_model = model_cell("embed").model
+            else:
+                embedding_model = settings.resolve_local_embedding_model()
+            sub_db = MemoryDB(
+                db_path_for_namespace(namespace),
+                embedding_dims=embedding_dims,
+                recency_half_life_days=settings.recency_half_life_days,
+                embedding_model=embedding_model,
+                reindex_on_model_change=settings.reindex_on_model_change,
+            )
+            _sub_db_cache[namespace] = sub_db
+        db = sub_db
+    return db, lc["embedding_model"], lc["embedding_dims"]
 
 
 def _json(obj: object) -> str:
@@ -537,24 +364,6 @@ def _json(obj: object) -> str:
     # Removing indent=2 drastically reduces payload size for large lists
     # of memories, reducing serialization time and network/token overhead.
     return json.dumps(obj, separators=(",", ":"))
-
-
-async def _maybe_include_setup_hint(result: dict) -> dict:
-    """If in awaiting_setup, surface a hint pointing the user at HTTP setup.
-
-    Stdio mode reads creds from env vars; missing creds is non-fatal because
-    mnemo-mcp falls back to the local fastretrieval runtime. The hint nudges users
-    toward the optional HTTP setup form for cloud providers / GDrive sync.
-    """
-    from mnemo_mcp.credential_state import CredentialState, get_state
-
-    if get_state() == CredentialState.AWAITING_SETUP:
-        result["_setup_hint"] = (
-            "Cloud features (Jina/Gemini/OpenAI/Cohere) and GDrive sync are "
-            "optional. Set API keys via env vars (stdio mode) or run with "
-            "--http and visit /authorize to configure via browser form."
-        )
-    return result
 
 
 # W6.4: `memory` deprecation -- map each composite-tool action to its
@@ -648,7 +457,17 @@ async def _embed(
 
     role: EmbeddingRole = "query" if is_query else "document"
     try:
-        return await backend.embed_single(text, dims, role=role)
+        # Hard per-call deadline: the backend's internal retry budget
+        # (MAX_RETRIES x client timeout) can otherwise stall a tool call for
+        # minutes on a flaky network. Bounded here, degraded to FTS5 below.
+        async with asyncio.timeout(EMBED_CALL_DEADLINE_S):
+            return await backend.embed_single(text, dims, role=role)
+    except TimeoutError:
+        logger.warning(
+            f"Embedding exceeded {EMBED_CALL_DEADLINE_S}s ({model}); "
+            "degrading to FTS5 for this call"
+        )
+        return None
     except Exception as e:
         from mnemo_mcp.embedder import _is_retryable
 
@@ -666,7 +485,7 @@ async def _embed(
         # semantic search behind a FTS5 fallback.
         logger.error(
             f"Embedding permanently failing ({model}): {e}. "
-            "Check EMBEDDING_MODELS / EMBEDDING_DIMS / API key."
+            "Check the [models.embed] cell (base_url / model / HULL_EMBED_API_KEY)."
         )
         raise
 
@@ -678,9 +497,9 @@ async def _handle_add(
     tags: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, embedding_backend = _get_request_embedding(
-        ctx, embedding_model, embedding_dims
-    )
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
 
     if not content:
         return {
@@ -834,9 +653,9 @@ async def _handle_search(
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
-    embedding_model, embedding_backend = _get_request_embedding(
-        ctx, embedding_model, embedding_dims
-    )
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
     embedding = await _embed(
         query,
         embedding_model,
@@ -848,7 +667,9 @@ async def _handle_search(
     # Spec section 4.2: rerank operates on a wider candidate pool
     # (top-50 -> top-N) so we ask db.search for ``max(50, limit*5)`` rows
     # when a reranker is active and otherwise stay at the LLM-requested limit.
-    reranker = _get_request_reranker(ctx)
+    from mnemo_mcp.reranker import get_reranker
+
+    reranker = get_reranker()
     from mnemo_mcp.reranker import describe_reranker, rerank_with_identity
 
     reranker_backend, reranker_model = describe_reranker(reranker)
@@ -938,7 +759,7 @@ async def _handle_search(
             "or use action='list' to browse all memories."
         )
 
-    response = await _maybe_include_setup_hint(response)
+    return response
     return response
 
 
@@ -983,11 +804,10 @@ async def _handle_update(
     importance: float | None = None,
 ) -> dict[str, typing.Any]:
 
-    db, _, _ = _get_ctx(ctx)
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, embedding_backend = _get_request_embedding(
-        ctx, embedding_model, embedding_dims
-    )
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
 
     if not memory_id:
         return {
@@ -1116,14 +936,12 @@ async def _handle_import(
 
 async def _handle_stats(ctx: Context | None) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, _ = _get_request_embedding(ctx, embedding_model, embedding_dims)
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
-    from mnemo_mcp.sync import resolve_active_backend
-
-    s["sync_enabled"] = resolve_active_backend() != "disabled"
-    s["sync_folder"] = settings.sync_folder
     return s
 
 
@@ -1203,9 +1021,9 @@ async def _handle_capture(
     reaching into module-level globals.
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, embedding_backend = _get_request_embedding(
-        ctx, embedding_model, embedding_dims
-    )
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
 
     if not text:
         return {
@@ -1462,12 +1280,12 @@ async def _handle_consolidate(
 ) -> dict[str, typing.Any]:
     """Consolidate similar memories in a category using LLM summarization."""
     db, _, _ = _get_ctx(ctx)
-    from mnemo_mcp.graph import _has_llm_provider
+    from mnemo_mcp.graph import _cell_ready
 
-    if not _has_llm_provider():
+    if not _cell_ready("chat"):
         return {
-            "error": "Consolidation requires LLM (SDK mode with API keys)",
-            "suggestion": "Run the setup flow or provide API keys via environment variables (e.g. GEMINI_API_KEY).",
+            "error": "Consolidation requires the [models.chat] provider cell",
+            "suggestion": "Configure the cell (base_url/api_key/model) in ~/.mnemo/config.toml.",
         }
 
     if not category:
@@ -1484,16 +1302,14 @@ async def _handle_consolidate(
         }
 
     try:
-        from mnemo_mcp.graph import _llm_completion, _resolve_llm_model
-
-        model = _resolve_llm_model(settings)
+        from mnemo_mcp.graph import _cell_completion
 
         content_list = "\n---\n".join(
             f"[{m['id'][:8]}] {m['content']}" for m in memories[:20]
         )
 
-        summary = await _llm_completion(
-            model=model,
+        summary = await _cell_completion(
+            "chat",
             messages=[
                 {
                     "role": "user",
@@ -1967,19 +1783,18 @@ async def memory(
 
 @mcp.tool(
     description=(
-        "Server config, sync, setup, and bounded vector backfill. Actions: "
-        "status|sync|set|warmup|setup_sync|backfill_embeddings.\n"
+        "Server configuration. Actions: status | set | warmup | "
+        "backfill_embeddings.\n"
         "\n"
         "ACTION GUIDE — when to use each:\n"
-        "- status: Show current configuration, setup status, and database stats.\n"
-        "- sync: Trigger manual sync (requires sync_enabled=true + google_drive_client_id).\n"
-        "- set: Update a setting. Requires 'key' and 'value'.\n"
-        "  Valid keys: 'sync_enabled' (true/false), 'sync_interval' (int), 'log_level' (str).\n"
-        "  Example: action='set', key='sync_enabled', value='true'\n"
-        "- warmup: Pre-download embedding model (~570 MB) to avoid delays later.\n"
-        "- backfill_embeddings: Embed active rows missing a current Vectorize ledger "
-        "entry; optional batch_size is bounded to 100.\n"
-        "- setup_sync: Authenticate Google Drive via Device Code OAuth flow."
+        "- status: Show current configuration, provider cells, auth mode, and "
+        "database stats.\n"
+        "- set: Update a setting. Requires 'key' and 'value'. Valid key: "
+        "'log_level' (str).\n"
+        "- warmup: Pre-download local embedding model (~570 MB) / probe the "
+        "embed cell.\n"
+        "- backfill_embeddings: Embed active rows missing a vector; optional "
+        "batch_size is bounded to 100."
     ),
     annotations=ToolAnnotations(
         title="Config",
@@ -1996,63 +1811,28 @@ async def config(
     batch_size: int | None = None,
     ctx: Context | None = None,
 ) -> dict[str, typing.Any]:
-    """Server configuration, sync control, and setup.
+    """Server configuration and bounded vector backfill.
 
     Actions:
     - status: Show current config
-    - sync: Trigger manual Google Drive sync (requires sync_enabled + google_drive_client_id)
     - set: Update setting (key + value required)
-    - warmup: Pre-download embedding model (~570 MB) to avoid first-run delays
-    - backfill_embeddings: Embed active rows missing a current Vectorize ledger entry
-    - setup_sync: Authenticate Google Drive via Device Code OAuth flow
+    - warmup: Pre-download local embedding model / probe the embed cell
+    - backfill_embeddings: Embed active rows missing a vector
     """
     match action:
         case "status":
             return await _handle_config_status(ctx)
-        case "sync":
-            return await _handle_config_sync(ctx)
         case "set":
             return await _handle_config_set(key, value)
         case "warmup":
             return await _handle_config_warmup()
-        case "setup_sync":
-            return await _handle_config_setup_sync()
-        case "setup_status":
-            return await _handle_config_setup_status()
-        case "setup_start":
-            return await _handle_config_setup_start(key)
-        case "setup_skip":
-            return await _handle_config_setup_skip()
-        case "setup_reset":
-            return await _handle_config_setup_reset()
-        case "setup_complete":
-            return await _handle_config_setup_complete(ctx)
         case "backfill_embeddings":
             return await _handle_config_backfill(ctx, batch_size)
-        case "setup_relay":
-            return await _handle_config_setup_relay()
-        case "sync_now":
-            return await _handle_config_sync_now(ctx, key)
-        case "export_passport":
-            return await _handle_config_export_passport(ctx)
-        case "import_passport":
-            return await _handle_config_import_passport(ctx, key)
         case _:
             valid_actions = [
-                "export_passport",
-                "import_passport",
                 "backfill_embeddings",
                 "set",
-                "setup_complete",
-                "setup_relay",
-                "setup_reset",
-                "setup_skip",
-                "setup_start",
-                "setup_status",
-                "setup_sync",
                 "status",
-                "sync",
-                "sync_now",
                 "warmup",
             ]
             closest = (
@@ -2063,7 +1843,7 @@ async def config(
             resp: dict[str, typing.Any] = {
                 "error": f"Unknown action '{action}'.",
                 "valid_actions": valid_actions,
-                "hint": "Common actions: 'status' to view config, 'set' to update settings, 'sync' to manual sync.",
+                "hint": "Common actions: 'status' to view config, 'set' to update settings.",
             }
             if closest:
                 resp["suggestion"] = f"Did you mean '{closest[0]}'?"
@@ -2097,8 +1877,10 @@ async def _handle_config_backfill(
             "suggestion": "Use a bounded batch_size such as 32.",
         }
 
-    db, global_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, backend = _get_request_embedding(ctx, global_model, embedding_dims)
+    db, embedding_model, embedding_dims = _get_ctx(ctx)
+    from mnemo_mcp.embedder import get_backend
+
+    backend = get_backend()
     if not embedding_model or backend is None:
         return {
             "status": "unavailable",
@@ -2186,18 +1968,13 @@ async def _handle_config_backfill(
 
 
 async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
-    from mnemo_mcp.sync import resolve_active_backend
-
-    sync_backend = resolve_active_backend()
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    embedding_model, _ = _get_request_embedding(ctx, embedding_model, embedding_dims)
+    from mnemo_mcp.embedder import get_backend
+
+    embedding_backend = get_backend()
     s = await asyncio.to_thread(db.stats)
     return {
         "database": {
-            # The store that answered, not the SQLite path config would use:
-            # under MEMORY_DB_BACKEND=cf-d1 the counts below come from D1 and
-            # settings.get_db_path() names a container file holding none of
-            # them. Same source as memory_stats, so the two cannot disagree.
             "path": s["db_path"],
             "total_memories": s["total_memories"],
             "categories": s["categories"],
@@ -2208,21 +1985,11 @@ async def _handle_config_status(ctx: Context | None) -> dict[str, typing.Any]:
             "dims": embedding_dims,
             "available": embedding_model is not None,
         },
-        "sync": {
-            "enabled": sync_backend != "disabled",
-            "provider": "google_drive" if sync_backend == "gdrive" else sync_backend,
-            "folder": settings.sync_folder,
-            "interval": settings.sync_interval,
+        "provider_cells": {
+            task: cell_configured(task) for task in ("embed", "rerank", "chat", "jev_score")
         },
+        "auth_mode": hull_settings().server.auth,
     }
-
-
-async def _handle_config_sync(ctx: Context | None) -> dict[str, typing.Any]:
-    db, _, _ = _get_ctx(ctx)
-    from mnemo_mcp.sync import sync_full
-
-    result = await sync_full(db)
-    return result
 
 
 async def _handle_config_set(
@@ -2235,8 +2002,6 @@ async def _handle_config_set(
         }
 
     valid_keys = {
-        "sync_enabled",
-        "sync_interval",
         "log_level",
     }
     if key not in valid_keys:
@@ -2256,11 +2021,7 @@ async def _handle_config_set(
         return resp
 
     # Apply setting
-    if key == "sync_enabled":
-        settings.sync_enabled = value.lower() in ("true", "1", "yes")
-    elif key == "sync_interval":
-        settings.sync_interval = int(value)
-    elif key == "log_level":
+    if key == "log_level":
         level = value.upper()
         valid_levels = {
             "TRACE",
@@ -2308,423 +2069,6 @@ async def _handle_config_warmup() -> dict[str, typing.Any]:
 
     result = await run_warmup()
     return result
-
-
-async def _handle_config_setup_sync() -> dict[str, typing.Any]:
-    from mnemo_mcp.setup_tool import run_setup_sync
-
-    result = await run_setup_sync()
-    return result
-
-
-async def _handle_config_setup_status() -> dict[str, typing.Any]:
-    from mcp_core.storage.per_plugin_store import PerPluginStore
-
-    from mnemo_mcp.credential_state import (
-        ALL_CONFIG_KEYS,
-        CLOUD_KEYS,
-        CredentialState,
-        credentials_for_current_request,
-        get_current_sub,
-        get_setup_url,
-        get_state,
-    )
-
-    # In HTTP multi-user remote mode the per-request JWT sub is set; resolve
-    # cred providers from the per-sub config so status reflects the *caller*,
-    # not the shared host process env. Stdio + single-user HTTP keep the
-    # legacy env + PerPluginStore derivation.
-    if get_current_sub() is not None:
-        _per_sub = credentials_for_current_request()
-        _env_keys: list[str] = []
-        _store_keys = [k for k in ALL_CONFIG_KEYS if _per_sub.get(k)]
-    else:
-        # Derive providers_configured from live PerPluginStore load + env
-        # so status is accurate even if module-level _state is stale.
-        _saved = PerPluginStore("mnemo").load() or {}
-        _env_keys = [k for k in ALL_CONFIG_KEYS if os.environ.get(k)]
-        _store_keys = [k for k in ALL_CONFIG_KEYS if _saved.get(k)]
-    _providers = list(dict.fromkeys(_env_keys + _store_keys))
-    _state = get_state()
-
-    # CONFIGURED is a cached lifecycle marker, not proof that credentials are
-    # still loadable.  Derive it only from the live env/store snapshot so a
-    # stale process state cannot mask a cleared or unreadable configuration.
-    if _providers:
-        _derived_state = "configured"
-    elif _state == CredentialState.LOCAL:
-        _derived_state = "local"
-    elif _state == CredentialState.SETUP_IN_PROGRESS:
-        _derived_state = "setup_in_progress"
-    else:
-        _derived_state = "awaiting_setup"
-    return {
-        "state": _derived_state,
-        "setup_url": get_setup_url(),
-        "cloud_keys_in_env": [k for k in _env_keys if k in CLOUD_KEYS],
-        "providers_configured": _providers,
-    }
-
-
-async def _handle_config_setup_start(key: str | None) -> dict[str, typing.Any]:
-    from mnemo_mcp.credential_state import CredentialState, get_state
-
-    if get_state() == CredentialState.CONFIGURED and not (
-        key and key.lower() == "force"
-    ):
-        return {
-            "status": "already_configured",
-            "message": "Already configured. Use key='force' to reconfigure.",
-        }
-    return {
-        "status": "stdio_unsupported",
-        "message": (
-            "Setup form is only available in HTTP mode. Run mnemo-mcp "
-            "with --http (or MCP_TRANSPORT=http) and visit /authorize to "
-            "configure API keys via browser. In stdio mode, set env vars "
-            "directly (JINA_AI_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, "
-            "COHERE_API_KEY, GOOGLE_DRIVE_CLIENT_ID)."
-        ),
-    }
-
-
-async def _handle_config_setup_skip() -> dict[str, typing.Any]:
-    from mcp_core import set_local_mode
-
-    from mnemo_mcp.credential_state import CredentialState, set_state
-
-    set_local_mode("mnemo-mcp")
-    set_state(CredentialState.LOCAL)
-    return {
-        "status": "ok",
-        "message": "Local mode set. Relay will not trigger on restart.",
-    }
-
-
-async def _handle_config_setup_reset() -> dict[str, typing.Any]:
-    from mnemo_mcp.credential_state import reset_state
-
-    reset_state()
-    return {
-        "status": "ok",
-        "message": "Credentials cleared. Next tool call will offer setup.",
-    }
-
-
-async def _handle_config_setup_complete(
-    ctx: Context | None,
-) -> dict[str, typing.Any]:
-    from mnemo_mcp.credential_state import (
-        CredentialState,
-        get_state,
-        resolve_credential_state,
-    )
-
-    resolve_credential_state()
-    state = get_state()
-    settings.setup_providers()
-
-    # Re-init embedding backend when configured (always, in case
-    # credentials changed or backend was cleared by reset)
-    if state == CredentialState.CONFIGURED and ctx is not None:
-        lc = ctx.request_context.lifespan_context
-        mode = settings.setup_providers()
-        await _init_embedding_backend(mode, lc)
-
-    return {
-        "status": "ok",
-        "state": state.value,
-        "message": "Credential state refreshed.",
-    }
-
-
-async def _handle_config_setup_relay() -> dict[str, typing.Any]:
-    """Deprecated alias for setup_start (removed in a future release)."""
-    result = await _handle_config_setup_start(key="force")
-    result["_deprecation"] = {
-        "message": (
-            "setup_relay is deprecated and will be removed in a future "
-            "release. Use setup_start instead."
-        ),
-        "use_instead": "setup_start",
-    }
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Phase 2: passport sync MCP actions
-# ---------------------------------------------------------------------------
-
-
-def _resolve_sync_passphrase() -> str | None:
-    """Resolve the passport bundle passphrase from env or persisted store.
-
-    Order:
-    1. ``SYNC_PASSPHRASE`` env var (in-process override, never persisted).
-    2. ``settings.sync_passphrase`` Pydantic value (env-driven).
-
-    Note: we deliberately do NOT load the Argon2id-derived hash from
-    ``config.enc`` here - that hash is for verification only, never
-    decryption. The user must supply the raw passphrase per session
-    (HTTP relay form keeps the raw value in process memory only) so a
-    leaked ``config.enc`` cannot decrypt past bundles.
-    """
-    raw = os.environ.get("SYNC_PASSPHRASE", "").strip()
-    if raw:
-        return raw
-    if settings.sync_passphrase:
-        return settings.sync_passphrase.strip() or None
-    return None
-
-
-def _resolve_default_backend() -> str:
-    """Return the deployment's active sync backend, including ``disabled``."""
-    from mnemo_mcp.sync import resolve_active_backend
-
-    return resolve_active_backend()
-
-
-async def _handle_config_sync_now(
-    ctx: Context | None, backend: str | None
-) -> dict[str, typing.Any]:
-    """``config(action="sync_now")`` - delta push (or full-pull-push on gap)."""
-    if _resolve_default_backend() == "disabled":
-        return {"status": "disabled", "message": "External sync is disabled"}
-    db, _, _ = _get_ctx(ctx)
-    passphrase = _resolve_sync_passphrase()
-    if not passphrase:
-        return {
-            "error": "SYNC_PASSPHRASE not set",
-            "hint": (
-                "Set SYNC_PASSPHRASE env var (stdio mode) or submit "
-                "the relay form passphrase field (HTTP mode) before "
-                "triggering passport sync."
-            ),
-            "suggestion": "Provide the SYNC_PASSPHRASE environment variable or use the HTTP setup form.",
-        }
-
-    target = (backend or _resolve_default_backend()).strip()
-    try:
-        from mnemo_mcp.sync.delta import sync_now
-
-        result = await sync_now(db, target, passphrase)
-        return {"backend": target, **result}
-    except KeyError:
-        logger.exception("sync_now failed: backend not found")
-        return {
-            "error": "backend configuration incomplete",
-            "suggestion": "Check if backend configuration is complete.",
-        }
-    except Exception:
-        logger.exception("sync_now failed")
-        return {
-            "error": "sync_now failed: internal error",
-            "suggestion": "Check network connectivity and provider credentials.",
-        }
-
-
-async def _handle_config_export_passport(ctx: Context | None) -> dict[str, typing.Any]:
-    """``config(action="export_passport")`` - write encrypted passport file."""
-    db, _, _ = _get_ctx(ctx)
-    passphrase = _resolve_sync_passphrase()
-    if not passphrase:
-        return {
-            "error": "SYNC_PASSPHRASE not set",
-            "hint": (
-                "Set SYNC_PASSPHRASE env var or submit the relay form "
-                "passphrase before exporting a passport."
-            ),
-            "suggestion": "Provide the SYNC_PASSPHRASE environment variable or use the HTTP setup form.",
-        }
-
-    from mnemo_mcp.sync.delta import build_full_bundle
-
-    bundle = await build_full_bundle(db, passphrase)
-    out_dir = settings.get_data_dir()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"passport-{int(__import__('time').time())}.mnemo"
-
-    await asyncio.to_thread(write_owner_only, path, bundle)
-    return {"status": "exported", "path": str(path), "size": len(bundle)}
-
-
-async def _handle_config_import_passport(
-    ctx: Context | None, source: str | None
-) -> dict[str, typing.Any]:
-    """``config(action="import_passport", from="s3"|"gdrive")``."""
-    if _resolve_default_backend() == "disabled":
-        return {"status": "disabled", "message": "External sync is disabled"}
-    db, _, _ = _get_ctx(ctx)
-    passphrase = _resolve_sync_passphrase()
-    if not passphrase:
-        return {
-            "error": "SYNC_PASSPHRASE not set",
-            "hint": (
-                "Set SYNC_PASSPHRASE env var or submit the relay form "
-                "passphrase before importing a passport."
-            ),
-            "suggestion": "Provide the SYNC_PASSPHRASE environment variable or use the HTTP setup form.",
-        }
-
-    target = (source or _resolve_default_backend()).strip()
-    try:
-        from mnemo_mcp.sync import get as get_backend
-        from mnemo_mcp.sync.delta import apply_bundle
-
-        backend = get_backend(target)
-        bundle = await backend.pull(sequence=None)
-    except KeyError:
-        logger.exception("import_passport failed: backend not found")
-        return {
-            "error": "backend configuration incomplete",
-            "suggestion": "Ensure the specified backend is properly configured.",
-        }
-    except Exception:
-        logger.exception("import_passport: backend pull failed")
-        return {
-            "error": "backend pull failed: internal error",
-            "suggestion": "Verify remote backend access and network connectivity.",
-        }
-
-    if not bundle:
-        return {
-            "status": "no_passport",
-            "backend": target,
-            "message": "No passport bundle found on backend.",
-        }
-
-    try:
-        result = await apply_bundle(db, bundle, passphrase)
-    except Exception:
-        logger.exception("import_passport: apply_bundle failed")
-        return {
-            "error": "Passphrase mismatch or tampered bundle",
-            "backend": target,
-            "suggestion": "Verify the passphrase matches the one used to export the passport bundle and that the bundle has not been modified.",
-        }
-
-    return {"status": "imported", "backend": target, **result}
-
-
-async def _handle_memory_compress(
-    ctx: Context | None, memory_id: str | None
-) -> dict[str, typing.Any]:
-    """``memory(action="compress", memory_id=...)`` - manual compression.
-
-    Reruns the LLM compression pipeline against an existing row whose
-    ``content`` is currently uncompressed. Updates ``content`` +
-    ``text_raw`` + ``compressed`` + ``compression_provider`` in place.
-    Useful for back-filling rows captured before COMPRESSION_ENABLED
-    was true.
-    """
-    db, _, _ = _get_ctx(ctx)
-    if not memory_id:
-        return {
-            "error": "memory_id required for compress",
-            "suggestion": "Pass memory_id from search/list results.",
-        }
-
-    row = await asyncio.to_thread(db.get, memory_id)
-    if not row:
-        return {
-            "error": f"Memory {memory_id} not found",
-            "suggestion": "Verify the memory_id using action='search' or action='list'.",
-        }
-    if row.get("compressed"):
-        return {
-            "status": "already_compressed",
-            "id": memory_id,
-            "compression_provider": row.get("compression_provider"),
-        }
-
-    from mnemo_mcp.compression import compress
-
-    result = await compress(row["content"])
-    if not result["compressed"]:
-        return {
-            "status": "skipped",
-            "id": memory_id,
-            "reason": "no LLM provider available or compression disabled",
-        }
-
-    cursor = db._conn.cursor()
-    cursor.execute(
-        "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
-        "compression_provider = ?, updated_at = ? WHERE id = ?",
-        (
-            result["text"],
-            result["text_raw"],
-            result["compression_provider"],
-            __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat(),
-            memory_id,
-        ),
-    )
-    db._conn.commit()
-    return {
-        "status": "compressed",
-        "id": memory_id,
-        "compression_provider": result["compression_provider"],
-        "tokens_in": result["tokens_in"],
-        "tokens_out": result["tokens_out"],
-    }
-
-
-@mcp.tool(
-    description=(
-        "Full documentation for memory and config tools. topic: 'memory' | 'config'\n"
-        "\n"
-        "ACTION GUIDE — when to use:\n"
-        "- Use when you need detailed instructions on how to use specific server tools or features."
-    ),
-    annotations=ToolAnnotations(
-        title="Help",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
-)
-async def help(topic: str = "memory") -> str:
-    """Load full documentation for a tool."""
-    docs_package = pkg_resources.files("mnemo_mcp.docs")
-    valid_topics = {"memory": "memory.md", "config": "config.md"}
-
-    # Backward compatibility: redirect "setup" to "config"
-    if topic == "setup":
-        topic = "config"
-
-    filename = valid_topics.get(topic)
-    if not filename:
-        closest = (
-            difflib.get_close_matches(str(topic), list(valid_topics.keys()), n=1)
-            if topic is not None
-            else []
-        )
-        resp: dict[str, typing.Any] = {
-            "error": f"Unknown topic '{topic}'.",
-            "valid_topics": list(valid_topics.keys()),
-        }
-        if closest:
-            resp["suggestion"] = f"Did you mean '{closest[0]}'?"
-        else:
-            resp["suggestion"] = (
-                f"Available topics are: {', '.join(valid_topics.keys())}."
-            )
-        return _json(resp)
-
-    doc_file = docs_package / filename
-    content = await asyncio.to_thread(doc_file.read_text, encoding="utf-8")
-    return content
-
-
-# --- Re-trigger relay form ---
-#
-# Registers ``config__open_relay`` so the LLM can surface the HTTP setup
-# form URL on demand. In stdio mode (no PUBLIC_URL), the tool returns
-# ``stdio_unsupported`` -- users must run with --http to use the form.
-from mcp_core.relay.tool_helpers import register_open_relay_tool  # noqa: E402
-
-register_open_relay_tool(mcp, "mnemo-mcp", os.environ.get("PUBLIC_URL"))
 
 
 # --- Resources ---
@@ -2785,160 +2129,110 @@ def recall_context(topic: str) -> str:
     )
 
 
-def _build_request_scope(enterprise_enabled: bool):
-    """Build the auth_scope middleware (module-level để test import được).
-
-    Always pins the verified JWT ``sub`` into the ``_current_sub`` contextvar
-    (credential scoping, unchanged behavior). When ``enterprise_enabled``, it
-    additionally builds the PrincipalContext from the claims mcp-core already
-    verified; malformed claims log a warning and yield None (deny-by-default
-    downstream) instead of raising — a claims-shape error is a config error,
-    not an auth failure, because mcp-core has already 401'd bad tokens.
-    """
-    from mnemo_mcp.enterprise.identity import (
-        principal_from_claims,
-        reset_current_principal,
-        set_current_principal,
-    )
-
-    role_mapping: dict[str, str] = json.loads(settings.enterprise_role_mapping or "{}")
-    # Wave C thay bằng mapping issuer->tenant thật; Wave A chỉ dùng tenant claim.
-    issuer_tenant_map = {
-        i.strip(): "" for i in settings.enterprise_issuers.split(",") if i.strip()
-    }
-
-    async def _per_request_sub_scope(
-        claims: dict, next_: Callable[[], Awaitable[None]]
-    ) -> None:
-        token = _current_sub.set(claims.get("sub"))
-        ptoken = None
-        if enterprise_enabled:
-            try:
-                principal = principal_from_claims(
-                    claims,
-                    role_claim=settings.enterprise_role_claim,
-                    role_mapping=role_mapping,
-                    tenant_claim=settings.enterprise_tenant_claim,
-                    issuer_tenant_map=issuer_tenant_map,
-                )
-            except ValueError as exc:
-                logger.warning(f"enterprise principal rejected: {exc}")
-                principal = None
-            ptoken = set_current_principal(principal)
-        try:
-            await next_()
-        finally:
-            if ptoken is not None:
-                reset_current_principal(ptoken)
-            _current_sub.reset(token)
-
-    return _per_request_sub_scope
-
-
 # --- Entrypoint ---
 
 
-async def run_http(port: int = 0) -> None:
-    """Run as HTTP server with local OAuth 2.1 AS.
+def build_http_app(settings=None):
+    """Build the authenticated HTTP MCP app (Starlette), no port bind.
 
-    Single-user mode (default): bind ``127.0.0.1`` and persist credentials
-    to one shared ``config.enc`` on the host.
-
-    Multi-user remote mode (``PUBLIC_URL`` set): bind ``0.0.0.0:8080`` (or
-    ``MCP_PORT``) and scope credential storage per-JWT-sub via
-    ``save_credentials``. The ``MCP_DCR_SERVER_SECRET`` env var is required
-    as proof of intentional multi-user deployment -- without it, refuse to
-    start so a misconfigured single-user instance never accidentally
-    accepts other users' OAuth flows into the same shared ``config.enc``.
+    Composition (de-host): the MCP SDK's ``streamable_http_app()`` carries
+    only the session-manager lifespan, so this outer Starlette app runs BOTH
+    lifespans — mnemo's own (store init, embedding/rerank warmup) and the
+    session manager's — via an AsyncExitStack. :class:`HullAuthMiddleware`
+    (pure ASGI) authenticates every request BEFORE the MCP handler and binds
+    the identity to a contextvar that tools read with
+    :func:`mnemo_mcp.runtime.current_sub`.
     """
-    from mcp_core.transport.local_server import run_http_server
+    from contextlib import AsyncExitStack, asynccontextmanager
 
-    from mnemo_mcp.credential_state import (
-        save_credentials,
-        wire_gdrive_callbacks,
+    from hull_core.auth.asgi import HullAuthMiddleware
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    from mnemo_mcp.runtime import build_authenticator
+
+    inner = mcp.streamable_http_app()
+    authenticator = build_authenticator(settings)
+
+    @asynccontextmanager
+    async def _combined_lifespan(app):  # noqa: ANN001, ANN202
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(lifespan(mcp))
+            await stack.enter_async_context(inner.router.lifespan_context(inner))
+            yield
+
+    app = HullAuthMiddleware(inner, authenticator)
+    return Starlette(lifespan=_combined_lifespan, routes=[Mount("/", app=app)])
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host in ("localhost", "::1", "[::1]"):
+        return True
+    try:
+        return int(socket.inet_aton(host).hex(), 16) & 0xFF000000 == 0x7F000000
+    except OSError:
+        return False
+
+
+class ServerConfigError(ValueError):
+    """Invalid server start configuration."""
+
+
+def run_server_blocking(
+    host: str | None = None,
+    port: int | None = None,
+) -> None:
+    """Blocking entry point: acquire the lifecycle lock, serve until stopped.
+
+    The ONLY way mnemo-mcp runs (spec §3): one HTTP process, MCP endpoint at
+    ``http://host:port/mcp``, auth per ``~/.mnemo/config.toml`` ([server]
+    auth = no-auth | token | multi). In open mode a non-loopback bind is
+    refused — an unauthenticated listener must never leave localhost.
+    """
+    import uvicorn
+
+    from hull_core.lifecycle.lock import LifecycleLock
+
+    from mnemo_mcp.runtime import hull_settings
+
+    hs = hull_settings()
+    bind_host = host or os.getenv("MNEMO_HOST") or hs.server.host
+    bind_port = int(
+        port
+        if port is not None
+        else (os.getenv("MNEMO_PORT") or hs.server.port)
     )
-    from mnemo_mcp.relay_schema import RELAY_SCHEMA
 
-    public_url = os.environ.get("PUBLIC_URL")
-    if public_url:
-        if not os.environ.get("MCP_DCR_SERVER_SECRET"):
-            raise SystemExit(
-                "mnemo-mcp refuses to start: PUBLIC_URL set but "
-                "MCP_DCR_SERVER_SECRET missing. Multi-user remote mode "
-                "requires the DCR secret as proof of intentional multi-user "
-                "deployment (prevents accidental single-user credential leak)."
-            )
-        host = "0.0.0.0"
-        port = int(os.environ.get("MCP_PORT", "8080"))
-    else:
-        host = "127.0.0.1"
+    if hs.server.auth == "open" and not _is_loopback_host(bind_host):
+        raise ServerConfigError(
+            f"auth = 'open' only permits loopback binds, refusing host "
+            f"{bind_host!r} (set [server] auth to 'token' or 'multi' in "
+            "~/.mnemo/config.toml for a shared listener)"
+        )
 
-    # HTTP multi-user remote mode (PUBLIC_URL set) wires an auth_scope
-    # middleware built by _build_request_scope: it pins the decoded JWT
-    # ``sub`` into a contextvar for the duration of the request so per-tool-call
-    # credential lookups can resolve against ``$MNEMO_DATA_DIR/subs/<sub>/config.json``
-    # instead of process environment, and — enterprise mode only — builds the
-    # verified PrincipalContext from the already-verified claims. Single-user
-    # HTTP (PUBLIC_URL unset, enterprise off) keeps the existing env-driven
-    # flow untouched.
-    _per_request_sub_scope = _build_request_scope(bool(settings.enterprise_enabled))
-
-    # MCP_AUTH_DISABLE=1 skips Bearer JWT verification on /mcp -- for
-    # deployments behind an external auth boundary (reverse proxy / API
-    # gateway). See mcp-core BearerMCPApp.auth_disabled (>=1.15.0-beta.3).
-    auth_disabled = os.environ.get("MCP_AUTH_DISABLE") == "1"
-
-    await run_http_server(
-        mcp,  # ty: ignore[invalid-argument-type]
-        server_name="mnemo-mcp",
-        relay_schema=RELAY_SCHEMA,
-        auth_disabled=auth_disabled,
-        port=port,
-        host=host,
-        on_credentials_saved=save_credentials,
-        # Use wire_gdrive_callbacks so terminal OAuth errors (invalid_grant,
-        # expired_token, save_token failures) surface to the browser's
-        # /setup-status poll instead of leaving the form stuck on
-        # "Waiting for authorization..." forever. Accepts legacy 1-arg core.
-        setup_complete_hook=wire_gdrive_callbacks,
-        auth_scope=_per_request_sub_scope if public_url else None,
-        stable_sub_enabled=True,
-        # Cloudflare may route successive Streamable HTTP requests to
-        # different container instances. JSON request/response mode keeps the
-        # MCP session response in the request that owns it instead of relying
-        # on a long-lived SSE stream through the edge.
-        json_response=bool(public_url),
-    )
+    lock = LifecycleLock("mnemo", bind_port)
+    with lock:
+        app = build_http_app(hs)
+        logger.info(
+            f"mnemo-mcp MCP endpoint: http://{bind_host}:{bind_port}/mcp "
+            f"(auth mode: {hs.server.auth})"
+        )
+        uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
 
 
 def main() -> None:
-    """Run the MCP server.
+    """Blocking server entry.
 
-    Transport selection (stdio default, HTTP opt-in):
-      - stdio (default): pure stdio, env var creds only, single-user
-      - http (opt-in via --http or MCP_TRANSPORT=http or TRANSPORT_MODE=http):
-        runHttpServer with delegated OAuth (always multi-user when
-        PUBLIC_URL set + MCP_DCR_SERVER_SECRET).
+    De-host: there is no stdio spawn mode and no ``--oauth`` flag anymore —
+    the server is always the HTTP MCP endpoint. Bind host/port come from
+    ``~/.mnemo/config.toml`` ([server] host/port), overridable via
+    MNEMO_HOST / MNEMO_PORT env for container deployments.
     """
-    logger.remove()
-    valid_levels = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
-    level = settings.log_level.upper() if settings.log_level else "WARNING"
-    if level not in valid_levels:
-        level = "WARNING"
-    logger.add(sys.stderr, level=level)
-    logger.info("Starting Mnemo MCP Server...")
+    host = os.environ.get("MNEMO_HOST") or None
+    port_env = os.environ.get("MNEMO_PORT")
+    port = int(port_env) if port_env else None
+    run_server_blocking(host=host, port=port)
 
-    is_http = (
-        "--http" in sys.argv
-        or os.environ.get("MCP_TRANSPORT") == "http"
-        or os.environ.get("TRANSPORT_MODE") == "http"
-    )
 
-    if is_http:
-        asyncio.run(run_http())
-        return
-
-    # Stdio mode (default): run FastMCP stdio server directly. No bridge layer.
-    # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
-    # See: ~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md
-    mcp.run(transport="stdio")
+if __name__ == "__main__":
+    main()

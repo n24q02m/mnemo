@@ -1,14 +1,13 @@
 """Bounded reflect providers (P4 paid path).
 
 The adapter wraps the same completion dispatch the rest of the server uses
-(``mcp_core.llm.acompletion`` via litellm) but adds the three contracts the
-pilot requires: a hard session spend cap with a pre-call estimate, a per-call
-cost receipt, and an injectable transport so tests exercise the full path
-without any network or spend.
+(the ``[models.chat]`` provider cell via hull-core) but adds the three
+contracts the pilot requires: a hard session spend cap with a pre-call
+estimate, a per-call cost receipt, and an injectable transport so tests
+exercise the full path without any network or spend.
 
-Routing follows the MCP secret-routing manifest: completion rides the
-Cloudflare AI Gateway OpenRouter suffix; the gateway key/base arrive from the
-manifest namespace via the environment at call time and are never logged.
+Token counts on the real path are tiktoken cl100k_base estimates (the
+OpenAI-spec chat endpoint returns no usage block through hull-core).
 """
 
 from __future__ import annotations
@@ -17,6 +16,13 @@ import asyncio
 from typing import Any
 
 from mnemo_core.ports import CapExceeded, ProviderAnswer, ReflectPort
+
+def _count_tokens(text: str) -> int:
+    """tiktoken cl100k_base estimate (same encoding the compression pipeline uses)."""
+    import tiktoken
+
+    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+
 
 # USD per 1M tokens (input, output). Verified 2026-09-12 against
 # docs.cohere.com; OpenRouter passes the same through for cohere/* models.
@@ -38,7 +44,7 @@ class BoundedReflectProvider(ReflectPort):
         cap_usd: Hard ceiling on cumulative estimated spend for this session.
         transport: Optional callable ``(model, messages, max_tokens) ->
             (text, prompt_tokens, completion_tokens)``. When given it replaces
-            the network entirely (tests); when omitted the real litellm
+            the network entirely (tests); when omitted the real chat cell
             dispatch runs.
     """
 
@@ -50,6 +56,10 @@ class BoundedReflectProvider(ReflectPort):
         cap_usd: float = 5.00,
         transport: Any = None,
     ) -> None:
+        if not model:
+            from mnemo_mcp.runtime import model_cell
+
+            model = model_cell("chat").model
         self.model = model
         self._api_key = api_key
         self._api_base = api_base
@@ -91,29 +101,33 @@ class BoundedReflectProvider(ReflectPort):
         }
 
     def _dispatch(self, prompt: str, max_tokens: int) -> tuple[str, int, int]:
-        """Real network dispatch through the shared litellm route."""
+        """Real network dispatch through the chat provider cell."""
 
         async def _run() -> tuple[str, int, int]:
-            from mcp_core.llm import acompletion
+            from hull_core.config.models import ModelCell
+            from hull_core.providers.openai_spec import OpenAICompatClient
 
-            kwargs: dict[str, Any] = {
-                "model": f"openrouter/{self.model}"
-                if not self.model.startswith("openrouter/")
-                else self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.0,
-                "max_tokens": max_tokens,
-                "api_key": self._api_key,
-            }
-            if self._api_base:
-                # Manifest model_contract: completion rides the CF AI Gateway
-                # OpenRouter suffix; the stored base is the bare gateway host.
-                kwargs["api_base"] = self._api_base.rstrip("/") + "/openrouter/v1"
-            response = await acompletion(**kwargs)
-            usage = getattr(response, "usage", None)
-            p_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
-            c_tok = int(getattr(usage, "completion_tokens", 0) or 0)
-            return (response.choices[0].message.content or "", p_tok, c_tok)
+            from mnemo_mcp.runtime import hull_settings, model_cell
+
+            if self.model and self._api_key:
+                cell = ModelCell(
+                    task="chat", model=self.model,
+                    api_key=self._api_key,
+                    base_url=self._api_base or model_cell("chat").base_url,
+                )
+            else:
+                cell = model_cell("chat")
+            client = OpenAICompatClient(cell, auth_mode=hull_settings().server.auth)
+            try:
+                text = await client.chat(
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    max_tokens=max_tokens,
+                )
+            finally:
+                await client.aclose()
+            p_tok, c_tok = _count_tokens(prompt), _count_tokens(text)
+            return (text, p_tok, c_tok)
 
         return asyncio.run(_run())
 

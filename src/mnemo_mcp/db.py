@@ -53,7 +53,7 @@ _STRUCT_CACHE: dict[int, struct.Struct] = {}
 # clean into a store that has it, which is the same silent data loss one layer
 # down. An explicit tuple gives the schema a second opinion to disagree with,
 # which is what makes a drift test possible at all. It also keeps
-# `_IMPORT_ROWS_PER_STATEMENT` in `db_cf` a module constant instead of coupling
+# the import batcher a module constant instead of coupling
 # D1 statement sizing to connection state, and avoids asking D1 -- which serves
 # a fixed SQLite subset -- for `PRAGMA table_info` at runtime.
 MEMORY_COLUMNS: tuple[str, ...] = (
@@ -849,70 +849,6 @@ class MemoryDB:
         return memory_id
 
     # ------------------------------------------------------------------
-    # Phase 2: sync_state helpers (mem_002_compression)
-    # ------------------------------------------------------------------
-
-    def get_sync_state(self, backend: str) -> dict | None:
-        """Return the sync_state row for ``backend`` or ``None`` if unset.
-
-        Backend names follow the registry naming (``s3`` / ``gdrive``).
-        Returns a dict with keys ``backend``, ``last_sync_at``,
-        ``last_commit_sha``, ``upload_cursor``.
-        """
-        try:
-            row = self._conn.execute(
-                "SELECT backend, last_sync_at, last_commit_sha, upload_cursor "
-                "FROM sync_state WHERE backend = ?",
-                (backend,),
-            ).fetchone()
-        except sqlite3.OperationalError:
-            # mem_002 migration has not run yet (test harness or stale DB).
-            return None
-        if row is None:
-            return None
-        return (
-            dict(row)
-            if isinstance(row, sqlite3.Row)
-            else {
-                "backend": row[0],
-                "last_sync_at": row[1],
-                "last_commit_sha": row[2],
-                "upload_cursor": row[3],
-            }
-        )
-
-    def upsert_sync_state(
-        self,
-        backend: str,
-        last_sync_at: float | None = None,
-        last_commit_sha: str | None = None,
-        upload_cursor: int | None = None,
-    ) -> None:
-        """Insert-or-update the sync_state row for ``backend``.
-
-        Any field left as ``None`` is preserved from the existing row when one
-        exists (so a partial update of just the upload cursor does not wipe
-        the timestamp). When no row exists the unspecified fields are stored
-        as NULL.
-
-        The merge happens inside the statement rather than in Python. The
-        connection is opened with ``check_same_thread=False`` and the sync
-        pipeline calls this via ``asyncio.to_thread`` (see
-        ``mnemo_mcp.sync.delta``), so a read-then-write pair would let two
-        partial updates to different columns interleave and lose one of them.
-        """
-        self._conn.execute(
-            "INSERT INTO sync_state "
-            "(backend, last_sync_at, last_commit_sha, upload_cursor) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(backend) DO UPDATE SET "
-            "last_sync_at = COALESCE(excluded.last_sync_at, last_sync_at), "
-            "last_commit_sha = COALESCE(excluded.last_commit_sha, last_commit_sha), "
-            "upload_cursor = COALESCE(excluded.upload_cursor, upload_cursor)",
-            (backend, last_sync_at, last_commit_sha, upload_cursor),
-        )
-        self._conn.commit()
-
     def search(
         self,
         query: str,
@@ -2020,63 +1956,6 @@ class MemoryDB:
     def close(self) -> None:
         """Close database connection."""
         self._conn.close()
-
-    def append_audit_event(
-        self, event_fields: dict, *, key: bytes, key_id: str = "k1"
-    ) -> dict:
-        """Append one tamper-evident audit event (SQLite: single transaction)."""
-        from mnemo_mcp.enterprise.audit import GENESIS, build_event
-
-        with self._conn:  # BEGIN..COMMIT implicit via context manager
-            row = self._conn.execute(
-                "SELECT seq, event_hash FROM enterprise_audit WHERE tenant_id = ? "
-                "ORDER BY seq DESC LIMIT 1",
-                (event_fields["tenant_id"],),
-            ).fetchone()
-            seq = (row["seq"] + 1) if row else 1
-            prev = row["event_hash"] if row else GENESIS
-            event = build_event(
-                seq=seq, prev_hash=prev, key=key, key_id=key_id, **event_fields
-            )
-            self._conn.execute(
-                "INSERT INTO enterprise_audit (id, tenant_id, seq, actor_sub,"
-                " actor_roles, operation, resource_type, resource_id, decision,"
-                " prev_hash, event_hash, key_id, details, occurred_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    event["id"],
-                    event["tenant_id"],
-                    event["seq"],
-                    event["actor_sub"],
-                    json.dumps(event["actor_roles"], ensure_ascii=False),
-                    event["operation"],
-                    event["resource_type"],
-                    event["resource_id"],
-                    event["decision"],
-                    event["prev_hash"],
-                    event["event_hash"],
-                    event["key_id"],
-                    json.dumps(event["details"], ensure_ascii=False),
-                    event["occurred_at"],
-                ),
-            )
-        return event
-
-    def verify_audit_chain(self, tenant_id: str, keys: dict[str, bytes]):
-        """Recompute the per-tenant HMAC chain over stored rows."""
-        from mnemo_mcp.enterprise.audit import verify_rows
-
-        rows = [
-            dict(r)
-            for r in self._conn.execute(
-                "SELECT * FROM enterprise_audit WHERE tenant_id = ? ORDER BY seq",
-                (tenant_id,),
-            ).fetchall()
-        ]
-        for row in rows:  # parse JSON columns back
-            row["actor_roles"] = json.loads(row["actor_roles"])
-            row["details"] = json.loads(row["details"])
-        return verify_rows(tenant_id, rows, keys)
 
     def _run_migrations(self) -> None:
         """Run Alembic migrations to head, with backup-before-migrate.

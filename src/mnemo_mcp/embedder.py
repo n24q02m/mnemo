@@ -1,16 +1,16 @@
-"""Dual-backend embedding: Cloud (litellm passthrough) + fastretrieval (local).
+"""Dual-backend embedding: Cloud (OpenAI-spec via hull-core) + fastretrieval (local).
 
 Supports two backends:
-- **cloud**: Cloud embedding via mcp_core.llm (litellm passthrough — Jina,
-  Gemini, OpenAI, Cohere, or any litellm 'provider/model'). Requires API
-  keys. Auto-detects provider from model name or API keys in environment.
+- **cloud**: Cloud embedding via the ``[models.embed]`` provider cell
+  (``base_url + api_key + model``, plain OpenAI-spec HTTP through hull-core).
+  Requires the host to configure the cell (config.toml or
+  ``HULL_EMBED_API_KEY``).
 - **local**: Local inference via fastretrieval. GGUF if GPU + llama-cpp-python,
   ONNX otherwise. No API keys needed, ~0.5GB model download on first use.
 
 Backend selection (always returns a valid backend):
-1. Explicit EMBEDDING_BACKEND env var
-2. 'cloud' if API keys are configured
-3. 'local' (default, always available)
+1. cloud when the ``[models.embed]`` cell has a key
+2. 'local' otherwise (default, always available)
 
 Embeddings are truncated to fixed dims in server._embed().
 """
@@ -38,12 +38,8 @@ RETRY_BASE_DELAY = 1.0  # seconds, doubles each retry
 # without a bound a slow or blackholed provider makes the user's tool call hang
 # for as long as the provider takes. CI run 30755522961 lost its windows-latest
 # job to exactly that: the probe stalled reading response headers for longer
-# than the 30s pytest-timeout. litellm's own default is 600s, which is not a
-# bound anyone waits through interactively -- a probe only has to answer
-# "reachable?", so it gets a short one.
-# This bounds one attempt, not the whole probe: some provider SDKs retry
-# underneath litellm and start the clock again for each try.
-PROBE_TIMEOUT = 10.0  # seconds
+# than the 30s pytest-timeout. hull-core's OpenAICompatClient therefore takes
+# an explicit ``timeout`` (default 60s) instead of a provider SDK default.
 
 
 # Bolt Performance Optimization: Use module-level constant tuple to avoid
@@ -69,7 +65,7 @@ _RETRYABLE_PATTERNS = (
 
 
 # Patterns marking a PERMANENT client-side error (invalid request, unsupported
-# capability, auth). litellm frequently re-wraps these as APIConnectionError --
+# capability, auth). Client layers frequently re-wrap these as connection errors --
 # whose class name contains "connection" and whose status_code is a hardcoded
 # 500 -- so classification MUST look at the message semantics, not the exception
 # class or status code. Retrying a permanent error re-sends the same doomed
@@ -100,7 +96,7 @@ def _is_retryable(exc: Exception) -> bool:
     """Return True only for TRANSIENT errors worth retrying.
 
     Classifies on error semantics, NOT the exception class name or a synthetic
-    status_code: litellm wraps a provider's permanent 4xx (e.g. a 422 "invalid
+    status_code: client layers wrap a provider's permanent 4xx (e.g. a 422 "invalid
     output_dimension") as ``APIConnectionError`` whose repr contains "connection"
     and whose ``status_code`` is a hardcoded 500 -- matching either would wrongly
     retry a request that can never succeed and skip the dimensions fallback.
@@ -175,178 +171,28 @@ class EmbeddingBackend(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Provider detection for embedding models
-# ---------------------------------------------------------------------------
-
-
-def _detect_embedding_provider(model: str) -> str:
-    """Detect provider from model name.
-
-    Returns 'jina', 'gemini', 'openai', or 'cohere'.
-    """
-    lower = model.lower()
-    if lower.startswith("jina_ai/") or lower.startswith("jina"):
-        return "jina"
-    if lower.startswith("gemini/") or "gemini" in lower:
-        return "gemini"
-    if lower.startswith("embed-") or lower.startswith("cohere/"):
-        return "cohere"
-    if lower.startswith("text-embedding") or lower.startswith("openai/"):
-        return "openai"
-    # Fallback: check env vars in priority order
-    if os.getenv("JINA_AI_API_KEY"):
-        return "jina"
-    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-        return "gemini"
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    return "cohere"
-
-
-def _strip_provider(model: str) -> str:
-    """Strip provider prefix (e.g. 'gemini/model' -> 'model')."""
-    if "/" in model:
-        return model.split("/", 1)[1]
-    return model
-
-
-# ---------------------------------------------------------------------------
-# Embedding response parsing (litellm-native shapes)
-# ---------------------------------------------------------------------------
-
-
-def _parse_embeddings(response: Any) -> list[list[float]]:
-    """Extract sorted embedding vectors from a litellm embedding response.
-
-    litellm embedding items (``response.data``) may be pydantic ``Embedding``
-    objects or plain dicts depending on provider/version, and ``data`` may be
-    ``None`` — handle all shapes.
-    """
-
-    def _idx(item: Any) -> int:
-        return (
-            item.get("index", 0)
-            if isinstance(item, dict)
-            else getattr(item, "index", 0)
-        )
-
-    def _vec(item: Any) -> list[float]:
-        return item["embedding"] if isinstance(item, dict) else item.embedding
-
-    data = sorted(response.data or [], key=_idx)
-    return [_vec(item) for item in data]
-
-
-# ---------------------------------------------------------------------------
-# Cloud Embedding Backend (litellm passthrough via mcp_core.llm)
+# Cloud Embedding Backend ([models.embed] provider cell)
 # ---------------------------------------------------------------------------
 
 
 class CloudEmbeddingBackend:
-    """Cloud embedding via mcp_core.llm (litellm passthrough)."""
+    """Cloud embedding via the ``[models.embed]`` provider cell.
 
-    # Max texts per batch request (safe for all providers).
-    MAX_BATCH_SIZE = 96
+    Wraps exactly one :class:`~hull_core.providers.openai_spec.
+    OpenAICompatClient` built from the cell; the cell owns base_url, api_key,
+    and model -- there is no provider prefix and no per-request credential
+    resolution.
+    """
 
-    def __init__(
-        self,
-        model: str | None = None,
-        api_base: str | None = None,
-        api_key: str | None = None,
-    ):
-        if model is None:
-            from mnemo_mcp.credential_state import model_for_task
+    MAX_BATCH_SIZE = 96  # Common safe batch size across providers
 
-            model = model_for_task("embedding")
-        self.model = model or os.getenv("EMBEDDING_MODEL", "embed-multilingual-v3.0")
-        self.api_key = api_key
-        self.api_base = api_base
-        self._provider = _detect_embedding_provider(self.model)
+    def __init__(self, client: Any) -> None:
+        self._client = client
 
-    def _litellm_model(self) -> str:
-        """Map mnemo's model naming to a litellm ``provider/model`` string."""
-        if "/" in self.model:
-            return self.model
-        if self._provider == "jina":
-            return f"jina_ai/{self.model}"
-        if self._provider == "gemini":
-            return f"gemini/{self.model}"
-        if self._provider == "cohere":
-            return f"cohere/{self.model}"
-        # OpenAI-style bare names (text-embedding-3-*) pass through as-is.
-        return self.model
-
-    def _build_kwargs(
-        self, dimensions: int | None, role: EmbeddingRole
-    ) -> dict[str, Any]:
-        """Build provider-specific aembedding/embedding kwargs."""
-        kwargs: dict[str, Any] = {}
-        if dimensions:
-            kwargs["dimensions"] = dimensions
-        if self._provider == "cohere":
-            kwargs["input_type"] = (
-                "search_query" if role == "query" else "search_document"
-            )
-        return kwargs
-
-    async def _call_provider(
-        self,
-        texts: list[str],
-        dimensions: int | None = None,
-        *,
-        role: EmbeddingRole = "document",
-    ) -> list[list[float]]:
-        """Single cloud path via mcp_core.llm (litellm passthrough)."""
-        # Lazy import: litellm costs ~1-2s on first import.
-        from mcp_core.llm import aembedding
-
-        from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
-
-        litellm_model = self._litellm_model()
-
-        response = await aembedding(
-            model=litellm_model,
-            input=texts,
-            api_base=self.api_base or api_base_for_task("EMBEDDING_API_BASE"),
-            api_key=self.api_key or api_key_for_model(litellm_model),
-            **self._build_kwargs(dimensions, role),
-        )
-        return _parse_embeddings(response)
-
-    def _call_provider_sync(
-        self,
-        texts: list[str],
-        dimensions: int | None = None,
-        *,
-        role: EmbeddingRole = "document",
-    ) -> list[list[float]]:
-        """Sync cloud path for ``check_available`` (sync mirror).
-
-        Keep in sync with :meth:`_call_provider`: same model/api_base/api_key
-        resolution + ``_build_kwargs`` + ``_parse_embeddings``; only the sync
-        ``embedding`` vs async ``aembedding`` call and the ``timeout`` differ.
-        The timeout is deliberately one-sided: this path only ever serves the
-        availability probe, which must answer within ``PROBE_TIMEOUT``, while
-        :meth:`_call_provider` carries real batches whose legitimate duration
-        scales with the payload.
-        """
-        from mcp_core.llm import embedding
-
-        litellm_model = self._litellm_model()
-
-        response = embedding(
-            model=litellm_model,
-            input=texts,
-            api_base=self.api_base or os.getenv("EMBEDDING_API_BASE") or None,
-            api_key=self.api_key or None,
-            timeout=PROBE_TIMEOUT,
-            # Availability probes must own their deadline. Provider SDK retry
-            # loops otherwise multiply the timeout and make a stalled endpoint
-            # hold startup open far beyond PROBE_TIMEOUT.
-            num_retries=0,
-            **self._build_kwargs(dimensions, role),
-        )
-        return _parse_embeddings(response)
+    @property
+    def model(self) -> str:
+        """The cell-owned embedding model id (for logs and diagnostics)."""
+        return self._client.cell.model
 
     async def _embed_batch_inner(
         self,
@@ -359,14 +205,19 @@ class CloudEmbeddingBackend:
 
         Tries server-side MRL truncation first (``dimensions`` param).
         If the provider rejects ``dimensions``, retries without it and
-        truncates locally.
+        truncates locally. ``role`` is accepted for protocol compatibility;
+        the OpenAI-spec ``/embeddings`` endpoint has no asymmetric query mode,
+        so queries embed exactly like documents (only the local ONNX backend
+        has a true query embedding).
         """
         use_dimensions = dimensions
 
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                embeddings = await self._call_provider(texts, use_dimensions, role=role)
+                embeddings = await self._client.embeddings(
+                    texts, dimensions=use_dimensions
+                )
 
                 # Truncate locally if server returned more dims than requested
                 if dimensions and embeddings and len(embeddings[0]) > dimensions:
@@ -375,9 +226,9 @@ class CloudEmbeddingBackend:
             except Exception as e:
                 # A dimensions rejection is PERMANENT -- retrying with the same
                 # dims can never succeed. Recover (drop `dimensions`, truncate
-                # locally) BEFORE the retryability check: litellm may wrap the
-                # provider's 422 as an APIConnectionError, so retry
-                # classification must not gate this capability fallback.
+                # locally) BEFORE the retryability check: providers may wrap the
+                # 422 in a transport error, so retry classification must not
+                # gate this capability fallback.
                 if use_dimensions and _is_unsupported_param(e, "dimensions"):
                     logger.warning(
                         f"Provider {self.model} rejected dimensions="
@@ -466,14 +317,14 @@ class CloudEmbeddingBackend:
         results = await self.embed_texts([text], dimensions, role=role)
         return results[0]
 
-    def check_available(self) -> int:
-        """Check if the cloud model is available via test request.
+    async def check_available(self) -> int:
+        """Return the cell model's native embedding dims, 0 when unavailable.
 
         Distinguishes between invalid API keys (warning) and other
-        failures (debug) so users know when their keys are wrong.
+        failures (debug) so users know when their key is wrong.
         """
         try:
-            embeddings = self._call_provider_sync(["test"], role="document")
+            embeddings = await self._client.embeddings(["ping"])
             if embeddings:
                 dim = len(embeddings[0])
                 logger.info(f"Embedding model {self.model} available (dims={dim})")
@@ -486,15 +337,12 @@ class CloudEmbeddingBackend:
             ):
                 logger.warning(
                     f"API key invalid for {self.model}: {e}. "
-                    "Check your API_KEYS configuration."
+                    "Check the api_key of the [models.embed] cell in "
+                    "~/.mnemo/config.toml."
                 )
             else:
                 logger.debug(f"Embedding model {self.model} not available: {e}")
             return 0
-
-
-# Backward compatibility alias
-LiteLLMBackend = CloudEmbeddingBackend
 
 
 # ---------------------------------------------------------------------------
@@ -598,47 +446,37 @@ def get_backend() -> EmbeddingBackend | None:
 
 def init_backend(
     backend_type: str,
-    model: str | None = None,
+    model: str | Any = None,
     api_base: str | None = None,
     api_key: str | None = None,
 ) -> EmbeddingBackend:
     """Initialize and cache the embedding backend.
 
     Args:
-        backend_type: 'cloud', 'litellm' (backward compat), or 'local'
-        model: Model name (optional for cloud, optional for local)
-        api_base: Custom API base URL (for cloud backend)
-        api_key: Custom API key (for cloud backend)
+        backend_type: 'cloud' or 'local'
+        model: Model name for 'local'; for 'cloud' either the hull provider
+            client itself (preferred) or unused (the cell owns the model).
+        api_base: Unused (kept for call-site compatibility); the cell owns it.
+        api_key: Unused (kept for call-site compatibility); the cell owns it.
 
     Returns:
         Initialized backend instance.
     """
     global _backend
 
-    if backend_type in ("cloud", "litellm"):
-        _backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
+    if backend_type == "cloud":
+        client = model if model is not None else _cell_client()
+        _backend = CloudEmbeddingBackend(client)
     elif backend_type == "local":
-        _backend = Qwen3EmbedBackend(model)
+        _backend = Qwen3EmbedBackend(model if isinstance(model, str) else None)
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
 
     return _backend
 
 
-# ---------------------------------------------------------------------------
-# Legacy module-level functions for backward compatibility
-# ---------------------------------------------------------------------------
+def _cell_client() -> Any:
+    """Build an OpenAI-spec client from the ``[models.embed]`` cell."""
+    from mnemo_mcp.runtime import provider_client
 
-
-async def embed_single(
-    text: str,
-    model: str,
-    dimensions: int | None = None,
-    api_base: str | None = None,
-    api_key: str | None = None,
-    *,
-    role: EmbeddingRole = "document",
-) -> list[float]:
-    """Embed a single text (legacy interface)."""
-    backend = CloudEmbeddingBackend(model, api_base=api_base, api_key=api_key)
-    return await backend.embed_single(text, dimensions, role=role)
+    return provider_client("embed")

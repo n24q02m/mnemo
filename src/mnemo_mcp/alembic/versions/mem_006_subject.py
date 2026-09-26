@@ -23,7 +23,7 @@ from alembic import op
 
 # Revision identifiers used by Alembic.
 revision = "mem_006_subject"
-down_revision = "mem_005_enterprise_audit"
+down_revision = "mem_004_store_meta"
 
 
 def _column_exists(column: str) -> bool:

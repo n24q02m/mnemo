@@ -1,7 +1,7 @@
-"""Console-script entry: mounts the shared mcp_core CLI builder.
+"""Console-script entry for mnemo-mcp (de-host HTTP-only).
 
-Bare invocation and any leading-dash argv (e.g. --http) start the server
-exactly as before; subcommands run one-shot operator actions.
+Bare invocation starts the HTTP MCP server; subcommands run one-shot
+operator actions (auth token hashing, warmup, config bootstrap).
 """
 
 from __future__ import annotations
@@ -11,8 +11,6 @@ import asyncio
 import json
 import sys
 
-from mcp_core import build_cli
-
 
 def _serve(argv: list[str]) -> int | None:
     from mnemo_mcp.server import main as server_main
@@ -21,62 +19,35 @@ def _serve(argv: list[str]) -> int | None:
     return 0
 
 
-def _configure_auth(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "provider", choices=["google"], help="Credential provider to authorize"
-    )
-    p.add_argument(
-        "--client-id",
-        default=None,
-        help="BYO OAuth client id (must be paired with --client-secret)",
-    )
-    p.add_argument("--client-secret", default=None, help="BYO OAuth client secret")
+def _handle_token_hash(args: argparse.Namespace) -> int:
+    """Hash a shared-mode token the way hull-core's Authenticator checks it.
 
+    Prints only the hash; the raw token never lands in config.toml.
+    """
+    import getpass
+    import os
 
-def _handle_auth(args: argparse.Namespace) -> int:
-    from mnemo_mcp.setup_tool import run_setup_sync
+    from hull_core.auth.tokens import hash_token
 
-    # Single-user / local machine only: writes the token via the local store.
-    # mnemo_mcp.config.settings is a module-level singleton resolved once at
-    # import time -- a BYO client pair can never reach it via os.environ
-    # after that point. The pair is threaded through run_setup_sync's
-    # client_id/client_secret params instead.
-    if args.client_id or args.client_secret:
-        from mcp_core.auth import resolve_bundled_client
-
-        from mnemo_mcp.config import _GOOGLE_CLIENT_SPEC
-
-        try:
-            resolved = resolve_bundled_client(
-                _GOOGLE_CLIENT_SPEC,
-                cli_id=args.client_id,
-                cli_secret=args.client_secret,
-            )
-        except ValueError as exc:
-            print(f"mnemo-mcp: {exc}", file=sys.stderr)
-            return 2
-        result = asyncio.run(
-            run_setup_sync(
-                client_id=resolved.client_id, client_secret=resolved.client_secret
-            )
-        )
-    else:
-        result = asyncio.run(run_setup_sync())
-
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result.get("status") == "authenticated" else 1
-
-
-def _handle_logout(args: argparse.Namespace) -> int:
-    from mnemo_mcp.token_store import delete_token, load_token
-
-    if load_token("google_drive") is None:
-        print("Nothing to log out (no saved Google Drive token).")
-        return 0
-
-    delete_token("google_drive")
-    print("Logged out. Google Drive sync token cleared.")
+    token = os.environ.get("MNEMO_AUTH_TOKEN") or getpass.getpass("token: ")
+    if not token:
+        print("mnemo-mcp: empty token", file=sys.stderr)
+        return 2
+    print(hash_token(token))
     return 0
+
+
+def _handle_token_verify(args: argparse.Namespace) -> int:
+    """Verify a candidate token against a ``scrypt$...`` string."""
+    from hull_core.auth.tokens import verify_token
+
+    try:
+        ok = verify_token(args.token, args.encoded)
+    except Exception as exc:  # hull_core.auth.tokens.TokenHashError
+        print(f"mnemo-mcp: {exc}")
+        return 2
+    print("OK" if ok else "FAIL")
+    return 0 if ok else 1
 
 
 def _handle_warmup(args: argparse.Namespace) -> int:
@@ -87,48 +58,12 @@ def _handle_warmup(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "ok" else 1
 
 
-def _configure_audit(p: argparse.ArgumentParser) -> None:
-    """Attach the `audit` subcommand group onto the parser build_cli hands us."""
-    sub = p.add_subparsers(dest="audit_action", required=True)
-    v = sub.add_parser("verify", help="Verify the per-tenant audit hash chain")
-    v.add_argument("--tenant", required=True)
-    v.add_argument("--db-path", default=None)
+def _handle_config_init(args: argparse.Namespace) -> int:
+    from mnemo_mcp.runtime import write_default_config
 
-
-def _handle_audit_verify(args: argparse.Namespace) -> int:
-    import os
-    from pathlib import Path
-
-    key_hex_or_raw = os.environ.get("MNEMO_AUDIT_HASH_KEY", "")
-    if not key_hex_or_raw:
-        print("audit key not configured (MNEMO_AUDIT_HASH_KEY empty)")
-        return 2
-    from mnemo_mcp.config import settings
-    from mnemo_mcp.db import MemoryDB
-
-    db_path = Path(args.db_path).expanduser() if args.db_path else None
-    if db_path is None:
-        db_path = (
-            Path(settings.db_path).expanduser()
-            if settings.db_path
-            else (Path.home() / ".mnemo-mcp" / "memories.db")
-        )
-    db = MemoryDB(db_path, embedding_dims=0)
-    report = db.verify_audit_chain(args.tenant, {"k1": key_hex_or_raw.encode()})
-    if report.ok:
-        print(f"VERIFY {args.tenant} OK checked={report.checked}")
-        return 0
-    print(f"VERIFY {args.tenant} FAIL at seq={report.first_bad_seq}: {report.reason}")
-    return 1
-
-
-def _extras() -> dict:
-    return {
-        "auth": (_configure_auth, _handle_auth),
-        "audit": (_configure_audit, _handle_audit_verify),
-        "warmup": _handle_warmup,
-        "logout": _handle_logout,
-    }
+    path = write_default_config(force=args.force)
+    print(f"Wrote {path}")
+    return 0
 
 
 def _version() -> str:
@@ -137,7 +72,46 @@ def _version() -> str:
     return __version__
 
 
-def main() -> int:
-    return build_cli("mnemo-mcp", serve=_serve, extra=_extras(), version=_version())(
-        None
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mnemo-mcp",
+        description="mnemo-mcp: HTTP MCP memory server (de-host).",
     )
+    parser.add_argument(
+        "--version", action="version", version=f"mnemo-mcp {_version()}"
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser(
+        "token-hash",
+        help="Hash a shared-mode token for [server] token_hash (reads "
+        "MNEMO_AUTH_TOKEN or prompts)",
+    ).set_defaults(func=_handle_token_hash)
+
+    v = sub.add_parser("token-verify", help="Verify a token against a hash")
+    v.add_argument("token")
+    v.add_argument("encoded")
+    v.set_defaults(func=_handle_token_verify)
+
+    sub.add_parser(
+        "warmup", help="Pre-download the local embedding model / probe cells"
+    ).set_defaults(func=_handle_warmup)
+
+    c = sub.add_parser("config-init", help="Write the default config template")
+    c.add_argument("--force", action="store_true")
+    c.set_defaults(func=_handle_config_init)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    if getattr(args, "func", None) is not None:
+        return args.func(args)
+    # Bare invocation (and any leading-dash argv argparse rejects) -> serve.
+    return _serve(list(sys.argv[1:])) or 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
