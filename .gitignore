@@ -65,13 +65,16 @@ docs/superpowers/
 /*.patch
 /*.diff
 
-# Cloudflare deploy (real account/KV/D1/Vectorize IDs + tokens — NEVER commit)
-wrangler.deploy.jsonc
-.wrangler.byo.jsonc
-.wrangler/
-.wrangler-dryrun/
-scripts/.mnemo_cf_token
-scripts/.wet_cf_token
+# De-host (2026-09): local instance data + provider export artifacts never enter git
+.mnemo/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*_FULL-*.sql
 node_modules/
 package-lock.json
-scripts/.wet_cf_token
+
+# e2e scratch (mode-3 isolation runs) — never track
+e2e-mode3-home/
+.e2e_mode3.py

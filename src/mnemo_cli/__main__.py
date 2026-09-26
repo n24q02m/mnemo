@@ -104,21 +104,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 import os
 
                 from mnemo_mcp.providers import BoundedReflectProvider
+                from mnemo_mcp.runtime import cell_configured
 
-                api_base = os.getenv("CF_AIG_BASE")
-                api_key = os.getenv("CF_AIG_TOKEN") or os.getenv("OPENROUTER_API_KEY")
-                if not api_key:
+                api_key = os.getenv("HULL_CHAT_API_KEY")
+                if not cell_configured("chat") and not api_key:
                     envelope = results.err(
                         results.AUTH_DENIED,
-                        "--paid requires CF_AIG_TOKEN or OPENROUTER_API_KEY",
+                        "--paid requires the [models.chat] cell "
+                        "(api_key in ~/.mnemo/config.toml or HULL_CHAT_API_KEY)",
                     )
                 else:
                     provider = BoundedReflectProvider(
-                        model=os.getenv(
-                            "MNEMO_REFLECT_MODEL", "openrouter/minimax/minimax-m3:free"
-                        ),
-                        api_key=api_key,
-                        api_base=api_base,
+                        model=os.getenv("MNEMO_REFLECT_MODEL", ""),
+                        api_key=api_key or "",
                         cap_usd=float(os.getenv("MNEMO_REFLECT_CAP_USD", "5.00")),
                     )
             if provider is not None or not getattr(args, "paid", False):

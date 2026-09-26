@@ -1,99 +1,37 @@
-"""Completion dispatch through the in-process mcp_core.llm library.
+"""Completion dispatch through the ``[models.chat]`` provider cell.
 
-Authenticated subjects select their own model, endpoint and provider key from
-the relay store. Empty subject configuration skips optional enrichment; it never
-inherits process credentials or a default completion model. Local single-user
-callers retain explicit overrides and environment-based provider detection.
+One cell (``base_url + api_key + model``, plain OpenAI-spec HTTP via
+hull-core) serves every chat-shaped task: compression, entity extraction,
+consolidation summaries. The host configures the cell in
+``~/.mnemo/config.toml`` (or ``HULL_CHAT_API_KEY``); an unconfigured cell
+skips optional enrichment — it never falls back to another provider.
 
-The managed completion route is openrouter/minimax/minimax-m3:free. Library
-dispatch supports explicit gateway endpoints without a standalone proxy server.
 Provider errors return None to optional enrichment callers, not another model.
 """
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any
 
 from loguru import logger
 
-# Provider priority is encoded once and consumed by both detection and
-# default-model lookup so they cannot drift apart.
-_PROVIDER_ENV_VARS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
-    ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
-    ("openai", ("OPENAI_API_KEY",)),
-    ("openrouter", ("OPENROUTER_API_KEY",)),
-    ("anthropic", ("ANTHROPIC_API_KEY",)),
-    ("xai", ("XAI_API_KEY",)),
-)
-
-# Sane per-provider defaults if ``LLM_MODELS`` env var is not set or does not
-# specify the active provider. Names follow the user's prior choices in the
-# repo (see CLAUDE.md "Default AI models" section); keep these exact unless
-# explicitly directed — see ~/.claude memory feedback_dont_change_model_names.
-_DEFAULT_MODELS: Final[dict[str, str]] = {
-    "gemini": "gemini-3-flash-preview",
-    "openai": "gpt-5.4-mini-2026-03-17",
-    "openrouter": "minimax/minimax-m3:free",
-    "anthropic": "claude-haiku-4-5",
-    "xai": "grok-4-fast",
-}
+_client: Any = None
 
 
-def detect_provider() -> str | None:
-    """Resolve an explicit task chain before the local provider-key priority."""
-    from mnemo_mcp.credential_state import (
-        detect_llm_provider_key,
-        get_current_sub,
-        model_for_task,
-    )
+def _get_client() -> Any:
+    """Cached OpenAI-spec client for the chat cell."""
+    global _client
+    if _client is None:
+        from mnemo_mcp.runtime import provider_client
 
-    configured = model_for_task("llm")
-    if configured:
-        provider, separator, model = configured.replace("=", "/", 1).partition("/")
-        return provider if separator and model else None
-    if get_current_sub() is not None:
-        return None
-
-    env_var = detect_llm_provider_key()
-    if env_var is None:
-        return None
-    for provider, env_vars in _PROVIDER_ENV_VARS:
-        if env_var in env_vars:
-            return provider
-    if env_var == "GOOGLE_VERTEX_EXPRESS_API_KEY":
-        return "vertex_express"
-    return None
+        _client = provider_client("chat")
+    return _client
 
 
-def get_default_model(provider: str) -> str:
-    """Return the model name for ``provider``, honouring the ``LLM_MODELS`` env var.
-
-    ``LLM_MODELS`` accepts comma-separated ``provider=model`` or
-    ``provider/model`` pairs (matching the existing settings format), e.g.::
-
-        LLM_MODELS="gemini=gemini-3-flash,openai=gpt-5-mini"
-        LLM_MODELS="gemini/gemini-3-flash,openai/gpt-5-mini"
-
-    The first matching entry wins. If the env var is unset or contains no
-    entry for ``provider``, the per-provider sane default from
-    ``_DEFAULT_MODELS`` is returned.
-    """
-    from mnemo_mcp.credential_state import get_current_sub, model_chain_for_task
-
-    for pair in model_chain_for_task("llm"):
-        for sep in ("=", "/"):
-            if sep in pair:
-                key, _, model = pair.partition(sep)
-                if key.strip().lower() == provider:
-                    model = model.strip()
-                    if model:
-                        return model
-                break
-
-    if get_current_sub() is not None:
-        return ""
-
-    return _DEFAULT_MODELS.get(provider, "")
+def reset_client() -> None:
+    """Drop the cached chat client (config edited, tests)."""
+    global _client
+    _client = None
 
 
 async def call_llm(
@@ -104,65 +42,32 @@ async def call_llm(
     temperature: float = 0.0,
     max_tokens: int = 500,
 ) -> str | None:
-    """Dispatch ``prompt`` to the configured LLM provider.
+    """Dispatch ``prompt`` to the ``[models.chat]`` cell.
 
     Args:
-        prompt: User prompt text. Treated as a single-turn user message.
-        provider: Local single-user provider override (including ``"openrouter"``).
-            Authenticated subjects always use their own relay selection.
-        model: Local single-user model override. Otherwise the subject's model,
-            or the local provider default, is used.
-        temperature: Sampling temperature passed through to litellm.
-        max_tokens: Maximum response tokens to request from the provider.
+        prompt: The user prompt text.
+        provider: Ignored (kept for call-site compatibility; the cell owns
+            the provider endpoint).
+        model: Ignored (the cell owns the model id).
+        temperature: Sampling temperature forwarded verbatim.
+        max_tokens: Completion budget forwarded verbatim.
 
     Returns:
-        The text content of the LLM response, or ``None`` when no provider
-        could be resolved (caller is expected to gracefully skip the
-        LLM-dependent enrichment in that case).
+        The assistant message content, or ``None`` when the cell is not
+        configured or the provider call fails (optional-enrichment contract).
     """
-    from mnemo_mcp.credential_state import get_current_sub, model_for_task
+    from mnemo_mcp.runtime import cell_configured
 
-    subject = get_current_sub()
-    if subject is not None:
-        configured = model_for_task("llm")
-        if not configured:
-            return None
-        litellm_model = configured.replace("=", "/", 1)
-        resolved_provider, separator, resolved_model = litellm_model.partition("/")
-        if not separator or not resolved_model:
-            return None
-    else:
-        resolved_provider = provider or detect_provider()
-        if resolved_provider is None:
-            logger.warning("call_llm: no LLM provider configured; skipping enrichment")
-            return None
-        resolved_model = model or get_default_model(resolved_provider)
-        if not resolved_model:
-            return None
-        litellm_model = f"{resolved_provider}/{resolved_model}"
+    if not cell_configured("chat"):
+        logger.debug("call_llm: [models.chat] cell not configured; skipping")
+        return None
 
     try:
-        # Lazy import: litellm costs ~1-2s on first import.
-        from mcp_core.llm import acompletion
-
-        from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
-
-        api_key = api_key_for_model(litellm_model)
-        if subject is not None and not api_key:
-            logger.debug("Completion skipped: no key for current subject's model")
-            return None
-
-        response = await acompletion(
-            model=litellm_model,
-            messages=[{"role": "user", "content": prompt}],
+        return await _get_client().chat(
+            [{"role": "user", "content": prompt}],
             temperature=temperature,
             max_tokens=max_tokens,
-            api_base=api_base_for_task("LLM_API_BASE"),
-            api_key=api_key,
         )
-        return response.choices[0].message.content or ""
     except Exception as e:  # pragma: no cover - per-provider runtime guard
-        logger.warning(
-            f"call_llm: provider={resolved_provider} model={resolved_model} failed: {e}"
-        )
+        logger.warning(f"call_llm: chat cell call failed: {e}")
         return None

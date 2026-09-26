@@ -1,40 +1,18 @@
-"""Dual-backend reranking: Cloud (litellm passthrough) + fastretrieval (local ONNX).
+"""Dual-backend reranking: Cloud ([models.rerank] cell) + fastretrieval (local ONNX).
 
-Cloud reranking goes through mcp_core.llm (litellm passthrough — Jina, Cohere,
-or any litellm rerank 'provider/model'). Reranker takes search results and
-re-scores them with a cross-encoder for better precision.
+Cloud reranking goes through the ``[models.rerank]`` provider cell
+(``base_url + api_key + model``, plain HTTP via hull-core). Reranker takes
+search results and re-scores them with a cross-encoder for better precision.
 Pipeline: retrieve top-N*3 -> rerank -> return top-N.
 """
 
 from __future__ import annotations
 
-import os
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from loguru import logger
-
-
-def _detect_rerank_provider(model: str) -> str:
-    """Detect reranker provider from model name.
-
-    Returns 'jina' or 'cohere'.
-    """
-    lower = model.lower()
-    if lower.startswith("jina_ai/") or lower.startswith("jina"):
-        return "jina"
-    # Fallback: check env vars in priority order
-    if not (lower.startswith("rerank") or lower.startswith("cohere/")):
-        if os.getenv("JINA_AI_API_KEY"):
-            return "jina"
-    return "cohere"
-
-
-def _strip_provider(model: str) -> str:
-    """Strip provider prefix (e.g. 'jina_ai/model' -> 'model')."""
-    if "/" in model:
-        return model.split("/", 1)[1]
-    return model
 
 
 class RerankerBackend(Protocol):
@@ -81,66 +59,33 @@ def describe_reranker(
 
 
 class CloudReranker:
-    """Cloud reranking via mcp_core.llm (litellm passthrough)."""
+    """Cloud reranking via the ``[models.rerank]`` provider cell.
 
-    def __init__(
-        self,
-        model: str | None = None,
-        api_base: str | None = None,
-        api_key: str | None = None,
-    ):
-        if model is None:
-            from mnemo_mcp.credential_state import model_for_task
+    Wraps exactly one :class:`~hull_core.providers.openai_spec.
+    OpenAICompatClient`; the cell owns base_url, api_key, and model. The hull
+    client is async, so this backend drives it from a private event loop in
+    the caller's thread (server dispatch runs rerank via ``asyncio.to_thread``).
+    """
 
-            model = model_for_task("rerank")
-        self.model = model or "rerank-v4.0-pro"
-        self.api_base = api_base
-        self.api_key = api_key
-        self._provider = _detect_rerank_provider(self.model)
+    def __init__(self, client: Any):
+        self._client = client
         self.backend_name = "cloud"
-        self.model_name = self.model
+        self.model_name = client.cell.model
 
-    def _litellm_model(self) -> str:
-        """Map mnemo's model naming to a litellm ``provider/model`` string."""
-        if "/" in self.model:
-            return self.model
-        if self._provider == "jina":
-            return f"jina_ai/{self.model}"
-        return f"cohere/{self.model}"
+    @property
+    def model(self) -> str:
+        """The cell-owned rerank model id (for logs and diagnostics)."""
+        return self._client.cell.model
 
     def _call_rerank(
         self, query: str, documents: list[str], top_n: int
     ) -> list[tuple[int, float]]:
-        """Single cloud path via mcp_core.llm (sync mirror — runs in to_thread)."""
-        # Lazy import: litellm costs ~1-2s on first import.
-        from mcp_core.llm import rerank as core_rerank
-
-        from mnemo_mcp.credential_state import api_base_for_task, api_key_for_model
-
-        litellm_model = self._litellm_model()
-
-        response = core_rerank(
-            model=litellm_model,
-            query=query,
-            documents=documents,
-            top_n=top_n,
-            api_base=self.api_base or api_base_for_task("RERANK_API_BASE"),
-            api_key=self.api_key or api_key_for_model(litellm_model),
-        )
-
-        # litellm RerankResponse.results defaults to None and rerank items
-        # may be pydantic objects or plain dicts — guard + handle both shapes.
-        def _idx(r: Any) -> int:
-            return r["index"] if isinstance(r, dict) else getattr(r, "index", 0)
-
-        def _score(r: Any) -> float:
-            return (
-                r["relevance_score"]
-                if isinstance(r, dict)
-                else getattr(r, "relevance_score", 0.0)
-            )
-
-        return [(_idx(r), _score(r)) for r in (response.results or [])]
+        """Single cloud path via the hull client (runs inside a worker thread)."""
+        results = _run_async(self._client.rerank(query, documents, top_n=top_n))
+        return [
+            (int(r["index"]), float(r["relevance_score"]))
+            for r in results
+        ]
 
     def rerank(
         self, query: str, documents: list[str], top_n: int = 10
@@ -153,7 +98,7 @@ class CloudReranker:
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_n]
         except Exception as e:
-            logger.warning(f"Cloud reranking failed ({self._provider}): {e}")
+            logger.warning(f"Cloud reranking failed ({self.model}): {e}")
             return []
 
     def check_available(self) -> bool:
@@ -172,9 +117,13 @@ class CloudReranker:
             return False
 
 
-# Backward compatibility aliases
-CohereReranker = CloudReranker
-LiteLLMReranker = CloudReranker
+def _run_async(coro: Any) -> Any:
+    """Run one coroutine to completion on this thread's event loop.
+
+    The server calls rerank inside ``asyncio.to_thread`` workers, where no
+    loop is running; a fresh loop per call is fine for a single request.
+    """
+    return asyncio.run(coro)
 
 
 class Qwen3Reranker:
@@ -253,31 +202,40 @@ def clear_reranker() -> None:
 
 def init_reranker(
     backend_type: str,
-    model: str | None = None,
+    model: str | Any = None,
     api_base: str | None = None,
     api_key: str | None = None,
 ) -> RerankerBackend:
     """Initialize and cache the reranker backend.
 
     Args:
-        backend_type: 'cloud', 'litellm' (backward compat), or 'local'
-        model: Model name (optional for cloud, optional for local)
-        api_base: Custom API base URL (for cloud backend)
-        api_key: Custom API key (for cloud backend)
+        backend_type: 'cloud' or 'local'
+        model: Model name for 'local'; for 'cloud' either the hull provider
+            client itself (preferred) or unused (the cell owns the model).
+        api_base: Unused (kept for call-site compatibility); the cell owns it.
+        api_key: Unused (kept for call-site compatibility); the cell owns it.
 
     Returns:
         Initialized backend instance.
     """
     global _backend
 
-    if backend_type in ("cloud", "litellm"):
-        _backend = CloudReranker(model, api_base=api_base, api_key=api_key)
+    if backend_type == "cloud":
+        client = model if model is not None else _cell_client()
+        _backend = CloudReranker(client)
     elif backend_type == "local":
-        _backend = Qwen3Reranker(model)
+        _backend = Qwen3Reranker(model if isinstance(model, str) else None)
     else:
         raise ValueError(f"Unknown reranker backend: {backend_type}")
 
     return _backend
+
+
+def _cell_client() -> Any:
+    """Build an OpenAI-spec client from the ``[models.rerank]`` cell."""
+    from mnemo_mcp.runtime import provider_client
+
+    return provider_client("rerank")
 
 
 class FallbackChainReranker:
@@ -360,23 +318,24 @@ def build_default_rerank_chain(
     *,
     prefer_local: bool = True,
 ) -> FallbackChainReranker:
-    """Build the canonical Phase 1 rerank chain.
+    """Build the canonical rerank chain.
 
-    Order: qwen3 local cross-encoder -> Jina (``JINA_AI_API_KEY``) ->
-    Cohere (``COHERE_API_KEY`` / ``CO_API_KEY``). Models keep the env-detected
-    default so :memory:`feedback_dont_change_model_names` stays satisfied.
+    Order: the ``[models.rerank]`` cell (when the host configured a key) ->
+    qwen3 local cross-encoder. Every cloud env-key discovery is gone with the
+    de-host: the host decides the single cloud cell; the local ONNX model is
+    the always-available fallback.
 
     Args:
-        prefer_local: When ``False``, cloud backends come first.
+        prefer_local: When ``True`` (default), the local backend runs first
+            and the cell only serves as fallback.
     """
     chain: list[RerankerBackend] = []
-    local = Qwen3Reranker()
+    from mnemo_mcp.runtime import cell_configured
 
     cloud: list[RerankerBackend] = []
-    if os.getenv("JINA_AI_API_KEY"):
-        cloud.append(CloudReranker(model="jina_ai/jina-reranker-v3"))
-    if os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY"):
-        cloud.append(CloudReranker(model="rerank-v4.0-pro"))
+    if cell_configured("rerank"):
+        cloud.append(CloudReranker(_cell_client()))
+    local = Qwen3Reranker()
 
     if prefer_local:
         chain.append(local)
