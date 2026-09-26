@@ -2,7 +2,11 @@
 
 import pytest
 
-from mnemo_mcp.runtime import db_path_for_namespace, mnemo_config_dir, validate_namespace
+from mnemo_mcp.runtime import (
+    db_path_for_namespace,
+    mnemo_config_dir,
+    validate_namespace,
+)
 
 
 @pytest.mark.parametrize(

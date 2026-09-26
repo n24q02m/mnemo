@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import runpy
-import sys
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 
 def test_main_module_calls_server_main():

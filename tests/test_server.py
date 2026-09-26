@@ -1,7 +1,6 @@
 """Tests for mnemo_mcp.server — MCP tools, prompts, resources."""
 
 import json
-import os
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,7 +24,6 @@ from mnemo_mcp.server import (
     export_memories,
     import_memories,
     list_memories,
-    main,
     memory,
     memory_stats,
     recall_context,
@@ -759,6 +757,7 @@ class TestConfigSet:
 # De-host note: the old test_main_invalid_log_level pinned main()'s stdio-mode
 # log-level fallback; main() now only parses MNEMO_HOST/PORT and delegates to
 # run_server_blocking (covered in tests/test_main.py), so that test is gone.
+
 
 class TestPrompts:
     def test_save_summary(self):

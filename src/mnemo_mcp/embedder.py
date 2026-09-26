@@ -18,7 +18,6 @@ Embeddings are truncated to fixed dims in server._embed().
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, Literal, Protocol
 
 from loguru import logger

@@ -30,9 +30,7 @@ class TestCloudRerankerErrorFallback:
         assert results == []
         mock_logger.warning.assert_called_once()
         args, _ = mock_logger.warning.call_args
-        assert (
-            "Cloud reranking failed (jina-reranker-v3): Mock cell failure" in args[0]
-        )
+        assert "Cloud reranking failed (jina-reranker-v3): Mock cell failure" in args[0]
 
     def test_rerank_cohere_style_model_exception_logs_and_returns_empty(self):
         """Same failure contract for a cell-owned rerank-v4 model id."""

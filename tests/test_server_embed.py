@@ -66,9 +66,7 @@ async def test_embed_transient_error_degrades_to_none():
     correct graceful degradation.
     """
     mock_backend = AsyncMock()
-    mock_backend.embed_single.side_effect = _ClientRateLimitError(
-        "rate limit exceeded"
-    )
+    mock_backend.embed_single.side_effect = _ClientRateLimitError("rate limit exceeded")
 
     with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
         result = await _embed("text", "model", 768)

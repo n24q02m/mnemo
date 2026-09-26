@@ -149,15 +149,13 @@ async def compress(
         )
     except Exception as e:  # pragma: no cover - SDK guard
         logger.warning(
-            f"compression: model={resolved_model} "
-            f"failed with {e}; storing raw text"
+            f"compression: model={resolved_model} failed with {e}; storing raw text"
         )
         return skip_payload
 
     if not compressed_text or not compressed_text.strip():
         logger.warning(
-            f"compression: model={resolved_model} returned empty text; "
-            "storing raw text"
+            f"compression: model={resolved_model} returned empty text; storing raw text"
         )
         return skip_payload
 

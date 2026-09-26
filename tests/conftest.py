@@ -5,7 +5,6 @@
 # cached in sys.modules, later imports skip its ``__init__`` (which would
 # otherwise try to resolve its own version via the leaked mock).
 import ipaddress
-import os
 import socket
 from collections.abc import Generator
 from pathlib import Path
@@ -140,6 +139,7 @@ def _block_outbound_network(request, monkeypatch):
 # Environment / state isolation
 # ---------------------------------------------------------------------------
 
+
 def _settings_env_keys() -> list[str]:
     """Every env var pydantic-settings would read into ``Settings``."""
     from mnemo_mcp.config import Settings
@@ -216,6 +216,7 @@ def _reset_module_singletons():
 # ---------------------------------------------------------------------------
 # Database fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def tmp_db(tmp_path: Path) -> Generator[MemoryDB]:

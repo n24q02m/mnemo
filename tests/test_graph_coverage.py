@@ -16,7 +16,6 @@ from mnemo_mcp.graph import (
     upsert_entities,
 )
 
-
 # ---------------------------------------------------------------------------
 # extract_entities -- entity validation
 # ---------------------------------------------------------------------------
@@ -28,18 +27,18 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-            "mnemo_mcp.graph._cell_completion",
-            new_callable=AsyncMock,
-            return_value=(
-                '{"entities": ['
-                '  {"name": "Python", "type": "tool"},'
-                '  {"name": "Bad", "type": "invalid_type"},'
-                '  {"name": "Alice", "type": "person"}'
-                '], "relations": ['
-                '  {"source": "Alice", "target": "Python", "type": "uses"},'
-                '  {"source": "Alice", "target": "Bad", "type": "bad_relation"}'
-                "]}"
-            ),
+                "mnemo_mcp.graph._cell_completion",
+                new_callable=AsyncMock,
+                return_value=(
+                    '{"entities": ['
+                    '  {"name": "Python", "type": "tool"},'
+                    '  {"name": "Bad", "type": "invalid_type"},'
+                    '  {"name": "Alice", "type": "person"}'
+                    '], "relations": ['
+                    '  {"source": "Alice", "target": "Python", "type": "uses"},'
+                    '  {"source": "Alice", "target": "Bad", "type": "bad_relation"}'
+                    "]}"
+                ),
             ),
         ):
             result = await extract_entities("test content")
@@ -61,12 +60,12 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-            "mnemo_mcp.graph._cell_completion",
-            new_callable=AsyncMock,
-            return_value=(
-                f'{{"entities": [{{"name": "{long_name}", "type": "concept"}}, '
-                f'{{"name": "Short", "type": "concept"}}], "relations": []}}'
-            ),
+                "mnemo_mcp.graph._cell_completion",
+                new_callable=AsyncMock,
+                return_value=(
+                    f'{{"entities": [{{"name": "{long_name}", "type": "concept"}}, '
+                    f'{{"name": "Short", "type": "concept"}}], "relations": []}}'
+                ),
             ),
         ):
             result = await extract_entities("test content")
@@ -81,12 +80,12 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-            "mnemo_mcp.graph._cell_completion",
-            new_callable=AsyncMock,
-            return_value=(
-                '{"entities": ["not_a_dict", {"name": "Valid", "type": "concept"}],'
-                ' "relations": []}'
-            ),
+                "mnemo_mcp.graph._cell_completion",
+                new_callable=AsyncMock,
+                return_value=(
+                    '{"entities": ["not_a_dict", {"name": "Valid", "type": "concept"}],'
+                    ' "relations": []}'
+                ),
             ),
         ):
             result = await extract_entities("test content")
@@ -100,12 +99,12 @@ class TestExtractEntitiesValidation:
         with (
             patch("mnemo_mcp.graph._cell_ready", return_value=True),
             patch(
-            "mnemo_mcp.graph._cell_completion",
-            new_callable=AsyncMock,
-            return_value=(
-                '{"entities": [{"name": 123, "type": "concept"}, '
-                '{"name": "Valid", "type": "concept"}], "relations": []}'
-            ),
+                "mnemo_mcp.graph._cell_completion",
+                new_callable=AsyncMock,
+                return_value=(
+                    '{"entities": [{"name": 123, "type": "concept"}, '
+                    '{"name": "Valid", "type": "concept"}], "relations": []}'
+                ),
             ),
         ):
             result = await extract_entities("test content")

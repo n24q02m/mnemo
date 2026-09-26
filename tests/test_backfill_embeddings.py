@@ -35,9 +35,7 @@ async def test_server_backfill_passes_document_role_and_aligns_vectors():
         result = await _handle_config_backfill(None, batch_size=2)
 
     assert result["embedded"] == 2
-    backend.embed_texts.assert_awaited_once_with(
-        ["alpha", "beta"], 1, role="document"
-    )
+    backend.embed_texts.assert_awaited_once_with(["alpha", "beta"], 1, role="document")
     assert db.write_vector.call_args_list == [
         call("a", [0.1]),
         call("b", [0.2]),

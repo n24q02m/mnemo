@@ -23,8 +23,8 @@ from mnemo_mcp import llm
 def _cell_client(content="ok", exc=None):
     """Stub hull OpenAI-spec client for the chat cell."""
     client = MagicMock()
-    client.chat = AsyncMock(return_value=content) if exc is None else AsyncMock(
-        side_effect=exc
+    client.chat = (
+        AsyncMock(return_value=content) if exc is None else AsyncMock(side_effect=exc)
     )
     return client
 

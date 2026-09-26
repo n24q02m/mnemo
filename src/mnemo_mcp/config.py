@@ -10,13 +10,10 @@ lives in ``~/.mnemo/config.toml`` via :mod:`hull_core.config.settings`
 from __future__ import annotations
 
 import functools
-import os
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-from loguru import logger
 
 
 def _default_data_dir() -> Path:
@@ -37,18 +34,25 @@ def _detect_gpu() -> bool:
     try:  # Apple Silicon: MPS via torch when installed.
         import torch  # type: ignore[import-not-found]
 
-        return bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
+        return (
+            bool(getattr(torch.backends, "mps", None))
+            and torch.backends.mps.is_available()
+        )
     except Exception:
         return False
 
 
 def _has_gguf_support() -> bool:
-    try:
-        import llama_cpp  # type: ignore[import-not-found]
+    import sys
 
-        return True
-    except ImportError:
-        return False
+    if "llama_cpp" in sys.modules:
+        # Honor the import-system convention: a None entry means a previous
+        # import failed; any real module object means it is available.
+        return sys.modules["llama_cpp"] is not None
+
+    import importlib.util
+
+    return importlib.util.find_spec("llama_cpp") is not None
 
 
 def _resolve_local_model(onnx_name: str, gguf_name: str) -> str:

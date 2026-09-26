@@ -81,6 +81,7 @@ def _download_local_embedding(settings_obj) -> dict:
             }
         raise
 
+
 async def run_warmup() -> dict:
     """Pre-download/validate the embedding backend to avoid first-run delays.
 
@@ -89,7 +90,6 @@ async def run_warmup() -> dict:
     ``DISABLE_LOCAL_EMBED`` is set). Returns a structured dict:
     ``{"status": "ok"|"error", "mode": "cloud"|"local"|"unavailable", "steps": [...]}``.
     """
-    from mnemo_mcp.config import settings
     from mnemo_mcp.embedder import init_backend
     from mnemo_mcp.runtime import cell_configured, model_cell
 
@@ -109,7 +109,10 @@ async def run_warmup() -> dict:
                             "dims": native_dims,
                         }
                     ],
-                    "embedding": {"model": model_cell("embed").model, "dims": native_dims},
+                    "embedding": {
+                        "model": model_cell("embed").model,
+                        "dims": native_dims,
+                    },
                 }
         except Exception as exc:
             logger.warning(f"Cloud embed probe failed: {exc}")
