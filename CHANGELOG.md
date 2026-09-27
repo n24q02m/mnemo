@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.18.5 (2026-09-27)
+
+### Bug Fixes
+
+- **test**: Lifespan vec assertion becomes conditional — no-vec legs keep running db-path +
+  close-semantics coverage instead of skipping
+  ([`8357108`](https://github.com/n24q02m/mnemo/commit/83571084440a7faf2704d3bbfd8c6b3fffc3c064))
+
+
 ## v2.18.4 (2026-09-27)
 
 ### Bug Fixes
