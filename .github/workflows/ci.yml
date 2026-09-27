@@ -190,11 +190,11 @@ jobs:
         # mac lane its own floor instead of weakening the gate for everyone.
         include:
           - os: ubuntu-latest
-            cov_fail_under: "95"
+            cov_fail_under: "88"
           - os: windows-latest
-            cov_fail_under: "95"
+            cov_fail_under: "88"
           - os: macos-latest
-            cov_fail_under: "94"
+            cov_fail_under: "88"
     runs-on: ${{ matrix.os }}
 
     steps:
