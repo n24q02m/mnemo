@@ -176,7 +176,7 @@ async def _init_embedding_backend(ctx: dict) -> None:
     try:
         await asyncio.to_thread(_maybe_register_custom_embed, local_model)
         backend = await asyncio.to_thread(init_backend, "local", local_model)
-        native_dims = await asyncio.to_thread(backend.check_available)
+        native_dims = await backend.check_available()
         if native_dims > 0:
             if embedding_dims == 0:
                 embedding_dims = _default_embedding_dims()

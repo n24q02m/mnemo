@@ -133,23 +133,23 @@ class TestQwen3EmbedQueryRole:
 
 class TestQwen3CheckAvailableEdge:
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_empty_result(self, mock_get_model):
+    async def test_check_available_empty_result(self, mock_get_model):
         """check_available returns 0 when embed returns empty list."""
         mock_model = MagicMock()
         mock_model.embed.return_value = iter([])
         mock_get_model.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
-        assert backend.check_available() == 0
+        assert await backend.check_available() == 0
 
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_exception(self, mock_get_model):
+    async def test_check_available_exception(self, mock_get_model):
         """check_available catches exception and returns 0."""
         mock_get_model.side_effect = Exception("Model load failure")
 
         backend = Qwen3EmbedBackend()
         # Should catch exception, log warning and return 0
-        assert backend.check_available() == 0
+        assert await backend.check_available() == 0
 
 
 # ---------------------------------------------------------------------------

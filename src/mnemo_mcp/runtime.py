@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hull_core.auth.context import AuthContext, current_user
 from hull_core.auth.middleware import Authenticator
@@ -29,6 +30,9 @@ from hull_core.auth.users import User, load_users
 from hull_core.config.models import ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
 from hull_core.providers.openai_spec import OpenAICompatClient
+
+if TYPE_CHECKING:
+    from hull_core.limits.limiter import SlidingWindowLimiter
 
 # Default storage width for sqlite-vec when EMBEDDING_DIMS is unset: the
 # native width of the default [models.embed] cell (voyage-4-lite, 1024d,
@@ -85,7 +89,7 @@ def load_users_for(settings: HullSettings) -> dict[str, User] | None:
 def build_authenticator(
     settings: HullSettings | None = None,
     *,
-    limiter: object | None = None,
+    limiter: SlidingWindowLimiter | None = None,
 ) -> Authenticator:
     """Assemble the hull Authenticator from mnemo's instance config."""
     from hull_core.limits.limiter import SlidingWindowLimiter
