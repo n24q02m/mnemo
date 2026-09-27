@@ -100,15 +100,11 @@ class TestLifespan:
                 assert ctx["embedding_dims"] == 1024
                 assert ctx["embedding_model"] is None  # backend not ready yet
                 db = ctx["db"]
-                if not db.vec_enabled:
-                    # macOS CI: sqlite3 built without enable_load_extension —
-                    # vec store legitimately absent (same guard as the
-                    # test_db_edge_paths vector tests). Wiring already
-                    # asserted above.
-                    pytest.skip(
-                        "sqlite-vec did not load here; lifespan wiring asserted above"
-                    )
-                assert db.vec_enabled is True
+                if db.vec_enabled:
+                    assert db.vec_enabled is True
+                # On no-vec legs (macOS CI: sqlite3 built without
+                # enable_load_extension) the vec store is legitimately
+                # absent; db wiring + close semantics below still run.
                 assert db_path.exists()
         # Exiting the context closes the store.
         with pytest.raises(sqlite3.ProgrammingError):
