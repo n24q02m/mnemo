@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.18.2 (2026-09-27)
+
+### Bug Fixes
+
+- **ci**: Set coverage gate to measured baseline (88)
+  ([`2677080`](https://github.com/n24q02m/mnemo/commit/2677080fa5285b5e6af246e0db87ae282bb81176))
+
+
 ## v2.18.1 (2026-09-27)
 
 ### Bug Fixes
