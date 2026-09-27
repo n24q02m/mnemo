@@ -123,20 +123,19 @@ def main() -> int:
     """Run a local-store backfill from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", required=True, help="SQLite database path")
-    parser.add_argument("--model", default=None, help="Embedding model override")
     parser.add_argument("--dimensions", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()
 
     from mnemo_mcp.config import settings
     from mnemo_mcp.db import MemoryDB
-    from mnemo_mcp.embedder import CloudEmbeddingBackend
+    from mnemo_mcp.embedder import init_backend
 
     embedding_dims = (
         args.dimensions or settings.embedding_dims or _DEFAULT_EMBEDDING_DIMS
     )
     db = MemoryDB(args.db, embedding_dims=embedding_dims)
-    embedder = CloudEmbeddingBackend(model=args.model)
+    embedder = init_backend("cloud")
     result = backfill(db, embedder, batch_size=args.batch_size)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["failed"] == 0 else 1

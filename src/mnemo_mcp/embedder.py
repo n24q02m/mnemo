@@ -160,7 +160,7 @@ class EmbeddingBackend(Protocol):
         """Embed a single text. Returns embedding vector."""
         ...
 
-    def check_available(self) -> int:
+    async def check_available(self) -> int:
         """Check if backend is available.
 
         Returns:
@@ -414,7 +414,7 @@ class Qwen3EmbedBackend:
         results = await self.embed_texts([text], dimensions, role=role)
         return results[0]
 
-    def check_available(self) -> int:
+    async def check_available(self) -> int:
         """Kiểm tra runtime fastretrieval cục bộ có hoạt động hay không."""
         try:
             model = self._get_model()

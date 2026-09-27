@@ -261,11 +261,11 @@ class TestQwen3EmbedBackend:
         assert result == [0.1, 0.2, 0.3]
 
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_not_installed(self, mock_get_model):
+    async def test_check_available_not_installed(self, mock_get_model):
         """Returns 0 when fastretrieval is not available."""
         mock_get_model.side_effect = ImportError("No module named 'fastretrieval'")
         backend = Qwen3EmbedBackend()
-        assert backend.check_available() == 0
+        assert await backend.check_available() == 0
 
 
 class TestBackendFactory:
@@ -334,7 +334,7 @@ class TestQwen3GetModelWarning:
     """_get_model() logs download warning on first call."""
 
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_success(self, mock_get_model):
+    async def test_check_available_success(self, mock_get_model):
         """check_available returns dims when model works."""
         import numpy as np
 
@@ -343,12 +343,12 @@ class TestQwen3GetModelWarning:
         mock_get_model.return_value = mock_model
 
         backend = Qwen3EmbedBackend()
-        dims = backend.check_available()
+        dims = await backend.check_available()
         assert dims == 3
 
     @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
-    def test_check_available_returns_zero_on_error(self, mock_get_model):
+    async def test_check_available_returns_zero_on_error(self, mock_get_model):
         """check_available returns 0 when model raises."""
         mock_get_model.side_effect = Exception("ONNX runtime error")
         backend = Qwen3EmbedBackend()
-        assert backend.check_available() == 0
+        assert await backend.check_available() == 0

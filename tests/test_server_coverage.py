@@ -456,7 +456,7 @@ class TestInitEmbeddingBackend:
         """Local check_available == 0 logs the error and keeps FTS5 mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        backend = MagicMock()
+        backend = AsyncMock()
         backend.check_available.return_value = 0
 
         with (
@@ -478,7 +478,7 @@ class TestInitEmbeddingBackend:
         """A configured storage width is retained after native model probing."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        backend = MagicMock()
+        backend = AsyncMock()
         backend.check_available.return_value = 1024
 
         with (
@@ -640,7 +640,7 @@ class TestWarmupInitEmbeddingBackend:
         """No embed cell -> local ONNX init with the resolved model id."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        backend = MagicMock()
+        backend = AsyncMock()
         backend.check_available.return_value = 1024
 
         with (
@@ -662,7 +662,7 @@ class TestWarmupInitEmbeddingBackend:
         """check_available raising during local init leaves FTS5 mode."""
         from mnemo_mcp.server import _init_embedding_backend
 
-        backend = MagicMock()
+        backend = AsyncMock()
         backend.check_available.side_effect = Exception("import error")
 
         with (
