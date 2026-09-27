@@ -415,7 +415,14 @@ class Qwen3EmbedBackend:
         return results[0]
 
     async def check_available(self) -> int:
-        """Kiểm tra runtime fastretrieval cục bộ có hoạt động hay không."""
+        """Kiểm tra runtime fastretrieval cục bộ có hoạt động hay không.
+
+        The probe itself is a blocking ONNX load + embed, so it runs on a
+        worker thread to keep the event loop responsive during startup.
+        """
+        return await asyncio.to_thread(self._check_available_sync)
+
+    def _check_available_sync(self) -> int:
         try:
             model = self._get_model()
             result = list(model.embed(["test"]))
