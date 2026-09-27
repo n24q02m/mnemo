@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.18.8 (2026-09-27)
+
+### Bug Fixes
+
+- **embed**: Offload Qwen3 availability probe to a worker thread
+  ([`cca931c`](https://github.com/n24q02m/mnemo/commit/cca931c9f79922cb387f5375760a49e4631a0637))
+
+
 ## v2.18.7 (2026-09-27)
 
 ### Bug Fixes
