@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.18.6 (2026-09-27)
+
+### Bug Fixes
+
+- **test**: Lifespan vec check queries memories_vec directly — vec_enabled must imply the vec table
+  exists, not a tautological bool assert
+  ([`27474ef`](https://github.com/n24q02m/mnemo/commit/27474efd4b0f1dd57d63546b1e62a6d5e5c86ad4))
+
+
 ## v2.18.5 (2026-09-27)
 
 ### Bug Fixes
