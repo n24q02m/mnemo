@@ -101,7 +101,9 @@ class TestLifespan:
                 assert ctx["embedding_model"] is None  # backend not ready yet
                 db = ctx["db"]
                 if db.vec_enabled:
-                    assert db.vec_enabled is True
+                    # Real wiring check: vec_enabled must mean the vec table
+                    # actually exists (catches "flag set, table never created").
+                    db._conn.execute("SELECT count(*) FROM memories_vec").fetchone()
                 # On no-vec legs (macOS CI: sqlite3 built without
                 # enable_load_extension) the vec store is legitimately
                 # absent; db wiring + close semantics below still run.
