@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.18.7 (2026-09-27)
+
+### Bug Fixes
+
+- **types**: Unify check_available as async across the embedding protocol
+  ([`c3a1355`](https://github.com/n24q02m/mnemo/commit/c3a1355879dc017eb2a8ab8526da1d85f3062ef7))
+
+
 ## v2.18.6 (2026-09-27)
 
 ### Bug Fixes
