@@ -8,6 +8,20 @@ import pytest
 
 from mnemo_mcp.db import MemoryDB
 
+
+def _vec_db(path: Path, dims: int) -> MemoryDB:
+    """MemoryDB with vector storage required; skips where sqlite-vec cannot
+    load (macOS CI builds sqlite3 without enable_load_extension, so the vec
+    table never exists and vector-backed paths run on the other legs)."""
+    db = MemoryDB(path, embedding_dims=dims)
+    if not db.vec_enabled:
+        db.close()
+        pytest.skip(
+            "sqlite-vec did not load here; vector-backed path runs on other legs"
+        )
+    return db
+
+
 # ---------------------------------------------------------------------------
 # store_meta / embedding identity guard
 # ---------------------------------------------------------------------------
@@ -89,7 +103,7 @@ def test_write_vector_requires_vec_store(tmp_path: Path):
 
 
 def test_write_vector_unknown_memory_raises_key_error(tmp_path: Path):
-    db = MemoryDB(tmp_path / "t.db", embedding_dims=8)
+    db = _vec_db(tmp_path / "t.db", 8)
     try:
         with pytest.raises(KeyError, match="memory not found"):
             db.write_vector("does-not-exist", [0.1] * 8)
@@ -114,7 +128,7 @@ def test_add_with_context_type_clamps_importance(tmp_path: Path):
 
 
 def test_add_with_context_type_writes_embedding(tmp_path: Path):
-    db = MemoryDB(tmp_path / "t.db", embedding_dims=8)
+    db = _vec_db(tmp_path / "t.db", 8)
     try:
         mid = db.add_with_context_type(
             "vectorised fact", embedding=[0.1] * 8, context_type="fact"
