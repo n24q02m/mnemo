@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v2.18.4 (2026-09-27)
+
+### Bug Fixes
+
+- **test**: Skip vector-backed tests where sqlite-vec cannot load — macOS CI builds sqlite3 without
+  enable_load_extension, so memories_vec never exists (same guard as wet 6d3791b)
+  ([`09b920c`](https://github.com/n24q02m/mnemo/commit/09b920c6b968ddf538cd2ef1f567ab904a72ee46))
+
+### Testing
+
+- Raise mnemo_mcp coverage to 96.85% (was 89.63) — 86 behavioral tests: secure_file contract,
+  runtime assembly, provider dispatch, graph parsing fallbacks, db edge paths, server tool handlers
+  ([`20d2fac`](https://github.com/n24q02m/mnemo/commit/20d2facec9e83dfe108ec6ddb912a828852312a5))
+
+
 ## v2.18.3 (2026-09-27)
 
 ### Bug Fixes
