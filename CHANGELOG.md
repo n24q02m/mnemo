@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.18.1 (2026-09-27)
+
+### Bug Fixes
+
+- **ci**: Make ty type check non-blocking to match crg convention
+  ([`10b9016`](https://github.com/n24q02m/mnemo/commit/10b90168b0c6e2d5e348e0663ea09e8ca26a6db3))
+
+
 ## v2.18.0 (2026-09-26)
 
 ### Features
