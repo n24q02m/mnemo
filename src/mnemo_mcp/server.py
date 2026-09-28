@@ -2242,7 +2242,7 @@ def run_server_blocking(
 
     The ONLY way mnemo-mcp runs (spec §3): one HTTP process, MCP endpoint at
     ``http://host:port/mcp``, auth per ``~/.mnemo/config.toml`` ([server]
-    auth = no-auth | token | multi). In open mode a non-loopback bind is
+    auth = no-auth | token | multi). In no-auth mode a non-loopback bind is
     refused — an unauthenticated listener must never leave localhost.
     """
     import uvicorn
@@ -2256,9 +2256,9 @@ def run_server_blocking(
         port if port is not None else (os.getenv("MNEMO_PORT") or hs.server.port)
     )
 
-    if hs.server.auth == "open" and not _is_loopback_host(bind_host):
+    if hs.server.auth == "no-auth" and not _is_loopback_host(bind_host):
         raise ServerConfigError(
-            f"auth = 'open' only permits loopback binds, refusing host "
+            f"auth = 'no-auth' only permits loopback binds, refusing host "
             f"{bind_host!r} (set [server] auth to 'token' or 'multi' in "
             "~/.mnemo/config.toml for a shared listener)"
         )
