@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
-# Multi-stage build for mnemo-mcp
-# Python 3.13 + sqlite-vec
-# All-in-one: persistent memory with Google Drive sync
+# Multi-stage build for mnemo-mcp: the HTTP MCP endpoint (de-hosted —
+# there is no stdio spawn mode). Python 3.13 + sqlite-vec.
+# Build:  docker build -t <repo>:http .
+# Bind host/port and auth come from ~/.mnemo/config.toml ([server];
+# port defaults to 8000), overridable via MNEMO_HOST / MNEMO_PORT.
 
 # ========================
 # Stage 1: Builder
@@ -16,11 +18,11 @@ WORKDIR /app
 
 # Install dependencies first (cached when deps don't change).
 # --frozen: install from the committed uv.lock exactly as-is, skipping
-# re-resolution. The lockfile is regenerated with UV_NO_SOURCES=1 on
-# commit so n24q02m-mcp-core already points at the PyPI registry, not
-# the dev-only ../mcp-core path from [tool.uv.sources]. Sources are a
-# resolve-time concept and are not consulted under --frozen, so the
-# Docker build picks the PyPI wheel without seeing the sibling path
+# re-resolution — this is what pins hull-core and every other dependency
+# to the audited revisions. The lockfile is regenerated with
+# UV_NO_SOURCES=1 on commit so every requirement points at the public
+# PyPI registry. Sources are a resolve-time concept and are not
+# consulted under --frozen, so the build never needs a dev source tree
 # that does not exist in the build context.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -32,14 +34,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # ========================
-# Stage 2: Runtime base (shared by stdio + http targets)
+# Stage 2: Runtime (HTTP MCP endpoint; single target)
 # ========================
-# Multi-target Dockerfile per spec
-# `~/projects/.superpower/mcp-core/specs/2026-04-30-multi-mode-stdio-http-architecture.md`
-# section D6. Build stdio: `docker buildx build --target stdio -t <repo>:stdio .`
-# Build http:  `docker buildx build --target http  -t <repo>:http .`
-# Build latest (= http): `docker buildx build --target http -t <repo>:latest .`
-FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 AS runtime
+FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 AS http
 
 LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
@@ -69,18 +66,7 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser \
 VOLUME /data
 USER appuser
 
-# ========================
-# Stage 3a: stdio target (default for plugin marketplace & uvx-style usage)
-# ========================
-FROM runtime AS stdio
-ENV MCP_TRANSPORT=stdio
-ENTRYPOINT ["python", "-m", "mnemo_mcp"]
-
-# ========================
-# Stage 3b: http target (multi-user remote daemon)
-# ========================
-FROM runtime AS http
-ENV MCP_TRANSPORT=http \
-    MCP_PORT=8080
-EXPOSE 8080
+# Default [server] port from ~/.mnemo/config.toml (hull settings default
+# 8000); override via config or MNEMO_PORT.
+EXPOSE 8000
 ENTRYPOINT ["python", "-m", "mnemo_mcp"]
