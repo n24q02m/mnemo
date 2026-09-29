@@ -16,6 +16,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# hull-core is pinned in uv.lock as a git dependency (public GitHub repo),
+# so the builder needs a git client for `uv sync --frozen` to fetch it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (cached when deps don't change).
 # --frozen: install from the committed uv.lock exactly as-is, skipping
 # re-resolution — this is what pins hull-core and every other dependency

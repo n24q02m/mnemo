@@ -26,7 +26,7 @@ services:
       target: http
     image: mnemo-mcp:http
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${MNEMO_PORT:-8771}:8000"
     volumes:
       - mnemo-data:/data
       - ./mnemo-config/config.toml:/data/.mnemo/config.toml:ro
