@@ -27,6 +27,7 @@ services:
     image: mnemo-mcp:http
     ports:
       - "127.0.0.1:${MNEMO_PORT:-8771}:8000"
+    restart: unless-stopped
     volumes:
       - mnemo-data:/data
       - ./mnemo-config/config.toml:/data/.mnemo/config.toml:ro
