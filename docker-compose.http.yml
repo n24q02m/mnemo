@@ -16,7 +16,7 @@
 #   host = "0.0.0.0"
 #   port = 8000
 #   auth = "token"
-#   token = "<secret>"          # generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+#   token_hash = "scrypt$..."    # generate: TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))"); hull token hash "$TOKEN"  (there is no plaintext `token` field)
 #
 # For auth = "multi" also mount users.toml (uncomment below).
 services:
