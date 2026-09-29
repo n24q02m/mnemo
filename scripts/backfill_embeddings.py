@@ -14,8 +14,6 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-_DEFAULT_EMBEDDING_DIMS = 768
-
 
 def _run_embedding(embedder: Any, texts: list[str]) -> list[list[float]]:
     """Embed ``texts`` using either the plan's sync or runtime async API."""
@@ -140,9 +138,15 @@ def main() -> int:
     from mnemo_mcp.db import MemoryDB
     from mnemo_mcp.embedder import init_backend
 
-    embedding_dims = (
-        args.dimensions or settings.embedding_dims or _DEFAULT_EMBEDDING_DIMS
+    embedding_dims = args.dimensions or (
+        settings.embedding_dims if settings.embedding_dims > 0 else None
     )
+    if embedding_dims is None:
+        parser.error(
+            "embedding dims unknown: pass --dimensions (or set embedding_dims "
+            "in config). Guessing would write wrong-width vectors into the "
+            "existing store."
+        )
     db = MemoryDB(Path(args.db), embedding_dims=embedding_dims)
     embedder = init_backend(args.backend)
     result = backfill(db, embedder, batch_size=args.batch_size)
