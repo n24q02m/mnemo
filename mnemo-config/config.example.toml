@@ -1,0 +1,47 @@
+# mnemo instance config (host-owned). Copy to mnemo-config/config.toml and
+# edit; the HTTP compose mounts it read-only at /data/.mnemo/config.toml
+# (the image sets HOME=/data, so this IS ~/.mnemo/config.toml in-container).
+#
+# Token setup for auth = "token":
+#   1. mint a token:  python -c "import secrets; print(secrets.token_urlsafe(32))"
+#   2. hash it:       MNEMO_AUTH_TOKEN=<token> uv run mnemo-mcp token-hash
+#   3. paste the printed `scrypt$...` value into token_hash below.
+# The plaintext token is what MCP clients send as the Bearer credential;
+# it never lands in this file.
+
+[server]
+host = "0.0.0.0"          # required inside the container (published on 127.0.0.1:<host> only)
+port = 8000               # container port; change the host side via MNEMO_PORT
+# no-auth -> localhost-only (server refuses non-loopback binds in this mode)
+# token   -> one shared token; set token_hash below
+# multi   -> also mount users.toml (see compose comment)
+auth = "token"
+# token_hash = "scrypt$..."
+# rpm = 120   # optional shared-mode rate limit
+
+# Per-task provider cells: each task gets its own base_url + api_key + model
+# (OpenAI-spec HTTP, OpenRouter pre-wired as default). Values below are
+# EXAMPLES — swap in whatever provider you want per task, cloud or local
+# (any OpenAI-spec base_url works). api_key may be left empty here and
+# supplied via env instead: HULL_EMBED_API_KEY / HULL_RERANK_API_KEY /
+# HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY (host-only, never end-user).
+
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "<your-openrouter-key>"
+model = "voyage-4-lite"
+
+[models.rerank]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "<your-openrouter-key>"
+model = "voyage-2.5-lite-rerank"
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "<your-openrouter-key>"
+model = "zai/glm-5.3-flash"
+
+[models.jev_score]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "<your-openrouter-key>"
+model = "zai/glm-5.3-flash"
