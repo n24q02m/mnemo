@@ -886,7 +886,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
-    { name = "fastretrieval", specifier = ">=1.7.2,<2" },
+    { name = "fastretrieval", specifier = ">=1.11.1,<2" },
     { name = "httpx" },
     { name = "hull-core", git = "https://github.com/n24q02m/hull?rev=abc27ed4acc5f6033795342a1c0d9a3d28adcfe7" },
     { name = "idna", specifier = ">=3.20" },
