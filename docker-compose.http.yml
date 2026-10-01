@@ -1,14 +1,40 @@
-# HTTP mode overlay — use with:
-# docker compose -f docker-compose.yml -f docker-compose.http.yml up
+# Self-contained HTTP deployment for the mnemo-mcp image — there is no base
+# compose file; this is the whole stack.
+#
+#   docker compose -f docker-compose.http.yml up --build
+#
+# Persistence: the image sets HOME=/data, so everything the server writes —
+# memories.db, mode-3 subs/, instance state — lands under /data and is kept
+# by the `mnemo-data` volume.
+#
+# Auth + bind: read from the instance config, not env vars. Mount your
+# ~/.mnemo/config.toml into the volume path below. A published listener
+# must NOT use auth = "no-auth" (the server refuses non-loopback binds in
+# no-auth mode); use "token" (shared token) or "multi" (+ users.toml):
+#
+#   [server]
+#   host = "0.0.0.0"
+#   port = 8000
+#   auth = "token"
+#   token_hash = "scrypt$..."    # generate: TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))"); hull token hash "$TOKEN"  (there is no plaintext `token` field)
+#
+# For auth = "multi" also mount users.toml (uncomment below).
 services:
   mnemo-mcp:
-    environment:
-      - TRANSPORT_MODE=http
-      - CREDENTIAL_SECRET=${CREDENTIAL_SECRET}
-      - MCP_RELAY_PASSWORD=${MCP_RELAY_PASSWORD}
+    build:
+      context: .
+      target: http
+    image: mnemo-mcp:http
     ports:
-      - "8086:8080"
+      - "127.0.0.1:${MNEMO_PORT:-8771}:8000"
+    restart: unless-stopped
+    environment:
+      # One-shot vector rebuild when the embed model identity changes (see
+      # EmbeddingModelMismatch): REINDEX_ON_MODEL_CHANGE=true docker compose up.
+      - REINDEX_ON_MODEL_CHANGE=${REINDEX_ON_MODEL_CHANGE:-false}
     volumes:
       - mnemo-data:/data
+      - ./mnemo-config/config.toml:/data/.mnemo/config.toml:ro
+      # - ./mnemo-config/users.toml:/data/.mnemo/users.toml:ro  # auth = "multi"
 volumes:
   mnemo-data:

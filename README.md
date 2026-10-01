@@ -61,6 +61,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 - [Security](#security)
 - [Build from Source](#build-from-source)
 - [CLI](#cli)
+- [Self-hosting (local HTTP instance)](#self-hosting-local-http-instance)
 - [Remote (HTTP mode)](#remote-http-mode)
 - [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Trust Model](#trust-model)
@@ -297,6 +298,78 @@ mnemo-mcp doctor                # environment diagnostics (Python, backend, stor
 | `config status` \| `config delete [--yes]` | Inspect or remove the stored encrypted configuration |
 | `relay status` \| `relay open` \| `relay reset` | Inspect, open, or clear the zero-config browser setup session |
 | `doctor` | Report Python version, credential backend, store dir, config, relay session, and storage mode |
+
+## Self-hosting (local HTTP instance)
+
+Two ways to run the server for MCP clients on your machine.
+
+### Dev: start with `uv` (no-auth, loopback only)
+
+```bash
+uv run mnemo-mcp --http        # binds 127.0.0.1:8000, auth = "no-auth" by default
+```
+
+`no-auth` refuses non-loopback binds, so this is localhost-only by construction —
+fine for trying the server locally. The MCP endpoint is
+`http://127.0.0.1:8000/mcp`. For a real config, bootstrap one and edit it:
+
+```bash
+uv run mnemo-mcp config-init   # writes ~/.mnemo/config.toml from the template
+```
+
+### Always-on: `docker compose` (token auth, loopback-published port)
+
+`docker-compose.http.yml` is self-contained (builds the image, persists state
+in the `mnemo-data` volume) and publishes only on loopback:
+
+```bash
+cp mnemo-config/config.example.toml mnemo-config/config.toml   # then edit:
+#   auth = "token"; set token_hash per the comments at the top of the example
+docker compose -f docker-compose.http.yml up --build -d
+# MCP endpoint: http://127.0.0.1:8771/mcp   (override the host port: MNEMO_PORT=9000 ...)
+```
+
+Token setup (also documented in the example config):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"     # 1. mint token
+MNEMO_AUTH_TOKEN=<token> uv run mnemo-mcp token-hash              # 2. print scrypt$ hash
+# 3. paste the hash into token_hash in mnemo-config/config.toml; give clients the token
+```
+
+For `auth = "multi"` (per-user namespaces) also mount `users.toml` — see the
+commented line in `docker-compose.http.yml`.
+
+### CLI consumer (no server needed)
+
+The `mnemo` surface talks straight to the memory DB — handy for scripts and
+agents:
+
+```bash
+mnemo capture --db ./mem.db "keep PyPI name mnemo-mcp; repo is mnemo" --tags decision --category decision
+mnemo recall  --db ./mem.db "release ladder" --k 5
+mnemo fetch   --db ./mem.db <memory_id>
+```
+
+Every subcommand prints a JSON envelope and takes `--db <path>`. See
+[CLI](#cli) for the full surface (`reflect`, `standing-*`, `doctor`, …).
+
+### Pointing an MCP client at the instance
+
+Register the HTTP endpoint (Streamable HTTP transport):
+
+- Claude Code: `claude mcp add --transport http mnemo http://127.0.0.1:8771/mcp`
+- Any OpenAI-spec MCP client: server URL `http://127.0.0.1:8771/mcp`; with
+  `auth = "token"` send the shared token as the Bearer credential.
+
+### Config: local vs cloud, per task
+
+Each task cell in `mnemo-config/config.toml` (`[models.embed]`, `rerank`,
+`chat`, `jev_score`) is independent: `base_url + api_key + model`, OpenAI-spec
+HTTP. Mix freely — e.g. cloud OpenRouter for `chat` while `embed`/`rerank`
+point at a local OpenAI-spec server, or all cloud. Keys are host-only
+(end users never see them) and may alternatively come from the
+`HULL_<TASK>_API_KEY` env vars.
 
 ## Remote (HTTP mode)
 

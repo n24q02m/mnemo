@@ -483,9 +483,14 @@ def test_is_loopback_host():
     assert _is_loopback_host("999.1.1.1") is False
 
 
-def test_run_server_blocking_refuses_open_auth_off_loopback(monkeypatch):
+def test_run_server_blocking_refuses_no_auth_off_loopback(monkeypatch):
+    """Regression: auth = 'no-auth' must never bind off-loopback.
+
+    The guard used to compare against 'open', a value AUTH_MODES can never
+    contain, so no-auth + 0.0.0.0 started an unauthenticated shared listener.
+    """
     hs = _mock_settings()
-    hs.server.auth = "open"
+    hs.server.auth = "no-auth"
     hs.server.host = "127.0.0.1"
     hs.server.port = 8000
     monkeypatch.setattr("mnemo_mcp.runtime.hull_settings", lambda: hs)
@@ -496,3 +501,27 @@ def test_run_server_blocking_refuses_open_auth_off_loopback(monkeypatch):
     monkeypatch.setattr("hull_core.lifecycle.lock.LifecycleLock", explode)
     with pytest.raises(ServerConfigError, match="only permits loopback binds"):
         run_server_blocking(host="0.0.0.0", port=8000)
+
+
+def test_run_server_blocking_allows_no_auth_on_loopback(monkeypatch):
+    hs = _mock_settings()
+    hs.server.auth = "no-auth"
+    hs.server.host = "127.0.0.1"
+    hs.server.port = 8000
+    monkeypatch.setattr("mnemo_mcp.runtime.hull_settings", lambda: hs)
+
+    lock = MagicMock()
+    monkeypatch.setattr(
+        "hull_core.lifecycle.lock.LifecycleLock", MagicMock(return_value=lock)
+    )
+    monkeypatch.setattr("mnemo_mcp.server.build_http_app", lambda _hs: MagicMock())
+
+    seen: dict[str, object] = {}
+
+    def fake_run(_app, *, host, port, log_level):
+        seen.update(host=host, port=port, log_level=log_level)
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+
+    run_server_blocking(host="127.0.0.1", port=8000)
+    assert seen == {"host": "127.0.0.1", "port": 8000, "log_level": "info"}

@@ -60,8 +60,11 @@ dev = [
 
 [tool.uv.sources]
 # Shared stack core (auth 3-mode, per-task model cells, limiter, lifecycle).
-# Pinned to the reviewed revision; bump deliberately, never via lockfile refresh.
-hull-core = { git = "https://github.com/n24q02m/hull.git", rev = "14841d05488c801d303b0f3d3cd97426f94a6e1a", subdirectory = "packages/core-py" }
+# hull merged into ONE hull-core distribution at the repo root on 2026-10-01
+# (n24q02m/hull#2, #4, #5): the pinned rev is the merged head abc27ed4a, the
+# dist is at the repo root so no subdirectory key, and the dist version stays
+# 0.1.0. Bump deliberately, never via lockfile refresh.
+hull-core = { git = "https://github.com/n24q02m/hull", rev = "abc27ed4acc5f6033795342a1c0d9a3d28adcfe7" }
 
 [project.scripts]
 mnemo-mcp = "mnemo_mcp.cli:main"

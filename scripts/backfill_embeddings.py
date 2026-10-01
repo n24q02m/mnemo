@@ -14,8 +14,6 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-_DEFAULT_EMBEDDING_DIMS = 768
-
 
 def _run_embedding(embedder: Any, texts: list[str]) -> list[list[float]]:
     """Embed ``texts`` using either the plan's sync or runtime async API."""
@@ -125,17 +123,32 @@ def main() -> int:
     parser.add_argument("--db", required=True, help="SQLite database path")
     parser.add_argument("--dimensions", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--backend",
+        choices=["cloud", "local"],
+        default="cloud",
+        help="Embedding backend: 'cloud' ([models.embed] cell) or 'local' "
+        "(ONNX model matching locally built vector stores)",
+    )
     args = parser.parse_args()
+
+    from pathlib import Path
 
     from mnemo_mcp.config import settings
     from mnemo_mcp.db import MemoryDB
     from mnemo_mcp.embedder import init_backend
 
-    embedding_dims = (
-        args.dimensions or settings.embedding_dims or _DEFAULT_EMBEDDING_DIMS
+    embedding_dims = args.dimensions or (
+        settings.embedding_dims if settings.embedding_dims > 0 else None
     )
-    db = MemoryDB(args.db, embedding_dims=embedding_dims)
-    embedder = init_backend("cloud")
+    if embedding_dims is None:
+        parser.error(
+            "embedding dims unknown: pass --dimensions (or set embedding_dims "
+            "in config). Guessing would write wrong-width vectors into the "
+            "existing store."
+        )
+    db = MemoryDB(Path(args.db), embedding_dims=embedding_dims)
+    embedder = init_backend(args.backend)
     result = backfill(db, embedder, batch_size=args.batch_size)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["failed"] == 0 else 1
