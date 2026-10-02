@@ -78,6 +78,7 @@ package-lock.json
 # e2e scratch (mode-3 isolation runs) — never track
 e2e-mode3-home/
 .e2e_mode3.py
+e2e_token*.txt
 
 # local instance config (real keys) — example is tracked, the real one never
 mnemo-config/config.toml
