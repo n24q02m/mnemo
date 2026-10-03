@@ -31,7 +31,7 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "fastretrieval>=1.7.2,<2",
+    "fastretrieval>=1.11.1,<2",
     # Shared stack core (de-host 2026-09): token auth 3-mode, per-task model cells,
     # limiter, lifecycle lock, OpenAI-spec provider client. Git dep, pinned rev.
     "hull-core",
