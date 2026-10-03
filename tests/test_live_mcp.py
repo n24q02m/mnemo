@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 5 Live Comprehensive Test for mnemo-mcp.
+Phase 5 Live Comprehensive Test for mnemo.
 
 Spawns the server as a subprocess via MCP SDK Client (StdioClientTransport),
 communicates over JSON-RPC stdio protocol, and tests ALL tools x actions.

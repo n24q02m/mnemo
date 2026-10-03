@@ -1,4 +1,4 @@
-"""Tests for ``mnemo_mcp.temporal.store`` -- Phase 3 KG persistence helper.
+"""Tests for ``mnemo.temporal.store`` -- Phase 3 KG persistence helper.
 
 Verifies:
 - Wraps Phase 1 graph helpers + extends with bitemporal bookkeeping.
@@ -9,8 +9,8 @@ Verifies:
 
 from __future__ import annotations
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.temporal.store import store_kg_with_memory_id
+from mnemo.db import MemoryDB
+from mnemo.temporal.store import store_kg_with_memory_id
 
 
 class TestStoreKgWithMemoryId:

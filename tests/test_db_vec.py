@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.db with vector search enabled."""
+"""Tests for mnemo.db with vector search enabled."""
 
 import sqlite3
 import struct
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 # Skip this entire module when the runtime Python was built without
 # --enable-loadable-sqlite-extensions (common on macOS hosted runners).

@@ -4,15 +4,15 @@ These are the functions a FastMCP ``@mcp.tool`` registration will wrap in
 P0.1 (thin: parse the tool-args dict, call the core, return the envelope).
 They exist as plain functions so the equivalence harness can exercise the
 exact MCP call path in-process without a running server. The existing rich
-tools in ``mnemo_mcp.server`` are untouched.
+tools in ``mnemo.server`` are untouched.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from mnemo.db import MemoryDB
 from mnemo_core import operations, standing
-from mnemo_mcp.db import MemoryDB
 
 
 def pilot_capture(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:

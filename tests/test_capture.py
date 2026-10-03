@@ -15,9 +15,9 @@ import json
 
 import pytest
 
-from mnemo_mcp.capture import CONTEXT_TYPES, capture
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.server import _handle_capture
+from mnemo.capture import CONTEXT_TYPES, capture
+from mnemo.db import MemoryDB
+from mnemo.server import _handle_capture
 
 
 def _row_count(db: MemoryDB) -> int:
@@ -223,7 +223,7 @@ async def test_handle_capture_oversized_text_returns_error(mock_ctx):
     """ValueError that is NOT about context_type falls into the generic
     branch and surfaces ``error`` without ``valid_context_types``.
     """
-    from mnemo_mcp.db import MAX_CONTENT_LENGTH
+    from mnemo.db import MAX_CONTENT_LENGTH
 
     ctx, _db = mock_ctx
     huge = "x" * (MAX_CONTENT_LENGTH + 10)
@@ -239,7 +239,7 @@ async def test_handle_capture_unexpected_exception_returns_internal_error(
     mock_ctx, monkeypatch
 ):
     """Unhandled exception in capture is caught and surfaced cleanly."""
-    import mnemo_mcp.capture as capture_mod
+    import mnemo.capture as capture_mod
 
     async def explode(*_args, **_kwargs):
         raise RuntimeError("kaboom")
@@ -256,7 +256,7 @@ async def test_handle_capture_unexpected_exception_returns_internal_error(
 
 def test_archive_trigger_interval_invalid_env_falls_back(monkeypatch):
     """Non-integer ARCHIVE_TRIGGER_EVERY env -> default 100."""
-    from mnemo_mcp.server import _archive_trigger_interval
+    from mnemo.server import _archive_trigger_interval
 
     monkeypatch.setenv("ARCHIVE_TRIGGER_EVERY", "not-int")
     assert _archive_trigger_interval() == 100

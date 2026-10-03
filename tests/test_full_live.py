@@ -1,4 +1,4 @@
-"""Full/real live MCP protocol tests for mnemo-mcp.
+"""Full/real live MCP protocol tests for mnemo.
 
 Spawns a real MCP server via stdio and tests ALL tool actions with real data.
 Uses tmp_path for DB -- local ONNX mode (no API keys needed).
@@ -49,7 +49,7 @@ def parse_json(r) -> dict:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start real mnemo-mcp server via stdio with temp DB, yield ClientSession."""
+    """Start real mnemo server via stdio with temp DB, yield ClientSession."""
     db_path = str(tmp_path / "test.db")
     server_params = StdioServerParameters(
         command="uv",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 def test_rows_without_vectors_and_write_vector_round_trip(tmp_path):

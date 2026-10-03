@@ -1,4 +1,4 @@
-"""Runtime bridge between mnemo-mcp and hull-core (de-host 2026-09).
+"""Runtime bridge between mnemo and hull-core (de-host 2026-09).
 
 One place wires the shared-core seams together:
 

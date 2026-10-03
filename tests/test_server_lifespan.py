@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.reranker import clear_reranker, get_reranker
-from mnemo_mcp.server import _enrich_memory, _init_reranker_backend, config
+from mnemo.db import MemoryDB
+from mnemo.reranker import clear_reranker, get_reranker
+from mnemo.server import _enrich_memory, _init_reranker_backend, config
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def _fresh_reranker_singleton():
 
 def _passthrough_to_thread():
     return patch(
-        "mnemo_mcp.server.asyncio.to_thread",
+        "mnemo.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
 
@@ -53,8 +53,8 @@ class TestInitRerankerBackend:
     async def test_reranker_disabled_returns_early(self):
         """Disabled reranker clears the singleton and never initializes."""
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.reranker.init_reranker") as mock_init,
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.reranker.init_reranker") as mock_init,
         ):
             mock_settings.rerank_enabled = False
             await _init_reranker_backend()
@@ -66,11 +66,11 @@ class TestInitRerankerBackend:
         cloud_backend = MagicMock()
         cloud_backend.check_available.return_value = True
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch(
-                "mnemo_mcp.reranker.init_reranker", return_value=cloud_backend
+                "mnemo.reranker.init_reranker", return_value=cloud_backend
             ) as mock_init,
         ):
             mock_settings.rerank_enabled = True
@@ -88,13 +88,11 @@ class TestInitRerankerBackend:
             return cloud_backend if backend_type == "cloud" else local_backend
 
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
-            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
-            patch(
-                "mnemo_mcp.reranker.init_reranker", side_effect=fake_init
-            ) as mock_init,
+            patch("mnemo.server._maybe_register_custom_rerank"),
+            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -113,13 +111,11 @@ class TestInitRerankerBackend:
             return local_backend
 
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=True),
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
-            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
-            patch(
-                "mnemo_mcp.reranker.init_reranker", side_effect=fake_init
-            ) as mock_init,
+            patch("mnemo.server._maybe_register_custom_rerank"),
+            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -131,9 +127,9 @@ class TestInitRerankerBackend:
     async def test_local_leg_disabled_when_disable_local_rerank(self):
         """DISABLE_LOCAL_RERANK with no usable cell initializes nothing."""
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=False),
-            patch("mnemo_mcp.reranker.init_reranker") as mock_init,
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=False),
+            patch("mnemo.reranker.init_reranker") as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = True
@@ -146,11 +142,11 @@ class TestInitRerankerBackend:
         local_backend = MagicMock()
         local_backend.check_available.return_value = False
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=False),
             _passthrough_to_thread(),
-            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
-            patch("mnemo_mcp.reranker.init_reranker", return_value=local_backend),
+            patch("mnemo.server._maybe_register_custom_rerank"),
+            patch("mnemo.reranker.init_reranker", return_value=local_backend),
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -161,12 +157,12 @@ class TestInitRerankerBackend:
     async def test_local_reranker_init_fails(self):
         """Local reranker init raising is contained (no crash, empty singleton)."""
         with (
-            patch("mnemo_mcp.server.settings") as mock_settings,
-            patch("mnemo_mcp.server.cell_configured", return_value=False),
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=False),
             _passthrough_to_thread(),
-            patch("mnemo_mcp.server._maybe_register_custom_rerank"),
+            patch("mnemo.server._maybe_register_custom_rerank"),
             patch(
-                "mnemo_mcp.reranker.init_reranker",
+                "mnemo.reranker.init_reranker",
                 side_effect=Exception("ONNX not installed"),
             ),
         ):
@@ -186,7 +182,7 @@ class TestConfigActions:
     async def test_config_warmup(self):
         """Config warmup action calls run_warmup."""
         with patch(
-            "mnemo_mcp.setup_tool.run_warmup",
+            "mnemo.setup_tool.run_warmup",
             new_callable=AsyncMock,
             return_value={"status": "ok", "warmup": True},
         ):
@@ -232,12 +228,12 @@ class TestEnrichMemory:
 
         with (
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 side_effect=Exception("LLM error"),
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
@@ -252,16 +248,16 @@ class TestEnrichMemory:
 
         with (
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            patch("mnemo_mcp.server.asyncio.to_thread") as mock_thread,
+            patch("mnemo.server.asyncio.to_thread") as mock_thread,
         ):
             await _enrich_memory(db, mid, "test content")
             # to_thread should NOT be called for update_importance

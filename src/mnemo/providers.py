@@ -58,7 +58,7 @@ class BoundedReflectProvider(ReflectPort):
         transport: Any = None,
     ) -> None:
         if not model:
-            from mnemo_mcp.runtime import model_cell
+            from mnemo.runtime import model_cell
 
             model = model_cell("chat").model
         self.model = model
@@ -108,7 +108,7 @@ class BoundedReflectProvider(ReflectPort):
             from hull_core.config.models import ModelCell
             from hull_core.providers.openai_spec import OpenAICompatClient
 
-            from mnemo_mcp.runtime import hull_settings, model_cell
+            from mnemo.runtime import hull_settings, model_cell
 
             if self.model and self._api_key:
                 cell = ModelCell(

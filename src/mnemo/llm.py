@@ -22,7 +22,7 @@ def _get_client() -> Any:
     """Cached OpenAI-spec client for the chat cell."""
     global _client
     if _client is None:
-        from mnemo_mcp.runtime import provider_client
+        from mnemo.runtime import provider_client
 
         _client = provider_client("chat")
     return _client
@@ -56,7 +56,7 @@ async def call_llm(
         The assistant message content, or ``None`` when the cell is not
         configured or the provider call fails (optional-enrichment contract).
     """
-    from mnemo_mcp.runtime import cell_configured
+    from mnemo.runtime import cell_configured
 
     if not cell_configured("chat"):
         logger.debug("call_llm: [models.chat] cell not configured; skipping")

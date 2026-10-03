@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Multi-stage build for mnemo-mcp: the HTTP MCP endpoint (de-hosted —
+# Multi-stage build for mnemo: the HTTP MCP endpoint (de-hosted —
 # there is no stdio spawn mode). Python 3.13 + sqlite-vec.
 # Build:  docker build -t <repo>:http .
 # Bind host/port and auth come from ~/.mnemo/config.toml ([server];
@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 AS http
 
-LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo-mcp"
+LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
 
 WORKDIR /app
@@ -75,4 +75,4 @@ USER appuser
 # Default [server] port from ~/.mnemo/config.toml (hull settings default
 # 8000); override via config or MNEMO_PORT.
 EXPOSE 8000
-ENTRYPOINT ["python", "-m", "mnemo_mcp"]
+ENTRYPOINT ["python", "-m", "mnemo"]

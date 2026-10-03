@@ -12,8 +12,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from mnemo.db import MemoryDB
 from mnemo_core import operations, results, standing
-from mnemo_mcp.db import MemoryDB
 
 
 def _serialize(envelope: dict) -> str:
@@ -103,8 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if getattr(args, "paid", False):
                 import os
 
-                from mnemo_mcp.providers import BoundedReflectProvider
-                from mnemo_mcp.runtime import cell_configured
+                from mnemo.providers import BoundedReflectProvider
+                from mnemo.runtime import cell_configured
 
                 api_key = os.getenv("HULL_CHAT_API_KEY")
                 if not cell_configured("chat") and not api_key:

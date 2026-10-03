@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.setup_tool -- warmup MCP-callable function.
+"""Tests for mnemo.setup_tool -- warmup MCP-callable function.
 
 De-host rework: run_setup_sync (Google Drive auth) is gone; warmup probes the
 ``[models.embed]`` provider cell and falls back to the local ONNX download.
@@ -11,14 +11,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from mnemo_mcp.setup_tool import run_warmup
+from mnemo.setup_tool import run_warmup
 
 
 class TestClearModelCache:
     """clear_model_cache removes corrupted HF Hub cache directories."""
 
     def test_removes_existing_cache(self, tmp_path):
-        from mnemo_mcp.setup_tool import clear_model_cache
+        from mnemo.setup_tool import clear_model_cache
 
         model_dir = tmp_path / "models--org--model"
         model_dir.mkdir(parents=True)
@@ -37,7 +37,7 @@ class TestClearModelCache:
     ):
         import fastretrieval
 
-        from mnemo_mcp import setup_tool
+        from mnemo import setup_tool
 
         legacy_cache = tmp_path / "legacy"
         public_cache = tmp_path / "public"
@@ -61,7 +61,7 @@ class TestClearModelCache:
         public_define.assert_called_once_with()
 
     def test_returns_none_when_cache_missing(self, tmp_path):
-        from mnemo_mcp.setup_tool import clear_model_cache
+        from mnemo.setup_tool import clear_model_cache
 
         with patch.dict("os.environ", {"FASTRETRIEVAL_CACHE_PATH": str(tmp_path)}):
             result = clear_model_cache("nonexistent/model")
@@ -73,7 +73,7 @@ class TestClearModelCache:
     ):
         import fastretrieval
 
-        from mnemo_mcp import setup_tool
+        from mnemo import setup_tool
 
         public_cache = tmp_path / "public"
         monkeypatch.delenv("FASTRETRIEVAL_CACHE_PATH", raising=False)
@@ -93,7 +93,7 @@ class TestDownloadLocalEmbedding:
 
     @patch("fastretrieval.TextEmbedding")
     def test_success(self, mock_te):
-        from mnemo_mcp.setup_tool import _download_local_embedding
+        from mnemo.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "test/model"
@@ -110,7 +110,7 @@ class TestDownloadLocalEmbedding:
 
     @patch("fastretrieval.TextEmbedding")
     def test_empty_result_returns_warning(self, mock_te):
-        from mnemo_mcp.setup_tool import _download_local_embedding
+        from mnemo.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "model"
@@ -124,10 +124,10 @@ class TestDownloadLocalEmbedding:
         assert result["status"] == "warning"
         assert "empty" in result["message"].lower()
 
-    @patch("mnemo_mcp.setup_tool.clear_model_cache")
+    @patch("mnemo.setup_tool.clear_model_cache")
     @patch("fastretrieval.TextEmbedding")
     def test_corrupted_cache_clears_and_retries(self, mock_te, mock_clear):
-        from mnemo_mcp.setup_tool import _download_local_embedding
+        from mnemo.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/model"
@@ -143,10 +143,10 @@ class TestDownloadLocalEmbedding:
         assert result.get("retried") is True
         mock_clear.assert_called_once_with("org/model")
 
-    @patch("mnemo_mcp.setup_tool.clear_model_cache")
+    @patch("mnemo.setup_tool.clear_model_cache")
     @patch("fastretrieval.TextEmbedding")
     def test_corrupted_cache_retry_fails(self, mock_te, mock_clear):
-        from mnemo_mcp.setup_tool import _download_local_embedding
+        from mnemo.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/model"
@@ -163,7 +163,7 @@ class TestDownloadLocalEmbedding:
 
     @patch("fastretrieval.TextEmbedding")
     def test_non_cache_error_re_raises(self, mock_te):
-        from mnemo_mcp.setup_tool import _download_local_embedding
+        from mnemo.setup_tool import _download_local_embedding
 
         mock_settings = MagicMock()
         mock_settings.resolve_local_embedding_model.return_value = "org/model"
@@ -185,14 +185,14 @@ class TestRunWarmup:
 
     def test_cell_probe_success(self, monkeypatch):
 
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
         monkeypatch.setattr(
-            "mnemo_mcp.runtime.model_cell",
+            "mnemo.runtime.model_cell",
             lambda task: SimpleNamespace(model="cell-model"),
         )
         backend = MagicMock()
         backend.check_available = AsyncMock(return_value=768)
-        mp = patch("mnemo_mcp.embedder.init_backend", return_value=backend)
+        mp = patch("mnemo.embedder.init_backend", return_value=backend)
 
         with mp:
             result = asyncio.run(run_warmup())
@@ -207,11 +207,11 @@ class TestRunWarmup:
         No local fallback in this case: the host explicitly configured the
         cell, so silent local download would mask the misconfiguration.
         """
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
         backend = MagicMock()
         backend.check_available = AsyncMock(return_value=0)
 
-        with patch("mnemo_mcp.embedder.init_backend", return_value=backend):
+        with patch("mnemo.embedder.init_backend", return_value=backend):
             result = asyncio.run(run_warmup())
 
         assert result["status"] == "error"
@@ -221,14 +221,14 @@ class TestRunWarmup:
 
     def test_cell_probe_exception_returns_unavailable(self, monkeypatch):
         """init_backend raising surfaces error/unavailable with a warning."""
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
 
         with (
             patch(
-                "mnemo_mcp.embedder.init_backend",
+                "mnemo.embedder.init_backend",
                 side_effect=Exception("auth error"),
             ),
-            patch("mnemo_mcp.setup_tool.logger") as mock_logger,
+            patch("mnemo.setup_tool.logger") as mock_logger,
         ):
             result = asyncio.run(run_warmup())
 
@@ -238,9 +238,9 @@ class TestRunWarmup:
 
     async def test_no_cell_downloads_local(self, monkeypatch):
         """No embed cell -> local ONNX download path runs."""
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: False)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: False)
         monkeypatch.setattr(
-            "mnemo_mcp.setup_tool._download_local_embedding",
+            "mnemo.setup_tool._download_local_embedding",
             MagicMock(
                 return_value={"step": "local_embedding", "status": "ok", "dims": 768}
             ),
@@ -254,12 +254,12 @@ class TestRunWarmup:
 
     async def test_local_embedding_disabled_skips_download(self, monkeypatch):
         """DISABLE_LOCAL_EMBED with no cell -> ok/unavailable, download skipped."""
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: False)
-        from mnemo_mcp.config import settings as real_settings
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: False)
+        from mnemo.config import settings as real_settings
 
         monkeypatch.setattr(real_settings, "disable_local_embed", True)
         with patch(
-            "mnemo_mcp.setup_tool._download_local_embedding",
+            "mnemo.setup_tool._download_local_embedding",
             new=AsyncMock(side_effect=AssertionError("must not download")),
         ):
             result = await run_warmup()

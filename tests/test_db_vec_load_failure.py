@@ -3,7 +3,7 @@
 import sqlite3
 from unittest.mock import patch
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 # Some CPython builds (notably the Homebrew/python.org macOS builds used on
 # GitHub Actions) are compiled without --enable-loadable-sqlite-extensions,
@@ -24,10 +24,10 @@ def test_sqlite_vec_load_failure_handled_gracefully(tmp_path):
     db_path = tmp_path / "test_vec_fail.db"
     with (
         patch(
-            "mnemo_mcp.db.sqlite_vec.load",
+            "mnemo.db.sqlite_vec.load",
             side_effect=RuntimeError("Extension load failed"),
         ),
-        patch("mnemo_mcp.db.logger") as mock_logger,
+        patch("mnemo.db.logger") as mock_logger,
     ):
         db = MemoryDB(db_path, embedding_dims=768)
         assert mock_logger.warning.called

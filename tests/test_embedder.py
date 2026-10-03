@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.embedder -- dual-backend embedding (all mocked).
+"""Tests for mnemo.embedder -- dual-backend embedding (all mocked).
 
 Cloud embedding goes through the ``[models.embed]`` provider cell. Async paths
 drive a stubbed hull OpenAI-spec client injected as ``CloudEmbeddingBackend(client)``;
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from mnemo_mcp.embedder import (
+from mnemo.embedder import (
     CloudEmbeddingBackend,
     Qwen3EmbedBackend,
     get_backend,
@@ -165,7 +165,7 @@ class TestBatchSplitting:
 
 
 class TestRetryLogic:
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_rate_limit(self, mock_sleep):
         client = _cell_client(
             side_effect=[Exception("429 rate limit exceeded"), [[0.1]]]
@@ -177,7 +177,7 @@ class TestRetryLogic:
         assert result == [[0.1]]
         mock_sleep.assert_called_once_with(1.0)
 
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retries_on_server_error(self, mock_sleep):
         client = _cell_client(
             side_effect=[Exception("503 temporarily unavailable"), [[0.2]]]
@@ -186,7 +186,7 @@ class TestRetryLogic:
 
         assert await backend.embed_texts(["test"]) == [[0.2]]
 
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_no_retry_on_non_retryable(self, mock_sleep):
         client = _cell_client(exc=Exception("Invalid API key"))
         backend = CloudEmbeddingBackend(client)
@@ -196,7 +196,7 @@ class TestRetryLogic:
 
         mock_sleep.assert_not_called()
 
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_exponential_backoff(self, mock_sleep):
         client = _cell_client(
             side_effect=[
@@ -211,7 +211,7 @@ class TestRetryLogic:
 
         assert mock_sleep.call_args_list == [call(1.0), call(2.0)]
 
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_max_retries_exhausted(self, mock_sleep):
         client = _cell_client(side_effect=Exception("429 rate limit"))
         backend = CloudEmbeddingBackend(client)
@@ -231,7 +231,7 @@ class TestQwen3EmbedBackend:
         backend = Qwen3EmbedBackend("custom/model")
         assert backend._model_name == "custom/model"
 
-    @patch("mnemo_mcp.embedder.asyncio.to_thread")
+    @patch("mnemo.embedder.asyncio.to_thread")
     async def test_embed_texts_calls_to_thread(self, mock_to_thread):
         """Local embedding runs in thread to avoid blocking event loop."""
         mock_to_thread.return_value = [[0.1, 0.2]]
@@ -242,7 +242,7 @@ class TestQwen3EmbedBackend:
         assert result == [[0.1, 0.2]]
         mock_to_thread.assert_called_once()
 
-    @patch("mnemo_mcp.embedder.asyncio.to_thread")
+    @patch("mnemo.embedder.asyncio.to_thread")
     async def test_empty_input(self, mock_to_thread):
         backend = Qwen3EmbedBackend()
 
@@ -251,7 +251,7 @@ class TestQwen3EmbedBackend:
         assert result == []
         mock_to_thread.assert_not_called()
 
-    @patch("mnemo_mcp.embedder.asyncio.to_thread")
+    @patch("mnemo.embedder.asyncio.to_thread")
     async def test_embed_single(self, mock_to_thread):
         mock_to_thread.return_value = [[0.1, 0.2, 0.3]]
         backend = Qwen3EmbedBackend()
@@ -260,7 +260,7 @@ class TestQwen3EmbedBackend:
 
         assert result == [0.1, 0.2, 0.3]
 
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    @patch("mnemo.embedder.Qwen3EmbedBackend._get_model")
     async def test_check_available_not_installed(self, mock_get_model):
         """Returns 0 when fastretrieval is not available."""
         mock_get_model.side_effect = ImportError("No module named 'fastretrieval'")
@@ -271,7 +271,7 @@ class TestQwen3EmbedBackend:
 class TestBackendFactory:
     def test_init_cloud_uses_cell_client(self):
         client = _cell_client()
-        with patch("mnemo_mcp.embedder._cell_client", return_value=client):
+        with patch("mnemo.embedder._cell_client", return_value=client):
             backend = init_backend("cloud")
 
         assert isinstance(backend, CloudEmbeddingBackend)
@@ -333,7 +333,7 @@ class TestCheckAvailableApiKeyValidation:
 class TestQwen3GetModelWarning:
     """_get_model() logs download warning on first call."""
 
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    @patch("mnemo.embedder.Qwen3EmbedBackend._get_model")
     async def test_check_available_success(self, mock_get_model):
         """check_available returns dims when model works."""
         import numpy as np
@@ -346,7 +346,7 @@ class TestQwen3GetModelWarning:
         dims = await backend.check_available()
         assert dims == 3
 
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    @patch("mnemo.embedder.Qwen3EmbedBackend._get_model")
     async def test_check_available_returns_zero_on_error(self, mock_get_model):
         """check_available returns 0 when model raises."""
         mock_get_model.side_effect = Exception("ONNX runtime error")

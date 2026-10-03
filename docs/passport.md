@@ -179,7 +179,7 @@ the `sync_overrides` audit table so divergence is never silently lost.
 
 Use the `passport-bootstrap` skill:
 
-1. Install mnemo-mcp.
+1. Install mnemo.
 2. Configure relay form (HTTP) or env vars (stdio) with your S3 / GDrive
    credentials AND your passphrase.
 3. Trigger `config(action="import_passport", key="s3")` (or `"gdrive"`).

@@ -1,4 +1,4 @@
-"""Coverage tests for ``mnemo_mcp.temporal.resolve`` -- vec KNN code paths.
+"""Coverage tests for ``mnemo.temporal.resolve`` -- vec KNN code paths.
 
 These tests require ``sqlite3.Connection.enable_load_extension`` which is
 disabled on macOS (`Python.org` builds and Homebrew default omit the
@@ -13,8 +13,8 @@ import sqlite3
 import pytest
 import sqlite_vec
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.temporal.resolve import (
+from mnemo.db import MemoryDB
+from mnemo.temporal.resolve import (
     find_similar_entity,
     insert_entity_with_embedding,
     resolve_entity,

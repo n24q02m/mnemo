@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.server import (
+from mnemo.db import MemoryDB
+from mnemo.server import (
     add_memory,
     archived_memories,
     consolidate_memories,

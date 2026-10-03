@@ -33,21 +33,21 @@ def mock_dependencies():
     mock_mcp_module = MagicMock()
     mock_mcp_module.FastMCP.return_value = mock_fast_mcp
     modules_to_patch = {
-        "mnemo_mcp.db": mock_db,
-        "mnemo_mcp.embedder": mock_embedder,
+        "mnemo.db": mock_db,
+        "mnemo.embedder": mock_embedder,
         "mcp.server.fastmcp": mock_mcp_module,
     }
     with patch.dict(sys.modules, modules_to_patch):
-        if "mnemo_mcp.server" in sys.modules:
-            del sys.modules["mnemo_mcp.server"]
+        if "mnemo.server" in sys.modules:
+            del sys.modules["mnemo.server"]
         yield
-        if "mnemo_mcp.server" in sys.modules:
-            del sys.modules["mnemo_mcp.server"]
+        if "mnemo.server" in sys.modules:
+            del sys.modules["mnemo.server"]
 
 
 @pytest.mark.asyncio
 async def test_log_level_invalid_rejection(mock_dependencies):
-    from mnemo_mcp import server
+    from mnemo import server
 
     with patch.object(server, "logger") as mock_logger:
         with patch.object(server, "settings") as mock_settings:
@@ -66,7 +66,7 @@ async def test_log_level_invalid_rejection(mock_dependencies):
 
 @pytest.mark.asyncio
 async def test_log_level_valid_update(mock_dependencies):
-    from mnemo_mcp import server
+    from mnemo import server
 
     with patch.object(server, "logger") as mock_logger:
         with patch.object(server, "settings") as mock_settings:

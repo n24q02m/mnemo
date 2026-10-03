@@ -2,7 +2,7 @@
 
 Spec § 4.3 Phase 3 actions. These are read-only helpers consumed by
 ``memory(action="entity_search"|"entity_graph"|"history")`` in
-:mod:`mnemo_mcp.server`. They live outside ``db.py`` so the temporal-KG
+:mod:`mnemo.server`. They live outside ``db.py`` so the temporal-KG
 surface stays modular and swappable.
 """
 
@@ -12,7 +12,7 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mnemo_mcp.db import MemoryDB
+    from mnemo.db import MemoryDB
 
 
 def entity_search(

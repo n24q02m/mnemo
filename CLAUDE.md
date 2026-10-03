@@ -1,4 +1,4 @@
-# CLAUDE.md - mnemo-mcp
+# CLAUDE.md - mnemo
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
 Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher (DEPRECATED -- use the granular tools instead) + config + help + config__open_relay.
@@ -46,8 +46,8 @@ mise run fix       # ruff fix + format
 ## Cau truc thu muc
 
 ```
-src/mnemo_mcp/
-  __main__.py      # python -m mnemo_mcp entrypoint
+src/mnemo/
+  __main__.py      # python -m mnemo entrypoint
   config.py        # Pydantic Settings (singleton), env vars khong co prefix
   server.py        # FastMCP server, tools, resources, prompts
   setup_tool.py    # Warmup + setup-sync logic (config tool actions)
@@ -66,7 +66,7 @@ tests/             # 1:1 mapping voi source modules
 ## Env vars
 
 Khong co prefix (khac voi cac project khac):
-- `DB_PATH` -- default `~/.mnemo-mcp/memories.db`
+- `DB_PATH` -- default `~/.mnemo/memories.db`
 - `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (fastretrieval, Qwen3 là profile tham chiếu mặc định).
 - `RERANK_MODELS` -- chain rerank, CSV `provider/model,...`; order = fallback. Rong = local ONNX cross-encoder.
 - `LLM_MODELS` -- chain LLM (graph extraction), CSV `provider/model,...`; order = fallback. Rong = tat feature LLM.
@@ -88,7 +88,7 @@ Khong co prefix (khac voi cac project khac):
 - Deprecated (honored mot release voi warning): singular `EMBEDDING_MODEL`/`RERANK_MODEL` + `EMBEDDING_BACKEND`/`RERANK_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
 - `SYNC_ENABLED` -- `true`/`false`, default true for local/self-host; the production Cloudflare deployment pins `false`.
 - `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID for optional local/self-host passport sync
-- `SYNC_FOLDER` -- Google Drive folder name for optional local/self-host sync (default: `mnemo-mcp`)
+- `SYNC_FOLDER` -- Google Drive folder name for optional local/self-host sync (default: `mnemo`)
 - `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
 - `RERANK_ENABLED` -- `true`/`false`, default true
 - `RERANK_TOP_N` -- so ket qua rerank giu lai (default: 10)
@@ -164,11 +164,11 @@ PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -
 - Tools tra ve `_json({"error": "..."})`, khong raise exception.
 - `match action:` pattern cho routing.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
-- Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo-mcp/tokens/google_drive.json` (600).
+- Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
 - Dependencies: `fastretrieval>=1.0.1`, `sqlite-vec`, `n24q02m-mcp-core[llm]` (litellm). Native SDK (google-genai/openai/cohere/anthropic) da go -- moi LLM/embed/rerank qua litellm passthrough.
 - Pre-commit: ruff lint + format, ty check, pytest.
-- Secrets: skret SSM namespace `/mnemo-mcp/prod` (region `ap-southeast-1`)
+- Secrets: skret SSM namespace `/mnemo/prod` (region `ap-southeast-1`)
 
 ## E2E
 
@@ -180,12 +180,12 @@ cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
 
 Configs for this repo: `mnemo-full`.
 
-t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.mnemo-mcp/subs/<sub>/tokens/google_drive.json``.
+t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.mnemo/subs/<sub>/tokens/google_drive.json``.
 
 Tier policy:
 
 - **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
-- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/mnemo-mcp/prod` (`ap-southeast-1`). No user gate.
+- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/mnemo/prod` (`ap-southeast-1`). No user gate.
 - **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
 
 Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.

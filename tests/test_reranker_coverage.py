@@ -9,7 +9,7 @@ cell-based cloud path is covered in tests/test_reranker.py.
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.reranker import CloudReranker, Qwen3Reranker
+from mnemo.reranker import CloudReranker, Qwen3Reranker
 
 
 def _cell_client(model="cell-model", exc=None):
@@ -39,7 +39,7 @@ class TestCheckAvailableCloudReranker:
     def test_check_api_key_invalid_logs_warning(self):
         """check_available returns False and logs warning on 401."""
         reranker = CloudReranker(_cell_client(exc=Exception("401 Unauthorized")))
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+        with patch("mnemo.reranker.logger") as mock_logger:
             assert reranker.check_available() is False
             mock_logger.warning.assert_called()
             assert "API key invalid" in mock_logger.warning.call_args[0][0]
@@ -47,7 +47,7 @@ class TestCheckAvailableCloudReranker:
     def test_check_non_auth_error_logs_debug(self):
         """check_available returns False and logs debug on non-auth errors."""
         reranker = CloudReranker(_cell_client(exc=Exception("Model not found")))
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+        with patch("mnemo.reranker.logger") as mock_logger:
             assert reranker.check_available() is False
             mock_logger.debug.assert_called()
             assert "not available" in mock_logger.debug.call_args[0][0]

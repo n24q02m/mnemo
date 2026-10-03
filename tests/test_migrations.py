@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.db import (
+from mnemo.db import (
     _ALEMBIC_INI_PATH,
     _ALEMBIC_SCRIPT_LOCATION,
     MemoryDB,

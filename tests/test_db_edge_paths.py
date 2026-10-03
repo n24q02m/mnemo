@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 def _vec_db(path: Path, dims: int) -> MemoryDB:
@@ -150,7 +150,7 @@ def test_search_survives_fts_tier_failure(tmp_path: Path, monkeypatch):
     """A malformed MATCH expression logs the tier failure but never raises."""
     db = MemoryDB(tmp_path / "t.db", embedding_dims=0)
     try:
-        monkeypatch.setattr("mnemo_mcp.db._build_fts_queries", lambda _q: ['"broken'])
+        monkeypatch.setattr("mnemo.db._build_fts_queries", lambda _q: ['"broken'])
         results = db.search(query="anything")
         assert results == []
     finally:
@@ -219,7 +219,7 @@ def test_archive_by_score_config_fallback_is_90_days(tmp_path: Path, monkeypatch
         mid = _insert_stale_row(db, days_old=100, importance=0.0)
         # The config import inside archive_by_score resolves to None ->
         # the int() probe raises and the documented 90-day fallback kicks in.
-        monkeypatch.setattr("mnemo_mcp.config.settings", None)
+        monkeypatch.setattr("mnemo.config.settings", None)
         assert db.archive_by_score(archive_after_days=None) == 1
         row = db._conn.execute(
             "SELECT archived_at FROM memories WHERE id = ?", (mid,)
@@ -268,9 +268,7 @@ def test_check_duplicate_similar_not_identical(tmp_path: Path):
 
 
 def test_migrations_skipped_without_alembic_ini(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        "mnemo_mcp.db._ALEMBIC_INI_PATH", tmp_path / "no" / "alembic.ini"
-    )
+    monkeypatch.setattr("mnemo.db._ALEMBIC_INI_PATH", tmp_path / "no" / "alembic.ini")
     db = MemoryDB(tmp_path / "t.db", embedding_dims=0)  # must not raise
     try:
         assert db._read_alembic_version() is None

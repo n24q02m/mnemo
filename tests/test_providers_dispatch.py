@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mnemo.llm import _get_client, reset_client
+from mnemo.providers import BoundedReflectProvider, _count_tokens
 from mnemo_core.ports import CapExceeded
-from mnemo_mcp.llm import _get_client, reset_client
-from mnemo_mcp.providers import BoundedReflectProvider, _count_tokens
 
 
 @pytest.fixture(autouse=True)
@@ -24,14 +24,14 @@ def _fresh_llm_client():
 
 def test_get_client_caches_until_reset():
     sentinel = MagicMock()
-    with patch("mnemo_mcp.runtime.provider_client", return_value=sentinel) as pc:
+    with patch("mnemo.runtime.provider_client", return_value=sentinel) as pc:
         assert _get_client() is sentinel
         assert _get_client() is sentinel
         assert pc.call_count == 1
 
     reset_client()
     other = MagicMock()
-    with patch("mnemo_mcp.runtime.provider_client", return_value=other) as pc:
+    with patch("mnemo.runtime.provider_client", return_value=other) as pc:
         assert _get_client() is other
         assert pc.call_count == 1
 
@@ -54,7 +54,7 @@ def test_count_tokens_is_cl100k_estimate():
 def test_empty_model_falls_back_to_chat_cell():
     cell = MagicMock()
     cell.model = "cell/chat-model"
-    with patch("mnemo_mcp.runtime.model_cell", return_value=cell):
+    with patch("mnemo.runtime.model_cell", return_value=cell):
         provider = BoundedReflectProvider(model="", api_key="k")
     assert provider.model == "cell/chat-model"
 
@@ -127,7 +127,7 @@ def _apply_runtime_patches(fake_settings):
         patch("hull_core.providers.openai_spec.OpenAICompatClient", _FakeClient)
     )
     stack.enter_context(
-        patch("mnemo_mcp.runtime.hull_settings", return_value=fake_settings)
+        patch("mnemo.runtime.hull_settings", return_value=fake_settings)
     )
     return stack
 
@@ -138,7 +138,7 @@ def test_dispatch_builds_cell_from_model_and_key():
     base_cell = MagicMock()
     base_cell.base_url = "http://cell-base"
     with _apply_runtime_patches(fake_settings):
-        with patch("mnemo_mcp.runtime.model_cell", return_value=base_cell):
+        with patch("mnemo.runtime.model_cell", return_value=base_cell):
             provider = BoundedReflectProvider(
                 model="cohere/command-r7b-12-2024", api_key="k", api_base=None
             )
@@ -162,7 +162,7 @@ def test_dispatch_falls_back_to_configured_chat_cell():
     cell = MagicMock()
     cell.model = "cell/chat-model"
     with _apply_runtime_patches(fake_settings):
-        with patch("mnemo_mcp.runtime.model_cell", return_value=cell):
+        with patch("mnemo.runtime.model_cell", return_value=cell):
             provider = BoundedReflectProvider(model="", api_key="")
             text, _, _ = provider._dispatch("prompt", 50)
 
@@ -179,7 +179,7 @@ def test_dispatch_via_synthesize_when_no_transport():
     cell = MagicMock()
     cell.model = "cell/chat-model"
     with _apply_runtime_patches(fake_settings):
-        with patch("mnemo_mcp.runtime.model_cell", return_value=cell):
+        with patch("mnemo.runtime.model_cell", return_value=cell):
             provider = BoundedReflectProvider(model="", api_key="")
             answer = provider.synthesize("q", [{"text": "note"}])
 

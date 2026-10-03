@@ -9,9 +9,9 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 <!-- Badge Row 1: Status -->
 [![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/n24q02m/mnemo-mcp/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo-mcp)
+[![codecov](https://codecov.io/gh/n24q02m/mnemo/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo)
 [![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
-[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo-mcp)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo)](LICENSE)
 [![SafeSkill 91/100](https://img.shields.io/badge/SafeSkill-91%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/n24q02m-mnemo-mcp)
 
 <!-- Badge Row 2: Tech -->
@@ -40,7 +40,7 @@ mcp-name: io.github.n24q02m/mnemo-mcp
 | [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
 | [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
 | [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
-| [mnemo-mcp](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
+| [mnemo](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval) | Multi-model retrieval runtime for ONNX/GGUF embeddings and reranking | Library |
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
@@ -138,7 +138,7 @@ Example stdio config (zero-config local defaults):
 
 ## Comparison vs. peers
 
-| Feature | mnemo-mcp | Mem0 | Letta | OpenMemory |
+| Feature | mnemo | Mem0 | Letta | OpenMemory |
 |---|---|---|---|---|
 | Hybrid retrieval (FTS + vec) | yes (FTS5 + RRF; sqlite-vec local / Vectorize on Cloudflare) | yes | partial | yes |
 | Cross-encoder rerank chain | yes (Fastretrieval Qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
@@ -232,7 +232,7 @@ Plugin trinity (Claude Code marketplace install):
 ## Security
 
 - **Graceful fallbacks** -- Cloud → Local embedding, no cross-mode fallback
-- **Sync token security** -- OAuth tokens stored at `~/.mnemo-mcp/tokens/` with 600 permissions
+- **Sync token security** -- OAuth tokens stored at `~/.mnemo/tokens/` with 600 permissions
 - **Input validation** -- Sync provider, folder, remote validated against allowlists
 - **Error sanitization** -- No credentials in error messages
 
@@ -240,7 +240,7 @@ Plugin trinity (Claude Code marketplace install):
 
 ```bash
 git clone https://github.com/n24q02m/mnemo.git
-cd mnemo-mcp
+cd mnemo
 uv sync
 uv run mnemo-mcp
 ```
@@ -394,7 +394,7 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
 
 **Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
 
-1. `git clone https://github.com/n24q02m/mnemo && cd mnemo-mcp`
+1. `git clone https://github.com/n24q02m/mnemo && cd mnemo`
 2. `wrangler login`
 3. Provision the storage bindings mnemo uses -- the memories database, the embedding
    index, and the encrypted credential store:
@@ -432,7 +432,7 @@ Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectoriz
    paid Cohere embedding/reranking through Cloudflare AI Gateway -- obtain the
    required budget authorization before exercising the paid tiers (Provider
    Spend Gate); see the
-   [per-task configuration](src/mnemo_mcp/docs/config.md#remote-model-routing).
+   [per-task configuration](src/mnemo/docs/config.md#remote-model-routing).
 Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
 `MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
 keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
@@ -448,7 +448,7 @@ On Cloudflare deployments, **Cloudflare D1 + Vectorize + KV** is the sole produc
 - **Vectorize** (`MCP_VECTORIZE_IDX`): Dense vector index for semantic similarity search.
 - **KV** (`MCP_STORAGE_BACKEND=cf-kv`): Encrypted per-user credential and session store.
 - **Sync boundary**: `MEMORY_DB_BACKEND=cf-d1` disables Google Drive OAuth and all external sync paths even if `SYNC_ENABLED` is toggled on or stale S3/Google settings remain. `SYNC_ENABLED=false` independently disables sync on non-CF deployments.
-- **Local & self-host bootstrap**: Local stdio (`~/.mnemo-mcp/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
+- **Local & self-host bootstrap**: Local stdio (`~/.mnemo/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
 
 ### Deployment (maintained instance)
 
@@ -467,7 +467,7 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). The
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.mnemo-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
+| stdio (default) | `~/.mnemo/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
 | HTTP self-host | Same as stdio | Same | Only you (admin = user) |
 | HTTP multi-user remote (`PUBLIC_URL`) | Per-JWT-sub credential store | AES-GCM | Only the authenticated user (per-`sub` isolation) |
 

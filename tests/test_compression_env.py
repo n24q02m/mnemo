@@ -1,6 +1,6 @@
 import pytest
 
-from mnemo_mcp.compression import _env_compression_enabled
+from mnemo.compression import _env_compression_enabled
 
 
 def test_env_compression_enabled_default(monkeypatch):

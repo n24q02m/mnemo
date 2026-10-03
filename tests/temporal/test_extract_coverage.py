@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-from mnemo_mcp.temporal.extract import (
+from mnemo.temporal.extract import (
     _validate_entities,
     _validate_relations,
     _validate_supersedes,
@@ -66,7 +66,7 @@ class TestExtractEntitiesNonDictResponse:
     async def test_response_not_dict(self):
         # call_llm returns a JSON list (not dict).
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=json.dumps(["not", "a", "dict"]),
         ):

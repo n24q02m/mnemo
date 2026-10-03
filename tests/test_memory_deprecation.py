@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.server import add_memory, mcp, memory, search_memory
+from mnemo.db import MemoryDB
+from mnemo.server import add_memory, mcp, memory, search_memory
 
 _DEPRECATION_TAG = (
     "[DEPRECATED — use the granular tools (add_memory, search_memory, ...) "

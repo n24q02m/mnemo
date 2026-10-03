@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.server._embed -- degrade-vs-raise error taxonomy.
+"""Tests for mnemo.server._embed -- degrade-vs-raise error taxonomy.
 
 The legacy provider SDK is gone with the de-host; ``_is_retryable`` classifies
 on the exception's message, so the stand-ins here are plain exception classes
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.server import _embed
+from mnemo.server import _embed
 
 
 class _ClientConnectionError(Exception):
@@ -68,7 +68,7 @@ async def test_embed_transient_error_degrades_to_none():
     mock_backend = AsyncMock()
     mock_backend.embed_single.side_effect = _ClientRateLimitError("rate limit exceeded")
 
-    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
+    with patch("mnemo.embedder.get_backend", return_value=mock_backend):
         result = await _embed("text", "model", 768)
         assert result is None
 
@@ -83,6 +83,6 @@ async def test_embed_permanent_error_raises_loudly():
         "AuthenticationError - invalid api key"
     )
 
-    with patch("mnemo_mcp.embedder.get_backend", return_value=mock_backend):
+    with patch("mnemo.embedder.get_backend", return_value=mock_backend):
         with pytest.raises(_ClientConnectionError):
             await _embed("text", "model", 768)

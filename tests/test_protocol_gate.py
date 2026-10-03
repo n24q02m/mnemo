@@ -1,4 +1,4 @@
-"""Protocol gate for mnemo-mcp: every registered tool reachable via ClientSession.
+"""Protocol gate for mnemo: every registered tool reachable via ClientSession.
 
 Scope honesty (read before editing):
 - This gate runs against the SOURCE TREE: the subprocess below boots the
@@ -8,13 +8,13 @@ Scope honesty (read before editing):
   ``uvx --from mnemo-mcp==<beta>`` driven by ``mcp.ClientSession``; that is
   blocked until PyPI trusted publishing exists. This file does NOT claim D3
   is satisfied.
-- Transport: mnemo-mcp has no stdio mode since the de-host (``main()`` in
-  ``src/mnemo_mcp/server.py``: "there is no stdio spawn mode anymore"), so
+- Transport: mnemo has no stdio mode since the de-host (``main()`` in
+  ``src/mnemo/server.py``: "there is no stdio spawn mode anymore"), so
   the sessions below connect over streamable HTTP on loopback with the
   default no-auth mode. The stale stdio fixtures in ``test_full_live.py`` /
   ``test_live_protocol.py`` predate that switch.
 - The expected tool set is the authoritative set of ``@mcp.tool``
-  registrations in ``src/mnemo_mcp/server.py`` (verified live 2026-10-02).
+  registrations in ``src/mnemo/server.py`` (verified live 2026-10-02).
   There is NO ``help`` tool; ``TestMeta`` in ``test_live_protocol.py``
   predates the granular-tool split and its ``{"memory", "config", "help"}``
   superset is stale.
@@ -53,7 +53,7 @@ pytestmark = [
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Authoritative ``@mcp.tool`` registration set (src/mnemo_mcp/server.py).
+# Authoritative ``@mcp.tool`` registration set (src/mnemo/server.py).
 EXPECTED_TOOLS = frozenset(
     {
         "add_memory",
@@ -195,7 +195,7 @@ def _build_gate_env(
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
-    """Boot the real mnemo-mcp HTTP server once; yield its base URL."""
+    """Boot the real mnemo HTTP server once; yield its base URL."""
     state_dir = tmp_path_factory.mktemp("mnemo-gate-state")
     for sub in ("config", "data", "cache", "tmp"):
         (state_dir / sub).mkdir()

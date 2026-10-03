@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 def _set_age(db: MemoryDB, memory_id: str, days_old: int) -> None:
@@ -205,7 +205,7 @@ def test_list_archived_returns_soft_archived_rows(tmp_db: MemoryDB):
 
 async def test_capture_does_not_unset_archived_at(tmp_db: MemoryDB):
     """Capture inserts a NEW row; existing archived rows are untouched."""
-    from mnemo_mcp.capture import capture
+    from mnemo.capture import capture
 
     archived_id = tmp_db.add("archived row stays archived")
     tmp_db.update_importance(archived_id, 0.0)
@@ -226,7 +226,7 @@ async def test_capture_does_not_unset_archived_at(tmp_db: MemoryDB):
 
 async def test_handle_archive_now_runs_archive_by_score(mock_ctx):
 
-    from mnemo_mcp.server import _handle_archive_now
+    from mnemo.server import _handle_archive_now
 
     ctx, db = mock_ctx
     mid = db.add("a stale row")
@@ -243,7 +243,7 @@ async def test_handle_archive_now_runs_archive_by_score(mock_ctx):
 
 async def test_archive_now_via_memory_dispatcher(mock_ctx):
 
-    from mnemo_mcp.server import memory
+    from mnemo.server import memory
 
     ctx, db = mock_ctx
     mid = db.add("dispatcher target")
@@ -266,7 +266,7 @@ async def test_archive_now_via_memory_dispatcher(mock_ctx):
 async def test_capture_triggers_archive_at_interval(mock_ctx, monkeypatch):
     """ARCHIVE_TRIGGER_EVERY=1 -> every capture schedules an archive sweep."""
 
-    from mnemo_mcp.server import _CAPTURE_COUNTER, memory
+    from mnemo.server import _CAPTURE_COUNTER, memory
 
     ctx, db = mock_ctx
     monkeypatch.setenv("ARCHIVE_TRIGGER_EVERY", "1")

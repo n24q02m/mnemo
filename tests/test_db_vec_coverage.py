@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 @pytest.fixture

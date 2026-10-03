@@ -483,6 +483,6 @@ def init_backend(
 
 def _cell_client() -> Any:
     """Build an OpenAI-spec client from the ``[models.embed]`` cell."""
-    from mnemo_mcp.runtime import provider_client
+    from mnemo.runtime import provider_client
 
     return provider_client("embed")

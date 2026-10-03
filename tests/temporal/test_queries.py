@@ -1,17 +1,17 @@
-"""Tests for ``mnemo_mcp.temporal.queries`` -- entity_search / entity_graph /
+"""Tests for ``mnemo.temporal.queries`` -- entity_search / entity_graph /
 history / as_of bitemporal lookups."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.graph import (
+from mnemo.db import MemoryDB
+from mnemo.graph import (
     create_relations,
     link_memory_entities,
     upsert_entities,
 )
-from mnemo_mcp.temporal.queries import (
+from mnemo.temporal.queries import (
     entity_graph,
     entity_search,
     history_for_entity,
@@ -20,7 +20,7 @@ from mnemo_mcp.temporal.queries import (
 
 
 def _now_iso() -> str:
-    """Current UTC timestamp in ISO format (mirrors mnemo_mcp.db._now_iso)."""
+    """Current UTC timestamp in ISO format (mirrors mnemo.db._now_iso)."""
     return datetime.now(UTC).isoformat()
 
 

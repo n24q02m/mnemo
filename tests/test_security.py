@@ -1,6 +1,6 @@
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 def test_tag_filtering_security(tmp_db: MemoryDB):

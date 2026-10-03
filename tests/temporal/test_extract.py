@@ -1,6 +1,6 @@
-"""Tests for ``mnemo_mcp.temporal.extract`` -- LLM-backed entity extraction.
+"""Tests for ``mnemo.temporal.extract`` -- LLM-backed entity extraction.
 
-Verifies the Phase 3 port to :func:`mnemo_mcp.llm.call_llm`:
+Verifies the Phase 3 port to :func:`mnemo.llm.call_llm`:
 
 - Returns ``None`` when no LLM provider is available (``call_llm`` returns
   ``None``).
@@ -14,13 +14,13 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-from mnemo_mcp.temporal.extract import extract_entities
+from mnemo.temporal.extract import extract_entities
 
 
 class TestExtractEntitiesPhase3:
     async def test_returns_none_when_no_provider(self):
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=None,
         ):
@@ -35,7 +35,7 @@ class TestExtractEntitiesPhase3:
             }
         )
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=canned,
         ) as mock_llm:
@@ -53,7 +53,7 @@ class TestExtractEntitiesPhase3:
 
     async def test_invalid_json_returns_none(self):
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value="not json at all",
         ):
@@ -62,7 +62,7 @@ class TestExtractEntitiesPhase3:
 
     async def test_missing_entities_key_returns_none(self):
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=json.dumps({"relations": []}),
         ):
@@ -81,7 +81,7 @@ class TestExtractEntitiesPhase3:
             }
         )
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=canned,
         ):
@@ -106,7 +106,7 @@ class TestExtractEntitiesPhase3:
             }
         )
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=canned,
         ):
@@ -127,7 +127,7 @@ class TestExtractEntitiesPhase3:
             }
         )
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=canned,
         ):
@@ -149,7 +149,7 @@ class TestExtractEntitiesPhase3:
             }
         )
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=canned,
         ):
@@ -160,7 +160,7 @@ class TestExtractEntitiesPhase3:
 
     async def test_truncates_content_to_3000_chars(self):
         with patch(
-            "mnemo_mcp.temporal.extract.call_llm",
+            "mnemo.temporal.extract.call_llm",
             new_callable=AsyncMock,
             return_value=json.dumps({"entities": []}),
         ) as mock_llm:

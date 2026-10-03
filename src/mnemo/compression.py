@@ -1,7 +1,7 @@
 """LLM-driven compression pipeline (Phase 2).
 
 Compresses captured turn-style text through the ``[models.chat]`` provider
-cell via :mod:`mnemo_mcp.llm` while preserving every concrete fact / decision /
+cell via :mod:`mnemo.llm` while preserving every concrete fact / decision /
 identifier so retrieval quality stays unchanged.
 
 Spec reference: ``2026-04-19-mnemo-v2-design.md`` section 4.1 (LLM compression
@@ -13,7 +13,7 @@ Behaviour:
 1. **No provider available** -> graceful skip. Returns the original text with
    ``compressed=False`` and matching ``tokens_in == tokens_out``. The caller
    stores the row as-is and a single warning is logged. No exception raised.
-2. **Chat cell configured** -> calls :func:`mnemo_mcp.llm.call_llm` with a
+2. **Chat cell configured** -> calls :func:`mnemo.llm.call_llm` with a
    deterministic compression prompt (temperature=0). Tokens counted via
    tiktoken cl100k_base (matches OpenAI / Anthropic Claude estimates closely
    enough for the 3x reduction metric). On empty / failed response -> the
@@ -33,7 +33,7 @@ from typing import Final
 import tiktoken
 from loguru import logger
 
-from mnemo_mcp.llm import call_llm
+from mnemo.llm import call_llm
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -77,7 +77,7 @@ def _env_compression_enabled() -> bool:
 
 def _resolve_cell_model() -> str | None:
     """The chat cell's model id, or None when the cell has no key."""
-    from mnemo_mcp.runtime import cell_configured, model_cell
+    from mnemo.runtime import cell_configured, model_cell
 
     if not cell_configured("chat"):
         return None

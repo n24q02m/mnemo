@@ -1,4 +1,4 @@
-# Mise configuration for mnemo-mcp
+# Mise configuration for mnemo
 [tools]
 python = "3.13"
 node = "24"

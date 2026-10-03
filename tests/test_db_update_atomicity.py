@@ -31,8 +31,8 @@ import uuid
 
 import pytest
 
-from mnemo_mcp import db as db_module
-from mnemo_mcp.db import MemoryDB
+from mnemo import db as db_module
+from mnemo.db import MemoryDB
 
 
 class TestFailedSuccessorInsert:

@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mnemo_mcp.graph import extract_entities, score_importance
+from mnemo.graph import extract_entities, score_importance
 
 
 def _cell_ready():
     return (
-        patch("mnemo_mcp.graph._cell_ready", return_value=True),
-        patch("mnemo_mcp.graph._cell_completion", new_callable=AsyncMock),
+        patch("mnemo.graph._cell_ready", return_value=True),
+        patch("mnemo.graph._cell_completion", new_callable=AsyncMock),
     )
 
 

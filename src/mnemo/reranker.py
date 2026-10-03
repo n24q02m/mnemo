@@ -230,7 +230,7 @@ def init_reranker(
 
 def _cell_client() -> Any:
     """Build an OpenAI-spec client from the ``[models.rerank]`` cell."""
-    from mnemo_mcp.runtime import provider_client
+    from mnemo.runtime import provider_client
 
     return provider_client("rerank")
 
@@ -327,7 +327,7 @@ def build_default_rerank_chain(
             and the cell only serves as fallback.
     """
     chain: list[RerankerBackend] = []
-    from mnemo_mcp.runtime import cell_configured
+    from mnemo.runtime import cell_configured
 
     cloud: list[RerankerBackend] = []
     if cell_configured("rerank"):

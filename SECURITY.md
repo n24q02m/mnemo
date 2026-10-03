@@ -24,7 +24,7 @@ You will receive acknowledgment within 48 hours.
 
 ## Security Best Practices
 
-When using mnemo-mcp:
+When using mnemo:
 
 - **Never commit API keys** to version control
 - Use environment variables or secure secret management

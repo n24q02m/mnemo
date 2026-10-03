@@ -26,9 +26,9 @@ import tempfile
 import time
 from pathlib import Path
 
+from mnemo.db import MemoryDB
+from mnemo.providers import BoundedReflectProvider
 from mnemo_core import operations
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.providers import BoundedReflectProvider
 
 CORPUS_PATH = Path(__file__).parent / "mn4_reflect_corpus.json"
 REPORT_PATH = Path(__file__).parent / "mn4_paid_baseline.json"

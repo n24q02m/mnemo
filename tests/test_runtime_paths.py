@@ -1,4 +1,4 @@
-"""Edge paths in mnemo_mcp.runtime (config/users/auth assembly) and the CLI."""
+"""Edge paths in mnemo.runtime (config/users/auth assembly) and the CLI."""
 
 import sys
 from pathlib import Path
@@ -9,8 +9,8 @@ from hull_core.auth.middleware import Authenticator
 from hull_core.auth.tokens import hash_token, verify_token
 from hull_core.config.settings import HullSettings, ServerSettings
 
-from mnemo_mcp import cli
-from mnemo_mcp.runtime import (
+from mnemo import cli
+from mnemo.runtime import (
     cell_configured,
     load_users_for,
     mnemo_config_dir,
@@ -79,7 +79,7 @@ def test_load_users_for_multi_parses_users(tmp_path: Path):
 
 
 def test_build_authenticator_no_auth_default_limiter():
-    from mnemo_mcp.runtime import build_authenticator
+    from mnemo.runtime import build_authenticator
 
     authenticator = build_authenticator(_settings("no-auth"))
     assert isinstance(authenticator, Authenticator)
@@ -88,7 +88,7 @@ def test_build_authenticator_no_auth_default_limiter():
 
 
 def test_build_authenticator_passes_limiter_through():
-    from mnemo_mcp.runtime import build_authenticator
+    from mnemo.runtime import build_authenticator
 
     limiter = MagicMock()
     authenticator = build_authenticator(_settings("no-auth"), limiter=limiter)
@@ -98,7 +98,7 @@ def test_build_authenticator_passes_limiter_through():
 def test_cell_configured_reflects_model_cell(monkeypatch):
     cell = MagicMock()
     cell.configured = True
-    monkeypatch.setattr("mnemo_mcp.runtime.model_cell", lambda task, s=None: cell)
+    monkeypatch.setattr("mnemo.runtime.model_cell", lambda task, s=None: cell)
     assert cell_configured("embed") is True
     cell.configured = False
     assert cell_configured("embed") is False
@@ -113,7 +113,7 @@ def test_write_default_config_creates_then_refuses_then_forces(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-    from mnemo_mcp.runtime import CONFIG_TEMPLATE
+    from mnemo.runtime import CONFIG_TEMPLATE
 
     path = write_default_config()
     assert path == tmp_path / ".mnemo" / "config.toml"
@@ -169,7 +169,7 @@ class TestTokenVerify:
             argparse_ns(token="s3cret", encoded="not-a-scrypt-hash")
         )
         assert rc == 2
-        assert "mnemo-mcp:" in capsys.readouterr().out
+        assert "mnemo:" in capsys.readouterr().out
 
 
 def argparse_ns(**kw):
@@ -200,7 +200,7 @@ class TestConfigInit:
 def test_main_bare_invocation_serves(monkeypatch):
     """Bare argv falls through to the serve path."""
     monkeypatch.setattr(sys, "argv", ["mnemo-mcp"])
-    with patch("mnemo_mcp.cli._serve", return_value=None) as serve:
+    with patch("mnemo.cli._serve", return_value=None) as serve:
         assert cli.main() == 0
     serve.assert_called_once_with([])
 

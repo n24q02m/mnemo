@@ -1,4 +1,4 @@
-# Self-contained HTTP deployment for the mnemo-mcp image — there is no base
+# Self-contained HTTP deployment for the mnemo image — there is no base
 # compose file; this is the whole stack.
 #
 #   docker compose -f docker-compose.http.yml up --build

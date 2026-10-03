@@ -1,6 +1,6 @@
 """mnemo_core: domain layer for the mnemo pilot (TOOL-1, P0).
 
-Surfaces (mnemo_cli, mnemo_mcp pilot tools) depend on this package;
+Surfaces (mnemo_cli, mnemo pilot tools) depend on this package;
 this package depends on neither.
 """
 

@@ -1,6 +1,6 @@
 import struct
 
-from mnemo_mcp.db import _STRUCT_CACHE, _serialize_f32
+from mnemo.db import _STRUCT_CACHE, _serialize_f32
 
 
 def test_serialize_f32_default():

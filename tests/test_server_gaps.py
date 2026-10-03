@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from starlette.applications import Starlette
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.server import (
+from mnemo.db import MemoryDB
+from mnemo.server import (
     ServerConfigError,
     _embed,
     _enrich_memory,
@@ -42,7 +42,7 @@ def ctx_with_db(tmp_path: Path):
 
 @pytest.fixture(autouse=True)
 def _clean_sub_db_cache():
-    import mnemo_mcp.server as server_module
+    import mnemo.server as server_module
 
     server_module._sub_db_cache.clear()
     yield
@@ -53,7 +53,7 @@ def _clean_sub_db_cache():
 
 def _passthrough_to_thread():
     return patch(
-        "mnemo_mcp.server.asyncio.to_thread",
+        "mnemo.server.asyncio.to_thread",
         side_effect=lambda fn, *a, **kw: fn(*a, **kw),
     )
 
@@ -85,15 +85,15 @@ class TestLifespan:
 
         settings = _mock_settings()
         with (
-            patch("mnemo_mcp.server.settings", settings),
-            patch("mnemo_mcp.server.cell_configured", return_value=True),
-            patch("mnemo_mcp.server.model_cell") as model_cell,
-            patch("mnemo_mcp.server.db_path_for_namespace", return_value=db_path),
+            patch("mnemo.server.settings", settings),
+            patch("mnemo.server.cell_configured", return_value=True),
+            patch("mnemo.server.model_cell") as model_cell,
+            patch("mnemo.server.db_path_for_namespace", return_value=db_path),
             patch(
-                "mnemo_mcp.server._init_embedding_backend",
+                "mnemo.server._init_embedding_backend",
                 side_effect=hanging_init,
             ),
-            patch("mnemo_mcp.server._init_reranker_backend", side_effect=hanging_init),
+            patch("mnemo.server._init_reranker_backend", side_effect=hanging_init),
         ):
             model_cell.return_value.model = "cloud-embed"
             async with lifespan(MagicMock()) as ctx:
@@ -120,15 +120,15 @@ class TestLifespan:
 
         settings = _mock_settings()
         with (
-            patch("mnemo_mcp.server.settings", settings),
-            patch("mnemo_mcp.server.cell_configured", return_value=False),
-            patch("mnemo_mcp.server.db_path_for_namespace", return_value=db_path),
+            patch("mnemo.server.settings", settings),
+            patch("mnemo.server.cell_configured", return_value=False),
+            patch("mnemo.server.db_path_for_namespace", return_value=db_path),
             patch(
-                "mnemo_mcp.server._init_embedding_backend",
+                "mnemo.server._init_embedding_backend",
                 side_effect=instant_init,
             ),
             patch(
-                "mnemo_mcp.server._init_reranker_backend",
+                "mnemo.server._init_reranker_backend",
                 side_effect=_instant_noop,
             ),
         ):
@@ -158,10 +158,10 @@ class TestGetCtxSubNamespace:
         alice_path = tmp_path / "alice" / "memories.db"
         settings = _mock_settings()
         with (
-            patch("mnemo_mcp.server.current_sub", return_value="alice"),
-            patch("mnemo_mcp.server.cell_configured", return_value=False),
-            patch("mnemo_mcp.server.settings", settings),
-            patch("mnemo_mcp.server.db_path_for_namespace", return_value=alice_path),
+            patch("mnemo.server.current_sub", return_value="alice"),
+            patch("mnemo.server.cell_configured", return_value=False),
+            patch("mnemo.server.settings", settings),
+            patch("mnemo.server.db_path_for_namespace", return_value=alice_path),
         ):
             db1, model1, dims1 = _get_ctx(ctx)
             db2, model2, dims2 = _get_ctx(ctx)
@@ -174,7 +174,7 @@ class TestGetCtxSubNamespace:
 
     async def test_default_namespace_uses_host_store(self, ctx_with_db):
         ctx, host_db = ctx_with_db
-        with patch("mnemo_mcp.server.current_sub", return_value="default"):
+        with patch("mnemo.server.current_sub", return_value="default"):
             db, _, _ = _get_ctx(ctx)
         assert db is host_db
 
@@ -186,7 +186,7 @@ class TestGetCtxSubNamespace:
 
 class TestEmbedDeadline:
     async def test_timeout_degrades_to_fts(self, monkeypatch):
-        import mnemo_mcp.server as server_module
+        import mnemo.server as server_module
 
         monkeypatch.setattr(server_module, "EMBED_CALL_DEADLINE_S", 0.05)
 
@@ -194,7 +194,7 @@ class TestEmbedDeadline:
             async def embed_single(self, text, dims, role=None):
                 await asyncio.sleep(1.0)
 
-        with patch("mnemo_mcp.server.logger") as mock_logger:
+        with patch("mnemo.server.logger") as mock_logger:
             result = await _embed("text", "model", 8, backend=SlowBackend())
         assert result is None
         assert mock_logger.warning.called
@@ -213,10 +213,10 @@ class TestEnrichMemory:
         ctx, db = ctx_with_db
         mid = db.add("worth remembering")
         with (
-            patch("mnemo_mcp.server.settings", _mock_settings()),
+            patch("mnemo.server.settings", _mock_settings()),
             _passthrough_to_thread(),
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.9,
             ),
@@ -232,20 +232,20 @@ class TestEnrichMemory:
             "relations": [],
         }
         with (
-            patch("mnemo_mcp.server.settings", _mock_settings(kg_auto_enabled=True)),
+            patch("mnemo.server.settings", _mock_settings(kg_auto_enabled=True)),
             _passthrough_to_thread(),
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),
             patch(
-                "mnemo_mcp.temporal.extract.extract_entities",
+                "mnemo.temporal.extract.extract_entities",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("phase 3 broken"),
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value=graph_data,
             ),
@@ -268,15 +268,15 @@ class TestEnrichMemory:
             "relations": [{"source": "Python", "target": "MCP", "type": "related_to"}],
         }
         with (
-            patch("mnemo_mcp.server.settings", _mock_settings(kg_auto_enabled=False)),
+            patch("mnemo.server.settings", _mock_settings(kg_auto_enabled=False)),
             _passthrough_to_thread(),
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value=graph_data,
             ),
@@ -324,7 +324,7 @@ class TestHandleMemoryCompress:
         ctx, db = ctx_with_db
         mid = db.add("plain row")
         with patch(
-            "mnemo_mcp.compression.compress",
+            "mnemo.compression.compress",
             new_callable=AsyncMock,
             return_value={"compressed": False},
         ):
@@ -345,7 +345,7 @@ class TestHandleMemoryCompress:
         with (
             _passthrough_to_thread(),
             patch(
-                "mnemo_mcp.compression.compress",
+                "mnemo.compression.compress",
                 new_callable=AsyncMock,
                 return_value=compress_result,
             ),
@@ -406,12 +406,12 @@ class TestSearchRerankerFallback:
 
         outcome = MagicMock()
         outcome.results = []
-        monkeypatch.setattr("mnemo_mcp.reranker.get_reranker", lambda: MagicMock())
+        monkeypatch.setattr("mnemo.reranker.get_reranker", lambda: MagicMock())
         monkeypatch.setattr(
-            "mnemo_mcp.reranker.describe_reranker", lambda _r: ("backend", "model")
+            "mnemo.reranker.describe_reranker", lambda _r: ("backend", "model")
         )
         monkeypatch.setattr(
-            "mnemo_mcp.reranker.rerank_with_identity",
+            "mnemo.reranker.rerank_with_identity",
             MagicMock(return_value=outcome),
         )
         resp = await memory(action="search", query="python asyncio", limit=2, ctx=ctx)
@@ -463,7 +463,7 @@ def test_build_http_app_returns_authenticated_starlette_app():
     from starlette.routing import Mount
 
     settings = _mock_settings()
-    with patch("mnemo_mcp.server.build_authenticator", return_value=MagicMock()):
+    with patch("mnemo.server.build_authenticator", return_value=MagicMock()):
         app = build_http_app(settings)
     assert isinstance(app, Starlette)
     # The MCP ASGI app is mounted at the root behind the auth middleware.
@@ -493,7 +493,7 @@ def test_run_server_blocking_refuses_no_auth_off_loopback(monkeypatch):
     hs.server.auth = "no-auth"
     hs.server.host = "127.0.0.1"
     hs.server.port = 8000
-    monkeypatch.setattr("mnemo_mcp.runtime.hull_settings", lambda: hs)
+    monkeypatch.setattr("mnemo.runtime.hull_settings", lambda: hs)
 
     def explode(_name, _port):
         raise AssertionError("LifecycleLock must not be acquired for a refused bind")
@@ -508,13 +508,13 @@ def test_run_server_blocking_allows_no_auth_on_loopback(monkeypatch):
     hs.server.auth = "no-auth"
     hs.server.host = "127.0.0.1"
     hs.server.port = 8000
-    monkeypatch.setattr("mnemo_mcp.runtime.hull_settings", lambda: hs)
+    monkeypatch.setattr("mnemo.runtime.hull_settings", lambda: hs)
 
     lock = MagicMock()
     monkeypatch.setattr(
         "hull_core.lifecycle.lock.LifecycleLock", MagicMock(return_value=lock)
     )
-    monkeypatch.setattr("mnemo_mcp.server.build_http_app", lambda _hs: MagicMock())
+    monkeypatch.setattr("mnemo.server.build_http_app", lambda _hs: MagicMock())
 
     seen: dict[str, object] = {}
 

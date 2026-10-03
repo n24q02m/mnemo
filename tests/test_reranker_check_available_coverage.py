@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.reranker import (
+from mnemo.reranker import (
     CloudReranker,
     FallbackChainReranker,
     Qwen3Reranker,
@@ -18,7 +18,7 @@ class TestQwen3RerankerCheckAvailableCoverage:
         mock_model.rerank.side_effect = Exception("Rerank failed")
 
         with patch.object(reranker, "_get_model", return_value=mock_model):
-            with patch("mnemo_mcp.reranker.logger") as mock_logger:
+            with patch("mnemo.reranker.logger") as mock_logger:
                 assert reranker.check_available() is False
                 mock_logger.debug.assert_called()
                 args, _ = mock_logger.debug.call_args
@@ -29,7 +29,7 @@ class TestQwen3RerankerCheckAvailableCoverage:
         reranker = Qwen3Reranker()
 
         with patch.object(reranker, "_get_model", side_effect=Exception("Load failed")):
-            with patch("mnemo_mcp.reranker.logger") as mock_logger:
+            with patch("mnemo.reranker.logger") as mock_logger:
                 assert reranker.check_available() is False
                 mock_logger.debug.assert_called()
                 args, _ = mock_logger.debug.call_args
@@ -73,8 +73,8 @@ class TestBuildDefaultRerankChain:
     def test_build_prefer_local(self, monkeypatch):
         client = MagicMock()
         client.cell.model = "rerank-via-cell"
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
-        monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo.reranker._cell_client", lambda: client)
         chain = build_default_rerank_chain(prefer_local=True)
         assert isinstance(chain, FallbackChainReranker)
         assert len(chain._backends) == 2  # local first, cell fallback
@@ -84,8 +84,8 @@ class TestBuildDefaultRerankChain:
     def test_build_prefer_cloud(self, monkeypatch):
         client = MagicMock()
         client.cell.model = "rerank-via-cell"
-        monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
-        monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
+        monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
+        monkeypatch.setattr("mnemo.reranker._cell_client", lambda: client)
         chain = build_default_rerank_chain(prefer_local=False)
         assert isinstance(chain, FallbackChainReranker)
         assert isinstance(chain._backends[0], CloudReranker)
