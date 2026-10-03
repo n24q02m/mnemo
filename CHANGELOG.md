@@ -2,6 +2,42 @@
 
 <!-- version list -->
 
+## v2.18.13-beta.1 (2026-10-03)
+
+### Bug Fixes
+
+- Add a protocol gate that runs in the default CI suite
+  ([#1288](https://github.com/n24q02m/mnemo/pull/1288),
+  [`e04fd44`](https://github.com/n24q02m/mnemo/commit/e04fd448d618184133b2a6467747a2292f148814))
+
+- Hold every Renovate update for 7 days ([#1289](https://github.com/n24q02m/mnemo/pull/1289),
+  [`b28c767`](https://github.com/n24q02m/mnemo/commit/b28c767719f7f31b53ddfc79a440703067cd07aa))
+
+- Ignore e2e_token scratch files so they cannot be tracked again
+  ([#1287](https://github.com/n24q02m/mnemo/pull/1287),
+  [`4a14eef`](https://github.com/n24q02m/mnemo/commit/4a14eefa238efed4544e24db2e1957937924b91b))
+
+- Make release dispatch-only (remove push-triggered stable)
+  ([#1282](https://github.com/n24q02m/mnemo/pull/1282),
+  [`b896211`](https://github.com/n24q02m/mnemo/commit/b896211071423e096e06398bb5a69abe3f300a92))
+
+- Make the ty type check a blocking CI gate ([#1286](https://github.com/n24q02m/mnemo/pull/1286),
+  [`378c7c9`](https://github.com/n24q02m/mnemo/commit/378c7c9f7ea98c856d034f278bde9384b5029898))
+
+- **cd**: Grant id-token write + pypi environment for uv publish OIDC
+  ([#1292](https://github.com/n24q02m/mnemo/pull/1292),
+  [`ae969bf`](https://github.com/n24q02m/mnemo/commit/ae969bfaf2432d79e737cfd907873fa842a5a4bc))
+
+- **deps**: Lock file maintenance ([#1290](https://github.com/n24q02m/mnemo/pull/1290),
+  [`c960758`](https://github.com/n24q02m/mnemo/commit/c9607584ac10e6ed2fd83f0e02f8a814372bdc07))
+
+- **deps**: Lock file maintenance ([#1285](https://github.com/n24q02m/mnemo/pull/1285),
+  [`33a8241`](https://github.com/n24q02m/mnemo/commit/33a82413e2b03536095c6dedd8528d5b5f3b0c11))
+
+- **deps**: Point hull-core at the merged single-dist commit
+  ([`f226f4b`](https://github.com/n24q02m/mnemo/commit/f226f4ba10064b041e157d44e2c2bc7734c86281))
+
+
 ## v2.18.12 (2026-09-29)
 
 ### Bug Fixes
