@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from mnemo_mcp.graph import (
+from mnemo.graph import (
     create_relations,
     link_memory_entities,
     upsert_entities,
@@ -51,7 +51,7 @@ def store_kg_with_memory_id(
     Args:
         conn: Live ``sqlite3.Connection`` from :class:`MemoryDB`.
         memory_id: Capture row id the extracted KG belongs to.
-        extracted: Output from :func:`mnemo_mcp.temporal.extract.extract_entities`
+        extracted: Output from :func:`mnemo.temporal.extract.extract_entities`
             with shape ``{"entities": [...], "relations": [...], ...}``.
 
     Returns:

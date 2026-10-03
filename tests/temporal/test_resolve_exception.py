@@ -1,14 +1,14 @@
 from unittest.mock import MagicMock, patch
 
-from mnemo_mcp.temporal.resolve import find_similar_entity, insert_entity_with_embedding
+from mnemo.temporal.resolve import find_similar_entity, insert_entity_with_embedding
 
 
 def test_find_similar_entity_exception_handling():
     conn = MagicMock()
     # Force _vec_table_exists to True so it proceeds to KNN
     with (
-        patch("mnemo_mcp.temporal.resolve._vec_table_exists", return_value=True),
-        patch("mnemo_mcp.temporal.resolve.logger") as mock_logger,
+        patch("mnemo.temporal.resolve._vec_table_exists", return_value=True),
+        patch("mnemo.temporal.resolve.logger") as mock_logger,
     ):
 
         def side_effect(query, *args):
@@ -32,8 +32,8 @@ def test_insert_entity_with_embedding_exception_handling():
     conn = MagicMock()
     # Force _vec_table_exists to True
     with (
-        patch("mnemo_mcp.temporal.resolve._vec_table_exists", return_value=True),
-        patch("mnemo_mcp.temporal.resolve.logger") as mock_logger,
+        patch("mnemo.temporal.resolve._vec_table_exists", return_value=True),
+        patch("mnemo.temporal.resolve.logger") as mock_logger,
     ):
 
         def side_effect(query, *args):

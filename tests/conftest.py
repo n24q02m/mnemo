@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import fastmcp  # noqa: F401
 import pytest
 
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 # ---------------------------------------------------------------------------
 # Outbound network guard
@@ -80,11 +80,11 @@ def _blocked(host: object, port: object) -> OutboundNetworkBlocked:
         f"Blocked outbound network access to {_host_text(host)}:{port} "
         "from a unit test.\n"
         "Unit tests must not talk to the internet. Patch the boundary the "
-        "call crosses instead -- e.g. patch('mnemo_mcp.embedder.init_backend') "
-        "or patch('mnemo_mcp.embedder._cell_client') for embedding backends, "
-        "patch('mnemo_mcp.reranker.init_reranker') for rerankers, or "
-        "patch('mnemo_mcp.runtime.provider_client') / "
-        "patch('mnemo_mcp.llm._get_client') for provider-cell calls. A test "
+        "call crosses instead -- e.g. patch('mnemo.embedder.init_backend') "
+        "or patch('mnemo.embedder._cell_client') for embedding backends, "
+        "patch('mnemo.reranker.init_reranker') for rerankers, or "
+        "patch('mnemo.runtime.provider_client') / "
+        "patch('mnemo.llm._get_client') for provider-cell calls. A test "
         "that genuinely needs the network belongs behind one of the "
         f"@pytest.mark.{{{markers}}} markers."
     )
@@ -142,7 +142,7 @@ def _block_outbound_network(request, monkeypatch):
 
 def _settings_env_keys() -> list[str]:
     """Every env var pydantic-settings would read into ``Settings``."""
-    from mnemo_mcp.config import Settings
+    from mnemo.config import Settings
 
     keys = {name.upper() for name in Settings.model_fields}
     keys.update({"DB_PATH", "MNEMO_DB_PATH"})  # validation aliases
@@ -159,7 +159,7 @@ def _isolate_fake_home(tmp_path_factory, monkeypatch):
     developer's real mnemo state -- and from parallel pytest workers.
     Path.home() reads HOME on POSIX and USERPROFILE on Windows.
     """
-    from mnemo_mcp.runtime import reset_settings_cache
+    from mnemo.runtime import reset_settings_cache
 
     fake_home = tmp_path_factory.mktemp("mnemo_test_home")
     monkeypatch.setenv("HOME", str(fake_home))
@@ -181,7 +181,7 @@ def _clear_provider_environment(monkeypatch):
     ) + tuple(_settings_env_keys()):
         monkeypatch.delenv(key, raising=False)
 
-    from mnemo_mcp.config import Settings, settings
+    from mnemo.config import Settings, settings
 
     # Reset the singleton so tests that mutate it directly (validate_assignment
     # fields, no monkeypatch) start from defaults every test.
@@ -197,10 +197,10 @@ def _reset_module_singletons():
     fake HOME, but the embedder/reranker singletons and the cached chat
     client hold objects built from the previous test's provider cells.
     """
-    import mnemo_mcp.embedder as embedder_mod
-    import mnemo_mcp.llm as llm_mod
-    import mnemo_mcp.reranker as reranker_mod
-    from mnemo_mcp.server import _sub_db_cache
+    import mnemo.embedder as embedder_mod
+    import mnemo.llm as llm_mod
+    import mnemo.reranker as reranker_mod
+    from mnemo.server import _sub_db_cache
 
     embedder_mod._backend = None
     reranker_mod.clear_reranker()

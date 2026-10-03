@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.server — MCP tools, prompts, resources."""
+"""Tests for mnemo.server — MCP tools, prompts, resources."""
 
 import json
 from collections.abc import Generator
@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB
-from mnemo_mcp.server import (
+from mnemo.db import MAX_CONTENT_LENGTH, MemoryDB
+from mnemo.server import (
     _enrich_memory,
     _handle_add,
     _handle_consolidate,
@@ -366,7 +366,7 @@ class TestMemoryConsolidate:
 
     async def test_consolidate_no_category(self, ctx_with_db):
         ctx, _ = ctx_with_db
-        with patch("mnemo_mcp.server.settings") as mock_settings:
+        with patch("mnemo.server.settings") as mock_settings:
             mock_settings.resolve_provider_mode.return_value = "sdk"
             result = await memory(action="consolidate", ctx=ctx)
         assert "error" in result
@@ -546,7 +546,7 @@ class TestEnrichMemory:
         mid = db.add("test memory")
         with (
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("api error"),
             ),
@@ -555,7 +555,7 @@ class TestEnrichMemory:
             # issues a live LLM request, exactly as the sibling tests below
             # already assume.
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -578,18 +578,18 @@ class TestEnrichMemory:
         }
         with (
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 return_value=mock_graph_data,
             ),
-            patch("mnemo_mcp.graph.upsert_entities", return_value=["e1", "e2"]),
-            patch("mnemo_mcp.graph.create_relations"),
-            patch("mnemo_mcp.graph.link_memory_entities"),
+            patch("mnemo.graph.upsert_entities", return_value=["e1", "e2"]),
+            patch("mnemo.graph.create_relations"),
+            patch("mnemo.graph.link_memory_entities"),
         ):
             await _enrich_memory(db, mid, "Python is a programming language")
 
@@ -599,12 +599,12 @@ class TestEnrichMemory:
         mid = db.add("test")
         with (
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),
             patch(
-                "mnemo_mcp.graph.extract_entities",
+                "mnemo.graph.extract_entities",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("boom"),
             ),
@@ -623,7 +623,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker.backend_name = "local"
         mock_reranker.model_name = "n24q02m/Qwen3-Reranker-0.6B-ONNX-YesNo"
         mock_reranker.rerank.return_value = [(1, 0.95), (0, 0.85), (2, 0.70)]
-        with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
+        with patch("mnemo.reranker.get_reranker", return_value=mock_reranker):
             result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is True
         assert result["results"][0]["rerank_score"] == 0.95
@@ -642,7 +642,7 @@ class TestSearchRerankerAndGraph:
         mock_reranker.backend_name = "cloud"
         mock_reranker.model_name = "cohere/rerank-v4.0-pro"
         mock_reranker.rerank.side_effect = RuntimeError("rerank failed")
-        with patch("mnemo_mcp.reranker.get_reranker", return_value=mock_reranker):
+        with patch("mnemo.reranker.get_reranker", return_value=mock_reranker):
             result = await _handle_search(ctx, "Python", None, None, 5)
         assert result["reranked"] is False
         assert result["reranker"] == {
@@ -656,7 +656,7 @@ class TestSearchRerankerAndGraph:
         ctx, db = ctx_with_db
         db.add("Python for AI")
         mid2 = db.add("Python for web development")
-        with patch("mnemo_mcp.graph.find_related_memory_ids", return_value=[mid2]):
+        with patch("mnemo.graph.find_related_memory_ids", return_value=[mid2]):
             result = await _handle_search(ctx, "Python", None, None, 5)
         # At least one result should have graph_related
         related = [r for r in result["results"] if r.get("graph_related")]
@@ -667,7 +667,7 @@ class TestSearchRerankerAndGraph:
         ctx, db = ctx_with_db
         db.add("Python for AI")
         with patch(
-            "mnemo_mcp.graph.find_related_memory_ids",
+            "mnemo.graph.find_related_memory_ids",
             side_effect=RuntimeError("graph error"),
         ):
             result = await _handle_search(ctx, "Python", None, None, 5)
@@ -678,7 +678,7 @@ class TestConsolidate:
     async def test_consolidate_no_category_when_cell_ready(self, ctx_with_db):
         """Cell ready + no category -> explicit category error."""
         ctx, db = ctx_with_db
-        with patch("mnemo_mcp.graph._cell_ready", return_value=True):
+        with patch("mnemo.graph._cell_ready", return_value=True):
             result = await _handle_consolidate(ctx, None)
         assert "error" in result
         assert "category is required" in result["error"]
@@ -688,7 +688,7 @@ class TestConsolidate:
         """Cell ready + fewer than 2 memories in category -> error."""
         ctx, db = ctx_with_db
         db.add("only one", category="tech")
-        with patch("mnemo_mcp.graph._cell_ready", return_value=True):
+        with patch("mnemo.graph._cell_ready", return_value=True):
             result = await _handle_consolidate(ctx, "tech")
         assert "error" in result
         assert "at least 2" in result["error"]
@@ -700,9 +700,9 @@ class TestConsolidate:
         db.add("Python is awesome", category="tech")
 
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value="Python is excellent",
             ),
@@ -720,9 +720,9 @@ class TestConsolidate:
         db.add("mem1", category="tech")
         db.add("mem2", category="tech")
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("LLM error"),
             ),
@@ -775,7 +775,7 @@ class TestServerVersion:
     def test_serverinfo_version_matches_package(self):
         """initialize's serverInfo.version reports the package version,
         not the MCP SDK version."""
-        from mnemo_mcp.server import __version__, mcp
+        from mnemo.server import __version__, mcp
 
         init_opts = mcp._mcp_server.create_initialization_options()
         assert init_opts.server_version == __version__
@@ -802,7 +802,7 @@ class TestMaybeRegisterCustomEmbed:
         import fastretrieval
 
         with patch.object(fastretrieval.TextEmbedding, "add_custom_model") as mock_add:
-            with patch("mnemo_mcp.server.settings") as mock_settings:
+            with patch("mnemo.server.settings") as mock_settings:
                 mock_settings.local_embedding_dim = 1024
                 mock_settings.resolve_embedding_dims.return_value = 768
                 mock_settings.local_embedding_model_file = "onnx/model.onnx"
@@ -828,7 +828,7 @@ class TestMaybeRegisterCustomEmbed:
             "add_custom_model",
             side_effect=ValueError("Model Org/custom-embed is already registered"),
         ):
-            with patch("mnemo_mcp.server.settings") as mock_settings:
+            with patch("mnemo.server.settings") as mock_settings:
                 mock_settings.local_embedding_dim = 768
                 mock_settings.resolve_embedding_dims.return_value = 768
                 mock_settings.local_embedding_model_file = "onnx/model.onnx"
@@ -864,7 +864,7 @@ class TestMaybeRegisterCustomRerank:
         with patch.object(
             fastretrieval.TextCrossEncoder, "add_custom_model"
         ) as mock_add:
-            with patch("mnemo_mcp.server.settings") as mock_settings:
+            with patch("mnemo.server.settings") as mock_settings:
                 mock_settings.local_rerank_model_file = "onnx/model_quantized.onnx"
 
                 _maybe_register_custom_rerank("Org/custom-reranker")
@@ -958,7 +958,7 @@ class TestSpecializedTools:
 
         # 11. Consolidate (requires LLM usually, might just return error if no keys, but it covers the tool entry point)
         with patch(
-            "mnemo_mcp.server._handle_consolidate", new_callable=AsyncMock
+            "mnemo.server._handle_consolidate", new_callable=AsyncMock
         ) as mock_handle:
             mock_handle.return_value = json.dumps({"status": "consolidated"})
             await consolidate_memories(category="test", ctx=ctx)

@@ -78,7 +78,7 @@ Requires `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` configured.
 **Sync prerequisites:**
 1. Get a token: call `config(action="setup_sync")` (Device Code OAuth flow)
 2. Set `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` in your MCP config environment
-3. The server auto-loads the saved token from `~/.mnemo-mcp/tokens/google_drive.json` -- no extra env vars needed
+3. The server auto-loads the saved token from `~/.mnemo/tokens/google_drive.json` -- no extra env vars needed
 
 ### `set` - Update a configuration value
 
@@ -139,7 +139,7 @@ locally so no extra env vars are needed for sync.
 1. Requests a device code from Google OAuth
 2. Displays a URL and code for user to enter in their browser
 3. Polls for authorization completion
-4. Saves the token to `~/.mnemo-mcp/tokens/google_drive.json`
+4. Saves the token to `~/.mnemo/tokens/google_drive.json`
 5. Returns env vars to set in your MCP config
 
 **Example:**
@@ -284,7 +284,7 @@ Configure via environment variables before starting the server:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_PATH` | `~/.mnemo-mcp/memories.db` | SQLite database path |
+| `DB_PATH` | `~/.mnemo/memories.db` | SQLite database path |
 | `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
 | `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (fastretrieval ONNX/GGUF), or empty (auto) |
 | `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
@@ -292,7 +292,7 @@ Configure via environment variables before starting the server:
 | `SYNC_ENABLED` | `true` | Enable external sync; CF D1 always disables it |
 | `MEMORY_DB_BACKEND` | `sqlite` | `cf-d1` uses D1/Vectorize and suppresses external sync/OAuth |
 | `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID for Google Drive |
-| `SYNC_FOLDER` | `mnemo-mcp` | Google Drive folder name |
+| `SYNC_FOLDER` | `mnemo` | Google Drive folder name |
 | `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |
 | `LOG_LEVEL` | `INFO` | Log level |
 | `COMPRESSION_ENABLED` | `true` | Enable LLM compression on capture |

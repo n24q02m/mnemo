@@ -1,9 +1,9 @@
-"""Tests for ``mnemo_mcp.temporal.resolve`` -- entity resolution dedup."""
+"""Tests for ``mnemo.temporal.resolve`` -- entity resolution dedup."""
 
 from __future__ import annotations
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.temporal.resolve import (
+from mnemo.db import MemoryDB
+from mnemo.temporal.resolve import (
     _resolve_threshold,
     find_similar_entity,
     insert_entity_with_embedding,

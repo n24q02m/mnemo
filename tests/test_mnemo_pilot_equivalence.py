@@ -3,7 +3,7 @@ envelopes for identical operations (TOOL-1 acceptance).
 
 Neither surface invokes the other: the CLI path goes through
 ``mnemo_cli.__main__.main`` (argparse -> core) and the MCP path through
-``mnemo_mcp.pilot_tools`` (args dict -> core). Envelopes are canonicalized
+``mnemo.pilot_tools`` (args dict -> core). Envelopes are canonicalized
 (masking freshly generated ids/timestamps, sorting keys) and compared as
 strings — any other difference fails the gate.
 """
@@ -20,8 +20,8 @@ import pytest
 
 from mnemo_cli.__main__ import main as cli_main
 from mnemo_core import operations, results
-from mnemo_mcp import pilot_tools
-from mnemo_mcp.db import MemoryDB
+from mnemo import pilot_tools
+from mnemo.db import MemoryDB
 
 _ID_RE = re.compile(r"[0-9a-f]{32}")
 

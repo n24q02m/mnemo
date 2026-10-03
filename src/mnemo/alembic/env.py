@@ -1,4 +1,4 @@
-"""Alembic environment for mnemo-mcp.
+"""Alembic environment for mnemo.
 
 This environment is tuned for SQLite + WAL and raw-SQL migrations
 (``op.execute(...)`` style). We do not use SQLAlchemy ORM models, so
@@ -41,7 +41,7 @@ def _resolve_db_url() -> str:
     1. ``-x db_path=/abs/path`` Alembic CLI override (highest, used by tests).
     2. ``MNEMO_DB_PATH`` environment variable.
     3. ``alembic.ini`` ``sqlalchemy.url`` value.
-    4. Default ``~/.mnemo-mcp/memories.db``.
+    4. Default ``~/.mnemo/memories.db``.
     """
     x_args = context.get_x_argument(as_dictionary=True)
     if "db_path" in x_args:
@@ -57,7 +57,7 @@ def _resolve_db_url() -> str:
     if ini_url and not ini_url.startswith("driver://"):
         return ini_url
 
-    default_path = (Path.home() / ".mnemo-mcp" / "memories.db").resolve()
+    default_path = (Path.home() / ".mnemo" / "memories.db").resolve()
     return f"sqlite:///{default_path.as_posix()}"
 
 

@@ -12,7 +12,7 @@ def test_server_import_emits_no_runtime_warnings() -> None:
         if not key.startswith(("MNEMO_", "GOOGLE_"))
     }
     result = subprocess.run(
-        [sys.executable, "-Werror", "-c", "import mnemo_mcp.server"],
+        [sys.executable, "-Werror", "-c", "import mnemo.server"],
         capture_output=True,
         check=False,
         env=env,

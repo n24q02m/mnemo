@@ -10,7 +10,7 @@ from loguru import logger
 
 def _cell_ready(task: str) -> bool:
     """True when the host configured a key for the task's provider cell."""
-    from mnemo_mcp.runtime import cell_configured
+    from mnemo.runtime import cell_configured
 
     return cell_configured(task)
 
@@ -30,7 +30,7 @@ async def _cell_completion(
     text content. ``options`` passes provider-specific body fields verbatim
     (e.g. OpenRouter ``reasoning``), the cell still wins on model.
     """
-    from mnemo_mcp.runtime import provider_client
+    from mnemo.runtime import provider_client
 
     kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
     if response_format:

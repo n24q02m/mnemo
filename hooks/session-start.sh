@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mnemo-mcp SessionStart hook.
+# mnemo SessionStart hook.
 #
 # Emits a non-blocking nudge so Claude Code knows mnemo is available and
 # how to use the recall-context skill at the start of a session. The hook

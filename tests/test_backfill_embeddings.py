@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from mnemo_mcp.server import _handle_config_backfill
+from mnemo.server import _handle_config_backfill
 from scripts.backfill_embeddings import backfill
 
 
@@ -11,7 +11,7 @@ async def test_server_backfill_passes_document_role_and_aligns_vectors():
 
     CURRENTLY FAILING — EXPOSES A LIVE BUG (reported to Main, src is read-only
     for this lane): `_handle_config_backfill` unpacks ``_get_ctx`` into
-    ``global_model`` (src/mnemo_mcp/server.py:1873) but its backend guard
+    ``global_model`` (src/mnemo/server.py:1873) but its backend guard
     (line 1878) and result payload (line ~1960) read ``embedding_model``, so
     every backfill_embeddings call raises NameError before touching the DB.
     Fix: unpack as ``embedding_model`` (or rename the uses); this test then
@@ -29,8 +29,8 @@ async def test_server_backfill_passes_document_role_and_aligns_vectors():
     backend.embed_texts = AsyncMock(return_value=[[0.1], [0.2]])
 
     with (
-        patch("mnemo_mcp.server._get_ctx", return_value=(db, "some-model", 1)),
-        patch("mnemo_mcp.embedder.get_backend", return_value=backend),
+        patch("mnemo.server._get_ctx", return_value=(db, "some-model", 1)),
+        patch("mnemo.embedder.get_backend", return_value=backend),
     ):
         result = await _handle_config_backfill(None, batch_size=2)
 

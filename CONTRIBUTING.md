@@ -1,6 +1,6 @@
-# Contributing to mnemo-mcp
+# Contributing to mnemo
 
-Thank you for your interest in contributing to mnemo-mcp! This guide will help you get started.
+Thank you for your interest in contributing to mnemo! This guide will help you get started.
 
 ## Getting Started
 
@@ -17,8 +17,8 @@ Thank you for your interest in contributing to mnemo-mcp! This guide will help y
 1. **Fork the repository** and clone your fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/mnemo-mcp
-cd mnemo-mcp
+git clone https://github.com/YOUR_USERNAME/mnemo
+cd mnemo
 ```
 
 2. **Install tools and dependencies**
@@ -149,9 +149,9 @@ uv run pytest --tb=short   # Short tracebacks
 ## Project Structure
 
 ```text
-mnemo-mcp/
+mnemo/
 ├── src/
-│   └── mnemo_mcp/
+│   └── mnemo/
 │       ├── __init__.py
 │       ├── __main__.py
 │       ├── config.py          # Configuration (pydantic-settings)

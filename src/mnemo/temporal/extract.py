@@ -1,18 +1,18 @@
-"""Phase 3 entity + relation extraction via :func:`mnemo_mcp.llm.call_llm`.
+"""Phase 3 entity + relation extraction via :func:`mnemo.llm.call_llm`.
 
 This module ports the Phase 1 ``graph.extract_entities`` LLM call to the
-Phase 1 multi-provider dispatch in :mod:`mnemo_mcp.llm`. Behaviour is
+Phase 1 multi-provider dispatch in :mod:`mnemo.llm`. Behaviour is
 preserved (same prompt template, same validation set, same return shape)
-so existing callers in :mod:`mnemo_mcp.server` and :mod:`mnemo_mcp.graph`
+so existing callers in :mod:`mnemo.server` and :mod:`mnemo.graph`
 continue to work via a re-export.
 
 Phase 3 additions:
 
 * The prompt now asks the LLM to optionally emit a ``supersedes`` array of
   ``{old_fact_id, confidence}`` objects (consumed by
-  :mod:`mnemo_mcp.temporal.supersede`). Old callers that ignore the field
+  :mod:`mnemo.temporal.supersede`). Old callers that ignore the field
   see no behavioural change.
-* Dispatch flows through :func:`mnemo_mcp.llm.call_llm`: authenticated subjects
+* Dispatch flows through :func:`mnemo.llm.call_llm`: authenticated subjects
   use their own relay model, endpoint and key; local single-user calls retain
   environment-based provider detection.
 """
@@ -24,7 +24,7 @@ from typing import Any, Final
 
 from loguru import logger
 
-from mnemo_mcp.llm import call_llm
+from mnemo.llm import call_llm
 
 # ---------------------------------------------------------------------------
 # Prompt + validation constants

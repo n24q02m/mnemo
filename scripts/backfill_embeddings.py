@@ -134,9 +134,9 @@ def main() -> int:
 
     from pathlib import Path
 
-    from mnemo_mcp.config import settings
-    from mnemo_mcp.db import MemoryDB
-    from mnemo_mcp.embedder import init_backend
+    from mnemo.config import settings
+    from mnemo.db import MemoryDB
+    from mnemo.embedder import init_backend
 
     embedding_dims = args.dimensions or (
         settings.embedding_dims if settings.embedding_dims > 0 else None

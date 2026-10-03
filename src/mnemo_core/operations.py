@@ -2,7 +2,7 @@
 
 Rules (spec `2026-09-10-mnemo-pilot-mn1-6-tool1-design.md` section 2):
 
-1. This module NEVER imports a surface module (mnemo_mcp server, mnemo_cli)
+1. This module NEVER imports a surface module (mnemo server, mnemo_cli)
    and NEVER reads ``os.environ`` — subject context arrives explicitly.
 2. Every operation returns the shared envelope from ``mnemo_core.results``;
    surfaces only parse input and serialize the envelope.
@@ -18,7 +18,7 @@ from mnemo_core import results
 from mnemo_core.defense import redact
 from mnemo_core.ports import CapExceeded, ReflectPort, StoragePort
 
-# Mirrors mnemo_mcp.db.MAX_CONTENT_LENGTH (validated at the DB layer too);
+# Mirrors mnemo.db.MAX_CONTENT_LENGTH (validated at the DB layer too);
 # re-declared here so VALIDATION mapping does not depend on the adapter.
 _MAX_CONTENT_LENGTH = 20_000
 

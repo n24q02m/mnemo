@@ -14,7 +14,7 @@ import pytest
 
 from mnemo_core import operations
 from mnemo_core.ports import ProviderAnswer
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 class FakeTransport:
@@ -38,7 +38,7 @@ def db(tmp_path: pathlib.Path) -> MemoryDB:
 
 
 def _provider(transport: FakeTransport, cap: float = 5.00):
-    from mnemo_mcp.providers import BoundedReflectProvider
+    from mnemo.providers import BoundedReflectProvider
 
     return BoundedReflectProvider(
         model="cohere/command-r7b-12-2024",

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mnemo_mcp.config import settings
-from mnemo_mcp.db import MemoryDB
+from mnemo.config import settings
+from mnemo.db import MemoryDB
 
 
 class TestKgAutoEnabledFlag:
@@ -32,7 +32,7 @@ class TestEnrichMemoryPhase3Path:
         monkeypatch.setattr(settings, "kg_auto_enabled", False)
 
     async def test_phase3_path_invoked(self, tmp_db: MemoryDB):
-        from mnemo_mcp.server import _enrich_memory
+        from mnemo.server import _enrich_memory
 
         mid = tmp_db.add("Alice works on Project X")
         canned = {
@@ -47,12 +47,12 @@ class TestEnrichMemoryPhase3Path:
         }
         with (
             patch(
-                "mnemo_mcp.temporal.extract.extract_entities",
+                "mnemo.temporal.extract.extract_entities",
                 new_callable=AsyncMock,
                 return_value=canned,
             ),
             patch(
-                "mnemo_mcp.graph.score_importance",
+                "mnemo.graph.score_importance",
                 new_callable=AsyncMock,
                 return_value=0.5,
             ),

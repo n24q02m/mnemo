@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.reranker import (
+from mnemo.db import MemoryDB
+from mnemo.reranker import (
     CloudReranker,
     FallbackChainReranker,
     Qwen3Reranker,
@@ -188,8 +188,8 @@ def test_build_default_rerank_chain_prefer_local_false_swaps_order(monkeypatch):
     """With the rerank cell configured, prefer_local=False puts the cell first."""
     client = MagicMock()
     client.cell.model = "rerank-via-cell"
-    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
-    monkeypatch.setattr("mnemo_mcp.reranker._cell_client", lambda: client)
+    monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
+    monkeypatch.setattr("mnemo.reranker._cell_client", lambda: client)
     chain = build_default_rerank_chain(prefer_local=False)
     backends = chain._backends
 
@@ -351,7 +351,7 @@ async def test_handle_search_passes_candidate_pool_when_reranker_active(
     mock_ctx,
 ):
     """Reranker presence should expand the candidate pool fed to db.search."""
-    from mnemo_mcp.server import _handle_search
+    from mnemo.server import _handle_search
 
     ctx, db = mock_ctx
     for i in range(20):
@@ -360,7 +360,7 @@ async def test_handle_search_passes_candidate_pool_when_reranker_active(
     fake_reranker = MagicMock()
     fake_reranker.rerank.return_value = [(0, 0.9), (1, 0.7)]
 
-    with patch("mnemo_mcp.reranker.get_reranker", return_value=fake_reranker):
+    with patch("mnemo.reranker.get_reranker", return_value=fake_reranker):
         with patch.object(db, "search", wraps=db.search) as wrapped:
             await _handle_search(ctx, query="reindex job", limit=5)
 

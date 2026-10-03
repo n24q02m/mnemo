@@ -1,13 +1,13 @@
 ---
 name: passport-bootstrap
-description: Use when the user installs mnemo-mcp on a fresh machine and wants to restore prior memory state from S3 or Google Drive (Phase 2 passport sync). Triggers on phrases like "set up mnemo on this machine", "restore my memory passport", "import passport", "bootstrap mnemo", or when the user says they got a new laptop / VM and wants their memories back.
+description: Use when the user installs mnemo on a fresh machine and wants to restore prior memory state from S3 or Google Drive (Phase 2 passport sync). Triggers on phrases like "set up mnemo on this machine", "restore my memory passport", "import passport", "bootstrap mnemo", or when the user says they got a new laptop / VM and wants their memories back.
 argument-hint: "[backend: s3 | gdrive]"
 ---
 
 # Passport Bootstrap
 
 Restore an encrypted memory passport from a configured backend so a
-fresh mnemo-mcp install picks up the user's full memory history.
+fresh mnemo install picks up the user's full memory history.
 
 ## When to Use
 

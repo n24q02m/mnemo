@@ -23,7 +23,7 @@ from pathlib import Path
 import sqlite_vec
 from loguru import logger
 
-from mnemo_mcp.exceptions import EmbeddingModelMismatch
+from mnemo.exceptions import EmbeddingModelMismatch
 
 # Alembic migration constants
 _ALEMBIC_INI_PATH = Path(__file__).resolve().parent / "alembic.ini"
@@ -125,7 +125,7 @@ def _check_sqlite_version() -> None:
         return
     required = ".".join(str(part) for part in MIN_SQLITE_VERSION)
     raise RuntimeError(
-        f"mnemo-mcp needs SQLite >= {required} for UPDATE ... RETURNING, but "
+        f"mnemo needs SQLite >= {required} for UPDATE ... RETURNING, but "
         f"this Python is linked against SQLite {sqlite3.sqlite_version}. "
         "Upgrade the SQLite library this Python build uses, or install a "
         "Python distribution that bundles a newer one."
@@ -1767,7 +1767,7 @@ class MemoryDB:
         """
         if archive_after_days is None:
             try:
-                from mnemo_mcp.config import settings as _settings
+                from mnemo.config import settings as _settings
 
                 archive_after_days = int(_settings.archive_after_days)
             except Exception:

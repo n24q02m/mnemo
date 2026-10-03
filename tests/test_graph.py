@@ -1,9 +1,9 @@
-"""Tests for mnemo_mcp.graph -- entity extraction, relations, graph traversal."""
+"""Tests for mnemo.graph -- entity extraction, relations, graph traversal."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.graph import (
+from mnemo.db import MemoryDB
+from mnemo.graph import (
     create_relations,
     extract_entities,
     find_related_memory_ids,
@@ -15,15 +15,15 @@ from mnemo_mcp.graph import (
 
 class TestExtractEntities:
     async def test_returns_none_when_cell_not_configured(self):
-        with patch("mnemo_mcp.graph._cell_ready", return_value=False):
+        with patch("mnemo.graph._cell_ready", return_value=False):
             result = await extract_entities("Python is a programming language")
         assert result is None
 
     async def test_success_with_llm(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": [{"name": "Python", "type": "tool"}],'
@@ -38,7 +38,7 @@ class TestExtractEntities:
 
     async def test_handles_llm_error(self):
         with patch(
-            "mnemo_mcp.graph._cell_completion",
+            "mnemo.graph._cell_completion",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ):
@@ -47,7 +47,7 @@ class TestExtractEntities:
 
     async def test_handles_invalid_json(self):
         with patch(
-            "mnemo_mcp.graph._cell_completion",
+            "mnemo.graph._cell_completion",
             new_callable=AsyncMock,
             return_value="not json",
         ):
@@ -56,7 +56,7 @@ class TestExtractEntities:
 
     async def test_handles_missing_entities_key(self):
         with patch(
-            "mnemo_mcp.graph._cell_completion",
+            "mnemo.graph._cell_completion",
             new_callable=AsyncMock,
             return_value='{"relations": []}',
         ):
@@ -65,9 +65,9 @@ class TestExtractEntities:
 
     async def test_calls_completion_once(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": [{"name": "Test", "type": "concept"}],'
@@ -86,8 +86,8 @@ class TestCellCompletion:
     async def test_response_format_forwarded_when_provided(self):
         client = MagicMock()
         client.chat = AsyncMock(return_value="{}")
-        with patch("mnemo_mcp.runtime.provider_client", return_value=client):
-            from mnemo_mcp.graph import _cell_completion
+        with patch("mnemo.runtime.provider_client", return_value=client):
+            from mnemo.graph import _cell_completion
 
             await _cell_completion(
                 "chat",
@@ -102,8 +102,8 @@ class TestCellCompletion:
     async def test_response_format_omitted_when_none(self):
         client = MagicMock()
         client.chat = AsyncMock(return_value="ok")
-        with patch("mnemo_mcp.runtime.provider_client", return_value=client):
-            from mnemo_mcp.graph import _cell_completion
+        with patch("mnemo.runtime.provider_client", return_value=client):
+            from mnemo.graph import _cell_completion
 
             await _cell_completion("chat", [{"role": "user", "content": "hi"}])
 
@@ -112,15 +112,15 @@ class TestCellCompletion:
 
 class TestScoreImportance:
     async def test_returns_default_when_cell_not_configured(self):
-        with patch("mnemo_mcp.graph._cell_ready", return_value=False):
+        with patch("mnemo.graph._cell_ready", return_value=False):
             score = await score_importance("some content")
         assert score == 0.5
 
     async def test_success_with_llm(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value="0.8",
             ),
@@ -130,9 +130,9 @@ class TestScoreImportance:
 
     async def test_clamps_to_range(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value="1.5",
             ),
@@ -142,9 +142,9 @@ class TestScoreImportance:
 
     async def test_clamps_negative(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value="-0.3",
             ),
@@ -154,9 +154,9 @@ class TestScoreImportance:
 
     async def test_handles_error(self):
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 side_effect=Exception("API error"),
             ),
@@ -328,7 +328,7 @@ class TestLinkMemoryEntities:
         """Exception during linking is caught and logged with details."""
         conn = MagicMock()
         conn.executemany.side_effect = Exception("DB error")
-        with patch("mnemo_mcp.graph.logger") as mock_logger:
+        with patch("mnemo.graph.logger") as mock_logger:
             # Should not raise
             link_memory_entities(conn, "fake-id", ["eid1", "eid2"])
             # Verify error was actually logged

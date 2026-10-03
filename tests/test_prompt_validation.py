@@ -1,6 +1,6 @@
 import json
 
-from mnemo_mcp.server import recall_context, save_summary
+from mnemo.server import recall_context, save_summary
 
 
 def test_recall_context_empty_topic():

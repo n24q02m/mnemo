@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.embedder import MAX_RETRIES, CloudEmbeddingBackend
+from mnemo.embedder import MAX_RETRIES, CloudEmbeddingBackend
 
 
 def _cell_client(model="test-model"):
@@ -70,7 +70,7 @@ class TestDimensionRecovery:
         # Should only be called once if it's not retryable and not unsupported param
         assert client.embeddings.call_count == 1
 
-    @patch("mnemo_mcp.embedder.asyncio.sleep", new_callable=AsyncMock)
+    @patch("mnemo.embedder.asyncio.sleep", new_callable=AsyncMock)
     async def test_retryable_error_still_exhausts_retries(self, mock_sleep):
         """
         Test that retryable errors (like rate limits) still exhaust the standard

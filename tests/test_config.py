@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.config — product-local Settings after the de-host.
+"""Tests for mnemo.config — product-local Settings after the de-host.
 
 Provider/auth/cell configuration moved to hull-core (~/.mnemo/config.toml,
 see tests for runtime); only env-driven product fields live here.
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.config import (
+from mnemo.config import (
     Settings,
     _detect_gpu,
     _has_gguf_support,
@@ -102,8 +102,8 @@ class TestLocalModels:
     def test_local_rerank_model_default_is_yesno(self):
         """No override keeps the YesNo ONNX default (~598MB vs ~12GB)."""
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=False),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=False),
+            patch("mnemo.config._detect_gpu", return_value=False),
+            patch("mnemo.config._has_gguf_support", return_value=False),
         ):
             s = Settings()
             assert (
@@ -114,8 +114,8 @@ class TestLocalModels:
     def test_returns_onnx_by_default_settings(self):
         """Returns ONNX model when no GPU or no GGUF support (via Settings)."""
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=False),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=False),
+            patch("mnemo.config._detect_gpu", return_value=False),
+            patch("mnemo.config._has_gguf_support", return_value=False),
         ):
             s = Settings()
             model = s.resolve_local_embedding_model()
@@ -124,8 +124,8 @@ class TestLocalModels:
     def test_returns_gguf_with_gpu_and_llama_settings(self):
         """Returns GGUF model when GPU is available and llama-cpp is installed."""
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=True),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=True),
+            patch("mnemo.config._detect_gpu", return_value=True),
+            patch("mnemo.config._has_gguf_support", return_value=True),
         ):
             s = Settings()
             model = s.resolve_local_embedding_model()
@@ -187,21 +187,21 @@ class TestHasGGUFSupport:
 class TestResolveLocalModel:
     def test_gpu_and_gguf(self):
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=True),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=True),
+            patch("mnemo.config._detect_gpu", return_value=True),
+            patch("mnemo.config._has_gguf_support", return_value=True),
         ):
             assert _resolve_local_model("onnx-model", "gguf-model") == "gguf-model"
 
     def test_gpu_no_gguf(self):
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=True),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=False),
+            patch("mnemo.config._detect_gpu", return_value=True),
+            patch("mnemo.config._has_gguf_support", return_value=False),
         ):
             assert _resolve_local_model("onnx-model", "gguf-model") == "onnx-model"
 
     def test_no_gpu(self):
         with (
-            patch("mnemo_mcp.config._detect_gpu", return_value=False),
-            patch("mnemo_mcp.config._has_gguf_support", return_value=True),
+            patch("mnemo.config._detect_gpu", return_value=False),
+            patch("mnemo.config._has_gguf_support", return_value=True),
         ):
             assert _resolve_local_model("onnx-model", "gguf-model") == "onnx-model"

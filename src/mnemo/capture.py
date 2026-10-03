@@ -1,7 +1,7 @@
 """Smart capture pipeline for ``memory(action="capture")``.
 
 Phase 1 v0 wires the typed capture API on top of the existing dedup primitives
-in :mod:`mnemo_mcp.db`. The pipeline:
+in :mod:`mnemo.db`. The pipeline:
 
 1. Validate ``context_type`` is one of the six canonical kinds
    (conversation/fact/preference/skill/task/decision) — invalid values raise
@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Final
 from loguru import logger
 
 if TYPE_CHECKING:
-    from mnemo_mcp.db import MemoryDB
+    from mnemo.db import MemoryDB
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ async def capture(
 
     Raises:
         ValueError: If ``context_type`` is not in :data:`CONTEXT_TYPES`, or
-            if ``text`` exceeds :data:`mnemo_mcp.db.MAX_CONTENT_LENGTH` (the
+            if ``text`` exceeds :data:`mnemo.db.MAX_CONTENT_LENGTH` (the
             underlying ``add_with_context_type`` raises).
     """
     if context_type not in CONTEXT_TYPES:
@@ -153,7 +153,7 @@ async def capture(
     # MODEL) so capture() does not need to thread them through. When the
     # pipeline declines to rewrite (skip / failure / disabled), the original
     # text is stored with compressed=False and no audit row.
-    from mnemo_mcp.compression import compress
+    from mnemo.compression import compress
 
     compression_result = await compress(text)
     stored_text = compression_result["text"]

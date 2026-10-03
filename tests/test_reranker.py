@@ -1,4 +1,4 @@
-"""Tests for mnemo_mcp.reranker -- dual-backend reranking.
+"""Tests for mnemo.reranker -- dual-backend reranking.
 
 Cloud reranking goes through the ``[models.rerank]`` provider cell (hull-core
 OpenAI-spec client); tests inject a stub client instead of any network.
@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import mnemo_mcp.reranker as reranker_mod
-from mnemo_mcp.reranker import (
+import mnemo.reranker as reranker_mod
+from mnemo.reranker import (
     CloudReranker,
     Qwen3Reranker,
     describe_reranker,
@@ -186,7 +186,7 @@ class TestInitReranker:
     def test_init_cloud_uses_cell_client(self):
         """init_reranker('cloud') builds a CloudReranker around the cell client."""
         client = _cell_client()
-        with patch("mnemo_mcp.reranker._cell_client", return_value=client):
+        with patch("mnemo.reranker._cell_client", return_value=client):
             backend = init_reranker("cloud")
         assert isinstance(backend, CloudReranker)
         assert get_reranker() is backend
@@ -216,7 +216,7 @@ class TestInitReranker:
     def test_init_cloud_with_kwargs(self):
         """init_reranker accepts api_base/api_key for call-site compatibility."""
         client = _cell_client()
-        with patch("mnemo_mcp.reranker._cell_client", return_value=client):
+        with patch("mnemo.reranker._cell_client", return_value=client):
             backend = init_reranker(
                 "cloud",
                 api_base="http://proxy:4000",

@@ -5,13 +5,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.graph import (
+from mnemo.db import MemoryDB
+from mnemo.graph import (
     create_relations,
     link_memory_entities,
     upsert_entities,
 )
-from mnemo_mcp.server import (
+from mnemo.server import (
     _handle_entity_graph,
     _handle_entity_search,
     _handle_history,

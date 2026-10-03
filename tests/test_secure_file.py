@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_mcp.secure_file import write_owner_only
+from mnemo.secure_file import write_owner_only
 
 
 def test_creates_nested_file_with_content(tmp_path: Path):

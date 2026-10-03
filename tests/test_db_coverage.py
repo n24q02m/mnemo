@@ -1,4 +1,4 @@
-"""Additional tests for mnemo_mcp.db — covering uncovered lines.
+"""Additional tests for mnemo.db — covering uncovered lines.
 
 Targets: vector search paths, RRF fusion scoring, tag post-filter edge cases,
 import_jsonl with list/dict/invalid data, replace mode with vec,
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB
+from mnemo.db import MAX_CONTENT_LENGTH, MemoryDB
 
 # ---------------------------------------------------------------------------
 # Test Setup

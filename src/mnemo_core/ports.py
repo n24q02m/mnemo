@@ -1,7 +1,7 @@
 """Storage port for the mnemo pilot.
 
 The domain layer depends on this protocol only; the concrete adapter is
-mnemo_mcp's :class:`~mnemo_mcp.db.MemoryDB` (satisfied structurally).
+mnemo's :class:`~mnemo.db.MemoryDB` (satisfied structurally).
 Surfaces never talk to storage directly — they call operations.
 """
 

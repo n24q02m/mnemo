@@ -11,7 +11,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from mnemo_mcp.config import settings
+from mnemo.config import settings
 
 
 def clear_model_cache(model_name: str) -> str | None:
@@ -90,8 +90,8 @@ async def run_warmup() -> dict:
     ``DISABLE_LOCAL_EMBED`` is set). Returns a structured dict:
     ``{"status": "ok"|"error", "mode": "cloud"|"local"|"unavailable", "steps": [...]}``.
     """
-    from mnemo_mcp.embedder import init_backend
-    from mnemo_mcp.runtime import cell_configured, model_cell
+    from mnemo.embedder import init_backend
+    from mnemo.runtime import cell_configured, model_cell
 
     if cell_configured("embed"):
         try:

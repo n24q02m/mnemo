@@ -229,7 +229,7 @@ jobs:
         run: uv run --no-sync ty check
 
       - name: Run tests with coverage
-        run: uv run --no-sync pytest --tb=short --cov=mnemo_mcp --cov-report=xml --cov-fail-under=${{ matrix.cov_fail_under }}
+        run: uv run --no-sync pytest --tb=short --cov=mnemo --cov-report=xml --cov-fail-under=${{ matrix.cov_fail_under }}
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'

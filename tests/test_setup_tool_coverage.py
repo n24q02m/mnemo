@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
 
-from mnemo_mcp.setup_tool import clear_model_cache
+from mnemo.setup_tool import clear_model_cache
 
 
 def test_clear_model_cache_none_if_not_exists(tmp_path):

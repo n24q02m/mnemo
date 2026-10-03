@@ -1,4 +1,4 @@
-"""Edge case tests for mnemo_mcp.temporal.resolve."""
+"""Edge case tests for mnemo.temporal.resolve."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 import pytest
 import sqlite_vec
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.temporal.resolve import (
+from mnemo.db import MemoryDB
+from mnemo.temporal.resolve import (
     find_similar_entity,
 )
 

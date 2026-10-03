@@ -2,7 +2,7 @@
 
 from importlib.metadata import version
 
-from mnemo_mcp.server import main
+from mnemo.server import main
 
 __version__ = version("mnemo-mcp")
 __all__ = ["main", "__version__"]

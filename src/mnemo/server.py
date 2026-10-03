@@ -23,9 +23,9 @@ from loguru import logger
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from mnemo_mcp.config import settings
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.runtime import (
+from mnemo.config import settings
+from mnemo.db import MemoryDB
+from mnemo.runtime import (
     DEFAULT_EMBEDDING_DIMS,
     build_authenticator,
     cell_configured,
@@ -35,8 +35,8 @@ from mnemo_mcp.runtime import (
     model_cell,
 )
 
-# Resolved via importlib.metadata (not ``from mnemo_mcp import __version__``)
-# to avoid a circular import: ``mnemo_mcp/__init__`` imports ``server.main``.
+# Resolved via importlib.metadata (not ``from mnemo import __version__``)
+# to avoid a circular import: ``mnemo/__init__`` imports ``server.main``.
 __version__ = _pkgver("mnemo-mcp")
 
 # Storage width for sqlite-vec. All embeddings are fitted to this size so
@@ -137,7 +137,7 @@ async def _init_embedding_backend(ctx: dict) -> None:
     otherwise the local ONNX leg. Neither: FTS5-only mode. Runs as a
     background task so the server accepts connections immediately.
     """
-    from mnemo_mcp.embedder import init_backend
+    from mnemo.embedder import init_backend
 
     embedding_dims = ctx["embedding_dims"]
 
@@ -194,7 +194,7 @@ async def _init_embedding_backend(ctx: dict) -> None:
 
 async def _init_reranker_backend() -> None:
     """Initialize the reranker: rerank cell when configured, else local ONNX."""
-    from mnemo_mcp.reranker import clear_reranker, init_reranker
+    from mnemo.reranker import clear_reranker, init_reranker
 
     clear_reranker()
 
@@ -445,7 +445,7 @@ async def _embed(
     if not model:
         return None
 
-    from mnemo_mcp.embedder import EmbeddingRole, get_backend
+    from mnemo.embedder import EmbeddingRole, get_backend
 
     backend = backend or get_backend()
     if backend is None:
@@ -467,7 +467,7 @@ async def _embed(
         )
         return None
     except Exception as e:
-        from mnemo_mcp.embedder import _is_retryable
+        from mnemo.embedder import _is_retryable
 
         if _is_retryable(e):
             # Transient (rate-limit / network; the backend already exhausted
@@ -495,7 +495,7 @@ async def _handle_add(
     tags: list[str] | None = None,
 ) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
+    from mnemo.embedder import get_backend
 
     embedding_backend = get_backend()
 
@@ -569,13 +569,13 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
 
     Phase 3 KG_AUTO_ENABLED path: when ``settings.kg_auto_enabled`` is
     True, route extraction through the new
-    :mod:`mnemo_mcp.temporal.extract` + :mod:`mnemo_mcp.temporal.store`
+    :mod:`mnemo.temporal.extract` + :mod:`mnemo.temporal.store`
     pipeline (records ``memory_edges.memory_id`` + ``valid_from`` for
     bitemporal traceability). Otherwise keeps the Phase 1 legacy path
     (calls graph.extract_entities + graph.upsert/link helpers directly)
     so callers pre-Phase-3 see no behavioural change.
     """
-    from mnemo_mcp.graph import (
+    from mnemo.graph import (
         create_relations,
         extract_entities,
         link_memory_entities,
@@ -595,8 +595,8 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
     # broken Phase 3 install never blocks captures.
     if settings.kg_auto_enabled:
         try:
-            from mnemo_mcp.temporal.extract import extract_entities as t_extract
-            from mnemo_mcp.temporal.store import store_kg_with_memory_id
+            from mnemo.temporal.extract import extract_entities as t_extract
+            from mnemo.temporal.store import store_kg_with_memory_id
 
             graph_data = await t_extract(content)
             if graph_data and graph_data.get("entities"):
@@ -651,7 +651,7 @@ async def _handle_search(
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
-    from mnemo_mcp.embedder import get_backend
+    from mnemo.embedder import get_backend
 
     embedding_backend = get_backend()
     embedding = await _embed(
@@ -665,10 +665,10 @@ async def _handle_search(
     # Spec section 4.2: rerank operates on a wider candidate pool
     # (top-50 -> top-N) so we ask db.search for ``max(50, limit*5)`` rows
     # when a reranker is active and otherwise stay at the LLM-requested limit.
-    from mnemo_mcp.reranker import get_reranker
+    from mnemo.reranker import get_reranker
 
     reranker = get_reranker()
-    from mnemo_mcp.reranker import describe_reranker, rerank_with_identity
+    from mnemo.reranker import describe_reranker, rerank_with_identity
 
     reranker_backend, reranker_model = describe_reranker(reranker)
     reranker_fallback = "not_configured" if reranker is None else "not_needed"
@@ -725,7 +725,7 @@ async def _handle_search(
     # Graph boost: find related memories via entity graph
     if results:
         try:
-            from mnemo_mcp.graph import find_related_memory_ids
+            from mnemo.graph import find_related_memory_ids
 
             top_id = results[0]["id"]
             related_ids = await asyncio.to_thread(
@@ -803,7 +803,7 @@ async def _handle_update(
 ) -> dict[str, typing.Any]:
 
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
+    from mnemo.embedder import get_backend
 
     embedding_backend = get_backend()
 
@@ -1011,12 +1011,12 @@ async def _handle_capture(
 ) -> dict[str, typing.Any]:
     """Handle ``memory(action="capture")`` -- typed capture with dedup.
 
-    Wraps :func:`mnemo_mcp.capture.capture` with the shared lifespan ctx so
+    Wraps :func:`mnemo.capture.capture` with the shared lifespan ctx so
     the capture pipeline can reuse the configured embedding backend without
     reaching into module-level globals.
     """
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
+    from mnemo.embedder import get_backend
 
     embedding_backend = get_backend()
 
@@ -1037,8 +1037,8 @@ async def _handle_capture(
         backend=embedding_backend,
     )
 
-    from mnemo_mcp.capture import CONTEXT_TYPES
-    from mnemo_mcp.capture import capture as _capture
+    from mnemo.capture import CONTEXT_TYPES
+    from mnemo.capture import capture as _capture
 
     try:
         result = await _capture(
@@ -1180,7 +1180,7 @@ async def _handle_entity_search(
             resp["suggestion"] = f"Pick an entity_type from {_VALID_ENTITY_TYPES}."
         return resp
 
-    from mnemo_mcp.temporal.queries import entity_search
+    from mnemo.temporal.queries import entity_search
 
     rows = await asyncio.to_thread(
         entity_search, db, name=name, entity_type=entity_type, limit=limit
@@ -1207,7 +1207,7 @@ async def _handle_entity_graph(
             "example": "action='entity_graph', name='Python', depth=2",
             "suggestion": "Provide either 'entity_id' or 'name' to specify the root of the graph.",
         }
-    from mnemo_mcp.temporal.queries import entity_graph
+    from mnemo.temporal.queries import entity_graph
 
     result = await asyncio.to_thread(
         entity_graph, db, entity_id=entity_id, name=name, depth=depth, limit=limit
@@ -1235,7 +1235,7 @@ async def _handle_as_of(
     if isinstance(limit, int):
         limit = max(1, min(limit, 100))
 
-    from mnemo_mcp.temporal.queries import memories_as_of
+    from mnemo.temporal.queries import memories_as_of
 
     rows = await asyncio.to_thread(memories_as_of, db, as_of, limit)
     return {
@@ -1259,7 +1259,7 @@ async def _handle_history(
                 "Get an entity_id from entity_graph or entity_search results."
             ),
         }
-    from mnemo_mcp.temporal.queries import history_for_entity
+    from mnemo.temporal.queries import history_for_entity
 
     timeline = await asyncio.to_thread(history_for_entity, db, entity_id)
     return {
@@ -1275,7 +1275,7 @@ async def _handle_consolidate(
 ) -> dict[str, typing.Any]:
     """Consolidate similar memories in a category using LLM summarization."""
     db, _, _ = _get_ctx(ctx)
-    from mnemo_mcp.graph import _cell_ready
+    from mnemo.graph import _cell_ready
 
     if not _cell_ready("chat"):
         return {
@@ -1297,7 +1297,7 @@ async def _handle_consolidate(
         }
 
     try:
-        from mnemo_mcp.graph import _cell_completion
+        from mnemo.graph import _cell_completion
 
         content_list = "\n---\n".join(
             f"[{m['id'][:8]}] {m['content']}" for m in memories[:20]
@@ -1880,7 +1880,7 @@ async def _handle_memory_compress(
             "compression_provider": row.get("compression_provider"),
         }
 
-    from mnemo_mcp.compression import compress
+    from mnemo.compression import compress
 
     result = await compress(row["content"])
     if not result["compressed"]:
@@ -1938,7 +1938,7 @@ async def _handle_config_backfill(
         }
 
     db, embedding_model, embedding_dims = _get_ctx(ctx)
-    from mnemo_mcp.embedder import get_backend
+    from mnemo.embedder import get_backend
 
     backend = get_backend()
     if not embedding_model or backend is None:
@@ -2123,7 +2123,7 @@ async def _handle_config_set(
 
 
 async def _handle_config_warmup() -> dict[str, typing.Any]:
-    from mnemo_mcp.setup_tool import run_warmup
+    from mnemo.setup_tool import run_warmup
 
     result = await run_warmup()
     return result
@@ -2199,7 +2199,7 @@ def build_http_app(settings=None):
     session manager's — via an AsyncExitStack. :class:`HullAuthMiddleware`
     (pure ASGI) authenticates every request BEFORE the MCP handler and binds
     the identity to a contextvar that tools read with
-    :func:`mnemo_mcp.runtime.current_sub`.
+    :func:`mnemo.runtime.current_sub`.
     """
     from contextlib import AsyncExitStack, asynccontextmanager
 
@@ -2240,7 +2240,7 @@ def run_server_blocking(
 ) -> None:
     """Blocking entry point: acquire the lifecycle lock, serve until stopped.
 
-    The ONLY way mnemo-mcp runs (spec §3): one HTTP process, MCP endpoint at
+    The ONLY way mnemo runs (spec §3): one HTTP process, MCP endpoint at
     ``http://host:port/mcp``, auth per ``~/.mnemo/config.toml`` ([server]
     auth = no-auth | token | multi). In no-auth mode a non-loopback bind is
     refused — an unauthenticated listener must never leave localhost.
@@ -2248,7 +2248,7 @@ def run_server_blocking(
     import uvicorn
     from hull_core.lifecycle.lock import LifecycleLock
 
-    from mnemo_mcp.runtime import hull_settings
+    from mnemo.runtime import hull_settings
 
     hs = hull_settings()
     bind_host = host or os.getenv("MNEMO_HOST") or hs.server.host
@@ -2267,7 +2267,7 @@ def run_server_blocking(
     with lock:
         app = build_http_app(hs)
         logger.info(
-            f"mnemo-mcp MCP endpoint: http://{bind_host}:{bind_port}/mcp "
+            f"mnemo MCP endpoint: http://{bind_host}:{bind_port}/mcp "
             f"(auth mode: {hs.server.auth})"
         )
         uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")

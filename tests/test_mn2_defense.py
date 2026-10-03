@@ -9,7 +9,7 @@ import pytest
 
 from mnemo_core import operations, results
 from mnemo_core.defense import redact, scan
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 
 @pytest.fixture

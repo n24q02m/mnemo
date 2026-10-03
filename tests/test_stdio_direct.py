@@ -1,6 +1,6 @@
-"""Verify mnemo-mcp runs in stdio direct mode (no smart_stdio bridge).
+"""Verify mnemo runs in stdio direct mode (no smart_stdio bridge).
 
-Spawns ``python -m mnemo_mcp`` with ``MCP_TRANSPORT=stdio`` and exercises the
+Spawns ``python -m mnemo`` with ``MCP_TRANSPORT=stdio`` and exercises the
 JSON-RPC handshake plus ``tools/list`` to prove the FastMCP stdio server is
 wired directly (no daemon-spawn bridge layer in front of it).
 
@@ -22,13 +22,13 @@ pytestmark = [pytest.mark.live, pytest.mark.timeout(60)]
 
 
 def _spawn_stdio_server() -> subprocess.Popen[str]:
-    """Start ``python -m mnemo_mcp`` with stdio transport.
+    """Start ``python -m mnemo`` with stdio transport.
 
     Returns the running subprocess. Caller is responsible for terminating it.
     """
     env = {**os.environ, "MCP_TRANSPORT": "stdio"}
     return subprocess.Popen(
-        [sys.executable, "-m", "mnemo_mcp"],
+        [sys.executable, "-m", "mnemo"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

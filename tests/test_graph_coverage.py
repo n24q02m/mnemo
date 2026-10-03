@@ -8,8 +8,8 @@ for the live completion surface).
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.db import MemoryDB
-from mnemo_mcp.graph import (
+from mnemo.db import MemoryDB
+from mnemo.graph import (
     extract_entities,
     find_related_memory_ids,
     link_memory_entities,
@@ -25,9 +25,9 @@ class TestExtractEntitiesValidation:
     async def test_filters_invalid_entity_types(self):
         """Filters out entities with invalid types."""
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": ['
@@ -58,9 +58,9 @@ class TestExtractEntitiesValidation:
         """Filters out entities with names longer than 200 chars."""
         long_name = "A" * 201
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     f'{{"entities": [{{"name": "{long_name}", "type": "concept"}}, '
@@ -78,9 +78,9 @@ class TestExtractEntitiesValidation:
     async def test_filters_non_dict_entities(self):
         """Filters out non-dict entries in entities list."""
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": ["not_a_dict", {"name": "Valid", "type": "concept"}],'
@@ -97,9 +97,9 @@ class TestExtractEntitiesValidation:
     async def test_filters_non_string_entity_names(self):
         """Filters out entities with non-string names."""
         with (
-            patch("mnemo_mcp.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_ready", return_value=True),
             patch(
-                "mnemo_mcp.graph._cell_completion",
+                "mnemo.graph._cell_completion",
                 new_callable=AsyncMock,
                 return_value=(
                     '{"entities": [{"name": 123, "type": "concept"}, '
@@ -183,7 +183,7 @@ class TestLinkMemoryEntitiesCoverage:
         """Exception during linking is caught and logged with details."""
         conn = MagicMock()
         conn.executemany.side_effect = Exception("DB error")
-        with patch("mnemo_mcp.graph.logger") as mock_logger:
+        with patch("mnemo.graph.logger") as mock_logger:
             # Should not raise
             link_memory_entities(conn, "fake-id", ["eid1", "eid2"])
             # Verify error was actually logged

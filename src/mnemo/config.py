@@ -4,7 +4,7 @@ Env-driven (pydantic-settings) product fields only: storage path, local ONNX
 fallbacks, retrieval/consolidation knobs, logging. Everything the HOST owns —
 auth mode + bind + per-task provider cells (embed/rerank/chat/jev_score) —
 lives in ``~/.mnemo/config.toml`` via :mod:`hull_core.config.settings`
-(see :mod:`mnemo_mcp.runtime`).
+(see :mod:`mnemo.runtime`).
 """
 
 from __future__ import annotations

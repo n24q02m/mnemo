@@ -114,7 +114,7 @@
 
 ### Testing
 
-- Raise mnemo_mcp coverage to 96.85% (was 89.63) — 86 behavioral tests: secure_file contract,
+- Raise mnemo coverage to 96.85% (was 89.63) — 86 behavioral tests: secure_file contract,
   runtime assembly, provider dispatch, graph parsing fallbacks, db edge paths, server tool handlers
   ([`20d2fac`](https://github.com/n24q02m/mnemo/commit/20d2facec9e83dfe108ec6ddb912a828852312a5))
 

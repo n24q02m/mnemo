@@ -18,9 +18,9 @@
 **Action:** When validating enumerated API parameters, use `difflib.get_close_matches` to identify potential typos and return a structured JSON error response that includes the closest fuzzy match as a `suggestion`. This allows the caller to easily identify their mistake and quickly self-correct.
 
 ## 2026-07-25 - Scope of this repo for UI/UX work
-**Learning:** `mnemo-mcp` ships a Python MCP server and a Cloudflare Worker. It has no frontend, no templates and no user-facing UI, so the Palette remit does not apply to it in the usual sense. This was concluded twice in one week and each conclusion was filed as a pull request containing an empty commit (#1003, #1007), which cost two review cycles and produced no change.
+**Learning:** `mnemo` ships a Python MCP server and a Cloudflare Worker. It has no frontend, no templates and no user-facing UI, so the Palette remit does not apply to it in the usual sense. This was concluded twice in one week and each conclusion was filed as a pull request containing an empty commit (#1003, #1007), which cost two review cycles and produced no change.
 
-**Action:** The reviewable surface here is the text the tools themselves return: the `error`, `suggestion` and `note` strings in `src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/`. Those are what a caller actually reads, and the entries above are all improvements to exactly that surface. Direct Palette work there. A conclusion that there is nothing to change belongs in this file as an entry; it does not need a pull request to be recorded.
+**Action:** The reviewable surface here is the text the tools themselves return: the `error`, `suggestion` and `note` strings in `src/mnemo/server.py` and the tool docs under `src/mnemo/docs/`. Those are what a caller actually reads, and the entries above are all improvements to exactly that surface. Direct Palette work there. A conclusion that there is nothing to change belongs in this file as an entry; it does not need a pull request to be recorded.
 
 ## Rejected
 
@@ -41,7 +41,7 @@ and with the same `chore:` prefix this repository rejects.
 
 The entry above exists so this does not need a pull request. It says what the
 reviewable surface here is -- the `error`, `suggestion` and `note` strings in
-`src/mnemo_mcp/server.py` and the tool docs under `src/mnemo_mcp/docs/` -- and
+`src/mnemo/server.py` and the tool docs under `src/mnemo/docs/` -- and
 that a decision to change nothing belongs in this file as an entry. Read this
 file before opening anything against this repository.
 ## 2026-08-01 - Missing Suggestion in as_of Action
@@ -49,5 +49,5 @@ file before opening anything against this repository.
 **Action:** When adding validation checks for API endpoints in purely backend MCP servers, ensure they return a structured dictionary containing both an `error` message and a `suggestion` for actionable recovery.
 
 ## 2026-09-04 - Saturated Error Surface Skip
-**Learning:** Reviewed `src/mnemo_mcp/server.py` for missing `suggestion` keys in JSON error responses. All error paths (including invalid configurations, topics, actions, and temporal/graph queries) already return actionable suggestions or apply fuzzy matching via `difflib.get_close_matches`. There is no missing DX surface to improve today.
+**Learning:** Reviewed `src/mnemo/server.py` for missing `suggestion` keys in JSON error responses. All error paths (including invalid configurations, topics, actions, and temporal/graph queries) already return actionable suggestions or apply fuzzy matching via `difflib.get_close_matches`. There is no missing DX surface to improve today.
 **Action:** Record a skip in the journal and stop without creating a PR, as instructed for repositories with no UI when the API response surface is completely healthy.

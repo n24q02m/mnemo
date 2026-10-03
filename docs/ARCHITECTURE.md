@@ -7,7 +7,7 @@
 
 ```
 +--------------------+        +---------------------+
-| MCP client         |  MCP   | mnemo-mcp           |
+| MCP client         |  MCP   | mnemo               |
 | (Claude Code,      | <----> | FastMCP server      |
 | Cursor, Codex,     |        | 15 tools (memory    |
 | claude.ai web)     |        | + config + help)    |
@@ -23,7 +23,7 @@
                 +--------------------+          +------------------------+
 ```
 The server supports two distinct storage authorities:
-- **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo-mcp/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline with optional passport sync (GDrive/S3).
+- **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline with optional passport sync (GDrive/S3).
 - **Cloudflare Deployed Mode**: Production authority is Cloudflare D1 (relational rows + FTS5) + Vectorize (dense vector index) + KV (encrypted credentials). `SYNC_ENABLED=false` is enforced in Worker container configuration.
 ## Capture pipeline (`memory(action="capture")`)
 
@@ -148,7 +148,7 @@ Trigger paths:
 
 Restore: `memory(action="restore", memory_id=...)` clears `archived_at`.
 
-## Multi-provider LLM dispatch (`mnemo_mcp.llm`)
+## Multi-provider LLM dispatch (`mnemo.llm`)
 
 Phase 1 ships the dispatch layer; actual fact-extraction prompts arrive in
 Phase 2 (compression / passport sync).
@@ -222,9 +222,9 @@ The table below is the full classification.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.mnemo-mcp/config.json` + `memories.db` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
+| stdio (default) | `~/.mnemo/config.json` + `memories.db` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
 | HTTP self-host (single-user) | Same | Same | Only you (admin = user) |
-| HTTP self-host (multi-user) | `~/.mnemo-mcp/subs/<sub>/config.json` + per-sub `memories.db` | Per-sub AES-GCM | Each authenticated user sees only their sub |
+| HTTP self-host (multi-user) | `~/.mnemo/subs/<sub>/config.json` + per-sub `memories.db` | Per-sub AES-GCM | Each authenticated user sees only their sub |
 
 In multi-user remote mode, `MCP_DCR_SERVER_SECRET` is required as proof
 of intentional multi-user deployment -- mnemo refuses to start with

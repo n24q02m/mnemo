@@ -1,4 +1,4 @@
-"""Pytest-based live MCP protocol tests for mnemo-mcp.
+"""Pytest-based live MCP protocol tests for mnemo.
 
 Spawns a real MCP server via stdio and tests all tools through the protocol.
 Uses a temp directory for DB -- all tests work offline (local ONNX embedding).
@@ -133,7 +133,7 @@ def parse_allow_error(r) -> str:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start real mnemo-mcp server via stdio with temp DB, yield ClientSession.
+    """Start real mnemo server via stdio with temp DB, yield ClientSession.
 
     Suppresses anyio cancel-scope teardown errors that occur when
     pytest-asyncio tears down the event loop in a different task context.

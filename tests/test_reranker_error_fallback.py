@@ -6,7 +6,7 @@ warning carries the cell-owned model id instead of a provider prefix.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from mnemo_mcp.reranker import CloudReranker
+from mnemo.reranker import CloudReranker
 
 
 def _cell_client(model, exc):
@@ -24,7 +24,7 @@ class TestCloudRerankerErrorFallback:
             _cell_client("jina-reranker-v3", Exception("Mock cell failure"))
         )
 
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+        with patch("mnemo.reranker.logger") as mock_logger:
             results = reranker.rerank("test query", ["doc1"])
 
         assert results == []
@@ -38,7 +38,7 @@ class TestCloudRerankerErrorFallback:
             _cell_client("rerank-v4.0-pro", Exception("Mock cell failure"))
         )
 
-        with patch("mnemo_mcp.reranker.logger") as mock_logger:
+        with patch("mnemo.reranker.logger") as mock_logger:
             results = reranker.rerank("test query", ["doc1"])
 
         assert results == []

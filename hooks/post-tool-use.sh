@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mnemo-mcp PostToolUse hook (opt-in via CAPTURE_AUTO_ENABLED=true).
+# mnemo PostToolUse hook (opt-in via CAPTURE_AUTO_ENABLED=true).
 #
 # When opt-in is enabled and the just-completed tool call wrote to a
 # decision-like file (CLAUDE.md, AGENTS.md, ARCHITECTURE.md, docs/*.md),

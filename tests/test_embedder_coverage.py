@@ -1,4 +1,4 @@
-"""Additional tests for mnemo_mcp.embedder -- covering uncovered lines.
+"""Additional tests for mnemo.embedder -- covering uncovered lines.
 
 De-host rework: the custom-endpoint/api_key passthrough class pinned removed
 internals (the legacy provider SDK took api_key/api_base per call) and was
@@ -10,7 +10,7 @@ embed_texts inner function, query role, check_available result empty.
 
 from unittest.mock import MagicMock, patch
 
-from mnemo_mcp.embedder import Qwen3EmbedBackend, _is_retryable
+from mnemo.embedder import Qwen3EmbedBackend, _is_retryable
 
 # ---------------------------------------------------------------------------
 # Qwen3EmbedBackend._get_model
@@ -132,7 +132,7 @@ class TestQwen3EmbedQueryRole:
 
 
 class TestQwen3CheckAvailableEdge:
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    @patch("mnemo.embedder.Qwen3EmbedBackend._get_model")
     async def test_check_available_empty_result(self, mock_get_model):
         """check_available returns 0 when embed returns empty list."""
         mock_model = MagicMock()
@@ -142,7 +142,7 @@ class TestQwen3CheckAvailableEdge:
         backend = Qwen3EmbedBackend()
         assert await backend.check_available() == 0
 
-    @patch("mnemo_mcp.embedder.Qwen3EmbedBackend._get_model")
+    @patch("mnemo.embedder.Qwen3EmbedBackend._get_model")
     async def test_check_available_exception(self, mock_get_model):
         """check_available catches exception and returns 0."""
         mock_get_model.side_effect = Exception("Model load failure")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify CLAUDE.md and AGENTS.md stay in sync (excluding the first heading line).
 # CLAUDE.md is the canonical source. AGENTS.md mirrors it with only its first
-# heading differing (`# AGENTS.md - mnemo-mcp` vs `# mnemo-mcp`).
+# heading differing (`# AGENTS.md - mnemo` vs `# mnemo`).
 set -e
 
 if [ ! -f CLAUDE.md ] || [ ! -f AGENTS.md ]; then

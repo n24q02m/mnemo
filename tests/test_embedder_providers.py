@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp.embedder import CloudEmbeddingBackend, _is_unsupported_param
+from mnemo.embedder import CloudEmbeddingBackend, _is_unsupported_param
 
 
 def _cell_client(model="cell-model"):
@@ -83,6 +83,6 @@ class TestEmbedBatchInnerEdge:
         """
         backend = CloudEmbeddingBackend(_cell_client(model="embed-multilingual-v3.0"))
 
-        with patch("mnemo_mcp.embedder.MAX_RETRIES", 0):
+        with patch("mnemo.embedder.MAX_RETRIES", 0):
             with pytest.raises(RuntimeError, match="no retries attempted"):
                 await backend._embed_batch_inner(["test"])

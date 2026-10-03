@@ -1,11 +1,11 @@
-"""Tests for mnemo_mcp.db — CRUD, FTS5 search, scoring, export/import."""
+"""Tests for mnemo.db — CRUD, FTS5 search, scoring, export/import."""
 
 import json
 import time
 
 import pytest
 
-from mnemo_mcp.db import MAX_CONTENT_LENGTH, MemoryDB, _build_fts_queries
+from mnemo.db import MAX_CONTENT_LENGTH, MemoryDB, _build_fts_queries
 
 
 class TestAdd:
@@ -98,7 +98,7 @@ class TestGet:
 class TestUpdate:
     """update() now supersedes: it returns the NEW row's id (not a bool),
     and the old id no longer resolves via get() (bitemporal supersession,
-    mem_003 -- see mnemo_mcp.db.MemoryDB.update docstring)."""
+    mem_003 -- see mnemo.db.MemoryDB.update docstring)."""
 
     def test_content(self, tmp_db: MemoryDB):
         mid = tmp_db.add("original")
@@ -750,7 +750,7 @@ class TestEmbeddingModelIdentityGuard:
     """
 
     def test_fresh_store_stamps_identity(self, tmp_path):
-        from mnemo_mcp.db import MemoryDB
+        from mnemo.db import MemoryDB
 
         db_path = tmp_path / "stamp.db"
         db = MemoryDB(
@@ -763,7 +763,7 @@ class TestEmbeddingModelIdentityGuard:
         db.close()
 
     def test_reopen_same_identity_proceeds(self, tmp_path):
-        from mnemo_mcp.db import MemoryDB
+        from mnemo.db import MemoryDB
 
         db_path = tmp_path / "same.db"
         db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
@@ -778,8 +778,8 @@ class TestEmbeddingModelIdentityGuard:
         db2.close()
 
     def test_reopen_different_identity_raises(self, tmp_path):
-        from mnemo_mcp.db import MemoryDB
-        from mnemo_mcp.exceptions import EmbeddingModelMismatch
+        from mnemo.db import MemoryDB
+        from mnemo.exceptions import EmbeddingModelMismatch
 
         db_path = tmp_path / "mismatch.db"
         db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
@@ -795,8 +795,8 @@ class TestEmbeddingModelIdentityGuard:
         assert "REINDEX_ON_MODEL_CHANGE" in msg
 
     def test_reopen_different_dims_raises(self, tmp_path):
-        from mnemo_mcp.db import MemoryDB
-        from mnemo_mcp.exceptions import EmbeddingModelMismatch
+        from mnemo.db import MemoryDB
+        from mnemo.exceptions import EmbeddingModelMismatch
 
         db_path = tmp_path / "dimsmismatch.db"
         db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
@@ -808,7 +808,7 @@ class TestEmbeddingModelIdentityGuard:
         assert "1024" in str(exc_info.value)
 
     def test_reindex_on_mismatch_drops_and_restamps(self, tmp_path):
-        from mnemo_mcp.db import MemoryDB
+        from mnemo.db import MemoryDB
 
         db_path = tmp_path / "reindex.db"
         db = MemoryDB(db_path, embedding_dims=768, embedding_model="provider/model-a")
@@ -884,7 +884,7 @@ class TestDBInitSecurity:
     def test_invalid_embedding_dims_type(self, tmp_path):
         import pytest
 
-        from mnemo_mcp.db import MemoryDB
+        from mnemo.db import MemoryDB
 
         db_path = tmp_path / "test.sqlite"
 
@@ -900,7 +900,7 @@ class TestDBInitSecurity:
 
 def test_invalid_embedding_dims_bounds(tmp_path):
     """Test that out-of-bounds embedding dimensions raise ValueError."""
-    from mnemo_mcp.db import MemoryDB
+    from mnemo.db import MemoryDB
 
     with pytest.raises(ValueError, match="embedding_dims must be between 0 and 10000"):
         MemoryDB(tmp_path / "fail.db", embedding_dims=20000)

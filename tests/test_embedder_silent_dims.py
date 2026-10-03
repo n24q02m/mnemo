@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from mnemo_mcp.embedder import MAX_RETRIES, CloudEmbeddingBackend, _is_retryable
+from mnemo.embedder import MAX_RETRIES, CloudEmbeddingBackend, _is_retryable
 
 # The exact provider body cohere returns for an unsupported output_dimension,
 # as a client layer surfaces it after wrapping the 422 in a connection error.

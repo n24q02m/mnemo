@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from mnemo_core import operations
-from mnemo_mcp.db import MemoryDB
+from mnemo.db import MemoryDB
 
 CORPUS_PATH = Path(__file__).with_name("mn4_reflect_corpus.json")
 REPORT_PATH = Path(__file__).with_name("mn4_reflect_baseline.json")

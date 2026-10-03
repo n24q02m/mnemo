@@ -18,9 +18,9 @@ from unittest.mock import patch
 
 import pytest
 
-from mnemo_mcp.capture import capture
-from mnemo_mcp.compression import COMPRESSION_PROMPT, compress, count_tokens
-from mnemo_mcp.db import MemoryDB
+from mnemo.capture import capture
+from mnemo.compression import COMPRESSION_PROMPT, compress, count_tokens
+from mnemo.db import MemoryDB
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -77,9 +77,9 @@ async def test_compress_graceful_skip_when_no_provider() -> None:
 
 def _configure_chat_cell(monkeypatch: pytest.MonkeyPatch, model="test-chat-model"):
     """Make the fake-HOME environment look like a configured chat cell."""
-    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+    monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
     monkeypatch.setattr(
-        "mnemo_mcp.runtime.model_cell", lambda task: SimpleNamespace(model=model)
+        "mnemo.runtime.model_cell", lambda task: SimpleNamespace(model=model)
     )
 
 
@@ -100,7 +100,7 @@ async def test_compress_returns_compressed_text_when_provider_available(
         assert kwargs["temperature"] == 0.0
         return short_compressed
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
+    with patch("mnemo.compression.call_llm", side_effect=_fake_call):
         result = await compress(SAMPLE_TURN)
 
     assert result["compressed"] is True
@@ -119,7 +119,7 @@ async def test_compress_disabled_via_env(monkeypatch: pytest.MonkeyPatch) -> Non
     async def _should_not_be_called(*args, **kwargs):
         raise AssertionError("call_llm must not run when COMPRESSION_ENABLED=false")
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_should_not_be_called):
+    with patch("mnemo.compression.call_llm", side_effect=_should_not_be_called):
         result = await compress(SAMPLE_TURN)
 
     assert result["compressed"] is False
@@ -141,7 +141,7 @@ async def test_provider_model_args_ignored_cell_owns_dispatch(
         captured["kwargs"] = kwargs
         return "compressed"
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
+    with patch("mnemo.compression.call_llm", side_effect=_fake_call):
         result = await compress("text", provider="openai", model="gpt-test")
 
     assert result["compression_provider"] == "chat-cell"
@@ -158,7 +158,7 @@ async def test_compress_empty_response_degrades_to_skip(
     async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
         return "   "
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
+    with patch("mnemo.compression.call_llm", side_effect=_fake_call):
         result = await compress("hello")
 
     assert result["compressed"] is False
@@ -174,7 +174,7 @@ async def test_compress_sdk_exception_degrades_to_skip(
     async def _fake_call(prompt, provider, model, *, temperature, max_tokens):
         raise RuntimeError("simulated SDK failure")
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
+    with patch("mnemo.compression.call_llm", side_effect=_fake_call):
         result = await compress("hello")
 
     assert result["compressed"] is False
@@ -202,7 +202,7 @@ async def test_capture_writes_compression_columns_when_provider_active(
     async def _fake_call(prompt, **kwargs):
         return "tight summary keeping facts"
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_fake_call):
+    with patch("mnemo.compression.call_llm", side_effect=_fake_call):
         result = await capture(
             isolated_db,
             text="long verbose original text with the same fact repeated x3",
@@ -267,7 +267,7 @@ async def test_capture_dedup_short_circuits_before_compression(
     async def _should_not_run(*args, **kwargs):
         raise AssertionError("compression must not run on dedup hit")
 
-    with patch("mnemo_mcp.compression.call_llm", side_effect=_should_not_run):
+    with patch("mnemo.compression.call_llm", side_effect=_should_not_run):
         result = await capture(
             isolated_db,
             text="The quick brown fox jumps over the lazy dog",

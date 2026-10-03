@@ -42,7 +42,7 @@ def _resolve_dims() -> int:
     Falls back to :data:`_DEFAULT_EMBEDDING_DIMS` when unset or unresolvable.
     """
     try:
-        from mnemo_mcp.config import settings
+        from mnemo.config import settings
 
         dims = settings.resolve_embedding_dims()
     except Exception:

@@ -1,9 +1,9 @@
-"""Tests for the LLM dispatch layer (``mnemo_mcp.llm``).
+"""Tests for the LLM dispatch layer (``mnemo.llm``).
 
 De-host rework: the multi-provider detection/env-override machinery pinned
 removed internals and was deleted -- one ``[models.chat]`` provider cell now
 serves every chat-shaped task. What remains to pin is the live
-optional-enrichment contract of :func:`mnemo_mcp.llm.call_llm`:
+optional-enrichment contract of :func:`mnemo.llm.call_llm`:
 
 - unconfigured cell -> ``None`` (debug, not warning),
 - prompt/params forwarded verbatim to the cell client,
@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_mcp import llm
+from mnemo import llm
 
 
 def _cell_client(content="ok", exc=None):
@@ -32,12 +32,12 @@ def _cell_client(content="ok", exc=None):
 @pytest.fixture(autouse=True)
 def _cell_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make the fake-HOME environment look like a configured chat cell."""
-    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: True)
+    monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: True)
 
 
 def test_cell_not_configured_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unconfigured chat cell: call_llm returns None and logs at debug level."""
-    monkeypatch.setattr("mnemo_mcp.runtime.cell_configured", lambda task: False)
+    monkeypatch.setattr("mnemo.runtime.cell_configured", lambda task: False)
     with patch.object(llm.logger, "debug") as debug:
         result = asyncio.run(llm.call_llm("hello"))
     assert result is None
