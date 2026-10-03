@@ -169,7 +169,7 @@ class TestTokenVerify:
             argparse_ns(token="s3cret", encoded="not-a-scrypt-hash")
         )
         assert rc == 2
-        assert "mnemo-mcp:" in capsys.readouterr().out
+        assert "mnemo:" in capsys.readouterr().out
 
 
 def argparse_ns(**kw):
