@@ -77,9 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mnemo",
         description="mnemo: HTTP MCP memory server (de-host).",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"mnemo {_version()}"
-    )
+    parser.add_argument("--version", action="version", version=f"mnemo {_version()}")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser(

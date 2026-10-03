@@ -268,9 +268,7 @@ def test_check_duplicate_similar_not_identical(tmp_path: Path):
 
 
 def test_migrations_skipped_without_alembic_ini(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        "mnemo.db._ALEMBIC_INI_PATH", tmp_path / "no" / "alembic.ini"
-    )
+    monkeypatch.setattr("mnemo.db._ALEMBIC_INI_PATH", tmp_path / "no" / "alembic.ini")
     db = MemoryDB(tmp_path / "t.db", embedding_dims=0)  # must not raise
     try:
         assert db._read_alembic_version() is None

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mnemo_core import operations, standing
 from mnemo.db import MemoryDB
+from mnemo_core import operations, standing
 
 
 def pilot_capture(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:

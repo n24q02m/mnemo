@@ -12,9 +12,9 @@ import pathlib
 
 import pytest
 
+from mnemo.db import MemoryDB
 from mnemo_core import operations
 from mnemo_core.ports import ProviderAnswer
-from mnemo.db import MemoryDB
 
 
 class FakeTransport:

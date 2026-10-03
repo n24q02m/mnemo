@@ -85,9 +85,7 @@ class TestWarmupSubcommand:
         result = {"status": "error", "steps": []}
         with (
             patch.object(sys, "argv", ["mnemo-mcp", "warmup"]),
-            patch(
-                "mnemo.setup_tool.run_warmup", new=AsyncMock(return_value=result)
-            ),
+            patch("mnemo.setup_tool.run_warmup", new=AsyncMock(return_value=result)),
         ):
             rc = cli.main()
 

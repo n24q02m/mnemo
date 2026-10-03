@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mnemo_core.ports import CapExceeded
 from mnemo.llm import _get_client, reset_client
 from mnemo.providers import BoundedReflectProvider, _count_tokens
+from mnemo_core.ports import CapExceeded
 
 
 @pytest.fixture(autouse=True)

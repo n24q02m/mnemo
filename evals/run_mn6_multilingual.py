@@ -14,8 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from mnemo_core import operations, standing
 from mnemo.db import MemoryDB
+from mnemo_core import operations, standing
 
 CORPUS_PATH = Path(__file__).with_name("mn6_multilingual_corpus.json")
 REPORT_PATH = Path(__file__).with_name("mn6_multilingual_baseline.json")

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from mnemo.db import MemoryDB
 from mnemo_core import operations, results
 from mnemo_core.defense import redact, scan
-from mnemo.db import MemoryDB
 
 
 @pytest.fixture

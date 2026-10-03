@@ -14,9 +14,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from mnemo.db import MemoryDB
 from mnemo_core import operations
 from mnemo_core.defense import scan
-from mnemo.db import MemoryDB
 
 MN1_CORPUS = Path(__file__).with_name("mn1_corpus.json")
 REPORT_PATH = Path(__file__).with_name("mn2_defense_baseline.json")

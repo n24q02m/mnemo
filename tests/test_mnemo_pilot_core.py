@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_core import operations, results
 from mnemo.db import MemoryDB
+from mnemo_core import operations, results
 
 
 @pytest.fixture

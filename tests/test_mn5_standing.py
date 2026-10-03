@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from mnemo_core import results, standing
 from mnemo.db import MemoryDB
+from mnemo_core import results, standing
 
 
 @pytest.fixture()

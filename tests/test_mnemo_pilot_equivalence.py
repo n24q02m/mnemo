@@ -18,10 +18,10 @@ from typing import Any
 
 import pytest
 
-from mnemo_cli.__main__ import main as cli_main
-from mnemo_core import operations, results
 from mnemo import pilot_tools
 from mnemo.db import MemoryDB
+from mnemo_cli.__main__ import main as cli_main
+from mnemo_core import operations, results
 
 _ID_RE = re.compile(r"[0-9a-f]{32}")
 

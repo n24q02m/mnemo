@@ -12,8 +12,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from mnemo_core import operations, results, standing
 from mnemo.db import MemoryDB
+from mnemo_core import operations, results, standing
 
 
 def _serialize(envelope: dict) -> str:

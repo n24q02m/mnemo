@@ -92,9 +92,7 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
-            patch(
-                "mnemo.reranker.init_reranker", side_effect=fake_init
-            ) as mock_init,
+            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -117,9 +115,7 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
-            patch(
-                "mnemo.reranker.init_reranker", side_effect=fake_init
-            ) as mock_init,
+            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False

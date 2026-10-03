@@ -20,8 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from mnemo_core import operations
 from mnemo.db import MemoryDB
+from mnemo_core import operations
 
 CORPUS_PATH = Path(__file__).with_name("mn1_corpus.json")
 REPORT_PATH = Path(__file__).with_name("mn1_baseline.json")
