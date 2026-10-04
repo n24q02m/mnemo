@@ -2,6 +2,41 @@
 
 <!-- version list -->
 
+## v2.19.0-beta.1 (2026-10-04)
+
+### Bug Fixes
+
+- Rename module mnemo_mcp -> mnemo across code, docs, config
+  ([#1293](https://github.com/n24q02m/mnemo/pull/1293),
+  [`3086abf`](https://github.com/n24q02m/mnemo/commit/3086abf90a96578ecff431ea1735ed5d1187ce34))
+
+- Replace lambda with operator.itemgetter in rrf_fuse
+  ([`0d190d2`](https://github.com/n24q02m/mnemo/commit/0d190d25bf7057d2d6eb688eae389fd28b47db28))
+
+- Ruff isort/format after mnemo_mcp -> mnemo rename
+  ([#1293](https://github.com/n24q02m/mnemo/pull/1293),
+  [`3086abf`](https://github.com/n24q02m/mnemo/commit/3086abf90a96578ecff431ea1735ed5d1187ce34))
+
+- Update cli error-prefix assertion to mnemo ([#1293](https://github.com/n24q02m/mnemo/pull/1293),
+  [`3086abf`](https://github.com/n24q02m/mnemo/commit/3086abf90a96578ecff431ea1735ed5d1187ce34))
+
+- **deps**: Lock file maintenance ([#1294](https://github.com/n24q02m/mnemo/pull/1294),
+  [`d8a1fcd`](https://github.com/n24q02m/mnemo/commit/d8a1fcd1bf9317ee2e9c9d1fcab37807102bfd74))
+
+- **deps**: Update fastretrieval to >=1.11.1,<2
+  ([#1264](https://github.com/n24q02m/mnemo/pull/1264),
+  [`b9e229b`](https://github.com/n24q02m/mnemo/commit/b9e229b7dda547db6891942ec4d6fa8bffc32047))
+
+- **deps**: Update minor dependencies ([#1265](https://github.com/n24q02m/mnemo/pull/1265),
+  [`afb0157`](https://github.com/n24q02m/mnemo/commit/afb0157de0b97946fb9e2222594baf1e4e9fa438))
+
+### Features
+
+- ⚡ bolt: Replace lambda with operator.itemgetter for list sort
+  ([#1295](https://github.com/n24q02m/mnemo/pull/1295),
+  [`df21ad3`](https://github.com/n24q02m/mnemo/commit/df21ad3b299ba748343edb7a57771558a038b7da))
+
+
 ## v2.18.13-beta.1 (2026-10-03)
 
 ### Bug Fixes
