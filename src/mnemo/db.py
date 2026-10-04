@@ -1201,7 +1201,7 @@ class MemoryDB:
                 scores[mid] += 1.0 / (k + rank)
             else:
                 scores[mid] = 1.0 / (k + rank)
-        return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        return sorted(scores.items(), key=operator.itemgetter(1), reverse=True)
 
     def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
         """Compute final scores combining FTS, vector, recency, and frequency."""

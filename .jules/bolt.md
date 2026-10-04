@@ -80,3 +80,7 @@ Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into 
 ## 2026-10-03 - Optimize dictionary sorting by replacing lambda with operator.itemgetter
 **Learning:** Using `lambda` functions for `key` in `list.sort()` introduces significant overhead when sorting large arrays. `operator.itemgetter` is implemented in C and runs substantially faster (approx. ~18-20% speedup) for simple dictionary key extraction during sorting.
 **Action:** Replaced `key=lambda m: m["score"]` with `key=operator.itemgetter("score")` in `_compute_hybrid_scores`. To appease type checkers (Pyright/ty), explicitly typed the implicitly typed list `scored` as `list[dict]` and added a `# type: ignore[arg-type]` to the sort call.
+
+## 2026-10-04 - Extend itemgetter optimization to rrf_fuse
+**Learning:** `rrf_fuse` still used `lambda kv: kv[1]` for the final score sort; the same C-level `operator.itemgetter` substitution applies to tuple keys.
+**Action:** Replaced `key=lambda kv: kv[1]` with `key=operator.itemgetter(1)` in `rrf_fuse`, completing the sort-key optimization started in the `_compute_hybrid_scores` change.
