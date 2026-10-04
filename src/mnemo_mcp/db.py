@@ -11,7 +11,6 @@ Provides:
 import io
 import json
 import math
-import operator
 import re
 import shutil
 import sqlite3
@@ -1201,12 +1200,12 @@ class MemoryDB:
                 scores[mid] += 1.0 / (k + rank)
             else:
                 scores[mid] = 1.0 / (k + rank)
-        return sorted(scores.items(), key=operator.itemgetter(1), reverse=True)  # type: ignore[arg-type]
+        return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
 
     def _compute_hybrid_scores(self, results: dict[str, dict]) -> list[dict]:
         """Compute final scores combining FTS, vector, recency, and frequency."""
         now = datetime.now(UTC)
-        scored: list[dict] = []
+        scored = []
         recency_cache = {}
         freq_cache = {}
 
@@ -1278,7 +1277,7 @@ class MemoryDB:
                 mem["score"] = base * (1.0 + float(imp)) if imp else base
                 scored.append(mem)
 
-        scored.sort(key=operator.itemgetter("score"), reverse=True)  # type: ignore[arg-type]
+        scored.sort(key=lambda m: m["score"], reverse=True)
         return scored
 
     def _update_access_stats(self, top: list[dict]) -> None:
