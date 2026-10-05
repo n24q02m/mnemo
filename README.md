@@ -2,7 +2,7 @@
 
 > **Renamed (2026-09-13):** repo is now `mnemo` — CLI-first (`mnemo` command). PyPI package stays `mnemo-mcp`; MCP server remains a secondary surface.
 
-mcp-name: io.github.n24q02m/mnemo-mcp
+mcp-name: io.github.n24q02m/mnemo
 
 **Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
 
