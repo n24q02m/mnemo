@@ -6,7 +6,8 @@
 ## Overview
 
 The `memory` tool manages persistent AI memories with hybrid search (text + semantic).
-Memories survive across sessions, projects, and machines (with sync enabled).
+Memories survive across sessions and projects in a local SQLite store; backup
+across machines = rclone outside the server.
 
 ## Actions (current)
 
@@ -206,16 +207,20 @@ Defaults to 0.5 when LLM is unavailable. Used by auto-archive to identify low-va
 
 ### Duplicate Detection
 Before adding a memory, the system checks for semantic duplicates:
-- Above `DEDUP_THRESHOLD` (0.9): warns about near-duplicate
-- Above `DEDUP_WARN_THRESHOLD` (0.7): warns about similar existing memory
+- At/above `DEDUP_THRESHOLD` (default 0.92): the capture is rejected and the
+  existing memory_id is returned (`status="deduplicated"`)
 
 ### Auto-Archive
-Memories older than `ARCHIVE_AFTER_DAYS` (90) with importance below
-`ARCHIVE_IMPORTANCE_THRESHOLD` (0.3) are automatically archived. Use `restore` to recover them.
+A background sweep soft-archives old, low-importance rows:
+`score = recency_factor * (1 - importance)`; rows scoring above the archive
+line move out of default search results (never deleted). The sweep runs every
+`ARCHIVE_TRIGGER_EVERY` captures (default 100) and can be triggered manually
+with `memory(action="archive_now")`. Use `restore` to recover archived rows.
 
 ### Reranking
 Search results are reranked using a cross-encoder model for improved precision.
-Configured chains use Jina AI or Cohere. An empty chain selects the local
+A configured cloud chain goes through the `[models.rerank]` provider cell
+(OpenRouter pre-wired default). An empty chain selects the local
 Fastretrieval Qwen3 model; a configured cloud chain never silently falls back
 to local execution.
 

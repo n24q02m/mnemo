@@ -12,13 +12,12 @@ Compression fires automatically when ALL of the following are true:
 1. `memory(action="capture", text=...)` is called.
 2. The dedup probe did NOT short-circuit (no near-duplicate exists).
 3. `COMPRESSION_ENABLED=true` (the default).
-4. At least one LLM provider env key is set
-   (`GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
-   `XAI_API_KEY`), OR `COMPRESSION_PROVIDER` explicitly names one.
+4. The chat cell (`[models.chat]`) is configured (OpenRouter default
+   pre-wired via `hull config init`; any OpenAI-spec endpoint works).
 
 If any of these is false, the row stores the raw text with
 `compressed=false` and the pipeline gracefully skips. No exception is
-raised; future rows can still compress once you configure a provider.
+raised; future rows can still compress once the cell is configured.
 
 ## What is preserved
 
@@ -82,29 +81,15 @@ When disabled, capture stores the raw text always. Useful when:
   compression as a variable
 - You want to avoid LLM API costs for high-volume captures
 
-## Per-provider override
+## Model override
 
-```
-COMPRESSION_PROVIDER=openai
-COMPRESSION_MODEL=gpt-5-mini
-```
-
-When set, these win over the auto-detected provider priority
-(Gemini > OpenAI > Anthropic > xAI from `llm.detect_provider`). Use this
-when you want compression on a different provider than the LLM you use
-for graph extraction or importance scoring.
-
-## Provider priority
-
-Default order (matches `llm.detect_provider`):
-
-1. Gemini (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
-2. OpenAI (`OPENAI_API_KEY`)
-3. Anthropic (`ANTHROPIC_API_KEY`)
-4. xAI (`XAI_API_KEY`)
-
-Free-tier-friendly default: Gemini Flash gives you reasonable
-compression quality at zero cost up to the free quota.
+The model comes from the `[models.chat]` cell in the instance config
+(`base_url` + `api_key` + `model`; OpenRouter default). Point the cell at
+a different OpenAI-compatible endpoint or model to change the compression
+provider -- config, not code. There are no per-provider env keys and no
+auto-detect order; the historical `COMPRESSION_PROVIDER` /
+`COMPRESSION_MODEL` env overrides and the `llm.detect_provider` priority
+(Gemini > OpenAI > Anthropic > xAI) were removed in the 2026-09 de-host.
 
 ## How it works (under the hood)
 

@@ -1,330 +1,107 @@
 # Config Tool - Full Documentation
 
+> Rewritten 2026-10-05 for the post-de-host architecture (v2.19+). The old
+> document described removed features (Google Drive / S3 passport sync,
+> Cloudflare D1 deployment, relay credential setup, `API_KEYS`
+> multi-provider format, `COMPRESSION_PROVIDER` overrides). Those are gone
+> from the code; this page documents what exists.
+
 ## Overview
 
-The `config` tool shows server status, manages runtime configuration, and
-handles server setup tasks (model warmup, credential setup, Google Drive
-sync). The previously separate `setup` help topic is now redirected to this
-document - all setup actions live on the `config` tool.
+The `config` tool shows server status, updates a few runtime settings, and
+pre-downloads the local embedding model.
 
 ## Actions
 
-Active actions: `status`, `sync`, `set`, `warmup`, `setup_sync`,
-`setup_status`, `setup_start`, `setup_skip`, `setup_reset`,
-`setup_complete`, `setup_relay`, `sync_now`, `export_passport`,
-`import_passport`.
-
-> Passport sync actions (`sync_now`, `export_passport`, `import_passport`)
-> require `SYNC_PASSPHRASE` to be set in the process environment (stdio
-> mode) or supplied via the relay form passphrase field (HTTP mode). The
-> raw passphrase is held in process memory only; only the
-> Argon2id-derived hash lands in `config.enc`.
-
-On Cloudflare D1 (`MEMORY_DB_BACKEND=cf-d1`), external sync is disabled
-regardless of stale Google/S3 settings. `sync`, `setup_sync`, `sync_now`
-and `import_passport` return `status="disabled"` without provider access.
-`SYNC_ENABLED=false` applies the same off switch on non-CF deployments.
-
-### Remote model routing
-
-Each authenticated subject saves model, endpoint and provider key per task
-through the relay. Remote calls never inherit another subject or process-wide
-model, endpoint or key; a configured cloud task without its subject endpoint
-fails closed. Empty completion configuration disables enrichment. Local
-single-user mode retains explicit environment configuration and local
-Fastretrieval embedding/reranking.
-Hosted `warmup` probes only the current subject's configured embedding route;
-it never downloads a local model or tests process-wide provider credentials.
-
-For the managed gateway route, select:
-
-| Task | Model | Subject endpoint |
-|---|---|---|
-| Completion (graph, importance, compression) | `openrouter/minimax/minimax-m3:free` | `LLM_API_BASE={gateway}/openrouter/v1` |
-| Embedding | `cohere/embed-v4.0` | `EMBEDDING_API_BASE={gateway}/cohere/v2/embed` |
-| Rerank | `cohere/rerank-v4.0-fast` | `RERANK_API_BASE={gateway}/cohere` |
-
-Store `OPENROUTER_API_KEY` and `COHERE_API_KEY` in the subject relay, not Worker
-environment variables. Cohere calls are paid and require an explicit bounded
-spend authorization. Completion uses only the selected free model; a provider
-error does not select a paid fallback. `COMPRESSION_PROVIDER` and
-`COMPRESSION_MODEL` environment overrides apply only to local single-user mode.
+Active actions: `status`, `set`, `warmup`.
 
 ### `status` - Show current configuration
 
-Returns database stats, the resolved embedding identity, dimensions, availability, and sync status.
+Returns database stats, the resolved embedding identity, and dimensions.
 
 **Parameters:** None
 
 **Returns:**
-- `path`: The store the counts were read from -- the SQLite file, or
-  `cf-d1:<base-url>` when `MEMORY_DB_BACKEND=cf-d1`
-- `total_memories`: Total memory count
-- `categories`: Memory count by category
-- `embedding`: Exact resolved model identity (local model id or cloud candidate), storage dimensions, and availability. FTS-only/unavailable state is represented by a null model.
-- `sync`: Enabled, provider, folder, interval
-
-### `sync` - Trigger manual sync
-
-Performs a full sync cycle: pull remote changes, merge, push local changes.
-Requires `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` configured.
-
-**Parameters:** None
-
-**Returns:**
-- `pull`: Number of memories imported/skipped from remote
-- `push`: Success/failure of push operation
-
-**Sync prerequisites:**
-1. Get a token: call `config(action="setup_sync")` (Device Code OAuth flow)
-2. Set `SYNC_ENABLED=true` and `GOOGLE_DRIVE_CLIENT_ID` in your MCP config environment
-3. The server auto-loads the saved token from `~/.mnemo/tokens/google_drive.json` -- no extra env vars needed
+- `path`: the SQLite store backing the server (default `~/.mnemo/memories.db`)
+- `total_memories`: total memory count
+- `categories`: memory count by category
+- `embedding`: the resolved model identity, storage dimensions, and
+  availability (`null` model = FTS-only mode)
 
 ### `set` - Update a configuration value
 
 Change runtime settings. Changes persist for the current session.
 
 **Parameters:**
-- `key` (required): Setting name
-- `value` (required): New value
-
-**Available settings:**
-- `sync_enabled`: Enable/disable sync ("true" / "false")
-- `sync_interval`: Auto-sync interval in seconds (0 = manual)
-- `log_level`: Logging level ("DEBUG", "INFO", "WARNING", "ERROR")
+- `key` (required): setting name
+- `value` (required): new value
 
 **Example:**
 ```json
-{"action": "set", "key": "sync_interval", "value": "300"}
+{"action": "set", "key": "log_level", "value": "DEBUG"}
 ```
 
-### `warmup` - Pre-download embedding model
+### `warmup` - Pre-download the local embedding model
 
-Downloads the embedding model (~570 MB) so the first real connection does not timeout.
-If cloud API keys are configured, validates them instead of downloading the local model.
+Downloads the local ONNX embedding model (~570 MB, via fastretrieval) so
+the first real request does not time out. When the `[models.embed]`
+provider cell carries an `api_key`, cloud embedding is used and no local
+download is needed.
 
 **Parameters:** None
-
-**Returns:**
-- `status`: "ok" or "error"
-- `mode`: "cloud" or "local"
-- `steps`: List of setup steps with their status
-- `embedding`: Model info (when cloud mode)
-
-**Behavior:**
-1. If API keys are configured (`API_KEYS` env var), tries cloud embedding models first
-2. If cloud models work, returns immediately (no local download needed)
-3. If no cloud models or keys, downloads the local Qwen3-Embedding-0.6B ONNX model
-4. On corrupted cache, automatically clears and retries
 
 **Example:**
 ```json
 {"action": "warmup"}
 ```
 
-### `setup_sync` - Authenticate Google Drive
+## Provider configuration (hull per-task cells)
 
-Runs a Device Code OAuth flow to authenticate Google Drive access. Saves the token
-locally so no extra env vars are needed for sync.
+There are no provider API-key env vars and no BYOK. All cloud calls go
+through hull-core per-task cells -- each an independent
+`base_url` + `api_key` + `model` triple, plain OpenAI-spec HTTP:
 
-**Parameters:** None (requires `GOOGLE_DRIVE_CLIENT_ID` env var)
+| Cell | Used for |
+|---|---|
+| `[models.chat]` | compression, fact extraction, importance scoring, reflect |
+| `[models.embed]` | cloud embedding (local ONNX is the default fallback) |
+| `[models.rerank]` | cloud reranking (local fastretrieval reranker is the default fallback) |
+| `[models.jev]` | jev-score calls |
 
-**Returns:**
-- `status`: "authenticated", "disabled" or "error"
-- `provider`: "google_drive"
-- `token_path`: Path to saved token file
-- `next_steps`: Env vars to set in MCP config
+OpenRouter is the pre-wired default (`hull config init` writes the config).
+To use a different provider -- including a self-hosted Ollama/vLLM -- edit
+the cell's `base_url`/`model` in the instance `config.toml`. Keys are
+host-only material (instance config, or the `HULL_<TASK>_API_KEY` env
+override, e.g. `HULL_EMBED_API_KEY`); end users never supply keys.
 
-**Workflow:**
-1. Requests a device code from Google OAuth
-2. Displays a URL and code for user to enter in their browser
-3. Polls for authorization completion
-4. Saves the token to `~/.mnemo/tokens/google_drive.json`
-5. Returns env vars to set in your MCP config
-
-**Example:**
-```json
-{"action": "setup_sync"}
-```
-
-### `setup_status` - Inspect credential / setup state
-
-Returns the current credential state machine snapshot (one of
-`awaiting_setup`, `setup_in_progress`, `configured`, `skipped`) plus a
-human-readable message. Used by clients to decide whether to surface the
-relay setup form or proceed directly to memory operations.
-
-**Parameters:** None
-
-**Example:**
-```json
-{"action": "setup_status"}
-```
-
-### `setup_start` - Begin or restart the relay setup flow
-
-Transitions the server into `setup_in_progress` state and (when running in
-HTTP mode) emits the relay form URL the user should open. Pass
-`key="force"` to forcibly re-issue a relay session even if credentials are
-already configured.
-
-**Parameters:**
-- `key` (optional): `"force"` to bypass the configured-state guard.
-
-**Example:**
-```json
-{"action": "setup_start"}
-```
-
-### `setup_skip` - Defer setup until later
-
-Marks the credential state as `skipped` so subsequent tool calls do not
-re-prompt for setup in the current session. Memory operations remain
-available in FTS5-only mode (no embedding/rerank/LLM features).
-
-**Parameters:** None
-
-### `setup_reset` - Clear stored credentials
-
-Wipes the relay-issued credentials from local secure storage and resets
-the credential state to `awaiting_setup`. The next tool call will offer
-setup again.
-
-**Parameters:** None
-
-### `setup_complete` - Refresh credential state after relay submission
-
-Called by the relay flow (or invoked manually) to re-resolve the
-credential state, set up provider clients, and re-initialize the embedding
-backend if needed. Returns the updated `state` value.
-
-**Parameters:** None (uses request `ctx`)
-
-### `setup_relay` - DEPRECATED, use `setup_start` instead
-
-Equivalent to `setup_start(key="force")`. Kept for one release cycle for
-older clients; the response carries a `_deprecation` field pointing at
-`setup_start`. Will be removed in a future release.
-
-**Parameters:** None
-
-### `sync_now` - Push delta passport to a backend
-
-Triggers an explicit sync cycle against one configured backend. Picks
-delta-push (common case) or full-pull-push (sequence gap) automatically.
-
-**Parameters:**
-- `key` (optional): backend name (`"s3"` or `"gdrive"`). Defaults to the
-  first entry of `SYNC_BACKEND` env (default `"gdrive"`).
-
-**Returns:**
-- `backend`: backend name used.
-- `mode`: `"delta"` or `"full-pull-push"`.
-- `cursor`: new monotonic upload cursor.
-- `rows` or `merge`: row count for delta, or merge counts
-  (`{inserted, updated, skipped, row_count}`) for full-pull-push.
-
-**Example:**
-```json
-{"action": "sync_now", "key": "s3"}
-```
-
-### `export_passport` - Write encrypted passport to disk
-
-Builds a full passport bundle and writes it to
-`<data_dir>/passport-<unix-ts>.mnemo`. Useful for offline backup or
-manual transfer to another machine.
-
-**Parameters:** None (uses `SYNC_PASSPHRASE`)
-
-**Returns:**
-- `status`: `"exported"`.
-- `path`: absolute path to the `.mnemo` file.
-- `size`: bundle size in bytes.
-
-**Example:**
-```json
-{"action": "export_passport"}
-```
-
-### `import_passport` - Pull + apply remote passport
-
-Pulls the latest passport bundle from the named backend, decrypts with
-`SYNC_PASSPHRASE`, and applies each row via last-write-wins per row.
-Local rows newer than the bundle row are preserved + an audit row is
-written to `sync_overrides`.
-
-**Parameters:**
-- `key` (optional): backend name (`"s3"` or `"gdrive"`). Defaults to the
-  deployment resolver; CF D1 and `SYNC_ENABLED=false` disable external sync.
-
-**Returns:**
-- `status`: `"imported"` or `"no_passport"`.
-- `backend`: backend name used.
-- `inserted` / `updated` / `skipped` / `row_count`: per-row LWW counts.
-- `manifest`: decoded bundle manifest.
-
-**Example:**
-```json
-{"action": "import_passport", "key": "s3"}
-```
-
-## CLI Equivalents
-
-These MCP tool actions replace the former CLI subcommands:
-
-| CLI (removed) | MCP Tool |
-|:--------------|:---------|
-| `uvx mnemo-mcp warmup` | `config(action="warmup")` |
-| `uvx mnemo-mcp setup-sync` | `config(action="setup_sync")` |
-
-## Environment Variables
-
-Configure via environment variables before starting the server:
+## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_PATH` | `~/.mnemo/memories.db` | SQLite database path |
-| `API_KEYS` | (none) | API keys: `ENV_VAR:key,ENV_VAR:key` |
-| `EMBEDDING_BACKEND` | (auto-detect) | `cloud` (API), `local` (fastretrieval ONNX/GGUF), or empty (auto) |
-| `EMBEDDING_MODEL` | (auto-detect) | Provider model name (e.g. jina-embeddings-v5-text-small) or GGUF model ID |
-| `EMBEDDING_DIMS` | `0` | Embedding dimensions (0 = auto, resolves to 768) |
-| `SYNC_ENABLED` | `true` | Enable external sync; CF D1 always disables it |
-| `MEMORY_DB_BACKEND` | `sqlite` | `cf-d1` uses D1/Vectorize and suppresses external sync/OAuth |
-| `GOOGLE_DRIVE_CLIENT_ID` | (none) | OAuth client ID for Google Drive |
-| `SYNC_FOLDER` | `mnemo` | Google Drive folder name |
-| `SYNC_INTERVAL` | `300` | Auto-sync interval (seconds, 0 = manual) |
-| `LOG_LEVEL` | `INFO` | Log level |
-| `COMPRESSION_ENABLED` | `true` | Enable LLM compression on capture |
-| `COMPRESSION_PROVIDER` | (auto) | Explicit provider override (gemini/openai/anthropic/xai) |
-| `COMPRESSION_MODEL` | (auto) | Explicit model override |
-| `SYNC_BACKEND` | `gdrive` | **DEPRECATED (2026-05-14)**: backend now auto-resolved from `SYNC_S3_BUCKET` presence (XOR). Kept for backward compat with persisted `config.enc`. |
-| `SYNC_S3_BUCKET` | (none) | S3 bucket name. **Setting this activates S3 mode (XOR with GDrive).** Required for Method 2/3 docker deploy. |
-| `SYNC_S3_REGION` | `us-east-1` | S3 region (use `auto` for R2) |
-| `SYNC_S3_ENDPOINT` | (none) | Custom endpoint URL for R2 / B2 / MinIO |
-| `SYNC_S3_ACCESS_KEY_ID` | (none) | S3 access key |
-| `SYNC_S3_SECRET_ACCESS_KEY` | (none) | S3 secret key |
-| `SYNC_S3_PREFIX` | `passport/` | Object key prefix |
-| `SYNC_PASSPHRASE` | (none) | Raw passphrase for AES-256-GCM (in-process only) |
+| `MNEMO_HOST` | localhost | HTTP bind host |
+| `MNEMO_PORT` | (server default) | HTTP bind port |
+| `MNEMO_DB_PATH` | `~/.mnemo/memories.db` | SQLite database path (WAL) |
+| `MNEMO_AUTH_TOKEN` | (none) | Shared bearer token (auth mode 2); unset = localhost no-auth (mode 1). Multi-user mode uses `users.toml` (mode 3) |
+| `DEDUP_THRESHOLD` | `0.92` | Capture dedup similarity threshold (reject-only) |
+| `COMPRESSION_ENABLED` | `true` | LLM compression on capture (needs `[models.chat]` cell) |
+| `ARCHIVE_TRIGGER_EVERY` | `100` | Auto-archive sweep every Nth capture |
+| `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD` | (code default) | Temporal entity-resolution similarity floor |
+| `FASTRETRIEVAL_CACHE_PATH` | (platform cache) | Local ONNX model cache location |
+| `LOG_LEVEL` | `INFO` | Server log level |
 
-### API_KEYS Format
+## Storage and backup
 
-```
-API_KEYS="GOOGLE_API_KEY:AIza...,OPENAI_API_KEY:sk-..."
-```
+One SQLite file (WAL) under `~/.mnemo/`. There is no built-in sync;
+backup/sync with `rclone` outside the server (cron or manual).
 
-The server auto-detects which embedding model to use by trying providers in order:
-1. `gemini/gemini-embedding-001` (requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`)
-2. `text-embedding-3-large` (requires `OPENAI_API_KEY`)
-3. `embed-multilingual-v3.0` (requires `COHERE_API_KEY`)
+## Removed (pre-de-host, historical)
 
-Set `EMBEDDING_MODEL` explicitly to use a specific model.
-
-For GGUF with GPU support:
-
-```bash
-pip install mnemo-mcp[gguf]
-# Set EMBEDDING_BACKEND=local and EMBEDDING_MODEL=n24q02m/Qwen3-Embedding-0.6B-GGUF
-```
-
-No API keys = local-only mode (uses built-in Qwen3-Embedding-0.6B-ONNX for semantic search).
+The following were removed in the 2026-09 de-host and no longer exist in
+code or docs-as-behavior: Google Drive / S3 passport sync (`sync`,
+`setup_sync`, `sync_now`, `export_passport`, `import_passport`,
+`SYNC_*`, `GOOGLE_DRIVE_CLIENT_ID`, `SYNC_PASSPHRASE`), Cloudflare
+D1/Vectorize/KV deployment (`MEMORY_DB_BACKEND=cf-d1`), relay credential
+setup actions (`setup_start`/`setup_skip`/`setup_reset`/`setup_complete`/
+`setup_relay`), the `API_KEYS` multi-provider format, and
+`COMPRESSION_PROVIDER`/`COMPRESSION_MODEL` overrides. Backup = rclone;
+providers = hull per-task cells.

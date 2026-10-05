@@ -1,5 +1,16 @@
 # Mnemo MCP -- Architecture
 
+> **Current as of v2.19 (post-de-host, 2026-10).** Sections describing the
+> pre-de-host stack -- Cloudflare D1/Vectorize/KV deployment, GDrive/S3
+> passport sync, multi-provider key dispatch (GEMINI > OPENAI > ANTHROPIC >
+> XAI), LiteLLM strings -- describe **removed** architecture and are kept
+> only as history. Current truth: local SQLite (WAL) storage; all cloud
+> LLM/embedding/rerank calls go through hull-core per-task provider cells
+> (`[models.chat]` / `[models.embed]` / `[models.rerank]` / `[models.jev]`:
+> `base_url` + `api_key` + `model`, plain OpenAI-spec HTTP; OpenRouter
+> pre-wired default). Keys are host-only; there is no BYOK and no
+> provider-env-key registry. See `README.md` for setup.
+
 > Phase 1 (v1.x) snapshot. Updated 2026-05-09 to reflect typed capture, RRF
 > retrieval, archive policy, multi-provider LLM dispatch, and plugin trinity.
 
@@ -22,9 +33,9 @@
                 | FTS5 + sqlite-vec  |          | sync disabled           |
                 +--------------------+          +------------------------+
 ```
-The server supports two distinct storage authorities:
-- **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline with optional passport sync (GDrive/S3).
-- **Cloudflare Deployed Mode**: Production authority is Cloudflare D1 (relational rows + FTS5) + Vectorize (dense vector index) + KV (encrypted credentials). `SYNC_ENABLED=false` is enforced in Worker container configuration.
+The server supports one storage authority (post-de-host):
+
+- **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline. Backup/sync = rclone OUTSIDE the product (spec 2026-09-26 §3); the old GDrive/S3 passport sync and the Cloudflare D1/Vectorize/KV deployment mode were **removed** in the 2026-09 de-host and are shown below only as history.
 ## Capture pipeline (`memory(action="capture")`)
 
 ```
@@ -42,9 +53,9 @@ caller text
    +-- duplicate? -----> return existing memory_id, status="deduplicated"
    |
    v (no duplicate)
-[optional LLM fact extraction]   <-- multi-provider dispatch:
-   |                                 GEMINI > OPENAI > ANTHROPIC > XAI
-   |                                 graceful skip when no provider
+[optional LLM fact extraction]   <-- [models.chat] provider cell
+   |                                 (OpenRouter default; graceful
+   |                                 skip when unconfigured)
    v
 [db.add_with_context_type]
    |
@@ -97,7 +108,8 @@ query string
                 |
                 v
           [cross-encoder rerank]
-            chain: qwen3-reranker (local) -> Jina (cloud) -> Cohere
+            chain: fastretrieval reranker (local) ->
+            [models.rerank] cell (OpenRouter default)
             graceful skip when none available
                 |
                 v
@@ -148,23 +160,20 @@ Trigger paths:
 
 Restore: `memory(action="restore", memory_id=...)` clears `archived_at`.
 
-## Multi-provider LLM dispatch (`mnemo.llm`)
+## LLM dispatch (hull per-task cells, current)
 
-Phase 1 ships the dispatch layer; actual fact-extraction prompts arrive in
-Phase 2 (compression / passport sync).
+There is no provider registry and no provider env-key detection. Cloud
+LLM calls (fact extraction, compression, importance scoring, reflect)
+resolve the `[models.chat]` cell (and `[models.jev]` for jev-score) from
+the host-owned instance config: `base_url` + `api_key` + `model`, plain
+OpenAI-spec HTTP through hull-core. OpenRouter is the pre-wired default
+(`hull config init`); any OpenAI-compatible endpoint (self-hosted
+Ollama/vLLM included) works by editing the cell -- config, not code.
+Unconfigured cell -> graceful skip, capture stores raw text.
 
-```
-auto-detect order:
-  GEMINI_API_KEY / GOOGLE_API_KEY  -->  gemini/<model>
-  OPENAI_API_KEY                   -->  openai/<model>
-  ANTHROPIC_API_KEY                -->  anthropic/<model>
-  XAI_API_KEY                      -->  xai/<model>
-  none                             -->  return None + log warning,
-                                        capture stores raw text
-```
-
-Caller override: `LLM_MODELS=provider/model[,provider/model,...]` env or
-per-call kwarg. The dispatcher uses LiteLLM-compatible model strings.
+Historical (removed 2026-09): the old `mnemo.llm` auto-detect order
+(GEMINI > OPENAI > ANTHROPIC > XAI env keys, LiteLLM model strings,
+`LLM_MODELS` override) is gone from the codebase.
 
 ## Plugin trinity (Phase 1 §14 addendum)
 
@@ -278,7 +287,11 @@ Manual re-compression is exposed via
 `memory(action="compress", memory_id=...)` for back-filling rows captured
 before `COMPRESSION_ENABLED` was true.
 
-### Sync architecture (backend-pluggable)
+### Sync architecture (REMOVED 2026-09 — historical)
+
+> **Removed in the de-host**: GDrive/S3 passport sync no longer exists in
+> the product. Backup/sync = rclone outside the server (spec 2026-09-26
+> §3). The diagrams below are history only.
 
 ```
                    +-------------------------+

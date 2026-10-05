@@ -374,7 +374,8 @@ class Qwen3EmbedBackend:
             logger.warning(
                 f"Loading local embedding model: {self._model_name} "
                 "(~570 MB download on first run). "
-                "Set API_KEYS to use cloud embedding instead."
+                "Configure the [models.embed] provider cell (or "
+                "HULL_EMBED_API_KEY) to use cloud embedding instead."
             )
             self._model = TextEmbedding(model_name=self._model_name)
             logger.info("Local embedding model loaded")
