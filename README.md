@@ -4,7 +4,7 @@
 
 mcp-name: io.github.n24q02m/mnemo
 
-**Persistent AI memory with hybrid search and embedded sync. Open, free, unlimited.**
+**Persistent AI memory with hybrid search. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
 [![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
@@ -63,7 +63,6 @@ mcp-name: io.github.n24q02m/mnemo
 - [CLI](#cli)
 - [Self-hosting (local HTTP instance)](#self-hosting-local-http-instance)
 - [Remote (HTTP mode)](#remote-http-mode)
-- [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Trust Model](#trust-model)
 - [License](#license)
 
@@ -75,94 +74,96 @@ mcp-name: io.github.n24q02m/mnemo
 
 ## Roadmap (current = Phase 3 / v2.x)
 
+> Phase rows below describe the pre-de-host design history (v1.x / early v2):
+> multi-provider LLM dispatch, GDrive/S3 passport sync, and Cloudflare
+> deployment were **removed in the 2026-09 de-host**. Current architecture:
+> one local SQLite store (WAL), per-task `[models.*]` provider cells
+> (OpenRouter pre-wired default), no embedded sync (backup = rclone).
+
 | Phase | Version | Status | Highlights |
 |---|---|---|---|
-| **Phase 1** | **v1.x** | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
-| **Phase 2** | v1.x+1 | **Shipped** | LLM-driven compression of older memories + Passport sync (encrypted import/export bundle for cross-machine bootstrap) -- AES-256-GCM + Argon2id, S3 / R2 / B2 / MinIO + GDrive backends, delta-sync with LWW per row |
-| **Phase 3** | **v2.0.0** | **Shipped (BREAKING)** | Temporal knowledge graph -- bitemporal `valid_from` / `valid_to` columns -- entity resolution via embedding KNN -- `entity_search` / `entity_graph` / `history` actions -- KG-aware passport bundle sections -- `KG_AUTO_ENABLED` opt-in auto-extract on capture |
+| **Phase 1** | **v1.x** | **Shipped** | Typed `memory(action="capture")` (6 context_types + dedup) -- RRF (k=60) hybrid fusion + cross-encoder rerank + temporal decay -- importance x recency archive policy + restore -- Alembic migrations -- multi-provider LLM dispatch (pre-de-host) -- plugin trinity (recall-context + memory-commit skills, SessionStart + opt-in PostToolUse hooks) |
+| **Phase 2** | v1.x+1 | **Shipped, partially removed** | LLM-driven compression of older memories (kept, now via `[models.chat]` cell) + Passport sync (encrypted import/export bundle; **removed 2026-09**) |
+| **Phase 3** | **v2.0.0** | **Shipped (BREAKING)** | Temporal knowledge graph -- bitemporal `valid_from` / `valid_to` columns -- entity resolution via embedding KNN -- `entity_search` / `entity_graph` / `history` actions -- `KG_AUTO_ENABLED` opt-in auto-extract on capture |
 
 ## Features
 
-- **Hybrid retrieval** -- FTS5 + vector search (sqlite-vec locally, Vectorize on Cloudflare), fused via Reciprocal Rank Fusion (k=60), then re-ranked by a configurable rerank chain (`RERANK_MODELS`, order = litellm fallback; empty -> Fastretrieval's local Qwen3 reranker) with temporal decay and importance boost
-- **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and a configurable LLM chain (`LLM_MODELS`, order = litellm fallback)
+- **Hybrid retrieval** -- FTS5 + vector search (sqlite-vec), fused via Reciprocal Rank Fusion (k=60), then re-ranked via the `[models.rerank]` provider cell (OpenRouter pre-wired default) with the local Fastretrieval Qwen3 cross-encoder as fallback, plus temporal decay and importance boost
+- **Typed capture** -- `memory(action="capture")` with 6 context_types (`conversation`/`fact`/`preference`/`skill`/`task`/`decision`), embedding-based dedup, and optional `[models.chat]`-cell compression + importance scoring
 - **Knowledge graph** -- Automatic entity extraction and relation tracking; top results boosted by graph proximity
 - **Importance scoring + archive policy** -- LLM-scored 0.0-1.0 importance; soft-archive when `recency_factor * (1 - importance) > 1.0`; restore action available
 - **Auto-archive trigger** -- Background sweep every Nth capture (default 100) -- no cron required
 - **STM-to-LTM consolidation** -- LLM summarization of related memories in a category
 - **Duplicate detection** -- Warns before adding semantically similar memories
-- **Zero config** -- Fastretrieval's built-in local registry resolves Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud providers (Jina AI, Gemini, OpenAI, Cohere)
-- **Multi-machine sync** -- JSONL-based merge sync via Google Drive (bundled Desktop OAuth public client)
+- **Zero config** -- Fastretrieval's built-in local registry resolves Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud calls go through per-task `[models.<task>]` provider cells (OpenAI-spec; OpenRouter pre-wired default)
+- **Local-first storage** -- one SQLite file (WAL) under `~/.mnemo/`; backup and cross-machine migration = `rclone` outside the server (no embedded sync)
 - **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
-- **LLM compression** -- Per-turn compression via the multi-provider dispatcher targets ~3x token reduction at >=0.9 fact retention; graceful skip when no provider configured (see [docs/compression.md](docs/compression.md))
-- **Encrypted passport sync** -- AES-256-GCM bundles + Argon2id KDF, S3 (R2 / B2 / MinIO) and Google Drive backends, delta-sync with last-write-wins per row (see [docs/passport.md](docs/passport.md)). Bootstrap via the `passport-bootstrap` skill.
-- **Temporal knowledge graph** -- Bitemporal columns (`valid_from` / `valid_to` / `superseded_by`) on every memory + entity-resolution dedup (embedding KNN at default 0.85 cosine threshold) + audit trail (`memory_audit` table with prev/new state hashes) + new actions (`entity_search` / `entity_graph` / `history`) + opt-in `KG_AUTO_ENABLED` auto-extract on capture. **BREAKING** for clients that called `memory.get` expecting historical-inclusive results: pass `as_of` for time-travel; default now filters to current-state (`valid_to IS NULL`).
+- **LLM compression** -- Per-turn compression through the `[models.chat]` provider cell targets ~3x token reduction at >=0.9 fact retention; graceful skip when the cell is unconfigured (see [docs/compression.md](docs/compression.md))
+- **Temporal knowledge graph** -- Bitemporal columns (`valid_from` / `valid_to` / `superseded_by`) on every memory + entity-resolution dedup (embedding KNN at default 0.85 cosine threshold) + audit trail (`memory_audit` table with prev/new state hashes) + new actions (`entity_search` / `entity_graph` / `history` / `as_of`) + opt-in `KG_AUTO_ENABLED` auto-extract on capture. **BREAKING** for clients that called `memory.get` expecting historical-inclusive results: pass `as_of` for time-travel; default now filters to current-state (`valid_to IS NULL`).
 
 ## Quick install
 
 ```bash
-# Method 1 (default): plugin install via Claude Code
+# Method 1: Claude Code plugin (skills + hooks; connects to a running
+# mnemo HTTP instance -- start one per "Self-hosting" below)
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install mnemo-mcp@n24q02m-plugins
 
-# Method 2 (CLI): direct uvx invocation
-claude mcp add mnemo -- uvx mnemo-mcp
+# Method 2: run the HTTP server yourself and register the endpoint
+uvx --from mnemo-mcp mnemo-mcp            # serves http://127.0.0.1:8000/mcp by default
+claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
-# Method 3 (remote): point a client at an HTTP deployment
+# Method 3 (remote): point a client at an existing HTTP deployment
 claude mcp add --transport http mnemo https://<your-host>/mcp
 ```
 
-Install matrix (stdio unless noted; see the [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) page for full steps):
+Install matrix (the server speaks Streamable HTTP only — there is no stdio
+transport post-de-host; see the
+[Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
-| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` |
-| Claude Code (stdio) | `claude mcp add mnemo -- uvx mnemo-mcp` |
-| Codex | register stdio command `uvx mnemo-mcp` under `mcp_servers` in `~/.codex/config.toml` |
-| Gemini CLI | add the `mcpServers` JSON below to `~/.gemini/settings.json` |
-| Cursor / Windsurf | add the `mcpServers` JSON below via the client's MCP settings (`mcp.json`) |
-| Any client (HTTP self-host) | point the client at `https://<your-host>/mcp` (Streamable HTTP, OAuth-gated) |
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
+| Claude Code (HTTP) | start the server (`uvx --from mnemo-mcp mnemo-mcp` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
+| Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
+| Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
 
-Example stdio config (zero-config local defaults):
-
-```json
-{
-  "mcpServers": {
-    "mnemo": {
-      "command": "uvx",
-      "args": ["mnemo-mcp"]
-    }
-  }
-}
-```
+With `auth = "token"` or `"multi"` configured in `mnemo-config/config.toml`,
+send the token as a Bearer credential (`--header "Authorization: Bearer <token>"`
+or the client's equivalent).
 
 ## Comparison vs. peers
 
 | Feature | mnemo | Mem0 | Letta | OpenMemory |
 |---|---|---|---|---|
-| Hybrid retrieval (FTS + vec) | yes (FTS5 + RRF; sqlite-vec local / Vectorize on Cloudflare) | yes | partial | yes |
-| Cross-encoder rerank chain | yes (Fastretrieval Qwen3 local + Jina + Cohere) | partial (Cohere only) | no | no |
+| Hybrid retrieval (FTS + vec) | yes (FTS5 + RRF + sqlite-vec) | yes | partial | yes |
+| Cross-encoder rerank | yes (Fastretrieval Qwen3 local + `[models.rerank]` cell) | partial (Cohere only) | no | no |
 | Temporal decay scoring | yes (exp half-life) | no | no | no |
 | Importance boost in rank | yes (LLM 0.0-1.0) | no | no | no |
 | Soft-archive + restore policy | yes (importance x recency) | no | no | no |
 | Self-hostable (single SQLite file) | yes (zero ext deps) | partial (cloud-first) | yes (Postgres) | yes (Postgres + Qdrant) |
-| Multi-provider LLM dispatch | yes (`LLM_MODELS` chain, any litellm provider) | partial | yes | partial |
+| LLM dispatch | yes (`[models.chat]` cell, any OpenAI-spec endpoint) | partial | yes | partial |
 | Plugin trinity (skills + hooks) | yes (recall-context + memory-commit) | n/a | n/a | n/a |
-| Multi-machine sync | yes (GDrive bundled OAuth) | yes (cloud) | n/a | n/a |
-| E2E-encrypted passport sync | yes (AES-256-GCM + Argon2id, S3 + GDrive) | no | no | no |
-| LLM compression on capture | yes (multi-provider, ~3x at >=0.90 retention) | no | no | no |
-| Backend-pluggable sync architecture | yes (S3 / R2 / B2 / MinIO + GDrive) | no | no | no |
+| Cross-machine migration | yes (rclone backup/restore outside the server) | yes (cloud) | n/a | n/a |
+| LLM compression on capture | yes ([models.chat] cell, ~3x at >=0.90 retention) | no | no | no |
 | Bitemporal `valid_from` / `valid_to` queries | yes (`as_of` time-travel) | no | partial (events only) | no |
 | Entity resolution via embedding KNN | yes (cosine threshold tunable) | no | no | no |
 | Audit trail with state hashes | yes (`memory_audit` table) | no | no | no |
 
 ## Status
 
-> **2026-05-02 -- Architecture stabilization update**
+> **2026-09 -- De-host update**
 >
-> Past months saw significant churn around credential handling and the daemon-bridge auto-spawn pattern. This caused multi-process races, browser tab spam, and inconsistent setup UX across plugins. **The architecture is now stable**: 2 clean modes (stdio + HTTP), no daemon-bridge layer, no auto-spawn from stdio.
+> The Cloudflare D1/Vectorize/KV deployment mode, embedded GDrive/S3 passport
+> sync, multi-provider key dispatch (per-provider API-key env vars + model
+> chains), and the stdio transport were removed. mnemo now runs one HTTP MCP
+> endpoint on a local SQLite (WAL) store, and all cloud calls go through
+> per-task `[models.*]` provider cells (OpenRouter pre-wired default).
+> Backup across machines = `rclone` outside the server.
 >
-> Apologies for the instability period. If you encountered issues with prior versions, please update to the latest release and follow the current [setup docs](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- most prior workarounds are no longer needed.
+> If you encountered issues with prior versions, update to the latest release
+> and follow the current [setup docs](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/).
 >
 > **Related plugins from the same author**:
 > - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
@@ -190,19 +191,22 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.co
 
 ## Smithery
 
-mnemo-mcp is packaged for [Smithery](https://smithery.ai/) -- install or run it straight from the registry. It starts over stdio via `uvx mnemo-mcp` with no configuration required to launch; credentials are configured at runtime through the server's own config flow (see [Documentation](#documentation)). The published start command lives in [`smithery.yaml`](smithery.yaml).
+mnemo-mcp was previously packaged for [Smithery](https://smithery.ai/) via a
+local stdio start command. Post-de-host the server is HTTP-only, so the local
+`smithery.yaml` was removed; publish a running instance's `https://<host>/mcp`
+endpoint to Smithery as a remote server instead.
 
 ## Tools
 
-15 MCP tools, 17 memory actions. The memory surface is exposed both as 11 specialized single-purpose tools and a deprecated legacy `memory` dispatcher (same actions), plus `config`, `help`, and `config__open_relay`:
+13 MCP tools, 18 memory actions. The memory surface is exposed as 11
+specialized single-purpose tools, the deprecated legacy `memory` dispatcher
+(same actions), and `config`:
 
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
 | `add_memory`, `search_memory`, `list_memories`, `update_memory`, `delete_memory`, `export_memories`, `import_memories`, `memory_stats`, `restore_memory`, `archived_memories`, `consolidate_memories` | (one action each) | Specialized single-purpose memory tools -- the recommended surface |
-| `memory` (legacy dispatcher, **DEPRECATED** -- use the granular tools above instead; will be removed in a future release) | `add`, `capture`, `search`, `list`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history) |
-| `config` | `status`, `sync`, `set`, `warmup`, `setup_sync`, `setup_status`, `setup_start`, `setup_skip`, `setup_reset`, `setup_complete`, `setup_relay`, `sync_now`, `export_passport`, `import_passport` | Server status, trigger sync, update settings, pre-download embedding model, authenticate sync provider, manage HTTP setup form lifecycle, passport export/import |
-| `help` | `topic="memory"` or `topic="config"` | Full documentation for any tool |
-| `config__open_relay` | (HTTP relay mode) | Open the zero-config relay setup form (registered via mcp-core) |
+| `memory` (legacy dispatcher, **DEPRECATED** -- use the granular tools above instead; will be removed in a future release) | `add`, `capture`, `search`, `list`, `as_of`, `update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`, `archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`, `history` | Core CRUD + typed capture (6 context_types) + hybrid search (RRF + rerank + temporal decay) + import/export + soft-archive + restore + on-demand archive sweep + LLM consolidation + LLM compression + temporal KG (entity search / graph / history / as_of) |
+| `config` | `status`, `set`, `warmup`, `backfill_embeddings` | Server status, update runtime settings, pre-download embedding model, backfill missing embedding vectors |
 
 Plugin trinity (Claude Code marketplace install):
 
@@ -231,9 +235,9 @@ Plugin trinity (Claude Code marketplace install):
 
 ## Security
 
-- **Graceful fallbacks** -- Cloud → Local embedding, no cross-mode fallback
-- **Sync token security** -- OAuth tokens stored at `~/.mnemo/tokens/` with 600 permissions
-- **Input validation** -- Sync provider, folder, remote validated against allowlists
+- **Graceful fallbacks** -- cloud provider cells degrade to local ONNX; an unconfigured cell never silently selects a paid provider
+- **Host-only credentials** -- provider keys live in the host-owned `config.toml` or `HULL_<TASK>_API_KEY` env vars; end users never see them
+- **Auth-gated HTTP** -- `auth = "no-auth"` refuses non-loopback binds; `token` / `multi` require credential checks
 - **Error sanitization** -- No credentials in error messages
 
 ## Build from Source
@@ -253,9 +257,10 @@ The package ships two distinct console scripts:
   starts a server): `capture`, `recall`, `reflect`, `fetch`, and the
   `standing-*` family operate directly on a SQLite memory DB.
   `mnemo-pilot` is a legacy alias of the same entry point.
-- **`mnemo-mcp`** -- the MCP server plus one-shot operator subcommands. A bare
-  invocation (or any `--`-prefixed flag) starts the server; a leading
-  subcommand runs an action and exits.
+- **`mnemo-mcp`** -- the MCP server plus one-shot operator subcommands. A
+  bare invocation starts the HTTP server; a leading subcommand
+  (`config-init`, `warmup`, `token-hash`, `token-verify`) runs an action
+  and exits.
 
 CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
@@ -271,33 +276,25 @@ mnemo standing-refresh --db ./mem.db onboarding "how do releases cut?" --k 5   #
 mnemo standing-read --db ./mem.db onboarding             # cheap read with staleness info
 ```
 
-Server operator CLI (`mnemo-mcp`):
+Server operator CLI (`mnemo-mcp`; a bare invocation starts the HTTP server):
 
 ```bash
-mnemo-mcp                       # start the stdio server (default transport)
-mnemo-mcp --http                # start the Streamable HTTP server
-                                # (also via MCP_TRANSPORT=http or TRANSPORT_MODE=http)
+mnemo-mcp                       # start the Streamable HTTP MCP server
+                                # (bind host/port from config.toml or MNEMO_HOST/MNEMO_PORT)
 
-mnemo-mcp auth google           # authorize Google Drive sync via OAuth
-mnemo-mcp auth google --client-id <ID> --client-secret <SECRET>   # bring-your-own OAuth client
-mnemo-mcp logout                # clear the local Google Drive sync token
-mnemo-mcp warmup                # pre-download Fastretrieval-managed local embedding + rerank models
-
-mnemo-mcp config status         # report whether stored config exists
-mnemo-mcp config delete --yes   # delete the stored (encrypted) config
-mnemo-mcp relay status          # show the active browser-setup relay session
-mnemo-mcp relay open            # open the relay setup form in a browser
-mnemo-mcp relay reset           # clear relay session state
-mnemo-mcp doctor                # environment diagnostics (Python, backend, store, mode)
+mnemo-mcp config-init [--force] # write ~/.mnemo/config.toml from the template
+mnemo-mcp warmup                # pre-download local embedding model / probe cells
+mnemo-mcp token-hash            # print a scrypt$ hash for [server] token_hash
+                                # (reads MNEMO_AUTH_TOKEN or prompts)
+mnemo-mcp token-verify <token> <scrypt$...>   # verify a token against a hash
 ```
 
 | Subcommand | Purpose |
 |:-----------|:--------|
-| `auth <provider>` | Authorize a sync credential provider (currently `google`); `--client-id` / `--client-secret` supply a bring-your-own OAuth client |
-| `warmup` | Pre-download the Fastretrieval-managed local Qwen3 ONNX embedding + rerank models so first use works offline |
-| `config status` \| `config delete [--yes]` | Inspect or remove the stored encrypted configuration |
-| `relay status` \| `relay open` \| `relay reset` | Inspect, open, or clear the zero-config browser setup session |
-| `doctor` | Report Python version, credential backend, store dir, config, relay session, and storage mode |
+| `config-init [--force]` | Write the default instance `config.toml` (server auth + `[models.*]` provider cells) |
+| `warmup` | Pre-download the Fastretrieval-managed local ONNX embedding model so first use works offline |
+| `token-hash` | Mint a `scrypt$` hash for `[server] token_hash` (shared-token auth) |
+| `token-verify` | Verify a candidate token against a stored `scrypt$` hash |
 
 ## Self-hosting (local HTTP instance)
 
@@ -306,7 +303,7 @@ Two ways to run the server for MCP clients on your machine.
 ### Dev: start with `uv` (no-auth, loopback only)
 
 ```bash
-uv run mnemo-mcp --http        # binds 127.0.0.1:8000, auth = "no-auth" by default
+uv run mnemo-mcp               # binds 127.0.0.1:8000, auth = "no-auth" by default
 ```
 
 `no-auth` refuses non-loopback binds, so this is localhost-only by construction —
@@ -352,7 +349,7 @@ mnemo fetch   --db ./mem.db <memory_id>
 ```
 
 Every subcommand prints a JSON envelope and takes `--db <path>`. See
-[CLI](#cli) for the full surface (`reflect`, `standing-*`, `doctor`, …).
+[CLI](#cli) for the full surface (`reflect`, `standing-*`, …).
 
 ### Pointing an MCP client at the instance
 
@@ -373,121 +370,28 @@ point at a local OpenAI-spec server, or all cloud. Keys are host-only
 
 ## Remote (HTTP mode)
 
-Deployed over HTTP, mnemo speaks Streamable HTTP transport and is OAuth-gated. Point any MCP client that supports remote HTTP + OAuth at `https://<your-host>/mcp` and authenticate on first connect; each authenticated user gets an isolated per-user credential store (see [Trust Model](#trust-model)). To stand up an instance, see [Deploy to Cloudflare](#deploy-to-cloudflare).
+mnemo speaks Streamable HTTP on a single `/mcp` endpoint — remote access is a
+self-hosted instance on a reachable host, fronted by whatever TLS proxy you
+choose (the server itself binds plain HTTP). Auth is configured in
+`mnemo-config/config.toml` under `[server]`: `auth = "token"` (one shared
+Bearer token) or `auth = "multi"` (per-user tokens + namespaces via
+`users.toml`). `auth = "no-auth"` refuses non-loopback binds.
 
-Public OCI image publication is discontinued. Existing historical registry tags
-remain untouched; new container deployments build from source or use the
-Cloudflare-managed registry.
-
-## Deploy to Cloudflare
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/n24q02m/mnemo)
-
-Run your own mnemo instance serverless on Cloudflare (Containers + D1 + Vectorize + KV).
-
-> **Paused 2026-09-13 (maintained instance only):** the CF deploy token was
-> removed from the account as off-manifest (process violation), so the CD
-> `deploy-cf` job no-ops behind the `CF_DEPLOY_ENABLED` repo variable. The
-> maintained instance freezes at its last deployed release until a token is
-> re-established via the documented process and the variable is set to
-> `true`. Self-hosting on your own account (below) is unaffected.
-
-**Prerequisites:** a Cloudflare account on the **Workers Paid plan** — required for Containers, D1, and Vectorize (the Cloudflare free tier does not include them) — and the `wrangler` CLI.
-
-1. `git clone https://github.com/n24q02m/mnemo && cd mnemo`
-2. `wrangler login`
-3. Provision the storage bindings mnemo uses -- the memories database, the embedding
-   index, and the encrypted credential store:
-   ```
-   wrangler d1 create mnemo-memories
-   wrangler vectorize create mnemo-memory-vectors-1536 --dimensions 1536 --metric cosine
-   wrangler kv namespace create mnemo-kv
-   ```
-   Paste the returned D1 database ID and KV namespace ID into `wrangler.jsonc` (the
-   Vectorize index binds by name, so no ID is needed), then create the memories schema
-   (tables, indexes, and the FTS5 full-text index) in the database you just made:
-   ```
-   wrangler d1 migrations apply mnemo-memories --remote
-   ```
-   The SQL lives in `migrations/0001_init.sql`, and the D1 binding in `wrangler.jsonc`
-   points at that folder via `migrations_dir: "migrations"`. Full-text search uses FTS5,
-   which D1 ships; vector similarity is served by Vectorize rather than by an in-database
-   extension, because D1 cannot load one.
-4. Build the HTTP container from this checkout and push it to your Cloudflare managed registry (CF Containers cannot pull from external registries directly), then set `<YOUR_ACCOUNT_ID>` in `wrangler.jsonc`:
-   ```
-   docker build --target http -t mnemo-mcp:local .
-   wrangler containers push mnemo-mcp:local
-   # set image to registry.cloudflare.com/<YOUR_ACCOUNT_ID>/mnemo-mcp:local
-   ```
-5. Set `<YOUR_PUBLIC_URL>` (e.g. `https://mnemo.example.com`) and `<YOUR_WORKER_DOMAIN>`
-   (e.g. `mnemo.example.com`) in `wrangler.jsonc`, then set the secrets:
-   ```
-   wrangler secret put CREDENTIAL_SECRET              # per-user vault key (encrypts the cf-kv credential store)
-   wrangler secret put MCP_RELAY_PASSWORD             # shared password gating the browser setup form
-   wrangler secret put MCP_DCR_SERVER_SECRET          # required once PUBLIC_URL is set (multi-user, per-JWT-sub)
-   ```
-6. `wrangler deploy` and complete setup in the browser relay form at your Worker domain.
-   Save each subject's models, endpoints and provider keys there, not in Worker
-   environment variables. The managed route uses Minimax-free completion and
-   paid Cohere embedding/reranking through Cloudflare AI Gateway -- obtain the
-   required budget authorization before exercising the paid tiers (Provider
-   Spend Gate); see the
-   [per-task configuration](src/mnemo/docs/config.md#remote-model-routing).
-Storage maps to Cloudflare via `MCP_STORAGE_BACKEND=cf-kv` (credentials / tokens, encrypted),
-`MEMORY_DB_BACKEND=cf-d1` (the memories database + FTS5 full-text; unset or `sqlite`
-keeps the local SQLite file at `DB_PATH`), and Vectorize (embeddings,
-cosine). Cloud embedding, reranking and completion resolve per authenticated
-subject. Remote startup does not probe shared provider credentials or download
-local Fastretrieval models. Missing subject configuration never selects a
-process-wide provider/model fallback.
-
-### Authority & Sync Boundary
-
-On Cloudflare deployments, **Cloudflare D1 + Vectorize + KV** is the sole production authority:
-- **D1** (`MEMORY_DB_BACKEND=cf-d1`): Authoritative storage for memory rows, metadata, bitemporal valid ranges, and FTS5 search.
-- **Vectorize** (`MCP_VECTORIZE_IDX`): Dense vector index for semantic similarity search.
-- **KV** (`MCP_STORAGE_BACKEND=cf-kv`): Encrypted per-user credential and session store.
-- **Sync boundary**: `MEMORY_DB_BACKEND=cf-d1` disables Google Drive OAuth and all external sync paths even if `SYNC_ENABLED` is toggled on or stale S3/Google settings remain. `SYNC_ENABLED=false` independently disables sync on non-CF deployments.
-- **Local & self-host bootstrap**: Local stdio (`~/.mnemo/memories.db`) and self-hosted instances retain optional passport sync (Google Drive Device Code OAuth or S3/R2/B2) for workstation migration.
-
-### Deployment (maintained instance)
-
-Every tagged release deploys automatically: the CD `deploy-cf` job checks out
-the released tag, builds the http-slim image, pushes it to the Cloudflare-managed
-registry as immutable `:<release-tag>`, deploys the Worker, and gates on a canary
-health check -- a release is live at exactly its own version. A beta dispatch
-redeploys the beta; a stable dispatch is maintainer-gated. Manual `wrangler deploy`
-against the maintained instance is not permitted: it would break the
-release-tag ↔ live-image correspondence. Self-hosting on your own Cloudflare
-account (the button above) is unaffected.
+Public OCI image publication is discontinued. Existing historical registry tags remain untouched; new container deployments build from source
+(`docker build --target http`) or use `docker-compose.http.yml`.
 
 ## Trust Model
 
-This plugin implements **TC-Local** (machine-bound, single trust principal). The mode/storage/encryption breakdown below is the full classification.
+mnemo is **TC-Local** (machine-bound): every storage artifact lives under
+`~/.mnemo/` owned by your OS user, and provider keys are host-only config
+(`config.toml` / `HULL_<TASK>_API_KEY`), never visible to MCP clients.
 
-| Mode | Storage | Encryption | Who can read your data? |
+| `[server] auth` | Bind allowed | Storage | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.mnemo/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-| HTTP self-host | Same as stdio | Same | Only you (admin = user) |
-| HTTP multi-user remote (`PUBLIC_URL`) | Per-JWT-sub credential store | AES-GCM | Only the authenticated user (per-`sub` isolation) |
+| `no-auth` (default) | loopback only (non-loopback bind refused) | `~/.mnemo/memories.db` + `config.toml` | Only your OS user |
+| `token` | any | same, one shared `default` namespace | Anyone holding the shared token |
+| `multi` | any | per-namespace `~/.mnemo/subs/<ns>/memories.db` (via `users.toml`) | Each token holder sees only their own namespace |
 
-### Workspace username (HTTP setup form)
-
-The browser setup form has an optional **workspace username** field. Entering the
-same username always lands you in the same per-`sub` bucket, so your credentials
-and memories stay reachable across a re-authorization and across devices, instead
-of being tied to the one-off subject minted for each `/authorize` round-trip.
-Leaving it blank keeps the previous per-authorize behaviour.
-
-Trust boundary: when the form is gated by a *shared* `MCP_RELAY_PASSWORD`, the
-username is a partition key, not a secret -- anyone who knows that password can
-type any username and reach that bucket. That is fine for a trusted group; an
-untrusted multi-tenant deployment needs a per-user secret or delegated OAuth
-instead.
-
-**One-time migration:** existing users must re-enter their credentials once after
-this change. Nothing is deleted; credentials stored under the old random subject
-are simply no longer addressed.
 
 ## License
 

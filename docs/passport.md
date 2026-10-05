@@ -1,7 +1,14 @@
-# Passport Sync
+# Passport Sync (REMOVED 2026-09 — historical document)
 
-**Passport sync** is an end-to-end-encrypted memory backup / restore loop
-that lets you carry your full memory history across machines without
+> **Removed in the 2026-09 de-host**: GDrive/S3 passport sync, the
+> `sync`/`passport` config actions, the passport scheduler, and the
+> Cloudflare deployment profile no longer exist in the product. Backup and
+> cross-machine migration = `rclone` outside the server. This document is
+> kept as history only; every env var, action and backend it describes is
+> gone from the code.
+
+**Passport sync** was an end-to-end-encrypted memory backup / restore loop
+that let you carry your full memory history across machines without
 exposing plaintext to the storage backend.
 
 ## Concept

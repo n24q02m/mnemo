@@ -11,9 +11,10 @@ across machines = rclone outside the server.
 
 ## Actions (current)
 
-The active action surface is: `add`, `capture`, `search`, `list`, `update`,
-`delete`, `export`, `import`, `stats`, `restore`, `archived`, `consolidate`.
-
+The active action surface is: `add`, `capture`, `search`, `list`, `as_of`,
+`update`, `delete`, `export`, `import`, `stats`, `restore`, `archived`,
+`archive_now`, `consolidate`, `compress`, `entity_search`, `entity_graph`,
+`history`.
 The `capture` action records a typed memory with an explicit
 `context_type` (one of `conversation` / `fact` / `preference` / `skill` /
 `task` / `decision`), runs embedding-based duplicate detection before

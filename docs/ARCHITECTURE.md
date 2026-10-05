@@ -20,18 +20,17 @@
 +--------------------+        +---------------------+
 | MCP client         |  MCP   | mnemo               |
 | (Claude Code,      | <----> | FastMCP server      |
-| Cursor, Codex,     |        | 15 tools (memory    |
-| claude.ai web)     |        | + config + help)    |
+| Cursor, Codex,     |  HTTP  | 13 tools (memory    |
+| claude.ai web)     |        | + config)           |
 +--------------------+        +----------+----------+
                                          |
-                         +---------------+----------------+
-                         |                                |
-                         v                                v
-                +--------------------+          +------------------------+
-                | Local/self-host    |          | Cloudflare deployment  |
-                | SQLite (WAL)       |          | D1 + Vectorize + KV     |
-                | FTS5 + sqlite-vec  |          | sync disabled           |
-                +--------------------+          +------------------------+
+                                         v
+                              +--------------------+
+                              | Local/self-host    |
+                              | SQLite (WAL)       |
+                              | FTS5 + sqlite-vec  |
+                              +--------------------+
+         (Cloudflare D1/Vectorize/KV deployment: REMOVED 2026-09)
 ```
 The server supports one storage authority (post-de-host):
 
@@ -226,27 +225,27 @@ to upgrade when the backup write fails.
 
 ## Trust model
 
-This plugin implements **TC-Local** (machine-bound, single trust principal).
-The table below is the full classification.
+mnemo is **TC-Local** (machine-bound): every storage artifact lives under
+`~/.mnemo/` owned by the host OS user. Provider keys are host-only config
+(`config.toml` / `HULL_<TASK>_API_KEY`), never visible to MCP clients. The
+`[server] auth` modes are the full classification:
 
-| Mode | Storage | Encryption | Who can read your data? |
+| `[server] auth` | Bind allowed | Storage | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.mnemo/config.json` + `memories.db` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-| HTTP self-host (single-user) | Same | Same | Only you (admin = user) |
-| HTTP self-host (multi-user) | `~/.mnemo/subs/<sub>/config.json` + per-sub `memories.db` | Per-sub AES-GCM | Each authenticated user sees only their sub |
-
-In multi-user remote mode, `MCP_DCR_SERVER_SECRET` is required as proof
-of intentional multi-user deployment -- mnemo refuses to start with
-`PUBLIC_URL` set but `MCP_DCR_SERVER_SECRET` missing.
+| `no-auth` (default) | loopback only (non-loopback bind refused) | `~/.mnemo/config.toml` + `memories.db` | Only your OS user |
+| `token` | any | same, one shared `default` namespace | Anyone holding the shared token |
+| `multi` | any | per-namespace `~/.mnemo/subs/<ns>/memories.db` (via `users.toml`) | Each token holder sees only their own namespace |
 
 ---
 
-## Phase 2 (v1.x+1.y) -- LLM compression + passport sync
+## Phase 2 (v1.x+1.y) -- LLM compression (+ removed passport sync)
 
-> Phase 2 layers compression + cross-machine sync on top of the Phase 1
-> capture / retrieval foundation without rewriting any existing path.
-> Existing tests pass unchanged; Phase 1 callers see zero breaking
-> changes.
+> Phase 2 layered compression + cross-machine sync on top of the Phase 1
+> capture / retrieval foundation. The sync half (GDrive/S3 passport
+> bundles, sync backends, scheduler, relay form) was **removed in the
+> 2026-09 de-host** -- the subsections describing it below are history
+> only. Compression survives, now dispatching through the `[models.chat]`
+> provider cell.
 
 ### Compression pipeline
 
@@ -262,17 +261,18 @@ memory(action="capture", text=..., context_type="fact")
           v
 +--------------------+
 | compression.compress(text)
-|   - reads COMPRESSION_ENABLED / PROVIDER / MODEL env
-|   - resolves provider via llm.detect_provider() priority
+|   - reads COMPRESSION_ENABLED env (default true)
+|   - resolves model via [models.chat] cell (OpenAI-spec; OpenRouter
+|     pre-wired default; graceful skip when unconfigured)
 |   - calls llm.call_llm with COMPRESSION_PROMPT (temp=0)
 |   - tiktoken cl100k_base for tokens_in/out metrics
-|   - graceful skip on no-provider / disabled / empty / error
+|   - graceful skip on no-cell / disabled / empty / error
 +---------+----------+
           |
           v
 db.add_with_context_type(
     content=<compressed>, text_raw=<original>,
-    compressed=True, compression_provider="gemini", ...
+    compressed=True, compression_provider="chat-cell", ...
 )
 ```
 
@@ -323,7 +323,7 @@ active one per deployment is selected XOR-style by
 else GDrive — see `docs/passport.md`). New backends drop in by
 subclassing `SyncBackend` and calling `sync.register("name", instance)`.
 
-### Bundle format (E2E encryption)
+### Bundle format (E2E encryption) — REMOVED 2026-09, historical
 
 ```
 +------------------------+ <- offset 0
@@ -354,7 +354,7 @@ operator can audit version + KDF without the passphrase. Wrong
 passphrase OR ciphertext tampering both raise
 `cryptography.exceptions.InvalidTag` (no oracle).
 
-### Delta-sync protocol with LWW
+### Delta-sync protocol with LWW — REMOVED 2026-09, historical
 
 ```
             +--------------------+
@@ -387,7 +387,7 @@ hit. It carries (memory_id, local_updated_at, remote_updated_at,
 local_content, remote_content, recorded_at) so the user can later
 inspect divergence without losing the local change.
 
-### Passphrase storage gate
+### Passphrase storage gate — REMOVED 2026-09, historical
 
 The relay form collects `SYNC_PASSPHRASE` as a single password input.
 Before persistence, `credential_state._harden_passphrase` swaps it for
@@ -400,13 +400,13 @@ Verification uses `bundle.verify_passphrase` which is constant-time
 A leaked `config.enc` exposes only the Argon2id digest (which still
 needs to be brute-forced against the 64 MiB / 3-iter Argon2id cost).
 
-### Background sync scheduler
+### Background sync scheduler (REMOVED 2026-09 — historical)
 
-`sync.start_passport_scheduler(db, interval)` spawns a background task
-that wakes every `SYNC_INTERVAL` seconds and calls `sync_now` for each
-backend in `SYNC_BACKEND`. An `asyncio.Lock` prevents concurrent ticks
+`sync.start_passport_scheduler(db, interval)` spawned a background task
+that woke every `SYNC_INTERVAL` seconds and called `sync_now` for each
+backend in `SYNC_BACKEND`. An `asyncio.Lock` prevented concurrent ticks
 overlapping with manual `config(action="sync_now")` calls. Per-backend
-exceptions are logged + swallowed so one backend offline does not stall
+exceptions were logged + swallowed so one backend offline did not stall
 the loop.
 
 ### MCP action surface (Phase 2 additions)
@@ -414,18 +414,31 @@ the loop.
 | Action | Purpose |
 |---|---|
 | `memory(action="compress", memory_id=...)` | Manual re-compression of an existing row. |
+
+Removed in the 2026-09 de-host (kept for history):
+
+| Action | Purpose |
+|---|---|
 | `config(action="sync_now", key="<backend>")` | Push delta (or full-pull-push on sequence gap). |
 | `config(action="export_passport")` | Write encrypted bundle to `<data_dir>/passport-<ts>.mnemo`. |
 | `config(action="import_passport", key="<backend>")` | Pull latest bundle, LWW merge. |
 
-Plugin trinity Phase 2 addition: `passport-bootstrap` skill guides
-fresh-machine restore (detect backend -> prompt passphrase ->
-import_passport -> verify status).
+Plugin trinity Phase 2 addition (removed with the sync feature):
+`passport-bootstrap` skill guided fresh-machine restore (detect backend
+-> prompt passphrase -> import_passport -> verify status).
 
 ### Phase 2 env vars
 
+Current (still active):
+
 ```
-COMPRESSION_ENABLED       (bool, default true)
+COMPRESSION_ENABLED       (bool, default true; pipeline uses the
+                           [models.chat] cell for provider + model)
+```
+
+History (pre-de-host, removed 2026-09):
+
+```
 COMPRESSION_PROVIDER      (gemini | openai | anthropic | xai; default auto)
 COMPRESSION_MODEL         (provider model name; default per-provider)
 
@@ -520,7 +533,7 @@ behavioural change. Explicit opt-in via env var or
    embedding is supplied AND the vec table exists. Accepts the top-1
    neighbour when cosine similarity ≥ `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD`
    (default 0.85). Cosine = `1 - L2_squared / 2` (assumes
-   L2-normalised embeddings; matches Qwen3 / Jina default).
+   L2-normalised embeddings; matches Qwen3 default).
 3. Miss → INSERT new entity AND parallel `memory_entities_vec` row at
    the entity's rowid for round-trip back-mapping.
 
@@ -536,14 +549,14 @@ Bitemporal filter (`memories_as_of`): when `as_of=None`, returns rows
 with `valid_to IS NULL` (current state). Otherwise filters
 `valid_from <= as_of < valid_to`.
 
-### Bundle codec — KG sections populated
+### Bundle codec — KG sections populated (REMOVED 2026-09 — historical)
 
 Phase 2 reserved `memories_entities.jsonl` + `memories_edges.jsonl` as
-empty placeholders. Phase 3 populates them plus a new
-`memories_entity_links.jsonl` section. Manifest schema_version bumps to
+empty placeholders. Phase 3 populated them plus a new
+`memories_entity_links.jsonl` section. Manifest schema_version bumped to
 `mem_003_temporal` with `entity_count` / `edge_count` / `link_count`
-fields. Receivers replay via INSERT OR IGNORE so duplicates collapse on
-the unique indexes.
+fields. Receivers replayed via INSERT OR IGNORE so duplicates collapsed on
+the unique indexes. The whole bundle codec went away with passport sync.
 
 ### Phase 3 env vars
 
@@ -567,6 +580,6 @@ new `as_of`-aware action.
 
 The `knowledge-audit` skill grows 5 KG-specific dimensions: stale
 entities, orphan edges, contradicting / superseded chains, bitemporal
-drift detection, audit-trail integrity check. Triggers expand to: post
-legacy-passport import, post `KG_AUTO_ENABLED=true` batch capture, pre
-Phase 3 passport export.
+drift detection, audit-trail integrity check. Trigger: post
+`KG_AUTO_ENABLED=true` batch capture (the legacy passport-import triggers
+went away with the sync feature).

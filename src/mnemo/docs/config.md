@@ -66,7 +66,7 @@ through hull-core per-task cells -- each an independent
 | `[models.chat]` | compression, fact extraction, importance scoring, reflect |
 | `[models.embed]` | cloud embedding (local ONNX is the default fallback) |
 | `[models.rerank]` | cloud reranking (local fastretrieval reranker is the default fallback) |
-| `[models.jev]` | jev-score calls |
+| `[models.jev_score]` | jev-score calls |
 
 OpenRouter is the pre-wired default (`hull config init` writes the config).
 To use a different provider -- including a self-hosted Ollama/vLLM -- edit

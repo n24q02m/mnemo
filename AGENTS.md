@@ -1,8 +1,22 @@
 # AGENTS.md - mnemo
 
 MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
-Hybrid search: FTS5 + sqlite-vec semantic. 15 tools: 11 specialized memory tools (add_memory, search_memory, list_memories, update_memory, delete_memory, export_memories, import_memories, memory_stats, restore_memory, archived_memories, consolidate_memories) + legacy `memory` dispatcher (DEPRECATED -- use the granular tools instead) + config + help + config__open_relay.
-2-mode embedding: cloud chain (`EMBEDDING_MODELS`) > Local (Qwen3 ONNX khi chain rong). Per-task model chains (`EMBEDDING_MODELS`/`RERANK_MODELS`/`LLM_MODELS`, order = litellm fallback). LLM/Embed/Rerank: litellm passthrough qua `mcp_core.llm` (mcp-core[llm]).
+Post-de-host (2026-09): server la MOT HTTP Streamable endpoint tren hull-core
+(auth `no-auth|token|multi` + per-namespace SQLite), local SQLite (WAL) la
+storage authority duy nhat. Khong con stdio transport, Cloudflare deploy,
+passport sync, relay setup, hay multi-provider key dispatch.
+Hybrid search: FTS5 + sqlite-vec. 13 tools: 11 specialized memory tools
+(add_memory, search_memory, list_memories, update_memory, delete_memory,
+export_memories, import_memories, memory_stats, restore_memory,
+archived_memories, consolidate_memories) + legacy `memory` dispatcher
+(DEPRECATED -- use the granular tools instead) + config. 18 memory actions.
+Provider calls di qua hull per-task `[models.*]` cells (base_url + api_key +
+model, OpenAI-spec HTTP; OpenRouter pre-wired default):
+`[models.embed]` (cloud embed; local Qwen3 ONNX fallback),
+`[models.rerank]` (cloud rerank; local cross-encoder fallback),
+`[models.chat]` (compression, entity extraction, consolidation),
+`[models.jev_score]` (importance scoring). Cell khong co key => feature do
+skip gracefully, KHONG fallback sang provider khac.
 
 ## Commands
 
@@ -26,7 +40,9 @@ uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
 
 # Build & Run
 uv build
-uv run mnemo-mcp                    # run server (warmup/setup_sync via config tool)
+uv run mnemo-mcp                    # HTTP server (bind tu ~/.mnemo/config.toml)
+uv run mnemo-mcp config-init        # ghi template config
+uv run mnemo-mcp warmup             # pre-download local ONNX embed model
 
 # Mise shortcuts
 mise run setup     # full dev setup
@@ -48,146 +64,120 @@ mise run fix       # ruff fix + format
 ```
 src/mnemo/
   __main__.py      # python -m mnemo entrypoint
-  config.py        # Pydantic Settings (singleton), env vars khong co prefix
-  server.py        # FastMCP server, tools, resources, prompts
-  setup_tool.py    # Warmup + setup-sync logic (config tool actions)
+  cli.py           # mnemo-mcp entry: bare = HTTP server; subcommands
+                   # (config-init, warmup, token-hash, token-verify)
+  server.py        # FastMCP tools/resources/prompts + hull HTTP app
+  runtime.py       # bridge sang hull-core: settings, model cells, auth,
+                   # per-namespace DB paths
+  llm.py           # completion dispatch qua [models.chat] cell
+  capture.py       # typed capture pipeline (dedup + compression hook)
+  compression.py   # LLM compression qua chat cell ("chat-cell" marker)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
-  embedder.py      # Dual-backend: multi-provider cloud (Jina/Gemini/OpenAI/Cohere) + fastretrieval local
-  reranker.py      # Dual-backend reranking: cloud (Jina/Cohere) + local (fastretrieval cross-encoder)
-  graph.py         # Knowledge graph: entity/relation extraction via LLM
-  relay_setup.py   # Zero-config relay: create session, poll for config
-  relay_schema.py  # Relay form schema (local + cloud modes)
-  sync/            # Sync backends: gdrive.py (OAuth Device Code, httpx) + s3.py (R2/B2/MinIO) + delta/bundle/base
-  token_store.py   # OAuth token storage (secure file-based, chmod 600)
-  docs/            # Tool documentation markdown
+  embedder.py      # [models.embed] cell + fastretrieval local fallback
+  reranker.py      # local Qwen3 cross-encoder + [models.rerank] cell chain
+  graph.py         # entity/relation extraction qua chat cell
+  temporal/        # bitemporal KG: extract, resolve, store, queries
+  alembic/         # schema migrations (mem_001..mem_003)
+  setup_tool.py    # warmup logic
+  providers.py     # bounded paid reflect provider (cap USD)
+  pilot_tools.py   # CLI-surface handlers over mnemo_core
+  docs/            # tool documentation markdown (memory.md, config.md)
+src/mnemo_core/    # domain core for the `mnemo` CLI surface:
+                   # operations, standing pages, ports, results, defense
+src/mnemo_cli/     # `mnemo` / `mnemo-pilot` argparse CLI (no server)
 tests/             # 1:1 mapping voi source modules
 ```
 
 ## Env vars
 
-Khong co prefix (khac voi cac project khac):
-- `DB_PATH` -- default `~/.mnemo/memories.db`
-- `EMBEDDING_MODELS` -- chain embedding, CSV `provider/model,provider/model`; order = litellm fallback. Rong = local ONNX (fastretrieval, Qwen3 là profile tham chiếu mặc định).
-- `RERANK_MODELS` -- chain rerank, CSV `provider/model,...`; order = fallback. Rong = local ONNX cross-encoder.
-- `LLM_MODELS` -- chain LLM (graph extraction), CSV `provider/model,...`; order = fallback. Rong = tat feature LLM.
-- Provider duoc suy ra tu prefix model. API key theo convention litellm `<PROVIDER>_API_KEY`. 7 provider servers goi y:
+- `MNEMO_DB_PATH` / `DB_PATH` -- default `~/.mnemo/memories.db`
+- `MNEMO_HOST` / `MNEMO_PORT` -- HTTP bind overrides (config.toml `[server]`)
+- `MNEMO_AUTH_TOKEN` -- token source cho `mnemo-mcp token-hash`
+- `HULL_<TASK>_API_KEY` -- host-only provider key override per cell:
+  `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` /
+  `HULL_JEV_SCORE_API_KEY` (env wins over config.toml `api_key`)
+- `EMBEDDING_DIMS` -- storage width (0 = runtime default 1024)
+- `REINDEX_ON_MODEL_CHANGE` -- clear stale vector state on model swap
+- `DISABLE_LOCAL_EMBED` / `DISABLE_LOCAL_RERANK` -- kill local ONNX fallback
+- `LOCAL_EMBEDDING_MODEL` / `LOCAL_RERANK_MODEL` -- local model override
+- `RERANK_ENABLED`, `RERANK_TOP_N` (10)
+- `ARCHIVE_ENABLED`, `ARCHIVE_AFTER_DAYS` (90),
+  `ARCHIVE_IMPORTANCE_THRESHOLD` (0.3), `ARCHIVE_TRIGGER_EVERY` (100)
+- `DEDUP_THRESHOLD` (0.9), `DEDUP_WARN_THRESHOLD` (0.7)
+- `RECENCY_HALF_LIFE_DAYS` (7)
+- `COMPRESSION_ENABLED` (true)
+- `KG_AUTO_ENABLED` (false), `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD` (0.85),
+  `TEMPORAL_SUPERSESSION_THRESHOLD` (0.85),
+  `TEMPORAL_SUPERSESSION_ENABLED` (true)
+- `MNEMO_REFLECT_MODEL`, `MNEMO_REFLECT_CAP_USD` -- paid reflect bounds
+- `FASTRETRIEVAL_CACHE_PATH`, `LOG_LEVEL` (INFO)
+- Removed 2026-09 (gone from code, do not reintroduce): `EMBEDDING_MODELS`,
+  `RERANK_MODELS`, `LLM_MODELS`, `*_API_BASE` endpoints, per-provider
+  `*_API_KEY` (JINA/GEMINI/OPENAI/COHERE/XAI/ANTHROPIC/VERTEX_EXPRESS),
+  `COMPRESSION_PROVIDER`, `COMPRESSION_MODEL`, `SYNC_*`,
+  `GOOGLE_DRIVE_CLIENT_ID`, `MEMORY_DB_BACKEND`, `MCP_STORAGE_BACKEND`,
+  `MCP_TRANSPORT`, `PUBLIC_URL`, `MCP_DCR_SERVER_SECRET`, `MCP_RELAY_*`,
+  `MNEMO_ENTERPRISE*`, `MNEMO_AUDIT_*`. See docs/ARCHITECTURE.md history.
 
-  | model prefix | key env var | get it at |
-  |---|---|---|
-  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
-  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
-  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
-  | `xai/` | `XAI_API_KEY` | console.x.ai |
-  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
-  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
+## Client config
 
-  For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
-- Custom endpoint (SSRF-guarded): `LLM_API_BASE`, `EMBEDDING_API_BASE`, `RERANK_API_BASE`
-- `EMBEDDING_DIMS` -- local default 768 when `0 = auto`; the hosted Cloudflare profile uses 1536 for the active Vectorize index.
-- Deprecated (honored mot release voi warning): singular `EMBEDDING_MODEL`/`RERANK_MODEL` + `EMBEDDING_BACKEND`/`RERANK_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
-- `SYNC_ENABLED` -- `true`/`false`, default true for local/self-host; the production Cloudflare deployment pins `false`.
-- `GOOGLE_DRIVE_CLIENT_ID` -- OAuth client ID for optional local/self-host passport sync
-- `SYNC_FOLDER` -- Google Drive folder name for optional local/self-host sync (default: `mnemo`)
-- `SYNC_INTERVAL` -- seconds (0 = manual only, default: 300)
-- `RERANK_ENABLED` -- `true`/`false`, default true
-- `RERANK_TOP_N` -- so ket qua rerank giu lai (default: 10)
-- `ARCHIVE_ENABLED` -- `true`/`false`, default true
-- `ARCHIVE_AFTER_DAYS` -- so ngay truoc khi archive (default: 90)
-- `ARCHIVE_IMPORTANCE_THRESHOLD` -- nguong importance de giu lai (default: 0.3)
-- `DEDUP_THRESHOLD` -- nguong similarity de coi la duplicate (default: 0.9)
-- `DEDUP_WARN_THRESHOLD` -- nguong similarity de canh bao (default: 0.7)
-- `RECENCY_HALF_LIFE_DAYS` -- half-life cho temporal decay scoring (default: 7)
-- `LOG_LEVEL` -- log level (default: INFO)
+Server chi noi Streamable HTTP -- khong co stdio spawn. Chay instance roi
+point client vao endpoint:
 
-### Enterprise profile (Wave A; default off)
-
-- `MNEMO_ENTERPRISE` -- `true`/`false`, default false. False = hành vi hiện tại nguyên vẹn.
-- `MNEMO_ENTERPRISE_ISSUERS` -- CSV trusted IdP issuers (dùng ở Wave C).
-- `MNEMO_ENTERPRISE_AUDIENCE` -- JWT audience check (Wave C).
-- `MNEMO_ENTERPRISE_ROLE_CLAIM` -- claim chứa groups (default `groups`).
-- `MNEMO_ENTERPRISE_ROLE_MAPPING` -- JSON group→role, group lạ fallback `member`.
-- `MNEMO_ENTERPRISE_TENANT_CLAIM` -- claim tenant (default `tid`).
-- `MNEMO_AUDIT_HASH_KEY` -- khoá HMAC audit chain; cấp qua skret tại deploy, KHÔNG commit.
-- `MNEMO_AUDIT_KEY_ID` -- default `k1`; dùng khi xoay khoá (verify chấp nhận cửa sổ khoá).
-- `MNEMO_AUDIT_RETENTION_DAYS` -- default 400; retention của chính bảng audit (sweeper Wave D).
-
-CLI: `mnemo-mcp audit verify --tenant T [--db-path P]` — exit 0 ok / 1 chain đứt / 2 thiếu key.
-
-### Manual config example
+```bash
+uvx --from mnemo-mcp mnemo-mcp   # http://127.0.0.1:8000/mcp (no-auth default)
+```
 
 ```json
 {
   "mcpServers": {
-    "mnemo": {
-      "command": "uvx", "args": ["mnemo-mcp"],
-      "env": {
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "RERANK_MODELS": "jina_ai/jina-reranker-v3",
-        "LLM_MODELS": "gemini/gemini-3-flash-preview",
-        "JINA_AI_API_KEY": "jina_xxx",
-        "GEMINI_API_KEY": "AIza_xxx"
-      }
-    }
+    "mnemo": { "type": "http", "url": "http://127.0.0.1:8000/mcp" }
   }
 }
 ```
 
+Provider cells song trong `~/.mnemo/config.toml` (`mnemo-mcp config-init`):
+`[models.<task>]` = `base_url` + `api_key` + `model`, OpenRouter pre-wired.
+Key co the dat trong file hoac qua `HULL_<TASK>_API_KEY`.
+
 ## Embedding architecture
 
-1. **Cloud** (`EMBEDDING_MODELS` chain) -- thu lan luot theo thu tu, fallback qua litellm.
-2. **Local** -- Qwen3-Embedding-0.6B ONNX, dung khi chain rong, zero config, luon available.
+1. **Local** -- Qwen3-Embedding ONNX via fastretrieval, zero config,
+   default khi `[models.embed]` cell khong co key.
+2. **Cloud** (`[models.embed]` cell) -- OpenAI-spec `/embeddings` call.
 
-Local SQLite uses the local default width (768 unless a provider reports another
-dimension). The hosted Cloudflare profile is pinned to the active 1536-dimension
-Vectorize index; `REINDEX_ON_MODEL_CHANGE=true` clears stale vector state before
-the next embedding pass. Never mix vectors from different model identities.
+Local SQLite dung storage width mac dinh 1024 (native cua default embed
+cell). Never mix vectors from different model identities --
+`REINDEX_ON_MODEL_CHANGE=true` clears stale vector state truoc next pass.
 
-## Storage authority and sync boundary
+## Storage authority
 
-- **Cloudflare deployed mode**: D1 is authoritative for memory rows and FTS5,
-  Vectorize is authoritative for dense vectors, and KV stores encrypted
-  per-sub credentials. `SYNC_ENABLED=false` disables legacy DB-file Google Drive
-  sync on the production deployment.
-- **Local/self-host mode**: SQLite remains local authority and passport sync
-  (Google Drive Device Code OAuth or S3-compatible storage) is opt-in.
-- Drive inventory/cleanup is an independent safety lane: exact root, recursive
-  manifest, durable backup/restore proof, and exact-ID post-verify are required
-  before any mutation.
+- SQLite (`~/.mnemo/memories.db`, WAL) la authority duy nhat. `auth = "multi"`
+  tach per-namespace store `~/.mnemo/subs/<ns>/memories.db`.
+- Backup / cross-machine migration = `rclone` BEN NGOAI server; khong co
+  embedded sync. Cloudflare D1/Vectorize va GDrive/S3 passport sync da
+  removed 2026-09 (docs/passport.md + ARCHITECTURE.md giu history).
 
 ## CD Pipeline
 
-PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace; Cloudflare deploy builds/pushes the internal image.
+PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace.
 
 ## Luu y
 
 - Tools tra ve `_json({"error": "..."})`, khong raise exception.
-- `match action:` pattern cho routing.
+- `match action:` pattern cho routing trong `memory` dispatcher.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
-- Sync: Google Drive API (httpx), JSONL-based merge. OAuth Device Code flow, token luu tai `~/.mnemo/tokens/google_drive.json` (600).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `fastretrieval>=1.0.1`, `sqlite-vec`, `n24q02m-mcp-core[llm]` (litellm). Native SDK (google-genai/openai/cohere/anthropic) da go -- moi LLM/embed/rerank qua litellm passthrough.
-- Pre-commit: ruff lint + format, ty check, pytest.
+- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `hull-core` (git pin).
+  Khong con litellm / mcp-core / native provider SDKs -- moi cloud call qua
+  hull-core OpenAICompatClient tren per-task cells.
+- Pre-commit: gitleaks, ruff lint + format, ty check, pytest.
 - Secrets: skret SSM namespace `/mnemo/prod` (region `ap-southeast-1`)
 
 ## E2E
 
-Driven by `mcp-core/scripts/e2e/` (matrix-locked, 15 configs). Run a single config from this repo via `make e2e` (proxy) or directly:
-
-```
-cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
-```
-
-Configs for this repo: `mnemo-full`.
-
-t2-interaction: GDrive device-code (900s); per-sub token storage at ``~/.mnemo/subs/<sub>/tokens/google_drive.json``.
-
-Tier policy:
-
-- **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
-- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/mnemo/prod` (`ap-southeast-1`). No user gate.
-- **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
-
-Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.
-
-References: `mcp-core/scripts/e2e/matrix.yaml`, `~/.claude/skills/mcp-dev/references/e2e-full-matrix.md` (harness-readiness gate), `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-JWT-sub isolation).
+`tests/live_http.py` spawn that su HTTP server tren tmp HOME (config-init +
+env isolation); `tests/test_live_protocol*.py`, `test_http_direct.py`,
+`test_live_mcp.py`, `test_full_live.py` exercise protocol surface.
+Network-marked suites (`integration`/`live`/`full`/`e2e`) deselect by
+default. Khong con relay-form E2E hay mcp-core driver matrix cho repo nay.

@@ -86,10 +86,12 @@ def test_public_docs_drop_image_aliases_but_keep_local_build_guidance():
     assert "[![Docker]" not in readme
     assert "Public OCI image publication is discontinued" in readme
     assert "Existing historical registry tags" in readme
-    assert "docker build --target http -t mnemo-mcp:local ." in readme
-    assert "wrangler containers push mnemo-mcp:local" in readme
-    assert "docker build --target http -t mnemo-mcp:local ." in passport
-    assert "mnemo-mcp:local --http" in passport
+    assert "docker build --target http" in readme
+    assert "wrangler containers push" not in readme
+
+    # passport.md is a de-host historical document (banner-marked); it must
+    # not reintroduce public image refs (covered by the loop above).
+    assert "REMOVED 2026-09" in passport
 
     expected_release_claim = (
         "PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace"
