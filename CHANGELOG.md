@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.19.2-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Purge pre-de-host strings from docs, manifest, and code comments
+  ([#1297](https://github.com/n24q02m/mnemo/pull/1297),
+  [`ecf3a70`](https://github.com/n24q02m/mnemo/commit/ecf3a701a508d74fc86d7bb224943823c5894ff7))
+
+- Replace obsolete stdio live fixtures with HTTP server spawn
+  ([`93b6966`](https://github.com/n24q02m/mnemo/commit/93b69660502e1e2c14408d5f955246a1d82bc9c2))
+
+- Rewrite provider/sync docs to hull per-task cells (post-de-host)
+  ([`acc0f67`](https://github.com/n24q02m/mnemo/commit/acc0f67aef906736bfe443985e71731b96ba000f))
+
+- **deps**: Lock file maintenance ([#1296](https://github.com/n24q02m/mnemo/pull/1296),
+  [`b0ebd04`](https://github.com/n24q02m/mnemo/commit/b0ebd0479b90b4d3e66135da9663e0efd59824fb))
+
+
 ## v2.19.1 (2026-10-05)
 
 
