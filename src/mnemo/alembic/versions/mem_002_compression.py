@@ -7,9 +7,10 @@ Implements ``mem_002_compression`` from the Phase 2 design (spec
   recovery when compression rewrites ``memories.content``.
 * ``memories.compressed BOOLEAN NOT NULL DEFAULT 0`` - flag indicating the row
   was rewritten by the LLM compression pipeline.
-* ``memories.compression_provider TEXT`` - records which LLM provider performed
-  the compression (gemini/openai/anthropic/xai) so downstream re-compression /
-  audit can trace lineage. NULL when ``compressed = 0``.
+* ``memories.compression_provider TEXT`` - records which pipeline performed
+  the compression (literal ``"chat-cell"`` when the ``[models.chat]`` provider
+  cell rewrote the row) so downstream re-compression / audit can trace
+  lineage. NULL when ``compressed = 0``.
 * ``sync_state`` table - per-backend (s3 / gdrive) sync cursor for the Phase 2
   passport delta-sync orchestrator. Holds last successful sync timestamp,
   optional commit SHA, and the monotonic upload cursor used to detect

@@ -112,8 +112,8 @@ def _is_unsupported_param(exc: Exception, param: str) -> bool:
     Detects errors like "does not support parameters: {'dimensions': ...}"
     or "output_dimension is not supported for this model", plus provider
     cap rejections such as "dimensions ≤1024" / "dimensions must be at most
-    1024" (Jina v5 small caps at 1024 while the CF deployment requests the
-    1536 storage width — F2 layer 2, 2026-09-16).
+    1024" (e.g. an endpoint capping an embedding model at 1024 while the
+    storage width requested is 1536 — F2 layer 2, 2026-09-16).
     Uses stem matching (e.g. "dimension" matches "dimensions", "output_dimension").
     """
     msg = str(exc).lower()
@@ -125,7 +125,7 @@ def _is_unsupported_param(exc: Exception, param: str) -> bool:
         return True
     # Cap-style rejections: "dimensions ≤1024", "must be at most 1024",
     # "maximum of", "cannot exceed", "<= 1024", "less than or equal to 1024"
-    # (Jina v5 small's actual wording, observed live 2026-09-17).
+    # (wording observed live on a cloud embedding endpoint 2026-09-17).
     return any(
         marker in msg
         for marker in ("≤", "<=", "at most", "maximum", "exceed", "less than")

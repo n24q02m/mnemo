@@ -149,8 +149,8 @@ async def capture(
         }
 
     # Phase 2: optional LLM compression (graceful skip when no provider).
-    # The pipeline reads its own env vars (COMPRESSION_ENABLED / PROVIDER /
-    # MODEL) so capture() does not need to thread them through. When the
+    # The pipeline reads COMPRESSION_ENABLED plus the [models.chat] provider
+    # cell itself so capture() does not need to thread them through. When the
     # pipeline declines to rewrite (skip / failure / disabled), the original
     # text is stored with compressed=False and no audit row.
     from mnemo.compression import compress

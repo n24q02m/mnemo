@@ -3,31 +3,16 @@
   "description": "Persistent AI memory — store, search, and recall knowledge across sessions",
   "version": "2.19.1",
   "userConfig": {
-    "JINA_AI_API_KEY": {
+    "MNEMO_URL": {
       "type": "string",
-      "title": "Jina AI API key (optional)",
-      "description": "Optional cloud reranker key. https://jina.ai/api-dashboard/",
-      "sensitive": true,
+      "title": "mnemo server URL (optional)",
+      "description": "Streamable HTTP endpoint of a running mnemo instance (e.g. http://127.0.0.1:8000/mcp). Start one with `uvx --from mnemo-mcp mnemo-mcp` or docker compose.",
       "required": false
     },
-    "GEMINI_API_KEY": {
+    "MNEMO_TOKEN": {
       "type": "string",
-      "title": "Gemini API key (optional)",
-      "description": "Optional cloud embedding + LLM. Free tier available. https://aistudio.google.com/apikey",
-      "sensitive": true,
-      "required": false
-    },
-    "OPENAI_API_KEY": {
-      "type": "string",
-      "title": "OpenAI API key (optional)",
-      "description": "Optional cloud embedding + LLM (lower priority than Gemini). https://platform.openai.com/api-keys",
-      "sensitive": true,
-      "required": false
-    },
-    "COHERE_API_KEY": {
-      "type": "string",
-      "title": "Cohere API key (optional)",
-      "description": "Optional cloud embedding + reranking. https://dashboard.cohere.com/api-keys",
+      "title": "mnemo bearer token (optional)",
+      "description": "Shared bearer token when the instance uses auth = \"token\" / \"multi\"; leave empty for a loopback no-auth instance.",
       "sensitive": true,
       "required": false
     }
@@ -39,18 +24,10 @@
   "homepage": "https://github.com/n24q02m/mnemo",
   "mcpServers": {
     "mnemo": {
-      "command": "uvx",
-      "args": [
-        "--python",
-        "3.13",
-        "mnemo-mcp"
-      ],
-      "env": {
-        "MCP_TRANSPORT": "stdio",
-        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
-        "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",
-        "OPENAI_API_KEY": "${user_config.OPENAI_API_KEY}",
-        "COHERE_API_KEY": "${user_config.COHERE_API_KEY}"
+      "type": "http",
+      "url": "${user_config.MNEMO_URL}",
+      "headers": {
+        "Authorization": "Bearer ${user_config.MNEMO_TOKEN}"
       }
     }
   }

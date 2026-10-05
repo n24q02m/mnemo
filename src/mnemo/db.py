@@ -747,7 +747,8 @@ class MemoryDB:
         Phase 2 extension (``mem_002_compression`` Alembic migration): callers
         running text through the LLM compression pipeline can pass the
         original uncompressed text via ``text_raw`` and flag the row with
-        ``compressed=True`` plus ``compression_provider`` (gemini/openai/...).
+        ``compressed=True`` plus ``compression_provider`` (the literal
+        ``"chat-cell"`` when the ``[models.chat]`` provider cell rewrote it).
         Default behaviour preserves Phase 1 (no compression bookkeeping).
 
         Args:
@@ -763,8 +764,9 @@ class MemoryDB:
             compressed: Flag indicating the LLM compression pipeline rewrote
                 ``content``. Defaults to False so unchanged callers keep the
                 Phase 1 behaviour.
-            compression_provider: LLM provider that performed the compression
-                (gemini/openai/anthropic/xai). NULL when ``compressed=False``.
+            compression_provider: Marker for the pipeline that performed the
+                compression (``"chat-cell"`` for the ``[models.chat]`` cell).
+                NULL when ``compressed=False``.
 
         Returns:
             Memory ID (32-char hex).

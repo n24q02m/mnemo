@@ -99,15 +99,16 @@ capture(text)
   -> compress(text)
        -> tiktoken.encode(text) -> tokens_in
        -> llm.call_llm(COMPRESSION_PROMPT.format(text=text),
-                       provider=resolved, model=resolved,
                        temperature=0.0,
                        max_tokens=tokens_in // 2)
+            # model + endpoint come from the [models.chat] cell
        -> tiktoken.encode(result) -> tokens_out
-       -> {text, text_raw, compressed=True, provider, tokens_in, tokens_out}
+       -> {text, text_raw, compressed=True,
+           compression_provider="chat-cell", tokens_in, tokens_out}
   -> db.add_with_context_type(content=result.text,
                               text_raw=result.text_raw,
                               compressed=True,
-                              compression_provider=...)
+                              compression_provider="chat-cell")
 ```
 
 `tiktoken cl100k_base` is the tokenizer (matches OpenAI + Anthropic

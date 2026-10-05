@@ -239,9 +239,10 @@ class FallbackChainReranker:
     """Reranker that tries an ordered list of backends until one returns scores.
 
     Phase 1 retrieval polish (spec section 4.2) requires a cross-encoder
-    rerank with the chain: ``qwen3-reranker local`` -> Jina -> Cohere. When
-    every backend in the chain fails, ``rerank`` returns an empty list so the
-    caller keeps the original ordering.
+    rerank; the chain is now the local Fastretrieval Qwen3 model plus the
+    ``[models.rerank]`` provider cell (OpenAI-spec; OpenRouter pre-wired
+    default). When every backend in the chain fails, ``rerank`` returns an
+    empty list so the caller keeps the original ordering.
     """
 
     def __init__(self, backends: list[RerankerBackend]):
