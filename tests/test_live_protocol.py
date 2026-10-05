@@ -1,7 +1,9 @@
 """Pytest-based live MCP protocol tests for mnemo.
 
-Spawns a real MCP server via stdio and tests all tools through the protocol.
-Uses a temp directory for DB -- all tests work offline (local ONNX embedding).
+Spawns the real mnemo HTTP MCP server (``python -m mnemo``, de-hosted: there
+is no stdio mode) on an ephemeral loopback port and tests all tools through
+the streamable-HTTP MCP protocol. Uses a temp directory for the instance home
+-- all tests work offline (local ONNX embedding).
 
 Usage:
     uv run pytest tests/test_live_protocol.py -v --tb=short -m live
@@ -15,15 +17,14 @@ import warnings
 from pathlib import Path
 
 import pytest
-from mcp import StdioServerParameters
+from live_http import mcp_client_session, mnemo_http_server
 from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
 
 pytestmark = [pytest.mark.live, pytest.mark.timeout(120)]
 
 
-# Environment names needed to launch ``uv`` and its child process on all
-# supported platforms. Everything else must be supplied explicitly below.
+# Environment names needed to launch ``python -m mnemo`` and its children on
+# all supported platforms. Everything else must be supplied explicitly below.
 _PROCESS_ENV_KEYS = (
     "PATH",
     "PATHEXT",
@@ -33,6 +34,7 @@ _PROCESS_ENV_KEYS = (
     "VIRTUAL_ENV",
     "UV_PROJECT_ENVIRONMENT",
 )
+
 
 _KNOWN_PROVIDER_ENV_KEYS = (
     "API_KEYS",
@@ -79,14 +81,13 @@ def _build_local_replay_env(
     config_dir = tmp_path / "local-config"
     data_dir = tmp_path / "local-data"
     temp_dir = tmp_path / "local-temp"
-    db_path = tmp_path / "local-test.db"
+    # NOTE: no DB_PATH/MNEMO_DB_PATH — the de-hosted server derives its store
+    # from ~/.mnemo/ (HOME/USERPROFILE above). Exporting them would split the
+    # alembic target from the runtime DB and the server exits during lifespan.
     env = {
         **parent_env,
-        "DB_PATH": str(db_path),
-        "MNEMO_DB_PATH": str(db_path),
         "LOG_LEVEL": "WARNING",
         "SYNC_ENABLED": "false",
-        "MCP_TRANSPORT": "stdio",
         "MEMORY_DB_BACKEND": "sqlite",
         "MNEMO_DATA_DIR": str(data_dir),
         "HOME": str(local_state),
@@ -133,22 +134,17 @@ def parse_allow_error(r) -> str:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start real mnemo server via stdio with temp DB, yield ClientSession.
+    """Start the real mnemo HTTP server with a temp instance home.
 
     Suppresses anyio cancel-scope teardown errors that occur when
     pytest-asyncio tears down the event loop in a different task context.
     """
     from fastretrieval import define_cache_dir
 
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "mnemo-mcp"],
-        env=_build_local_replay_env(tmp_path, cache_dir=define_cache_dir()),
-    )
+    env = _build_local_replay_env(tmp_path, cache_dir=define_cache_dir())
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+        async with mnemo_http_server(env, tmp_path / "server.log") as port:
+            async with mcp_client_session(port) as session:
                 yield session
     except (RuntimeError, ExceptionGroup) as exc:
         # anyio cancel-scope teardown error -- harmless in test context
@@ -165,22 +161,13 @@ async def mcp_session(tmp_path):
 
 @pytest.fixture
 async def local_mcp_session(tmp_path):
-    """Start mnemo-mcp with deterministic local-only provider selection."""
+    """Start mnemo's HTTP server with deterministic local-only providers."""
     from fastretrieval import define_cache_dir
 
-    local_env = _build_local_replay_env(
-        tmp_path,
-        cache_dir=define_cache_dir(),
-    )
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "mnemo-mcp"],
-        env=local_env,
-    )
+    env = _build_local_replay_env(tmp_path, cache_dir=define_cache_dir())
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+        async with mnemo_http_server(env, tmp_path / "server-local.log") as port:
+            async with mcp_client_session(port) as session:
                 yield session
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
@@ -203,35 +190,32 @@ class TestMeta:
     async def test_list_tools(self, mcp_session: ClientSession):
         result = await mcp_session.list_tools()
         tool_names = {t.name for t in result.tools}
-        expected = {"memory", "config", "help"}
-        assert tool_names >= expected, (
-            f"Missing tools: {expected - tool_names}, got {tool_names}"
+        # De-hosted registry: 11 granular memory tools + deprecated memory
+        # facade + config. There is no ``help`` tool anymore.
+        expected = {
+            "add_memory",
+            "search_memory",
+            "list_memories",
+            "update_memory",
+            "delete_memory",
+            "export_memories",
+            "import_memories",
+            "memory_stats",
+            "restore_memory",
+            "archived_memories",
+            "consolidate_memories",
+            "memory",
+            "config",
+        }
+        assert tool_names == expected, (
+            f"Tool registry drifted: missing={expected - tool_names} "
+            f"unexpected={tool_names - expected}"
         )
 
     async def test_list_resources(self, mcp_session: ClientSession):
         result = await mcp_session.list_resources()
         # Should not raise, even if empty
         assert isinstance(result.resources, list)
-
-
-# ---------------------------------------------------------------------------
-# Help tool (offline)
-# ---------------------------------------------------------------------------
-
-
-class TestHelp:
-    @pytest.mark.parametrize("topic", ["memory", "config"])
-    async def test_help_topics(self, mcp_session: ClientSession, topic: str):
-        r = await mcp_session.call_tool("help", {"topic": topic})
-        text = parse(r)
-        assert len(text) >= 100, f"Help for '{topic}' too short: {len(text)} chars"
-
-    async def test_help_invalid_topic(self, mcp_session: ClientSession):
-        r = await mcp_session.call_tool("help", {"topic": "nonexistent"})
-        text = parse_allow_error(r)
-        assert any(w in text.lower() for w in ("error", "not found", "unknown")), (
-            f"Expected error response, got: {text[:80]}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -442,13 +426,16 @@ class TestGranularRetrieval:
     ):
         deadline = time.monotonic() + 300
 
-        setup_result = await local_mcp_session.call_tool(
-            "config", {"action": "setup_status"}
-        )
+        # De-hosted config has no ``setup_status`` action; local mode is
+        # instead implied by ``status`` reporting every provider cell
+        # unconfigured (the env builder empties all provider keys).
+        setup_result = await local_mcp_session.call_tool("config", {"action": "status"})
         setup_text = parse(setup_result)
         setup = json.loads(setup_text)
-        assert setup.get("state") == "local", setup
-        assert setup.get("cloud_keys_in_env") == [], setup
+        cells = setup.get("provider_cells", {})
+        assert cells and not any(cells.values()), (
+            f"expected all provider cells unconfigured (local mode): {cells}"
+        )
 
         warmup_result = await local_mcp_session.call_tool(
             "config", {"action": "warmup"}

@@ -1,9 +1,11 @@
 """Mnemo MCP Server - Persistent AI memory with embedded sync.
 
 MCP Interface:
-- memory tool: add/search/list/update/delete/export/import/stats
-- config tool: status/sync/set/warmup/setup_sync
-- help tool: full documentation on demand
+- 11 granular memory tools (add_memory, search_memory, list_memories,
+  update_memory, delete_memory, export_memories, import_memories,
+  memory_stats, restore_memory, archived_memories, consolidate_memories)
+  plus the deprecated composite ``memory`` facade
+- config tool: status/set/warmup/backfill_embeddings
 - Resources: mnemo://stats
 - Prompts: save_summary, recall_context
 """

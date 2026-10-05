@@ -1,7 +1,9 @@
 """Full/real live MCP protocol tests for mnemo.
 
-Spawns a real MCP server via stdio and tests ALL tool actions with real data.
-Uses tmp_path for DB -- local ONNX mode (no API keys needed).
+Spawns the real mnemo HTTP MCP server (``python -m mnemo``, de-hosted: there
+is no stdio mode) on an ephemeral loopback port and tests ALL tool actions
+with real data over streamable HTTP. Uses tmp_path for the instance home --
+local ONNX mode (no API keys needed).
 
 Usage:
     uv run pytest tests/test_full_live.py -m full -v --tb=short
@@ -12,9 +14,8 @@ import os
 import warnings
 
 import pytest
-from mcp import StdioServerParameters
+from live_http import mcp_client_session, mnemo_http_server
 from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
 
 pytestmark = [pytest.mark.full, pytest.mark.timeout(60)]
 
@@ -49,23 +50,21 @@ def parse_json(r) -> dict:
 
 @pytest.fixture
 async def mcp_session(tmp_path):
-    """Start real mnemo server via stdio with temp DB, yield ClientSession."""
-    db_path = str(tmp_path / "test.db")
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "mnemo-mcp"],
-        env={
-            **os.environ,
-            "DB_PATH": db_path,
-            "LOG_LEVEL": "WARNING",
-            "SYNC_ENABLED": "false",
-            "EMBEDDING_BACKEND": "local",
-        },
-    )
+    """Start the real mnemo HTTP server with a tmp home, yield ClientSession."""
+    # The de-hosted store derives from ~/.mnemo/ — HOME/USERPROFILE isolate it.
+    # Exporting DB_PATH would split alembic's target and crash the lifespan.
+    home = tmp_path / "home"
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "LOG_LEVEL": "WARNING",
+        "SYNC_ENABLED": "false",
+        "EMBEDDING_BACKEND": "local",
+    }
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
+        async with mnemo_http_server(env, tmp_path / "server.log") as port:
+            async with mcp_client_session(port) as session:
                 yield session
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()
@@ -388,22 +387,18 @@ class TestFullCloudMode:
     @pytest.fixture
     async def cloud_session(self, tmp_path):
         """MCP session using cloud SDK mode via API_KEYS."""
-        db_path = str(tmp_path / "cloud_test.db")
-        server_params = StdioServerParameters(
-            command="uv",
-            args=["run", "mnemo-mcp"],
-            env={
-                **os.environ,
-                "DB_PATH": db_path,
-                "LOG_LEVEL": "WARNING",
-                "SYNC_ENABLED": "false",
-                "API_KEYS": API_KEYS,
-            },
-        )
+        home = tmp_path / "cloud-home"
+        env = {
+            **os.environ,
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "LOG_LEVEL": "WARNING",
+            "SYNC_ENABLED": "false",
+            "API_KEYS": API_KEYS,
+        }
         try:
-            async with stdio_client(server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
+            async with mnemo_http_server(env, tmp_path / "server-cloud.log") as port:
+                async with mcp_client_session(port) as session:
                     yield session
         except (RuntimeError, ExceptionGroup) as exc:
             msg = str(exc).lower()

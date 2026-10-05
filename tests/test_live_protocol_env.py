@@ -24,11 +24,8 @@ def test_replay_env_retains_only_process_launch_essentials(monkeypatch, tmp_path
     assert {name: env[name] for name in _PROCESS_ENV_KEYS} == expected
     assert "UNEXPECTED_PARENT_SECRET" not in env
     assert set(env) <= set(_PROCESS_ENV_KEYS) | set(_KNOWN_PROVIDER_ENV_KEYS) | {
-        "DB_PATH",
-        "MNEMO_DB_PATH",
         "LOG_LEVEL",
         "SYNC_ENABLED",
-        "MCP_TRANSPORT",
         "MEMORY_DB_BACKEND",
         "MNEMO_DATA_DIR",
         "HOME",
@@ -47,7 +44,9 @@ def test_replay_env_retains_only_process_launch_essentials(monkeypatch, tmp_path
         "DISABLE_LOCAL_EMBED",
         "DISABLE_LOCAL_RERANK",
     }
-    assert env["DB_PATH"] == env["MNEMO_DB_PATH"]
+    # The de-hosted store derives from ~/.mnemo/ — exporting DB_PATH would
+    # split alembic's target from the runtime DB and crash the lifespan.
+    assert "DB_PATH" not in env and "MNEMO_DB_PATH" not in env
 
 
 def test_replay_env_empties_known_provider_values(monkeypatch, tmp_path):
@@ -63,7 +62,7 @@ def test_replay_env_forces_temporary_local_offline_boundary(tmp_path):
     root = tmp_path.resolve()
     env = _build_local_replay_env(tmp_path, cache_dir=tmp_path / "cache")
 
-    assert env["DB_PATH"] == str(root / "local-test.db")
+    assert Path(env["HOME"]).is_relative_to(root)
     for name in (
         "HOME",
         "USERPROFILE",

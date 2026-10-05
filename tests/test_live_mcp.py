@@ -2,13 +2,14 @@
 """
 Phase 5 Live Comprehensive Test for mnemo.
 
-Spawns the server as a subprocess via MCP SDK Client (StdioClientTransport),
-communicates over JSON-RPC stdio protocol, and tests ALL tools x actions.
+Spawns the real mnemo HTTP MCP server (``python -m mnemo``, de-hosted: no
+stdio mode) on an ephemeral loopback port, communicates over the
+streamable-HTTP MCP protocol, and tests ALL tools x actions.
 
 Usage:
     uv run python tests/test_live_mcp.py
 
-No external services required — uses temp directory for DB.
+No external services required — uses temp directory for the instance home.
 """
 
 import asyncio
@@ -16,9 +17,10 @@ import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
-from mcp import StdioServerParameters
-from mcp.client.stdio import stdio_client
+# ``tests/`` is on sys.path when this file runs as a script.
+from live_http import mcp_client_session, mnemo_http_server
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,34 +58,50 @@ async def run_tests():
     global passed, failed
 
     tmpdir = tempfile.mkdtemp(prefix="mnemo-live-test-")
-    db_path = os.path.join(tmpdir, "test.db")
+    env = {
+        **os.environ,
+        "LOG_LEVEL": "WARNING",
+        # Isolated instance home: the de-hosted server derives ~/.mnemo
+        # (config.toml, memories.db, lifecycle lock) from HOME/USERPROFILE.
+        # Do NOT export DB_PATH — it would split alembic's target DB from the
+        # runtime store and crash the lifespan.
+        "HOME": tmpdir,
+        "USERPROFILE": tmpdir,
+    }
 
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "mnemo-mcp"],
-        env={
-            **os.environ,
-            "DB_PATH": db_path,
-            "LOG_LEVEL": "WARNING",
-        },
-    )
-
-    async with stdio_client(server_params) as streams:
-        read_stream, write_stream = streams
-        from mcp.client.session import ClientSession
-
-        async with ClientSession(read_stream, write_stream) as session:
-            await session.initialize()
+    async with mnemo_http_server(env, Path(tmpdir) / "server.log") as port:
+        async with mcp_client_session(port) as session:
             print("Server connected. Running tests...\n")
 
             # ===== listTools =====
             print("--- Meta ---")
             tools_result = await session.list_tools()
             tool_names = [t.name for t in tools_result.tools]
-            if set(tool_names) >= {"memory", "config", "help"}:
+            # De-hosted registry: 11 granular memory tools + deprecated
+            # ``memory`` facade + ``config``; there is no ``help`` tool.
+            expected = {
+                "add_memory",
+                "search_memory",
+                "list_memories",
+                "update_memory",
+                "delete_memory",
+                "export_memories",
+                "import_memories",
+                "memory_stats",
+                "restore_memory",
+                "archived_memories",
+                "consolidate_memories",
+                "memory",
+                "config",
+            }
+            if set(tool_names) == expected:
                 ok("listTools", f"tools={tool_names}")
             else:
-                fail("listTools", f"Missing tools: {tool_names}")
+                fail(
+                    "listTools",
+                    f"missing={expected - set(tool_names)} "
+                    f"unexpected={set(tool_names) - expected}",
+                )
 
             # ===== listResources =====
             try:
@@ -99,19 +117,6 @@ async def run_tests():
                     )
             except Exception as e:
                 ok("listResources", f"Not supported: {str(e)[:60]}")
-
-            # ===== HELP TOOL =====
-            print("\n--- help ---")
-            for topic in ["memory", "config"]:
-                try:
-                    r = await session.call_tool("help", {"topic": topic})
-                    t = parse(r)
-                    if len(t) >= 100:
-                        ok(f"help(topic={topic})", f"{len(t)} chars")
-                    else:
-                        fail(f"help(topic={topic})", f"Too short: {len(t)} chars")
-                except Exception as e:
-                    fail(f"help(topic={topic})", str(e))
 
             # ===== CONFIG TOOL =====
             print("\n--- config ---")
@@ -370,17 +375,6 @@ async def run_tests():
                     fail("config.set(invalid key)", f"No error: {t[:60]}")
             except Exception as e:
                 ok("config.set(invalid key)", f"Error: {str(e)[:60]}")
-
-            # help: invalid topic
-            try:
-                r = await session.call_tool("help", {"topic": "nonexistent"})
-                t = parse(r)
-                if "error" in t.lower() or "not found" in t.lower() or len(t) < 50:
-                    ok("help(invalid topic)", t[:80])
-                else:
-                    fail("help(invalid topic)", f"Expected error: {t[:60]}")
-            except Exception as e:
-                ok("help(invalid topic)", f"Error: {str(e)[:60]}")
 
             # ===== SECURITY BOUNDARY =====
             print("\n--- Security boundary ---")
