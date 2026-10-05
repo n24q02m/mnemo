@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.19.1-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Rename MCP registry identity to io.github.n24q02m/mnemo to match the wet and crg short-name canon
+  ([`5e1fe1a`](https://github.com/n24q02m/mnemo/commit/5e1fe1a76a2c73f6c75411541a88fc0527c9d4b8))
+
+
 ## v2.19.0 (2026-10-05)
 
 
