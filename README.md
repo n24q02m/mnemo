@@ -165,6 +165,14 @@ or the client's equivalent).
 > If you encountered issues with prior versions, update to the latest release
 > and follow the current [setup docs](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/).
 >
+> **MCP registry note (2026-10):** registry version 2.20.0 was published with a
+> stdio PyPI package claim (`uvx mnemo-mcp`) that no longer reflects the
+> product: post-de-host, mnemo speaks Streamable HTTP only, is self-hosted, and
+> has no public URL, so nothing is stdio-launchable. Registry versions are
+> immutable, so the stale claim cannot be edited in place — `server.json` in
+> this repo now carries an empty `packages` list, and the listing is slated
+> for de-list or a 2.20.1 republish (owner decision, pending).
+>
 > **Related plugins from the same author**:
 > - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
 > - [imagine-mcp](https://github.com/n24q02m/imagine-mcp) -- Image/video understanding + generation
