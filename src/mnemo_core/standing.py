@@ -18,12 +18,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 from typing import Any
 
 from mnemo_core import results
 from mnemo_core.operations import reflect
 from mnemo_core.ports import StoragePort
+
+logger = logging.getLogger(__name__)
 
 STANDING_CATEGORY = "_standing"
 
@@ -69,10 +72,12 @@ def _write_page(
         )
     except ValueError as exc:
         return results.err(results.VALIDATION, str(exc))
-    except sqlite3.Error as exc:
-        return results.err(results.STORAGE, f"standing write failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    except sqlite3.Error:
+        logger.exception("standing write failed")
+        return results.err(results.STORAGE, "standing write failed")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        logger.exception("unexpected failure")
+        return results.err(results.INTERNAL, "unexpected failure")
     return results.ok(
         {"id": page_id, "subject": subject, "category": STANDING_CATEGORY}
     )
@@ -196,10 +201,12 @@ def standing_read(store: StoragePort, subject: str | None, key: str) -> dict[str
     for src in doc.get("sources", []):
         try:
             live = store.get(src["id"], subject=subject)
-        except sqlite3.Error as exc:
-            return results.err(results.STORAGE, f"standing read failed: {exc}")
-        except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-            return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+        except sqlite3.Error:
+            logger.exception("standing read failed")
+            return results.err(results.STORAGE, "standing read failed")
+        except Exception:  # noqa: BLE001 - taxonomy boundary
+            logger.exception("unexpected failure")
+            return results.err(results.INTERNAL, "unexpected failure")
         if live is None:
             state = "missing"
             staleness = "stale:source_missing"

@@ -1,3 +1,8 @@
+## 2026-10-06 - Prevent Information Disclosure in Core Operations
+**Vulnerability:** Raw exception strings from `Exception` and `sqlite3.Error` (e.g., `str(exc)`) were exposed in the JSON response payload of core operations like `capture`, `recall`, `fetch`, `reflect`, `standing_read`, and `_write_page` in `src/mnemo_core/operations.py` and `src/mnemo_core/standing.py`.
+**Learning:** Returning exception details like `str(exc)` from backend failures directly to the client can leak sensitive internal configuration, database paths, or SQL details. Exception strings should be masked with generic error messages in API responses.
+**Prevention:** Catch generic exceptions without an `as exc` binding, log the exception securely on the server using `logger.exception()`, and return a generic error message (e.g., `"unexpected failure"`) to the client.
+
 ## 2026-07-24 - Prevent Information Disclosure in API Error Responses
 **Commit:** 080be86c (#1005)
 **Vulnerability:** Raw exception strings, including stack trace elements or backend error messages (e.g., `f"backend pull failed: {e}"` or `f"{type(e).__name__}: {e}"`), were returned directly in the JSON response of tool handlers (`consolidate`, `sync_now`, `import_passport`).
