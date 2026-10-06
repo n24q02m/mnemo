@@ -9,6 +9,7 @@ Pipeline: retrieve top-N*3 -> rerank -> return top-N.
 from __future__ import annotations
 
 import asyncio
+import operator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -92,7 +93,7 @@ class CloudReranker:
             return []
         try:
             results = self._call_rerank(query, documents, top_n)
-            results.sort(key=lambda x: x[1], reverse=True)
+            results.sort(key=operator.itemgetter(1), reverse=True)  # type: ignore[arg-type]
             return results[:top_n]
         except Exception as e:
             logger.warning(f"Cloud reranking failed ({self.model}): {e}")
@@ -162,7 +163,7 @@ class Qwen3Reranker:
             model = self._get_model()
             scores = list(model.rerank(query, documents))
             results = list(enumerate(scores))
-            results.sort(key=lambda x: x[1], reverse=True)
+            results.sort(key=operator.itemgetter(1), reverse=True)  # type: ignore[arg-type]
             return results[:top_n]
         except Exception as e:
             logger.warning(f"Local reranking failed: {e}")
