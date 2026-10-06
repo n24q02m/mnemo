@@ -2,6 +2,18 @@
 
 <!-- version list -->
 
+## v2.19.2 (2026-10-06)
+
+### Bug Fixes
+
+- Pin EMBEDDING_DIMS=768 in live replay env to exercise MRL truncation
+  ([#1299](https://github.com/n24q02m/mnemo/pull/1299),
+  [`c8f7736`](https://github.com/n24q02m/mnemo/commit/c8f7736393d67b9d4f4642217222d76814fa7dff))
+
+- **deps**: Lock file maintenance ([#1298](https://github.com/n24q02m/mnemo/pull/1298),
+  [`924ab53`](https://github.com/n24q02m/mnemo/commit/924ab537521ff3317864d76084abf5d1334cd41e))
+
+
 ## v2.19.2-beta.1 (2026-10-05)
 
 ### Bug Fixes
