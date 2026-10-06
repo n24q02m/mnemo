@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.20.0-beta.1 (2026-10-06)
+
+### Chores
+
+- Regenerate uv.lock for v2.19.2 ([#1300](https://github.com/n24q02m/mnemo/pull/1300),
+  [`6c8968d`](https://github.com/n24q02m/mnemo/commit/6c8968d7c42a1062c884d09c7333f9318f910645))
+
+### Features
+
+- **jev**: N1 shadow pilot on score_importance — parallel chat-cell scorer, log-only
+  ([#1300](https://github.com/n24q02m/mnemo/pull/1300),
+  [`6c8968d`](https://github.com/n24q02m/mnemo/commit/6c8968d7c42a1062c884d09c7333f9318f910645))
+
+- **jev**: Shadow pilot on score_importance — parallel chat-cell scorer, log-only (N1)
+  ([#1300](https://github.com/n24q02m/mnemo/pull/1300),
+  [`6c8968d`](https://github.com/n24q02m/mnemo/commit/6c8968d7c42a1062c884d09c7333f9318f910645))
+
+
 ## v2.19.2 (2026-10-06)
 
 ### Bug Fixes
