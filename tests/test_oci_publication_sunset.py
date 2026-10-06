@@ -61,12 +61,18 @@ def test_release_graph_has_no_public_oci_or_cf_deploy_jobs():
 
 
 def test_registry_metadata_publishes_only_the_pypi_package():
+    """Registry metadata carries exactly the PyPI package, and the package's
+    transport tells the post-de-host truth: Streamable HTTP is the server's
+    only transport, so the removed stdio claim may never reappear."""
     server = json.loads(_read("server.json"))
     packages = server["packages"]
 
     assert [package["registryType"] for package in packages] == ["pypi"]
     assert packages[0]["identifier"] == "mnemo-mcp"
     assert all(package.get("runtimeHint") == "uvx" for package in packages)
+    assert all(
+        package["transport"]["type"] == "streamable-http" for package in packages
+    )
 
 
 def test_public_docs_drop_image_aliases_but_keep_local_build_guidance():

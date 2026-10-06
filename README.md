@@ -167,11 +167,12 @@ or the client's equivalent).
 >
 > **MCP registry note (2026-10):** registry version 2.20.0 was published with a
 > stdio PyPI package claim (`uvx mnemo-mcp`) that no longer reflects the
-> product: post-de-host, mnemo speaks Streamable HTTP only, is self-hosted, and
-> has no public URL, so nothing is stdio-launchable. Registry versions are
-> immutable, so the stale claim cannot be edited in place — `server.json` in
-> this repo now carries an empty `packages` list, and the listing is slated
-> for de-list or a 2.20.1 republish (owner decision, pending).
+> product: post-de-host, mnemo speaks Streamable HTTP only — self-hosted, no
+> public URL. Registry versions are immutable, so the stale stdio claim cannot
+> be edited in place; the registry entry stays wrong until the owner de-lists
+> it or republishes as 2.20.1. `server.json` in this repo now declares the
+> package's true transport (`streamable-http`, default local endpoint), so the
+> next publish carries correct metadata.
 >
 > **Related plugins from the same author**:
 > - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
