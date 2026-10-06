@@ -1,6 +1,9 @@
 """Tests for mnemo.graph -- entity extraction, relations, graph traversal."""
 
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from loguru import logger
 
 from mnemo.db import MemoryDB
 from mnemo.graph import (
@@ -163,6 +166,90 @@ class TestScoreImportance:
         ):
             score = await score_importance("test")
         assert score == 0.5
+
+
+class TestScoreImportanceShadow:
+    """N1 shadow pilot: parallel chat-cell scorer, log-only (dehost plan)."""
+
+    @contextmanager
+    def _capture_logs(self):
+        records: list[str] = []
+        sink_id = logger.add(records.append, level="INFO", format="{message}")
+        try:
+            yield records
+        finally:
+            logger.remove(sink_id)
+
+    def _dispatch(self, primary: str, shadow: str | Exception):
+        calls: list[str] = []
+
+        async def fake(task, messages, **kwargs):
+            calls.append(task)
+            if task == "chat" and isinstance(shadow, Exception):
+                raise shadow
+            return primary if task == "jev_score" else shadow
+
+        return fake, calls
+
+    async def test_logs_agreement_and_returns_primary(self):
+        fake, calls = self._dispatch(primary="0.8", shadow="0.75")
+        with (
+            patch("mnemo.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_completion", side_effect=fake),
+            self._capture_logs() as records,
+        ):
+            score = await score_importance("critical information")
+
+        assert score == 0.8  # primary decides, shadow never touches behavior
+        # Both legs consulted; the shadow task starts concurrently with the
+        # primary (create_task), so only the membership is deterministic.
+        assert sorted(calls) == ["chat", "jev_score"]
+        joined = "\n".join(records)
+        assert "primary=0.800" in joined and "shadow=0.750" in joined
+        assert "agreement=True" in joined
+
+    async def test_disagreement_logged_behavior_unchanged(self):
+        fake, calls = self._dispatch(primary="0.9", shadow="0.1")
+        with (
+            patch("mnemo.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_completion", side_effect=fake),
+            self._capture_logs() as records,
+        ):
+            score = await score_importance("critical information")
+
+        assert score == 0.9  # disagreement is evidence, not a behavior change
+        assert "agreement=False" in "\n".join(records)
+
+    async def test_shadow_failure_ignored(self):
+        fake, calls = self._dispatch(
+            primary="0.8", shadow=RuntimeError("shadow provider down")
+        )
+        with (
+            patch("mnemo.graph._cell_ready", return_value=True),
+            patch("mnemo.graph._cell_completion", side_effect=fake),
+            self._capture_logs() as records,
+        ):
+            score = await score_importance("critical information")
+
+        assert score == 0.8
+        assert "shadow leg failed" in "\n".join(records)
+        assert "agreement=" not in "\n".join(records)
+
+    async def test_shadow_off_when_chat_cell_unconfigured(self):
+        fake, calls = self._dispatch(primary="0.8", shadow="0.2")
+        with (
+            patch(
+                "mnemo.graph._cell_ready",
+                side_effect=lambda task: task == "jev_score",
+            ),
+            patch("mnemo.graph._cell_completion", side_effect=fake),
+            self._capture_logs() as records,
+        ):
+            score = await score_importance("critical information")
+
+        assert score == 0.8
+        assert calls == ["jev_score"]  # shadow leg never consulted
+        assert "jev N1 shadow" not in "\n".join(records)
 
 
 class TestUpsertEntities:
