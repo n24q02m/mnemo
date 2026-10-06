@@ -101,7 +101,12 @@ def _build_local_replay_env(
         "TMPDIR": str(temp_dir),
         "FASTRETRIEVAL_CACHE_PATH": str(cache_dir),
         "QWEN3_EMBED_CACHE_PATH": "",
-        "EMBEDDING_DIMS": "0",
+        # Exercise the MRL truncation path explicitly: the local Qwen3
+        # embedding model serves native 1024-dim vectors; with
+        # EMBEDDING_DIMS=0 (runtime default, no truncation) the dims assert
+        # below would depend on model internals. 768 pins storage width by
+        # config, matching the assertion at the end of the replay.
+        "EMBEDDING_DIMS": "768",
         "RERANK_ENABLED": "true",
         "DISABLE_LOCAL_EMBED": "false",
         "DISABLE_LOCAL_RERANK": "false",
