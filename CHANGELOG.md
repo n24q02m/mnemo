@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v2.20.1 (2026-10-07)
+
+### Bug Fixes
+
+- Add HANDOVER.md operational handover (post-de-host stable pack)
+  ([#1301](https://github.com/n24q02m/mnemo/pull/1301),
+  [`65554da`](https://github.com/n24q02m/mnemo/commit/65554daf262f6535156201eb558fea61822200c0))
+
+- Regenerate uv.lock for 2.20.0 (was stale at 2.19.2)
+  ([#1307](https://github.com/n24q02m/mnemo/pull/1307),
+  [`b115923`](https://github.com/n24q02m/mnemo/commit/b115923464b9d1d52c4e69102ffe9b19bdc0f72b))
+
+- **model-sync**: Pull from canonical data/model-candidates branch, not main
+  ([#1303](https://github.com/n24q02m/mnemo/pull/1303),
+  [`4119216`](https://github.com/n24q02m/mnemo/commit/4119216a9af1df03161ffa47303ccc22ab4809c7))
+
+- **registry**: Drop stale stdio package claim; add weekly LLM_MODELS proposal
+  ([#1302](https://github.com/n24q02m/mnemo/pull/1302),
+  [`8817d61`](https://github.com/n24q02m/mnemo/commit/8817d61b9a8582e2340522e3f8abf3f76d15020a))
+
+
 ## v2.20.0 (2026-10-06)
 
 
