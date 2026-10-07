@@ -45,10 +45,10 @@ def capture(
         )
     except ValueError as exc:
         return results.err(results.VALIDATION, str(exc))
-    except sqlite3.Error as exc:
-        return results.err(results.STORAGE, f"capture failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    except sqlite3.Error:
+        return results.err(results.STORAGE, "capture failed: internal error")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, "unexpected failure")
     return results.ok(
         {
             "id": memory_id,
@@ -82,10 +82,10 @@ def recall(
         rows = store.search(query, limit=k, subject=subject)
         if not include_standing:
             rows = [row for row in rows if row.get("category") != "_standing"]
-    except sqlite3.Error as exc:
-        return results.err(results.STORAGE, f"recall failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    except sqlite3.Error:
+        return results.err(results.STORAGE, "recall failed: internal error")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, "unexpected failure")
     matches, egress_kinds = _redact_rows(rows)
     return results.ok(
         {
@@ -107,10 +107,10 @@ def fetch(
         return results.err(results.VALIDATION, "memory_id is required")
     try:
         row = store.get(memory_id, subject=subject)
-    except sqlite3.Error as exc:
-        return results.err(results.STORAGE, f"fetch failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    except sqlite3.Error:
+        return results.err(results.STORAGE, "fetch failed: internal error")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, "unexpected failure")
     if row is None:
         return results.err(results.NOT_FOUND, f"memory {memory_id!r} not found")
     memory, kinds = _redact_row(row)
@@ -148,10 +148,10 @@ def reflect(
         rows = store.search(
             query.strip(), limit=min(k, _MAX_REFLECT_K), subject=subject
         )
-    except sqlite3.Error as exc:
-        return results.err(results.STORAGE, f"reflect retrieval failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"unexpected failure: {exc}")
+    except sqlite3.Error:
+        return results.err(results.STORAGE, "reflect retrieval failed: internal error")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, "unexpected failure")
     citations, redactions = _redact_rows(
         [
             {
@@ -195,8 +195,8 @@ def reflect(
         answer = provider.synthesize(query.strip(), citations)
     except CapExceeded as exc:
         return results.err(results.CAP, str(exc))
-    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
-        return results.err(results.INTERNAL, f"provider failed: {exc}")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        return results.err(results.INTERNAL, "provider failed")
     receipt.update(
         {
             "model_calls": 1,
