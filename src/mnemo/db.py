@@ -1140,15 +1140,25 @@ class MemoryDB:
             except Exception as e:
                 logger.error(f"FTS search failed for tier '{fts_query}': {e}")
 
-        fts_vals = [m["fts_score"] for m in results.values() if m["fts_score"] > 0]
-        if fts_vals:
-            min_f = min(fts_vals)
-            max_f = max(fts_vals)
+        fts_nodes = []
+        min_f = float("inf")
+        max_f = float("-inf")
+        for m in results.values():
+            val = m["fts_score"]
+            if val > 0:
+                fts_nodes.append(m)
+                if val < min_f:
+                    min_f = val
+                if val > max_f:
+                    max_f = val
+
+        if fts_nodes:
             rng = max_f - min_f
-            for m in results.values():
-                if rng > 0 and m["fts_score"] > 0:
+            if rng > 0:
+                for m in fts_nodes:
                     m["fts_score"] = (m["fts_score"] - min_f) / rng
-                elif m["fts_score"] > 0:
+            else:
+                for m in fts_nodes:
                     m["fts_score"] = 1.0
 
         return results
