@@ -2,6 +2,43 @@
 
 <!-- version list -->
 
+## v2.21.0-beta.1 (2026-10-10)
+
+### Bug Fixes
+
+- Prevent information disclosure in core operations
+  ([#1305](https://github.com/n24q02m/mnemo/pull/1305),
+  [`4d59ec6`](https://github.com/n24q02m/mnemo/commit/4d59ec62fe7e4907d9a40bfc9a52716a272d9559))
+
+- Restore uv.lock to main state in sentinel PR ([#1305](https://github.com/n24q02m/mnemo/pull/1305),
+  [`4d59ec6`](https://github.com/n24q02m/mnemo/commit/4d59ec62fe7e4907d9a40bfc9a52716a272d9559))
+
+- Use async generator return annotations for context managers
+  ([#1308](https://github.com/n24q02m/mnemo/pull/1308),
+  [`bf99988`](https://github.com/n24q02m/mnemo/commit/bf99988efbc6eb782e13c1f55f49f383a1d7565c))
+
+- ⚡ bolt: optimize tuple sorting in reranker and embedder
+  ([#1304](https://github.com/n24q02m/mnemo/pull/1304),
+  [`b9a66aa`](https://github.com/n24q02m/mnemo/commit/b9a66aa0d0081ad8c45f4549b8280690a87bf8ea))
+
+- 🛡️ sentinel: prevent information disclosure in core operations
+  ([#1305](https://github.com/n24q02m/mnemo/pull/1305),
+  [`4d59ec6`](https://github.com/n24q02m/mnemo/commit/4d59ec62fe7e4907d9a40bfc9a52716a272d9559))
+
+- **deps**: Lock file maintenance ([#1308](https://github.com/n24q02m/mnemo/pull/1308),
+  [`bf99988`](https://github.com/n24q02m/mnemo/commit/bf99988efbc6eb782e13c1f55f49f383a1d7565c))
+
+### Features
+
+- Drop per-repo model-sync (hull central leaders issue replaces it)
+  ([#1310](https://github.com/n24q02m/mnemo/pull/1310),
+  [`6351a37`](https://github.com/n24q02m/mnemo/commit/6351a3725d8f5b7c861c7013c2a352a08b0fdf36))
+
+- ⚡ bolt: optimize FTS score normalization in _fts_search
+  ([#1311](https://github.com/n24q02m/mnemo/pull/1311),
+  [`8223e7d`](https://github.com/n24q02m/mnemo/commit/8223e7dc4ff3b21339a8584b9e84795834ed4612))
+
+
 ## v2.20.1 (2026-10-07)
 
 ### Bug Fixes
