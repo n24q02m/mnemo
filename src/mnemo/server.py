@@ -17,7 +17,7 @@ import os
 import socket
 import sys
 import typing
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from importlib.metadata import version as _pkgver
 
@@ -241,7 +241,7 @@ async def _init_reranker_backend() -> None:
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
+async def lifespan(server: FastMCP) -> AsyncGenerator[dict]:
     """Initialize DB and embedding/rerank backends on startup.
 
     Embedding backend init runs as a background task so the server accepts
