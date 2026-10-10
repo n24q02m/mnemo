@@ -18,6 +18,7 @@ Embeddings are truncated to fixed dims in server._embed().
 from __future__ import annotations
 
 import asyncio
+import operator
 from typing import Any, Literal, Protocol
 
 from loguru import logger
@@ -298,7 +299,7 @@ class CloudEmbeddingBackend:
 
         results = await asyncio.gather(*tasks)
         # Ensure ordered flattening
-        results.sort(key=lambda x: x[0])
+        results.sort(key=operator.itemgetter(0))  # type: ignore[arg-type]
         all_embeddings: list[list[float]] = []
         for _, batch_result in results:
             all_embeddings.extend(batch_result)
