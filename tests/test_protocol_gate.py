@@ -2,8 +2,9 @@
 
 Scope honesty (read before editing):
 - This gate runs against the SOURCE TREE: the subprocess below boots the
-  editable install (``uv run mnemo-mcp``), i.e. the code in this repository,
-  not a published artifact. It is pre-BETA hardening only.
+  editable install (``python -m mnemo`` on the test interpreter), i.e. the
+  code in this repository, not a published artifact. It is pre-BETA
+  hardening only.
 - The authoritative D3 gate runs against the installed BETA artifact with
   ``uvx --from mnemo-mcp==<beta>`` driven by ``mcp.ClientSession``; that is
   blocked until PyPI trusted publishing exists. This file does NOT claim D3
@@ -37,6 +38,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -203,8 +205,12 @@ def server(tmp_path_factory):
     out_path = state_dir / "server-stdout.log"
     err_path = state_dir / "server-stderr.log"
     with out_path.open("w") as out_f, err_path.open("w") as err_f:
+        # The test interpreter, not ``uv run``: on Windows terminate() only
+        # kills the direct child, and uv does not take its own children down
+        # with it, so every run left a live server holding the venv's
+        # mnemo-mcp.exe (and the next ``uv sync`` failed with os error 32).
         proc = subprocess.Popen(
-            ["uv", "run", "mnemo-mcp"],
+            [sys.executable, "-m", "mnemo"],
             cwd=str(_REPO_ROOT),
             env=_build_gate_env(state_dir, port=port),
             stdin=subprocess.DEVNULL,
