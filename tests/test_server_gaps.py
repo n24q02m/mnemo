@@ -430,7 +430,7 @@ class TestEntitySearchValidation:
         resp = await _handle_entity_search(
             ctx_with_db[0], name="X", entity_type="zzzzzz"
         )
-        assert resp["suggestion"].startswith("Pick an entity_type from")
+        assert resp["suggestion"].startswith("Pick a context_type from")
 
     async def test_invalid_entity_type_with_close_match(self, ctx_with_db):
         resp = await _handle_entity_search(

@@ -1156,8 +1156,8 @@ async def _handle_entity_search(
             "example": "action='entity_search', name='FastAPI'",
             "suggestion": (
                 "Pass 'name' (entity name, case-insensitive) and "
-                "optionally 'entity_type' (person/project/tool/concept/"
-                "org/location/event)."
+                "optionally 'context_type' as the entity type filter "
+                "(person/project/tool/concept/org/location/event)."
             ),
         }
 
@@ -1173,13 +1173,13 @@ async def _handle_entity_search(
     if entity_type is not None and entity_type not in _VALID_ENTITY_TYPES:
         closest = difflib.get_close_matches(str(entity_type), _VALID_ENTITY_TYPES, n=1)
         resp = {
-            "error": f"Invalid entity_type '{entity_type}'.",
+            "error": f"Invalid entity type '{entity_type}' in context_type.",
             "valid_entity_types": _VALID_ENTITY_TYPES,
         }
         if closest:
             resp["suggestion"] = f"Did you mean '{closest[0]}'?"
         else:
-            resp["suggestion"] = f"Pick an entity_type from {_VALID_ENTITY_TYPES}."
+            resp["suggestion"] = f"Pick a context_type from {_VALID_ENTITY_TYPES}."
         return resp
 
     from mnemo.temporal.queries import entity_search

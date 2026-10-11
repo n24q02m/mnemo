@@ -48,13 +48,17 @@ class TestEntitySearchHandler:
         data = result
         assert "error" in data
         assert "name" in data["error"].lower()
+        # The memory tool takes the entity type through context_type; there
+        # is no entity_type parameter for a caller to pass.
+        assert "'context_type'" in data["suggestion"]
+        assert "entity_type" not in data["suggestion"]
 
     async def test_invalid_entity_type_returns_fuzzy_suggestion(self, tmp_db: MemoryDB):
         ctx = _make_ctx(tmp_db)
         result = await _handle_entity_search(ctx, name="Python", entity_type="tooool")
         data = result
         assert "error" in data
-        assert "Invalid entity_type 'tooool'" in data["error"]
+        assert "Invalid entity type 'tooool' in context_type" in data["error"]
         assert "tool" in data["suggestion"]
         assert "valid_entity_types" in data
 
