@@ -16,6 +16,7 @@ inflate the false-positive metric this phase exists to measure honestly.
 
 from __future__ import annotations
 
+import operator
 import re
 from typing import Any
 
@@ -56,7 +57,8 @@ def scan(text: str) -> list[dict[str, Any]]:
         for match in pattern.finditer(text):
             raw.append((match.start(), match.end(), kind))
     # Longest span first at equal start, then pattern order (stable).
-    raw.sort(key=lambda f: (f[0], -(f[1] - f[0])))
+    raw.sort(key=operator.itemgetter(1), reverse=True)  # type: ignore[arg-type]
+    raw.sort(key=operator.itemgetter(0))  # type: ignore[arg-type]
     findings: list[dict[str, Any]] = []
     last_end = -1
     for start, end, kind in raw:
@@ -64,7 +66,7 @@ def scan(text: str) -> list[dict[str, Any]]:
             continue  # contained in / overlapping a kept finding
         findings.append({"kind": kind, "start": start, "end": end})
         last_end = end
-    findings.sort(key=lambda f: (f["start"], f["end"]))
+    findings.sort(key=operator.itemgetter("start", "end"))  # type: ignore[arg-type]
     return findings
 
 
