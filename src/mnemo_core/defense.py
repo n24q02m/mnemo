@@ -16,6 +16,7 @@ inflate the false-positive metric this phase exists to measure honestly.
 
 from __future__ import annotations
 
+import operator
 import re
 from typing import Any
 
@@ -64,7 +65,7 @@ def scan(text: str) -> list[dict[str, Any]]:
             continue  # contained in / overlapping a kept finding
         findings.append({"kind": kind, "start": start, "end": end})
         last_end = end
-    findings.sort(key=lambda f: (f["start"], f["end"]))
+    findings.sort(key=operator.itemgetter("start", "end"))  # type: ignore[arg-type]
     return findings
 
 
