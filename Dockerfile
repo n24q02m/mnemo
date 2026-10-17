@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 # Stage 2: Runtime (HTTP MCP endpoint; single target)
 # ========================
-FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 AS http
+FROM python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641 AS http
 
 LABEL org.opencontainers.image.source="https://github.com/n24q02m/mnemo"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/mnemo-mcp"
