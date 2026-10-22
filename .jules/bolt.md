@@ -91,3 +91,7 @@ Same failure as the 2026-07-25 entry above, on the PR whose idea was taken into 
 ## 2026-10-09 - Avoid repeated dictionary iteration and list comprehension overhead for min/max
 **Learning:** In `_fts_search`, performing a list comprehension to extract values, followed by two separate built-in calls to `min()` and `max()`, and finally re-iterating over the entire result dictionary to normalize scores incurs unnecessary memory allocation and loop overhead.
 **Action:** Replaced the list comprehension and `min`/`max` calls with a single pass over `results.values()` that simultaneously finds the minimum and maximum values while appending only the valid nodes to a temporary list. The normalization then iterates only over this smaller, pre-filtered list. This yielded an ~50% speedup on large result sets.
+
+## 2026-10-19 - Replace lambda with operator.itemgetter using chained stable sort
+**Learning:** When replacing a complex sorting `lambda` that involves math (e.g., `-(f[1] - f[0])`) for performance, `operator.itemgetter` cannot evaluate the math inline. However, leveraging Python's stable `list.sort()` by chaining multiple separate sorts using `operator.itemgetter` and standard `lambda` in reverse order of their original sort precedence achieves the identical result roughly 40-50% faster.
+**Action:** Replaced `raw.sort(key=lambda f: (f[0], -(f[1] - f[0])))` and `findings.sort(key=lambda f: (f["start"], f["end"]))` with chained separate `.sort` calls using `operator.itemgetter` and simple `lambda` in `src/mnemo_core/defense.py`.
