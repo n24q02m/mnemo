@@ -47,7 +47,11 @@ def capture(
             subject=subject,
         )
     except ValueError as exc:
-        return results.err(results.VALIDATION, str(exc))
+        msg = str(exc)
+        if "exceeds limit" not in msg:
+            logger.exception("validation failed")
+            msg = "validation failed"
+        return results.err(results.VALIDATION, msg)
     except sqlite3.Error:
         logger.exception("capture failed")
         return results.err(results.STORAGE, "capture failed")
