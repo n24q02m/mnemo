@@ -1230,20 +1230,15 @@ class MemoryDB:
 
         if has_vec:
             k = 60
-            fts_ranked = sorted(
-                results.keys(),
-                key=lambda x: results[x].get("fts_score", 0.0),
-                reverse=True,
-            )
-            vec_ranked = sorted(
-                results.keys(),
-                key=lambda x: results[x].get("vec_score", 0.0),
-                reverse=True,
-            )
+            items = list(results.items())
+
+            items.sort(key=lambda kv: kv[1].get("fts_score", 0.0), reverse=True)
             scores: dict[str, float] = {
-                mid: 1.0 / (k + rank) for rank, mid in enumerate(fts_ranked, start=1)
+                mid: 1.0 / (k + rank) for rank, (mid, _) in enumerate(items, start=1)
             }
-            for rank, mid in enumerate(vec_ranked, start=1):
+
+            items.sort(key=lambda kv: kv[1].get("vec_score", 0.0), reverse=True)
+            for rank, (mid, _) in enumerate(items, start=1):
                 scores[mid] += 1.0 / (k + rank)
 
             for mid, mem in results.items():
