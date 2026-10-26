@@ -466,14 +466,14 @@ class TestConfigTool:
 
 class TestNoneActionHandling:
     async def test_memory_none_action(self):
-        result = await memory(action=None)
+        result = await memory(action=None)  # ty: ignore[invalid-argument-type]
         assert "error" in result
         assert "Unknown action 'None'" in result["error"]
         assert "suggestion" in result
         assert "Available actions are:" in result["suggestion"]
 
     async def test_config_none_action(self):
-        result = await config(action=None)
+        result = await config(action=None)  # ty: ignore[invalid-argument-type]
         assert "error" in result
         assert "Unknown action 'None'" in result["error"]
         assert "suggestion" in result
@@ -777,8 +777,7 @@ class TestServerVersion:
         not the MCP SDK version."""
         from mnemo.server import __version__, mcp
 
-        init_opts = mcp._mcp_server.create_initialization_options()
-        assert init_opts.server_version == __version__
+        assert mcp.version == __version__
 
 
 class TestMaybeRegisterCustomEmbed:

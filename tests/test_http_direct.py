@@ -40,9 +40,9 @@ async def test_http_direct_init_responds(tmp_path):
         async with mcp_client_session(port) as session:
             result = await session.initialize()
             # FastMCP negotiates protocol version; just assert it returned one.
-            assert result.protocolVersion
+            assert result.protocol_version
             # Server name is "Mnemo" per FastMCP("Mnemo", ...) in server.py.
-            assert result.serverInfo.name == "Mnemo"
+            assert result.server_info.name == "Mnemo"
 
 
 async def test_http_direct_tools_list_returns_expected_tools(tmp_path):

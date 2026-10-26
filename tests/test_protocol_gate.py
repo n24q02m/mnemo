@@ -124,7 +124,7 @@ _KNOWN_PROVIDER_ENV_KEYS = (
 
 def parse(r) -> str:
     """Extract text from MCP tool result."""
-    if hasattr(r, "isError") and r.isError:
+    if hasattr(r, "is_error") and r.is_error:
         raise RuntimeError(r.content[0].text)
     return r.content[0].text
 
@@ -261,7 +261,6 @@ async def mcp_session(server):
         async with streamable_http_client(f"{server}/mcp") as (
             read_stream,
             write_stream,
-            _session_id,
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -293,7 +292,7 @@ class TestToolContract:
         )
         for tool in result.tools:
             assert tool.description, f"Tool {tool.name} has empty description"
-            assert tool.inputSchema, f"Tool {tool.name} has no input schema"
+            assert tool.input_schema, f"Tool {tool.name} has no input schema"
 
 
 # ---------------------------------------------------------------------------

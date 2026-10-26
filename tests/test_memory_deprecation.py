@@ -97,7 +97,7 @@ class TestMemoryResponseDeprecationField:
         assert result["_deprecation"]["use_instead"] is None
 
     async def test_none_action_response_has_deprecation(self):
-        result = await memory(action=None)
+        result = await memory(action=None)  # ty: ignore[invalid-argument-type]
         assert "error" in result
         assert "_deprecation" in result
 

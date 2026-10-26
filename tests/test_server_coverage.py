@@ -395,11 +395,14 @@ class TestConfigSync:
 
 
 class TestResources:
-    async def test_stats_resource(self, ctx_with_db):
-        """stats_resource returns database stats."""
+    async def test_stats_resource(self, ctx_with_db, monkeypatch):
+        """stats_resource returns database stats from the lifespan state."""
         ctx, db = ctx_with_db
         db.add("test memory")
-        result = json.loads(await stats_resource(ctx=ctx))
+        monkeypatch.setattr(
+            "mnemo.server._lifespan_state", ctx.request_context.lifespan_context
+        )
+        result = json.loads(await stats_resource())
         assert result["total_memories"] == 1
         assert "embedding_model" in result
 

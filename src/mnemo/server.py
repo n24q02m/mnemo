@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import version as _pkgver
 
 from loguru import logger
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 
 from mnemo.config import settings
@@ -240,8 +240,13 @@ async def _init_reranker_backend() -> None:
         clear_reranker()
 
 
+# Lifespan state of the running server. Static MCP resources cannot take a
+# ``Context`` (mcp 2.x), so ``mnemo://stats`` reads the state from here.
+_lifespan_state: dict | None = None
+
+
 @asynccontextmanager
-async def lifespan(server: FastMCP) -> AsyncGenerator[dict]:
+async def lifespan(server: MCPServer) -> AsyncGenerator[dict]:
     """Initialize DB and embedding/rerank backends on startup.
 
     Embedding backend init runs as a background task so the server accepts
@@ -292,9 +297,12 @@ async def lifespan(server: FastMCP) -> AsyncGenerator[dict]:
     # 3. Initialize reranker backend in background (non-blocking).
     reranker_task = asyncio.create_task(_init_reranker_backend())
 
+    global _lifespan_state
+    _lifespan_state = ctx
     try:
         yield ctx
     finally:
+        _lifespan_state = None
         # Cancel background init tasks if still running
         for task in (embedding_task, reranker_task):
             if not task.done():
@@ -310,15 +318,12 @@ async def lifespan(server: FastMCP) -> AsyncGenerator[dict]:
 
 # --- Server ---
 
-mcp = FastMCP(
+mcp = MCPServer(
     "Mnemo",
     instructions="Persistent AI memory. Proactively save preferences, decisions, facts. Search before recommending.",
     lifespan=lifespan,
+    version=__version__,
 )
-# FastMCP (mcp.server.fastmcp) has no ``version=`` kwarg; set it on the
-# lowlevel server so initialize's serverInfo.version reports the package
-# version instead of the MCP SDK version.
-mcp._mcp_server.version = __version__
 
 
 # --- Helper ---
@@ -328,6 +333,11 @@ _sub_db_cache: dict[str, MemoryDB] = {}
 
 
 def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
+    """Resolve the caller's store, model, and dimensions from a tool ``Context``."""
+    return _resolve_state(ctx.request_context.lifespan_context)
+
+
+def _resolve_state(lc: dict) -> tuple[MemoryDB, str | None, int]:
     """Resolve the caller's store, model, and dimensions (per-namespace, Q2).
 
     The lifespan opens the host-root store for the shared default namespace.
@@ -335,7 +345,6 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
     ``~/.mnemo/subs/<namespace>/memories.db`` (cached per process), so two
     users on one process can never read each other's data.
     """
-    lc = ctx.request_context.lifespan_context
     db: MemoryDB = lc["db"]
     namespace = current_sub()
     if namespace != "default":
@@ -935,7 +944,13 @@ async def _handle_import(
 
 
 async def _handle_stats(ctx: Context | None) -> dict[str, typing.Any]:
-    db, embedding_model, embedding_dims = _get_ctx(ctx)
+    return await _stats_for(_get_ctx(ctx))
+
+
+async def _stats_for(
+    resolved: tuple[MemoryDB, str | None, int],
+) -> dict[str, typing.Any]:
+    db, embedding_model, embedding_dims = resolved
     s = await asyncio.to_thread(db.stats)
     s["embedding_model"] = embedding_model
     s["embedding_dims"] = embedding_dims
@@ -1349,8 +1364,8 @@ async def _handle_consolidate(
     ),
     annotations=ToolAnnotations(
         title="Add Memory",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def add_memory(
@@ -1372,8 +1387,8 @@ async def add_memory(
     ),
     annotations=ToolAnnotations(
         title="Search Memory",
-        readOnlyHint=True,
-        destructiveHint=False,
+        read_only_hint=True,
+        destructive_hint=False,
     ),
 )
 async def search_memory(
@@ -1396,8 +1411,8 @@ async def search_memory(
     ),
     annotations=ToolAnnotations(
         title="List Memories",
-        readOnlyHint=True,
-        destructiveHint=False,
+        read_only_hint=True,
+        destructive_hint=False,
     ),
 )
 async def list_memories(
@@ -1416,8 +1431,8 @@ async def list_memories(
     ),
     annotations=ToolAnnotations(
         title="Update Memory",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def update_memory(
@@ -1444,8 +1459,8 @@ async def update_memory(
     ),
     annotations=ToolAnnotations(
         title="Delete Memory",
-        readOnlyHint=False,
-        destructiveHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
     ),
 )
 async def delete_memory(
@@ -1463,8 +1478,8 @@ async def delete_memory(
     ),
     annotations=ToolAnnotations(
         title="Export Memories",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def export_memories(ctx: Context | None = None) -> dict[str, typing.Any]:
@@ -1481,8 +1496,8 @@ async def export_memories(ctx: Context | None = None) -> dict[str, typing.Any]:
     ),
     annotations=ToolAnnotations(
         title="Import Memories",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def import_memories(
@@ -1500,8 +1515,8 @@ async def import_memories(
     ),
     annotations=ToolAnnotations(
         title="Memory Stats",
-        readOnlyHint=True,
-        destructiveHint=False,
+        read_only_hint=True,
+        destructive_hint=False,
     ),
 )
 async def memory_stats(ctx: Context | None = None) -> dict[str, typing.Any]:
@@ -1518,8 +1533,8 @@ async def memory_stats(ctx: Context | None = None) -> dict[str, typing.Any]:
     ),
     annotations=ToolAnnotations(
         title="Restore Memory",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def restore_memory(
@@ -1537,8 +1552,8 @@ async def restore_memory(
     ),
     annotations=ToolAnnotations(
         title="Archived Memories",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def archived_memories(
@@ -1557,8 +1572,8 @@ async def archived_memories(
     ),
     annotations=ToolAnnotations(
         title="Consolidate Memories",
-        readOnlyHint=False,
-        destructiveHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
     ),
 )
 async def consolidate_memories(
@@ -1594,10 +1609,10 @@ async def consolidate_memories(
     ),
     annotations=ToolAnnotations(
         title="Memory",
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=False,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=False,
     ),
 )
 async def memory(
@@ -1795,10 +1810,10 @@ async def memory(
     ),
     annotations=ToolAnnotations(
         title="Config",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
     ),
 )
 async def config(
@@ -2135,9 +2150,11 @@ async def _handle_config_warmup() -> dict[str, typing.Any]:
 
 
 @mcp.resource("mnemo://stats")
-async def stats_resource(ctx: Context | None = None) -> str:
+async def stats_resource() -> str:
     """Database statistics and server status."""
-    return _json(await _handle_stats(ctx))
+    if _lifespan_state is None:
+        return _json({"error": "Server is not running"})
+    return _json(await _stats_for(_resolve_state(_lifespan_state)))
 
 
 # --- Prompts ---

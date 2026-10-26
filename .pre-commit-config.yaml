@@ -44,14 +44,12 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # uv.lock freshness gate (post-de-host): hull-core resolves via a git
-  # source pin now, so stripping sources (the CF-era UV_NO_SOURCES=1
-  # workaround) makes resolution fail outright. Plain `uv lock --check`
-  # fails the commit when the lock is stale without rewriting it.
+  # uv.lock freshness gate: fails the commit when the lock is stale without
+  # rewriting it.
   - repo: local
     hooks:
       - id: uv-lock-no-sources
-        name: uv lock freshness (git sources intact)
+        name: uv lock freshness
         entry: bash -c 'uv lock --check'
         language: system
         files: ^(pyproject\.toml|uv\.lock)$

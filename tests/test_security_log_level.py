@@ -31,11 +31,11 @@ def mock_dependencies():
     mock_fast_mcp.resource.side_effect = identity_decorator
     mock_fast_mcp.prompt.side_effect = identity_decorator
     mock_mcp_module = MagicMock()
-    mock_mcp_module.FastMCP.return_value = mock_fast_mcp
+    mock_mcp_module.MCPServer.return_value = mock_fast_mcp
     modules_to_patch = {
         "mnemo.db": mock_db,
         "mnemo.embedder": mock_embedder,
-        "mcp.server.fastmcp": mock_mcp_module,
+        "mcp.server.mcpserver": mock_mcp_module,
     }
     with patch.dict(sys.modules, modules_to_patch):
         if "mnemo.server" in sys.modules:

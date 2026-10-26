@@ -1,9 +1,10 @@
 """Shared test fixtures for Mnemo MCP Server (de-hosted stack, hull-core)."""
 
-# Force-import fastmcp BEFORE test_security_log_level.py loads its
-# module-level ``patch("importlib.metadata.version")``. Once fastmcp is
-# cached in sys.modules, later imports skip its ``__init__`` (which would
-# otherwise try to resolve its own version via the leaked mock).
+# Force-import fastmcp and httpcore2 BEFORE test_security_log_level.py loads its
+# module-level ``patch("importlib.metadata.version")``. Once they are cached
+# in sys.modules, later imports skip their ``__init__`` (which would otherwise
+# try to resolve their own version via the leaked mock; httpcore2 does so on
+# the first httpx2 client).
 import ipaddress
 import socket
 from collections.abc import Generator
@@ -11,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import fastmcp  # noqa: F401
+import httpcore2  # noqa: F401
 import pytest
 
 from mnemo.db import MemoryDB
