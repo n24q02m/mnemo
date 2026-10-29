@@ -38,7 +38,7 @@ dependencies = [
     "n24q02m-hull>=0.4,<0.5",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.21.0",
-    "alembic>=1.20.0",
+    "alembic>=1.20.1",
     # Phase 2: token counting for LLM compression pipeline
     "tiktoken>=0.14.0",
     # idna floor patches CVE-2026-45409 (reached transitively via httpx chains).
