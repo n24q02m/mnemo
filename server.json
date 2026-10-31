@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "mnemo-mcp",
+      "identifier": "n24q02m-mnemo",
       "version": "2.21.0",
       "runtimeHint": "uvx",
       "transport": {
