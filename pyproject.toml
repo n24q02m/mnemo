@@ -1,5 +1,5 @@
 [project]
-name = "mnemo-mcp"
+name = "n24q02m-mnemo"
 version = "2.21.0"
 description = "Open-source MCP Server for persistent AI memory"
 readme = "README.md"
@@ -60,9 +60,10 @@ dev = [
 ]
 
 [project.scripts]
-mnemo-mcp = "mnemo.cli:main"  # legacy command alias
-mnemo-pilot = "mnemo_cli.__main__:main"
+n24q02m-mnemo = "mnemo_cli.__main__:main"
 mnemo = "mnemo_cli.__main__:main"
+mnemo-pilot = "mnemo_cli.__main__:main"
+mnemo-mcp = "mnemo.cli:main"  # legacy command alias
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/mnemo"

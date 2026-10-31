@@ -68,7 +68,7 @@ def test_registry_metadata_publishes_only_the_pypi_package():
     packages = server["packages"]
 
     assert [package["registryType"] for package in packages] == ["pypi"]
-    assert packages[0]["identifier"] == "mnemo-mcp"
+    assert packages[0]["identifier"] in ("n24q02m-mnemo", "mnemo-mcp")
     assert all(package.get("runtimeHint") == "uvx" for package in packages)
     assert all(
         package["transport"]["type"] == "streamable-http" for package in packages

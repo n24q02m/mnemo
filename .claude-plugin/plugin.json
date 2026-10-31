@@ -6,7 +6,7 @@
     "MNEMO_URL": {
       "type": "string",
       "title": "mnemo server URL (optional)",
-      "description": "Streamable HTTP endpoint of a running mnemo instance (e.g. http://127.0.0.1:8000/mcp). Start one with `uvx --from mnemo-mcp mnemo-mcp` or docker compose.",
+      "description": "Streamable HTTP endpoint of a running mnemo instance (e.g. http://127.0.0.1:8000/mcp). Start one with `uvx --from n24q02m-mnemo mnemo-mcp` or docker compose.",
       "required": false
     },
     "MNEMO_TOKEN": {

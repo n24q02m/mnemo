@@ -825,7 +825,26 @@ wheels = [
 ]
 
 [[package]]
-name = "mnemo-mcp"
+name = "n24q02m-hull"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "fastmcp" },
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "platformdirs" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/873580c1ee26c58ceec785b96ddfd5f9c522869c5ee7f70be6f859a3ff0f/n24q02m_hull-0.4.0.tar.gz", hash = "sha256:79f277b445204cc71f7ef7b46878fb4cde34320619e3ed6984058f6673ad6320", size = 979560, upload-time = "2026-10-26T13:04:48.934Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/70/e0/21740f74e5d83a663457d7795a0d4b54015ff04dd047de1a17f21809d5d6/n24q02m_hull-0.4.0-py3-none-any.whl", hash = "sha256:c900fab1c72c99cd227c00ff6503d210bf04b4f2e134b8cd340c2895ff7fbf28", size = 210007, upload-time = "2026-10-26T13:04:47.332Z" },
+]
+
+[[package]]
+name = "n24q02m-mnemo"
 version = "2.21.0"
 source = { editable = "." }
 dependencies = [
@@ -885,25 +904,6 @@ dev = [
     { name = "ruff" },
     { name = "syrupy", specifier = ">=6.1.1" },
     { name = "ty" },
-]
-
-[[package]]
-name = "n24q02m-hull"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "fastmcp" },
-    { name = "httpcore" },
-    { name = "httpx" },
-    { name = "platformdirs" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "uvicorn" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/873580c1ee26c58ceec785b96ddfd5f9c522869c5ee7f70be6f859a3ff0f/n24q02m_hull-0.4.0.tar.gz", hash = "sha256:79f277b445204cc71f7ef7b46878fb4cde34320619e3ed6984058f6673ad6320", size = 979560, upload-time = "2026-10-26T13:04:48.934Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/e0/21740f74e5d83a663457d7795a0d4b54015ff04dd047de1a17f21809d5d6/n24q02m_hull-0.4.0-py3-none-any.whl", hash = "sha256:c900fab1c72c99cd227c00ff6503d210bf04b4f2e134b8cd340c2895ff7fbf28", size = 210007, upload-time = "2026-10-26T13:04:47.332Z" },
 ]
 
 [[package]]

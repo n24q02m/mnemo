@@ -1,16 +1,15 @@
 # Mnemo MCP Server
 
-> **Renamed (2026-09-13):** repo is now `mnemo` — CLI-first (`mnemo` command). PyPI package stays `mnemo-mcp`; MCP server remains a secondary surface.
+> **Distribution & CLI:** the repo and CLI are `mnemo`. The PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). The MCP server remains available: run `mnemo` (or legacy `mnemo-mcp`).
 
 mcp-name: io.github.n24q02m/mnemo
 
 **Persistent AI memory with hybrid search. Open, free, unlimited.**
 
 <!-- Badge Row 1: Status -->
-[![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/mnemo/graph/badge.svg?token=GELGVQNMUZ)](https://codecov.io/gh/n24q02m/mnemo)
-[![PyPI](https://img.shields.io/pypi/v/mnemo-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/mnemo-mcp/)
+[![PyPI](https://img.shields.io/pypi/v/n24q02m-mnemo?logo=pypi&logoColor=white)](https://pypi.org/project/n24q02m-mnemo/)
 [![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/mnemo)](LICENSE)
 [![SafeSkill 91/100](https://img.shields.io/badge/SafeSkill-91%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/n24q02m-mnemo-mcp)
 
@@ -27,7 +26,6 @@ mcp-name: io.github.n24q02m/mnemo
 
 | Project | Tagline | Tag |
 |---|---|---|
-| [agent-chat-plugin](https://github.com/n24q02m/agent-chat-plugin) | Peer AI agents chat in a shared folder — no human relay, no orchestrator, wor... | Tooling |
 | [better-code-review-graph](https://github.com/n24q02m/better-code-review-graph) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
 | [better-drive](https://github.com/n24q02m/better-drive) | 2-way Google Drive sync with .driveignore filter — rclone engine, Windows tray | Tooling |
 | [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP |
@@ -111,7 +109,7 @@ mcp-name: io.github.n24q02m/mnemo
 /plugin install mnemo-mcp@n24q02m-plugins
 
 # Method 2: run the HTTP server yourself and register the endpoint
-uvx --from mnemo-mcp mnemo-mcp            # serves http://127.0.0.1:8000/mcp by default
+uvx --from n24q02m-mnemo mnemo-mcp            # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # Method 3 (remote): point a client at an existing HTTP deployment
@@ -125,7 +123,7 @@ transport post-de-host; see the
 | Client | Install |
 |---|---|
 | Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
-| Claude Code (HTTP) | start the server (`uvx --from mnemo-mcp mnemo-mcp` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
+| Claude Code (HTTP) | start the server (`uvx --from n24q02m-mnemo mnemo-mcp` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
 | Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
 | Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
 
@@ -190,7 +188,7 @@ or the client's equivalent).
 Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/)**:
 
 - [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
+- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- http
 - [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
 **Install with AI agent** -- paste this to your AI coding agent:

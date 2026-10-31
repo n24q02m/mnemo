@@ -4,5 +4,8 @@ from importlib.metadata import version
 
 from mnemo.server import main
 
-__version__ = version("mnemo-mcp")
+try:
+    __version__ = version("n24q02m-mnemo")
+except Exception:
+    __version__ = version("mnemo-mcp")
 __all__ = ["main", "__version__"]

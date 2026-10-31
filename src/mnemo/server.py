@@ -39,7 +39,10 @@ from mnemo.runtime import (
 
 # Resolved via importlib.metadata (not ``from mnemo import __version__``)
 # to avoid a circular import: ``mnemo/__init__`` imports ``server.main``.
-__version__ = _pkgver("mnemo-mcp")
+try:
+    __version__ = _pkgver("n24q02m-mnemo")
+except Exception:
+    __version__ = _pkgver("mnemo-mcp")
 
 # Storage width for sqlite-vec. All embeddings are fitted to this size so
 # switching models never breaks the vector table; the default matches the
