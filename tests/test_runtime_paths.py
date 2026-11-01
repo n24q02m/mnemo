@@ -199,7 +199,7 @@ class TestConfigInit:
 
 def test_main_bare_invocation_serves(monkeypatch):
     """Bare argv falls through to the serve path."""
-    monkeypatch.setattr(sys, "argv", ["mnemo-mcp"])
+    monkeypatch.setattr(sys, "argv", ["n24q02m-mnemo"])
     with patch("mnemo.cli._serve", return_value=None) as serve:
         assert cli.main() == 0
     serve.assert_called_once_with([])
@@ -207,5 +207,5 @@ def test_main_bare_invocation_serves(monkeypatch):
 
 def test_main_dispatches_subcommand(monkeypatch):
     monkeypatch.setenv("MNEMO_AUTH_TOKEN", "s3cret")
-    monkeypatch.setattr(sys, "argv", ["mnemo-mcp", "token-hash"])
+    monkeypatch.setattr(sys, "argv", ["n24q02m-mnemo", "token-hash"])
     assert cli.main() == 0

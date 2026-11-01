@@ -77,12 +77,11 @@ def test_registry_metadata_publishes_only_the_pypi_package():
 
 def test_public_docs_drop_image_aliases_but_keep_local_build_guidance():
     readme = _read("README.md")
-    passport = _read("docs/passport.md")
     agents = _read("AGENTS.md")
     claude = _read("CLAUDE.md")
     contributing = _read("CONTRIBUTING.md")
 
-    for text in (readme, passport, agents, claude, contributing):
+    for text in (readme, agents, claude, contributing):
         assert all(reference not in text for reference in PUBLIC_IMAGE_REFS)
 
     # The CF deployment artifacts are gone with the de-host.
@@ -94,10 +93,6 @@ def test_public_docs_drop_image_aliases_but_keep_local_build_guidance():
     assert "Existing historical registry tags" in readme
     assert "docker build --target http" in readme
     assert "wrangler containers push" not in readme
-
-    # passport.md is a de-host historical document (banner-marked); it must
-    # not reintroduce public image refs (covered by the loop above).
-    assert "REMOVED 2026-09" in passport
 
     expected_release_claim = (
         "PyPI + GitHub Release; eligible stable releases -> MCP Registry + marketplace"

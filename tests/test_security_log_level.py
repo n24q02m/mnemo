@@ -6,7 +6,7 @@ import pytest
 
 
 def mock_version(name):
-    if name == "mnemo-mcp":
+    if name == "n24q02m-mnemo":
         return "0.0.0-test"
     raise importlib.metadata.PackageNotFoundError(name)
 

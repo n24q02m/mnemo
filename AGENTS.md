@@ -4,7 +4,7 @@ MCP Server cho AI memory. Python 3.13, uv, hatchling, src layout.
 Post-de-host (2026-09): server la MOT HTTP Streamable endpoint tren hull-core
 (auth `no-auth|token|multi` + per-namespace SQLite), local SQLite (WAL) la
 storage authority duy nhat. Khong con stdio transport, Cloudflare deploy,
-passport sync, relay setup, hay multi-provider key dispatch.
+passport sync, setup form, hay multi-provider key dispatch.
 Hybrid search: FTS5 + sqlite-vec. 13 tools: 11 specialized memory tools
 (add_memory, search_memory, list_memories, update_memory, delete_memory,
 export_memories, import_memories, memory_stats, restore_memory,
@@ -40,9 +40,9 @@ uv run pytest tests/test_db.py::TestSearch::test_basic -v  # single test
 
 # Build & Run
 uv build
-uv run mnemo-mcp                    # HTTP server (bind tu ~/.mnemo/config.toml)
-uv run mnemo-mcp config-init        # ghi template config
-uv run mnemo-mcp warmup             # pre-download local ONNX embed model
+uv run n24q02m-mnemo                    # HTTP server (bind tu ~/.mnemo/config.toml)
+uv run n24q02m-mnemo config-init        # ghi template config
+uv run n24q02m-mnemo warmup             # pre-download local ONNX embed model
 
 # Mise shortcuts
 mise run setup     # full dev setup
@@ -64,7 +64,7 @@ mise run fix       # ruff fix + format
 ```
 src/mnemo/
   __main__.py      # python -m mnemo entrypoint
-  cli.py           # mnemo-mcp entry: bare = HTTP server; subcommands
+  cli.py           # n24q02m-mnemo entry (alias mnemo-mcp): bare = HTTP server; subcommands
                    # (config-init, warmup, token-hash, token-verify)
   server.py        # FastMCP tools/resources/prompts + hull HTTP app
   runtime.py       # bridge sang hull-core: settings, model cells, auth,
@@ -92,7 +92,7 @@ tests/             # 1:1 mapping voi source modules
 
 - `MNEMO_DB_PATH` / `DB_PATH` -- default `~/.mnemo/memories.db`
 - `MNEMO_HOST` / `MNEMO_PORT` -- HTTP bind overrides (config.toml `[server]`)
-- `MNEMO_AUTH_TOKEN` -- token source cho `mnemo-mcp token-hash`
+- `MNEMO_AUTH_TOKEN` -- token source cho `n24q02m-mnemo token-hash`
 - `HULL_<TASK>_API_KEY` -- host-only provider key override per cell:
   `HULL_EMBED_API_KEY` / `HULL_RERANK_API_KEY` / `HULL_CHAT_API_KEY` /
   `HULL_JEV_SCORE_API_KEY` (env wins over config.toml `api_key`)
@@ -116,7 +116,7 @@ tests/             # 1:1 mapping voi source modules
   `*_API_KEY` (JINA/GEMINI/OPENAI/COHERE/XAI/ANTHROPIC/VERTEX_EXPRESS),
   `COMPRESSION_PROVIDER`, `COMPRESSION_MODEL`, `SYNC_*`,
   `GOOGLE_DRIVE_CLIENT_ID`, `MEMORY_DB_BACKEND`, `MCP_STORAGE_BACKEND`,
-  `MCP_TRANSPORT`, `PUBLIC_URL`, `MCP_DCR_SERVER_SECRET`, `MCP_RELAY_*`,
+  `MCP_TRANSPORT`, `PUBLIC_URL`, `MCP_DCR_SERVER_SECRET`,
   `MNEMO_ENTERPRISE*`, `MNEMO_AUDIT_*`. See docs/ARCHITECTURE.md history.
 
 ## Client config
@@ -125,7 +125,7 @@ Server chi noi Streamable HTTP -- khong co stdio spawn. Chay instance roi
 point client vao endpoint:
 
 ```bash
-uvx --from mnemo-mcp mnemo-mcp   # http://127.0.0.1:8000/mcp (no-auth default)
+uvx n24q02m-mnemo   # http://127.0.0.1:8000/mcp (no-auth default)
 ```
 
 ```json
@@ -136,7 +136,7 @@ uvx --from mnemo-mcp mnemo-mcp   # http://127.0.0.1:8000/mcp (no-auth default)
 }
 ```
 
-Provider cells song trong `~/.mnemo/config.toml` (`mnemo-mcp config-init`):
+Provider cells song trong `~/.mnemo/config.toml` (`n24q02m-mnemo config-init`):
 `[models.<task>]` = `base_url` + `api_key` + `model`, OpenRouter pre-wired.
 Key co the dat trong file hoac qua `HULL_<TASK>_API_KEY`.
 
@@ -156,7 +156,7 @@ cell). Never mix vectors from different model identities --
   tach per-namespace store `~/.mnemo/subs/<ns>/memories.db`.
 - Backup / cross-machine migration = `rclone` BEN NGOAI server; khong co
   embedded sync. Cloudflare D1/Vectorize va GDrive/S3 passport sync da
-  removed 2026-09 (docs/passport.md + ARCHITECTURE.md giu history).
+  removed 2026-09 (history trong git; ARCHITECTURE.md chi giu phan compression).
 
 ## CD Pipeline
 
@@ -180,4 +180,4 @@ PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -
 env isolation); `tests/test_live_protocol*.py`, `test_http_direct.py`,
 `test_live_mcp.py`, `test_full_live.py` exercise protocol surface.
 Network-marked suites (`integration`/`live`/`full`/`e2e`) deselect by
-default. Khong con relay-form E2E hay mcp-core driver matrix cho repo nay.
+default. Khong con setup-form E2E hay mcp-core driver matrix cho repo nay.

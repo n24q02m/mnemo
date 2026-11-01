@@ -20,11 +20,11 @@
 #
 # For auth = "multi" also mount users.toml (uncomment below).
 services:
-  mnemo-mcp:
+  mnemo:
     build:
       context: .
       target: http
-    image: mnemo-mcp:http
+    image: mnemo:http
     ports:
       - "127.0.0.1:${MNEMO_PORT:-8771}:8000"
     restart: unless-stopped

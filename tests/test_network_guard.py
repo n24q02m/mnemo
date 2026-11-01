@@ -4,7 +4,7 @@ The guard is the reason a unit test can no longer stall on a real HTTPS
 request (CI run 30755522961). It only pays for itself if it keeps blocking
 what leaves the machine and keeps allowing what does not, so both halves are
 pinned here -- a guard that quietly starts rejecting loopback would break the
-tests that stand up a local relay / OAuth-callback server.
+tests that stand up a local OAuth-callback server.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ class TestAllowsLoopback:
 
         ``str(b"localhost")`` is ``"b'localhost'"``, so a guard that stringifies
         instead of decoding blocks every async loopback client that connects by
-        name -- which is what httpx and the relay tests do -- while still
+        name -- which is what httpx and the OAuth-callback tests do -- while still
         looking correct against the IP literals above.
         """
         with _listener() as port:

@@ -19,7 +19,7 @@ class TestServeDispatch:
         from mnemo import cli
 
         with (
-            patch.object(sys, "argv", ["mnemo-mcp"]),
+            patch.object(sys, "argv", ["n24q02m-mnemo"]),
             patch("mnemo.server.main") as mock_server_main,
         ):
             rc = cli.main()
@@ -32,7 +32,7 @@ class TestServeDispatch:
         from mnemo import cli
 
         with (
-            patch.object(sys, "argv", ["mnemo-mcp", "--http"]),
+            patch.object(sys, "argv", ["n24q02m-mnemo", "--http"]),
             patch("mnemo.server.main") as mock_server_main,
             pytest.raises(SystemExit) as excinfo,
         ):
@@ -49,7 +49,7 @@ class TestUnknownSubcommand:
         from mnemo import cli
 
         with (
-            patch.object(sys, "argv", ["mnemo-mcp", "bogus"]),
+            patch.object(sys, "argv", ["n24q02m-mnemo", "bogus"]),
             patch("mnemo.server.main") as mock_server_main,
             pytest.raises(SystemExit) as excinfo,
         ):
@@ -61,14 +61,14 @@ class TestUnknownSubcommand:
 
 
 class TestWarmupSubcommand:
-    """`mnemo-mcp warmup` -- run_warmup, no argument-taking configure."""
+    """`n24q02m-mnemo warmup` -- run_warmup, no argument-taking configure."""
 
     def test_happy_path(self, capsys):
         from mnemo import cli
 
         result = {"status": "ok", "mode": "local", "steps": []}
         with (
-            patch.object(sys, "argv", ["mnemo-mcp", "warmup"]),
+            patch.object(sys, "argv", ["n24q02m-mnemo", "warmup"]),
             patch(
                 "mnemo.setup_tool.run_warmup", new=AsyncMock(return_value=result)
             ) as mock_warmup,
@@ -84,7 +84,7 @@ class TestWarmupSubcommand:
 
         result = {"status": "error", "steps": []}
         with (
-            patch.object(sys, "argv", ["mnemo-mcp", "warmup"]),
+            patch.object(sys, "argv", ["n24q02m-mnemo", "warmup"]),
             patch("mnemo.setup_tool.run_warmup", new=AsyncMock(return_value=result)),
         ):
             rc = cli.main()

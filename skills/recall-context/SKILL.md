@@ -28,7 +28,7 @@ agent from re-deriving conclusions already captured in mnemo.
 
 1. **Resolve query terms** from the trigger:
    - `cwd`: use the current working directory path + project name as the
-     query (e.g. `mnemo-mcp` or `/c/Users/.../wet-mcp`).
+     query (e.g. `mnemo` or `/c/Users/.../wet`).
    - `recent`: use the last 5-10 file paths the agent edited or read.
    - `<topic>`: use the topic verbatim (the user's words).
    - Default (no arg): combine cwd + last 3 file paths.

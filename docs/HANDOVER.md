@@ -1,12 +1,13 @@
 # mnemo Handover
 
 Operational handover for [mnemo](https://github.com/n24q02m/mnemo) — MCP
-server for persistent AI memory. Current stable line: **mnemo-mcp 2.20.x**.
+server for persistent AI memory. Current stable line: **n24q02m-mnemo 2.21.x**.
 
 ## Current operation
 
-- PyPI dist: `mnemo-mcp`. Console scripts: `mnemo-mcp` (server + config/token
-  subcommands; legacy command alias) and `mnemo` / `mnemo-pilot` (CLI
+- PyPI dist: `n24q02m-mnemo` (renamed from `mnemo-mcp`). Console scripts:
+  `n24q02m-mnemo` (server + config/token subcommands; `mnemo-mcp` is the
+  legacy alias of the same entry point) and `mnemo` / `mnemo-pilot` (CLI
   consumer that talks straight to the memory DB — no server needed).
 - **Streamable HTTP only.** The stdio transport was removed post-de-host; the
   server runs one HTTP MCP endpoint (`/mcp`). Note: the immutable MCP registry
@@ -24,15 +25,15 @@ server for persistent AI memory. Current stable line: **mnemo-mcp 2.20.x**.
 
 ```bash
 # Run the HTTP server (uvx)
-uvx --from mnemo-mcp mnemo-mcp     # serves http://127.0.0.1:8000/mcp by default
+uvx n24q02m-mnemo                 # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # CLI consumer without a server
-uvx --from mnemo-mcp mnemo recall --db ./mem.db "package naming" --k 3
+uvx --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3
 
 # Claude Code plugin (needs a running instance)
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install mnemo-mcp@n24q02m-plugins
+/plugin install mnemo@n24q02m-plugins
 ```
 
 Any MCP client: point it at the `/mcp` endpoint of a running instance
@@ -43,8 +44,8 @@ Any MCP client: point it at the `/mcp` endpoint of a running instance
 
 ```bash
 # Dev: no-auth, loopback only
-uv run mnemo-mcp                    # binds 127.0.0.1:8000, auth = "no-auth" by default
-uv run mnemo-mcp config-init        # writes ~/.mnemo/config.toml from the template
+uv run n24q02m-mnemo                    # binds 127.0.0.1:8000, auth = "no-auth" by default
+uv run n24q02m-mnemo config-init        # writes ~/.mnemo/config.toml from the template
 
 # Always-on: docker compose (token auth, loopback-published port)
 cp mnemo-config/config.example.toml mnemo-config/config.toml   # edit auth + token_hash
@@ -58,11 +59,11 @@ docker compose -f docker-compose.http.yml up --build -d
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"   # 1. mint token
-MNEMO_AUTH_TOKEN=<token> uv run mnemo-mcp token-hash            # 2. print scrypt$ hash
+MNEMO_AUTH_TOKEN=<token> uv run n24q02m-mnemo token-hash            # 2. print scrypt$ hash
 # 3. paste the hash into token_hash in mnemo-config/config.toml; give clients the token
 ```
 
-`mnemo-mcp token-verify <token> <scrypt$...>` verifies a candidate against a
+`n24q02m-mnemo token-verify <token> <scrypt$...>` verifies a candidate against a
 stored hash. Clients send the token as a Bearer credential
 (`--header "Authorization: Bearer <token>"`).
 
@@ -79,7 +80,7 @@ stored hash. Clients send the token as a Bearer credential
 ```bash
 git clone https://github.com/n24q02m/mnemo.git && cd mnemo
 uv sync
-uv run mnemo-mcp        # dev HTTP server
+uv run n24q02m-mnemo        # dev HTTP server
 uv run pytest           # dev group: pytest, pytest-asyncio, pytest-timeout, ruff, ty
 ```
 

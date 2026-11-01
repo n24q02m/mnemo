@@ -4,7 +4,7 @@
 #
 # Token setup for auth = "token":
 #   1. mint a token:  python -c "import secrets; print(secrets.token_urlsafe(32))"
-#   2. hash it:       MNEMO_AUTH_TOKEN=<token> uv run mnemo-mcp token-hash
+#   2. hash it:       MNEMO_AUTH_TOKEN=<token> uv run n24q02m-mnemo token-hash
 #   3. paste the printed `scrypt$...` value into token_hash below.
 # The plaintext token is what MCP clients send as the Bearer credential;
 # it never lands in this file.
