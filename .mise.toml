@@ -44,4 +44,4 @@ run = [
 
 [tasks.dev]
 description = "Run MCP server locally"
-run = "uv run mnemo-mcp"
+run = "uv run n24q02m-mnemo"

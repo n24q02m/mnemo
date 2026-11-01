@@ -60,10 +60,10 @@ dev = [
 ]
 
 [project.scripts]
-n24q02m-mnemo = "mnemo_cli.__main__:main"
-mnemo = "mnemo_cli.__main__:main"
-mnemo-pilot = "mnemo_cli.__main__:main"
-mnemo-mcp = "mnemo.cli:main"  # legacy command alias
+n24q02m-mnemo = "mnemo.cli:main"  # MCP server + operator subcommands (canonical)
+mnemo-mcp = "mnemo.cli:main"  # legacy command alias (uvx mnemo-mcp configs)
+mnemo = "mnemo_cli.__main__:main"  # CLI-first memory surface (never starts a server)
+mnemo-pilot = "mnemo_cli.__main__:main"  # alias of `mnemo`
 
 [project.urls]
 Homepage = "https://github.com/n24q02m/mnemo"

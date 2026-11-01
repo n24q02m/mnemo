@@ -2,7 +2,7 @@
 
 > Rewritten 2026-10-05 for the post-de-host architecture (v2.19+). The old
 > document described removed features (Google Drive / S3 passport sync,
-> Cloudflare D1 deployment, relay credential setup, `API_KEYS`
+> Cloudflare D1 deployment, credential setup form, `API_KEYS`
 > multi-provider format, `COMPRESSION_PROVIDER` overrides). Those are gone
 > from the code; this page documents what exists.
 
@@ -100,8 +100,7 @@ The following were removed in the 2026-09 de-host and no longer exist in
 code or docs-as-behavior: Google Drive / S3 passport sync (`sync`,
 `setup_sync`, `sync_now`, `export_passport`, `import_passport`,
 `SYNC_*`, `GOOGLE_DRIVE_CLIENT_ID`, `SYNC_PASSPHRASE`), Cloudflare
-D1/Vectorize/KV deployment (`MEMORY_DB_BACKEND=cf-d1`), relay credential
-setup actions (`setup_start`/`setup_skip`/`setup_reset`/`setup_complete`/
-`setup_relay`), the `API_KEYS` multi-provider format, and
+D1/Vectorize/KV deployment (`MEMORY_DB_BACKEND=cf-d1`), credential setup
+actions (`setup_start`/`setup_skip`/`setup_reset`/`setup_complete`), the `API_KEYS` multi-provider format, and
 `COMPRESSION_PROVIDER`/`COMPRESSION_MODEL` overrides. Backup = rclone;
 providers = hull per-task cells.

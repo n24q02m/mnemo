@@ -13,7 +13,7 @@ Phase 3 additions:
   :mod:`mnemo.temporal.supersede`). Old callers that ignore the field
   see no behavioural change.
 * Dispatch flows through :func:`mnemo.llm.call_llm`: authenticated subjects
-  use their own relay model, endpoint and key; local single-user calls retain
+  use their own model, endpoint and key; local single-user calls retain
   environment-based provider detection.
 """
 

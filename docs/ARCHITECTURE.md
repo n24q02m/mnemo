@@ -242,7 +242,7 @@ mnemo is **TC-Local** (machine-bound): every storage artifact lives under
 
 > Phase 2 layered compression + cross-machine sync on top of the Phase 1
 > capture / retrieval foundation. The sync half (GDrive/S3 passport
-> bundles, sync backends, scheduler, relay form) was **removed in the
+> bundles, sync backends, scheduler, setup form) was **removed in the
 > 2026-09 de-host** -- the subsections describing it below are history
 > only. Compression survives, now dispatching through the `[models.chat]`
 > provider cell.
@@ -281,133 +281,11 @@ Schema (mem_002_compression migration):
 - `memories.text_raw TEXT` -- original text retained for audit / recovery
 - `memories.compressed BOOLEAN NOT NULL DEFAULT 0`
 - `memories.compression_provider TEXT`
-- `sync_state` table -- per-backend sync cursor (see below)
+- `sync_state` table -- legacy per-backend sync cursor (unused since the 2026-09 de-host)
 
 Manual re-compression is exposed via
 `memory(action="compress", memory_id=...)` for back-filling rows captured
 before `COMPRESSION_ENABLED` was true.
-
-### Sync architecture (REMOVED 2026-09 — historical)
-
-> **Removed in the de-host**: GDrive/S3 passport sync no longer exists in
-> the product. Backup/sync = rclone outside the server (spec 2026-09-26
-> §3). The diagrams below are history only.
-
-```
-                   +-------------------------+
-                   | sync_now orchestrator   |
-                   | (sync.delta.sync_now)   |
-                   +-----------+-------------+
-                               |
-              +----------------+----------------+
-              v                                 v
-   +---------------------+           +---------------------+
-   | GDriveBackend       |           | S3Backend           |
-   | (sync.gdrive)       |           | (sync.s3)           |
-   |  uses Phase 1       |           |  boto3 + custom     |
-   |  OAuth Device Code  |           |  endpoint for R2 / |
-   |  token              |           |  B2 / MinIO         |
-   +----------+----------+           +----------+----------+
-              |                                 |
-              v                                 v
-       <gdrive>/<sync_folder>/passport/   <bucket>/<prefix>/
-       seq-NNNNNN.bin                     seq-NNNNNN.bin
-                  (opaque AES-256-GCM bundles)
-```
-
-Both backends implement the same `SyncBackend` ABC (push / pull /
-last_remote_sequence / health_check). The package registry
-(`sync.register / get / list_backends`) lazily wires backends; the
-active one per deployment is selected XOR-style by
-`sync.resolve_active_backend()` (S3 when `SYNC_S3_BUCKET` is set,
-else GDrive — see `docs/passport.md`). New backends drop in by
-subclassing `SyncBackend` and calling `sync.register("name", instance)`.
-
-### Bundle format (E2E encryption) — REMOVED 2026-09, historical
-
-```
-+------------------------+ <- offset 0
-| 4 bytes header_len     |
-+------------------------+
-| N bytes plaintext JSON | -- {"version":2,"kdf":"argon2id",
-| header                 |     "salt":"<hex>","aead":"aes-256-gcm",
-+------------------------+     "nonce":"<hex>"}
-| M bytes AES-256-GCM    | -- associated_data = header bytes
-| ciphertext             |
-+------------------------+
-
-Inside ciphertext (length-prefixed sections):
-+--------+---------------+--------+--------------------+
-| u32 BE | name (UTF-8)  | u64 BE | section data bytes |
-+--------+---------------+--------+--------------------+
-
-Sections (Phase 2):
-- manifest.json
-- memories.jsonl
-- memories_entities.jsonl  (Phase 3 will populate)
-- memories_edges.jsonl     (Phase 3 will populate)
-```
-
-Argon2id parameters (OWASP 2024 baseline): 32-byte salt per bundle,
-3 iterations, 4 lanes, 64 MiB memory cost. Header is plaintext so an
-operator can audit version + KDF without the passphrase. Wrong
-passphrase OR ciphertext tampering both raise
-`cryptography.exceptions.InvalidTag` (no oracle).
-
-### Delta-sync protocol with LWW — REMOVED 2026-09, historical
-
-```
-            +--------------------+
-            | sync_now()         |
-            +-----+--------------+
-                  | read sync_state.upload_cursor + last_sync_at
-                  | query backend.last_remote_sequence
-                  v
-       remote_seq > local_cursor + 1 ?
-       (other machine pushed in between)
-                  |
-        no        |        yes
-        v         v
-+----------+   +-------------------------------------+
-| delta    |   | full pull -> apply_bundle (LWW per |
-| push at  |   | row -> insert/update/skip+audit)    |
-| cursor+1 |   | -> build_full_bundle -> push at     |
-+----------+   | remote_seq+1                        |
-               +-------------------------------------+
-
-LWW per row inside apply_bundle:
-  local missing                        -> INSERT
-  local.updated_at < remote.updated_at -> REPLACE
-  local.updated_at >= remote.updated_at -> SKIP + write
-                                          sync_overrides audit row
-```
-
-`sync_overrides` is a side table created idempotently on first audit
-hit. It carries (memory_id, local_updated_at, remote_updated_at,
-local_content, remote_content, recorded_at) so the user can later
-inspect divergence without losing the local change.
-
-### Passphrase storage gate — REMOVED 2026-09, historical
-
-The relay form collects `SYNC_PASSPHRASE` as a single password input.
-Before persistence, `credential_state._harden_passphrase` swaps it for
-`SYNC_PASSPHRASE_SALT` + `SYNC_PASSPHRASE_HASH` (Argon2id-derived hex).
-The raw passphrase NEVER lands in `config.enc`; the user must supply it
-again per session (env var in stdio mode, relay form in HTTP mode).
-
-Verification uses `bundle.verify_passphrase` which is constant-time
-(`hmac.compare_digest`) so timing attacks cannot leak digest contents.
-A leaked `config.enc` exposes only the Argon2id digest (which still
-needs to be brute-forced against the 64 MiB / 3-iter Argon2id cost).
-
-### Background sync scheduler (REMOVED 2026-09 — historical)
-
-`sync.start_passport_scheduler(db, interval)` spawned a background task
-that woke every `SYNC_INTERVAL` seconds and called `sync_now` for each
-backend in `SYNC_BACKEND`. An `asyncio.Lock` prevented concurrent ticks
-overlapping with manual `config(action="sync_now")` calls. Per-backend
-exceptions were logged + swallowed so one backend offline did not stall
-the loop.
 
 ### MCP action surface (Phase 2 additions)
 
@@ -548,15 +426,6 @@ behavioural change. Explicit opt-in via env var or
 Bitemporal filter (`memories_as_of`): when `as_of=None`, returns rows
 with `valid_to IS NULL` (current state). Otherwise filters
 `valid_from <= as_of < valid_to`.
-
-### Bundle codec — KG sections populated (REMOVED 2026-09 — historical)
-
-Phase 2 reserved `memories_entities.jsonl` + `memories_edges.jsonl` as
-empty placeholders. Phase 3 populated them plus a new
-`memories_entity_links.jsonl` section. Manifest schema_version bumped to
-`mem_003_temporal` with `entity_count` / `edge_count` / `link_count`
-fields. Receivers replayed via INSERT OR IGNORE so duplicates collapsed on
-the unique indexes. The whole bundle codec went away with passport sync.
 
 ### Phase 3 env vars
 

@@ -109,7 +109,7 @@ mcp-name: io.github.n24q02m/mnemo
 /plugin install mnemo-mcp@n24q02m-plugins
 
 # Method 2: run the HTTP server yourself and register the endpoint
-uvx --from n24q02m-mnemo mnemo-mcp            # serves http://127.0.0.1:8000/mcp by default
+uvx n24q02m-mnemo                      # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # Method 3 (remote): point a client at an existing HTTP deployment
@@ -123,7 +123,7 @@ transport post-de-host; see the
 | Client | Install |
 |---|---|
 | Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
-| Claude Code (HTTP) | start the server (`uvx --from n24q02m-mnemo mnemo-mcp` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
+| Claude Code (HTTP) | start the server (`uvx n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
 | Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
 | Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
 
@@ -198,7 +198,7 @@ Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.co
 
 ## Smithery
 
-mnemo-mcp was previously packaged for [Smithery](https://smithery.ai/) via a
+mnemo was previously packaged for [Smithery](https://smithery.ai/) via a
 local stdio start command. Post-de-host the server is HTTP-only, so the local
 `smithery.yaml` was removed; publish a running instance's `https://<host>/mcp`
 endpoint to Smithery as a remote server instead.
@@ -253,7 +253,7 @@ Plugin trinity (Claude Code marketplace install):
 git clone https://github.com/n24q02m/mnemo.git
 cd mnemo
 uv sync
-uv run mnemo-mcp
+uv run n24q02m-mnemo
 ```
 
 ## CLI
@@ -264,7 +264,7 @@ The package ships two distinct console scripts:
   starts a server): `capture`, `recall`, `reflect`, `fetch`, and the
   `standing-*` family operate directly on a SQLite memory DB.
   `mnemo-pilot` is a legacy alias of the same entry point.
-- **`mnemo-mcp`** -- the MCP server plus one-shot operator subcommands. A
+- **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) -- the MCP server plus one-shot operator subcommands. A
   bare invocation starts the HTTP server; a leading subcommand
   (`config-init`, `warmup`, `token-hash`, `token-verify`) runs an action
   and exits.
@@ -273,9 +273,9 @@ CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
 
 ```bash
-uvx --from mnemo-mcp mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
+uvx --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
 
-mnemo capture --db ./mem.db "keep PyPI name mnemo-mcp; repo is mnemo" --tags decision --category decision
+mnemo capture --db ./mem.db "keep PyPI name n24q02m-mnemo; repo is mnemo" --tags decision --category decision
 mnemo recall --db ./mem.db "release ladder" --k 5        # search a subject's memories
 mnemo reflect --db ./mem.db "why keep the alias?" --k 5  # bounded cited reflect over retrieval
 mnemo fetch --db ./mem.db <memory_id>                    # fetch one memory by id
@@ -283,17 +283,17 @@ mnemo standing-refresh --db ./mem.db onboarding "how do releases cut?" --k 5   #
 mnemo standing-read --db ./mem.db onboarding             # cheap read with staleness info
 ```
 
-Server operator CLI (`mnemo-mcp`; a bare invocation starts the HTTP server):
+Server operator CLI (`n24q02m-mnemo`; a bare invocation starts the HTTP server):
 
 ```bash
-mnemo-mcp                       # start the Streamable HTTP MCP server
+n24q02m-mnemo                       # start the Streamable HTTP MCP server
                                 # (bind host/port from config.toml or MNEMO_HOST/MNEMO_PORT)
 
-mnemo-mcp config-init [--force] # write ~/.mnemo/config.toml from the template
-mnemo-mcp warmup                # pre-download local embedding model / probe cells
-mnemo-mcp token-hash            # print a scrypt$ hash for [server] token_hash
+n24q02m-mnemo config-init [--force] # write ~/.mnemo/config.toml from the template
+n24q02m-mnemo warmup                # pre-download local embedding model / probe cells
+n24q02m-mnemo token-hash            # print a scrypt$ hash for [server] token_hash
                                 # (reads MNEMO_AUTH_TOKEN or prompts)
-mnemo-mcp token-verify <token> <scrypt$...>   # verify a token against a hash
+n24q02m-mnemo token-verify <token> <scrypt$...>   # verify a token against a hash
 ```
 
 | Subcommand | Purpose |
@@ -310,7 +310,7 @@ Two ways to run the server for MCP clients on your machine.
 ### Dev: start with `uv` (no-auth, loopback only)
 
 ```bash
-uv run mnemo-mcp               # binds 127.0.0.1:8000, auth = "no-auth" by default
+uv run n24q02m-mnemo               # binds 127.0.0.1:8000, auth = "no-auth" by default
 ```
 
 `no-auth` refuses non-loopback binds, so this is localhost-only by construction —
@@ -318,7 +318,7 @@ fine for trying the server locally. The MCP endpoint is
 `http://127.0.0.1:8000/mcp`. For a real config, bootstrap one and edit it:
 
 ```bash
-uv run mnemo-mcp config-init   # writes ~/.mnemo/config.toml from the template
+uv run n24q02m-mnemo config-init   # writes ~/.mnemo/config.toml from the template
 ```
 
 ### Always-on: `docker compose` (token auth, loopback-published port)
@@ -337,7 +337,7 @@ Token setup (also documented in the example config):
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"     # 1. mint token
-MNEMO_AUTH_TOKEN=<token> uv run mnemo-mcp token-hash              # 2. print scrypt$ hash
+MNEMO_AUTH_TOKEN=<token> uv run n24q02m-mnemo token-hash              # 2. print scrypt$ hash
 # 3. paste the hash into token_hash in mnemo-config/config.toml; give clients the token
 ```
 
@@ -350,7 +350,7 @@ The `mnemo` surface talks straight to the memory DB — handy for scripts and
 agents:
 
 ```bash
-mnemo capture --db ./mem.db "keep PyPI name mnemo-mcp; repo is mnemo" --tags decision --category decision
+mnemo capture --db ./mem.db "keep PyPI name n24q02m-mnemo; repo is mnemo" --tags decision --category decision
 mnemo recall  --db ./mem.db "release ladder" --k 5
 mnemo fetch   --db ./mem.db <memory_id>
 ```

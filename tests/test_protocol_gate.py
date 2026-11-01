@@ -6,7 +6,7 @@ Scope honesty (read before editing):
   code in this repository, not a published artifact. It is pre-BETA
   hardening only.
 - The authoritative D3 gate runs against the installed BETA artifact with
-  ``uvx --from mnemo-mcp==<beta>`` driven by ``mcp.ClientSession``; that is
+  ``uvx --from n24q02m-mnemo==<beta>`` driven by ``mcp.ClientSession``; that is
   blocked until PyPI trusted publishing exists. This file does NOT claim D3
   is satisfied.
 - Transport: mnemo has no stdio mode since the de-host (``main()`` in
@@ -113,7 +113,6 @@ _KNOWN_PROVIDER_ENV_KEYS = (
     "LLM_API_BASE",
     "LOCAL_EMBEDDING_MODEL",
     "LOCAL_RERANK_MODEL",
-    "MCP_RELAY_URL",
 )
 
 
@@ -208,7 +207,7 @@ def server(tmp_path_factory):
         # The test interpreter, not ``uv run``: on Windows terminate() only
         # kills the direct child, and uv does not take its own children down
         # with it, so every run left a live server holding the venv's
-        # mnemo-mcp.exe (and the next ``uv sync`` failed with os error 32).
+        # n24q02m-mnemo.exe (and the next ``uv sync`` failed with os error 32).
         proc = subprocess.Popen(
             [sys.executable, "-m", "mnemo"],
             cwd=str(_REPO_ROOT),
@@ -223,7 +222,7 @@ def server(tmp_path_factory):
                 if proc.poll() is not None:
                     tail = err_path.read_text(errors="replace")[-2000:]
                     raise RuntimeError(
-                        f"mnemo-mcp exited rc={proc.returncode} before readiness:"
+                        f"n24q02m-mnemo exited rc={proc.returncode} before readiness:"
                         f"\n{tail}"
                     )
                 try:
@@ -233,7 +232,7 @@ def server(tmp_path_factory):
                     if time.monotonic() >= deadline:
                         tail = err_path.read_text(errors="replace")[-2000:]
                         raise RuntimeError(
-                            f"mnemo-mcp not ready on 127.0.0.1:{port} within 45s:"
+                            f"n24q02m-mnemo not ready on 127.0.0.1:{port} within 45s:"
                             f"\n{tail}"
                         ) from None
                     time.sleep(0.25)

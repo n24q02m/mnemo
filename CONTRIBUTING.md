@@ -49,11 +49,11 @@ uv run ruff format --check .
 
 ```bash
 # Run the server (FTS5-only, no API keys needed)
-uv run mnemo-mcp
+uv run n24q02m-mnemo
 
 # With embedding support, set API keys:
 export API_KEYS="GOOGLE_API_KEY:your-key"
-uv run mnemo-mcp
+uv run n24q02m-mnemo
 ```
 
 ### Making Changes
