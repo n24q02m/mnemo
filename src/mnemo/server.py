@@ -2156,7 +2156,12 @@ async def _handle_config_warmup() -> dict[str, typing.Any]:
 async def stats_resource() -> str:
     """Database statistics and server status."""
     if _lifespan_state is None:
-        return _json({"error": "Server is not running"})
+        return _json(
+            {
+                "error": "Server is not running",
+                "suggestion": "Ensure the server lifespan context was entered properly.",
+            }
+        )
     return _json(await _stats_for(_resolve_state(_lifespan_state)))
 
 
