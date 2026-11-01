@@ -106,7 +106,7 @@ mcp-name: io.github.n24q02m/mnemo
 # Method 1: Claude Code plugin (skills + hooks; connects to a running
 # mnemo HTTP instance -- start one per "Self-hosting" below)
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install mnemo-mcp@n24q02m-plugins
+/plugin install mnemo@n24q02m-plugins
 
 # Method 2: run the HTTP server yourself and register the endpoint
 uvx n24q02m-mnemo                      # serves http://127.0.0.1:8000/mcp by default
@@ -118,11 +118,11 @@ claude mcp add --transport http mnemo https://<your-host>/mcp
 
 Install matrix (the server speaks Streamable HTTP only — there is no stdio
 transport post-de-host; see the
-[Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) page for full steps):
+[Setup](https://docs.n24q02m.com/servers/mnemo/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
-| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo-mcp@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
+| Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
 | Claude Code (HTTP) | start the server (`uvx n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
 | Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
 | Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
@@ -161,7 +161,7 @@ or the client's equivalent).
 > Backup across machines = `rclone` outside the server.
 >
 > If you encountered issues with prior versions, update to the latest release
-> and follow the current [setup docs](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/).
+> and follow the current [setup docs](https://docs.n24q02m.com/servers/mnemo/setup/).
 >
 > **MCP registry note (2026-10):** registry version 2.20.0 was published with a
 > stdio PyPI package claim (`uvx mnemo-mcp`) that no longer reflects the
@@ -185,16 +185,16 @@ or the client's equivalent).
 
 ## Documentation
 
-Full docs at **[mcp.n24q02m.com/servers/mnemo-mcp/setup/](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/)**:
+Full docs at **[docs.n24q02m.com/servers/mnemo/setup/](https://docs.n24q02m.com/servers/mnemo/setup/)**:
 
-- [Setup](https://mcp.n24q02m.com/servers/mnemo-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Setup](https://docs.n24q02m.com/servers/mnemo/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- http
 - [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
 > Install MCP server `mnemo-mcp` following the steps at
-> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/mnemo-mcp/setup-with-agent.md
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/mnemo/setup-with-agent.md
 
 ## Smithery
 
