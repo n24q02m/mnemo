@@ -8,7 +8,6 @@ This document tracks Mnemo performance baselines and targets.
 |---|---|
 | Capture latency p95 (no compression) | <100 ms (FTS5 + dedup probe + insert) |
 | Search recall@5 (mem_001 dataset, hybrid FTS+vec) | TBD (Phase 1 retrieval polish) |
-| GDrive sync push (whole-DB copy, ~1k rows) | ~3-5s (network-bound) |
 | Cold start (clean install, FTS5-only mode) | <500 ms |
 | Cold start (with Qwen3 ONNX local) | First-run: ~30s download (~570 MB) |
 
@@ -20,8 +19,6 @@ This document tracks Mnemo performance baselines and targets.
 | Fact retention after compression | >=0.90 | Design target |
 | Compression latency p95 | <500 ms | Design target |
 | Capture latency p95 (with compression) | <600 ms (= baseline + 500ms compression budget) | Baseline capture + 500ms compression |
-| Delta upload p95 (10k store, 1% delta) | <2s | Design target |
-| Full sync cold boot (10k store) | <15s | Design target |
 
 ## How to measure
 
@@ -30,11 +27,6 @@ Compression ratio + fact retention need a curated fixture
 ground-truth fact set). The fixture infrastructure ships with the
 compression feature; the actual ratio + retention numbers are populated
 as the curated dataset matures.
-
-Sync metrics are measured against the moto S3 backend (offline,
-deterministic) for delta latency and against a real R2 bucket for full
-sync cold boot. Real-bucket benchmarks live behind the `integration`
-pytest marker (skipped by default per pyproject.toml addopts).
 
 ## Phase 2 measured baselines
 
@@ -45,8 +37,6 @@ pytest marker (skipped by default per pyproject.toml addopts).
 | Compression ratio | tbd |
 | Fact retention | tbd |
 | Compression latency p95 | tbd |
-| Delta upload p95 | tbd |
-| Full sync cold boot | tbd |
 
 ## Phase 1 vs Phase 2 retrieval drift
 

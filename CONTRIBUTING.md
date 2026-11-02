@@ -151,15 +151,30 @@ uv run pytest --tb=short   # Short tracebacks
 ```text
 mnemo/
 ├── src/
-│   └── mnemo/
-│       ├── __init__.py
-│       ├── __main__.py
-│       ├── config.py          # Configuration (pydantic-settings)
-│       ├── server.py          # MCP server (FastMCP + tools)
-│       ├── db.py              # SQLite engine (FTS5 + sqlite-vec)
-│       ├── embedder.py        # Embedding provider (LiteLLM)
-│       ├── sync.py            # Google Drive sync (OAuth Device Code)
-│       └── docs/              # Tool documentation (Markdown)
+│   ├── mnemo/
+│   │   ├── __init__.py
+│   │   ├── __main__.py
+│   │   ├── config.py          # Configuration (pydantic-settings)
+│   │   ├── server.py          # MCP server (FastMCP + tools)
+│   │   ├── cli.py             # Console-script entry (HTTP-only)
+│   │   ├── runtime.py         # Bridge to hull-core (provider cells)
+│   │   ├── db.py              # SQLite engine (FTS5 + sqlite-vec)
+│   │   ├── embedder.py        # Embedding backends (cloud cell + fastretrieval)
+│   │   ├── reranker.py        # Reranking backends (cloud cell + fastretrieval)
+│   │   ├── llm.py             # Completion dispatch ([models.chat] cell)
+│   │   ├── capture.py         # Smart capture pipeline
+│   │   ├── compression.py     # LLM-driven memory compression
+│   │   ├── graph.py           # Knowledge graph (entities + relations)
+│   │   ├── providers.py       # Bounded reflect providers
+│   │   ├── pilot_tools.py     # Pilot MCP handlers over mnemo_core
+│   │   ├── secure_file.py     # Secure local-file persistence
+│   │   ├── setup_tool.py      # Setup / warmup tool
+│   │   ├── exceptions.py      # Custom exceptions
+│   │   ├── alembic/           # DB migrations
+│   │   ├── temporal/          # Temporal knowledge graph
+│   │   └── docs/              # Tool documentation (Markdown)
+│   ├── mnemo_cli/             # Pilot CLI surface
+│   └── mnemo_core/            # Domain layer (ports, operations, defense)
 ├── tests/
 ├── pyproject.toml
 └── README.md
