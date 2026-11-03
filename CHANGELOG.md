@@ -2,6 +2,90 @@
 
 <!-- version list -->
 
+## v2.22.0-beta.1 (2026-11-03)
+
+### Bug Fixes
+
+- Drop removed sync.py and stale sync benchmarks from docs
+  ([#1352](https://github.com/n24q02m/mnemo/pull/1352),
+  [`66b45c2`](https://github.com/n24q02m/mnemo/commit/66b45c2996a5d142f1bdf45abcf7b2f9ad10a573))
+
+- Quote CLAUDE_PLUGIN_ROOT in plugin hook commands
+  ([#1350](https://github.com/n24q02m/mnemo/pull/1350),
+  [`4a0ac9a`](https://github.com/n24q02m/mnemo/commit/4a0ac9ae0b76596ede9160768b3e79aee923b605))
+
+- Resolve package version for both n24q02m-mnemo and mnemo-mcp
+  ([#1347](https://github.com/n24q02m/mnemo/pull/1347),
+  [`e1b956f`](https://github.com/n24q02m/mnemo/commit/e1b956f00b4f6c99dc9128c8f27875d0647e39fe))
+
+- Serve MCP from n24q02m-mnemo entry point, drop relay and sync residue, align names
+  ([#1348](https://github.com/n24q02m/mnemo/pull/1348),
+  [`2a5c83c`](https://github.com/n24q02m/mnemo/commit/2a5c83c4b6c5d995f95e2536b8644da2fc025ef3))
+
+- Update plugin install name and docs links for the renamed plugin id
+  ([#1351](https://github.com/n24q02m/mnemo/pull/1351),
+  [`4256afb`](https://github.com/n24q02m/mnemo/commit/4256afb36c0c415efa75dcea1bfd0281adb3f0d0))
+
+- **deps**: Lock file maintenance ([#1355](https://github.com/n24q02m/mnemo/pull/1355),
+  [`a7a11ce`](https://github.com/n24q02m/mnemo/commit/a7a11ce2e96517e8256ad21347fb7409b8005f76))
+
+- **deps**: Lock file maintenance ([#1353](https://github.com/n24q02m/mnemo/pull/1353),
+  [`6a9a4cf`](https://github.com/n24q02m/mnemo/commit/6a9a4cff800e1ee67c9846137ad218f1e117d587))
+
+- **deps**: Lock file maintenance ([#1346](https://github.com/n24q02m/mnemo/pull/1346),
+  [`67d99fc`](https://github.com/n24q02m/mnemo/commit/67d99fc41464975c4cc9661179215320e4172ebb))
+
+- **deps**: Lock file maintenance ([#1342](https://github.com/n24q02m/mnemo/pull/1342),
+  [`e23aa66`](https://github.com/n24q02m/mnemo/commit/e23aa66aa22dcf78214a9220fb607a81cb1318ab))
+
+- **deps**: Lock file maintenance ([#1340](https://github.com/n24q02m/mnemo/pull/1340),
+  [`a7b6f72`](https://github.com/n24q02m/mnemo/commit/a7b6f72292d27e6bdd563cbece799c44622081e1))
+
+- **deps**: Lock file maintenance ([#1338](https://github.com/n24q02m/mnemo/pull/1338),
+  [`68abefc`](https://github.com/n24q02m/mnemo/commit/68abefc7597ddd1373c657bfc8e8335e6478fb19))
+
+- **deps**: Update actions/setup-python action to v7.1.0
+  ([#1344](https://github.com/n24q02m/mnemo/pull/1344),
+  [`3000949`](https://github.com/n24q02m/mnemo/commit/30009497d833b55539d15c3c392fd56653c90689))
+
+- **deps**: Update astral-sh/setup-uv action to v10.3.1
+  ([#1341](https://github.com/n24q02m/mnemo/pull/1341),
+  [`e5e7a5b`](https://github.com/n24q02m/mnemo/commit/e5e7a5bedd64da6247fecc24a483d9eb58fce2c7))
+
+- **deps**: Update dawidd6/action-send-mail action to v23
+  ([#1345](https://github.com/n24q02m/mnemo/pull/1345),
+  [`141db42`](https://github.com/n24q02m/mnemo/commit/141db424d89947a06dea65b76c5b83601fc4c751))
+
+- **deps**: Update patch dependencies ([#1343](https://github.com/n24q02m/mnemo/pull/1343),
+  [`3e55427`](https://github.com/n24q02m/mnemo/commit/3e55427a94192af21f16e9022e16a9be99e6e6de))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to a1165e2
+  ([#1318](https://github.com/n24q02m/mnemo/pull/1318),
+  [`a997f3c`](https://github.com/n24q02m/mnemo/commit/a997f3c33b9cbf09f384c649909ba2b090656966))
+
+- **deps**: Update step-security/harden-runner action to v2.22.2
+  ([#1337](https://github.com/n24q02m/mnemo/pull/1337),
+  [`6a4a294`](https://github.com/n24q02m/mnemo/commit/6a4a29483fb751bb7e0c7e12cb25db7da115c11d))
+
+### Features
+
+- Add transitional legacy stub distribution for the renamed package
+  ([#1349](https://github.com/n24q02m/mnemo/pull/1349),
+  [`5983805`](https://github.com/n24q02m/mnemo/commit/598380551b45ce8e7a8d7f8f3b4ac1b6085ff51d))
+
+- Rename distribution to n24q02m-mnemo and remove relay residue
+  ([#1347](https://github.com/n24q02m/mnemo/pull/1347),
+  [`e1b956f`](https://github.com/n24q02m/mnemo/commit/e1b956f00b4f6c99dc9128c8f27875d0647e39fe))
+
+- ⚡ bolt: optimize span sorting in defense with chained itemgetter
+  ([#1339](https://github.com/n24q02m/mnemo/pull/1339),
+  [`138ab97`](https://github.com/n24q02m/mnemo/commit/138ab977b9adb268fc242a796376cc2f62b850bd))
+
+- 🎨 palette: add suggestion to stats resource error
+  ([#1354](https://github.com/n24q02m/mnemo/pull/1354),
+  [`3344019`](https://github.com/n24q02m/mnemo/commit/3344019a94f65b4300f877cab5822b5caed02437))
+
+
 ## v2.21.0 (2026-10-27)
 
 
