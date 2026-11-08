@@ -182,20 +182,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # macOS hosted runners build CPython without
-        # --enable-loadable-sqlite-extensions, so the sqlite-vec test modules
-        # skip (~20 tests) and the vec-only source paths go uncovered. That
-        # pins the darwin lane at ~94.5-94.7% against the shared 95% gate --
-        # observed transient FAILs at 94.58%/94.73% that rerun green. Give the
-        # mac lane its own floor instead of weakening the gate for everyone.
         include:
           - os: ubuntu-latest
-            cov_fail_under: "88"
+            cov_fail_under: "95"
           - os: windows-latest
-            cov_fail_under: "88"
+            cov_fail_under: "95"
           - os: macos-latest
-            cov_fail_under: "88"
+            cov_fail_under: "95"
     runs-on: ${{ matrix.os }}
+    # python-build-standalone (the interpreter uv installs) is built with loadable
+    # SQLite extensions on every OS, unlike the macOS CPython of actions/setup-python.
+    env:
+      UV_PYTHON: "3.13"
+      UV_PYTHON_PREFERENCE: only-managed
 
     steps:
       - name: Harden Runner
@@ -211,10 +210,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
-      - name: Setup Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
+      - name: Install Python 3.13 (uv-managed)
+        run: uv python install
+
+      - name: Report SQLite extension support
+        shell: bash
+        run: uv run --no-project python -c "import sqlite3, sys; print(sys.executable, sys.version); print('sqlite', sqlite3.sqlite_version, 'enable_load_extension:', hasattr(sqlite3.Connection, 'enable_load_extension'))"
 
       - name: Install dependencies
         run: uv sync --group dev
