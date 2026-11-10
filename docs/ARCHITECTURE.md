@@ -192,14 +192,14 @@ plugin root/
     temporal-query/SKILL.md    (Phase 3, new)
   hooks/
     hooks.json         -- declares SessionStart + PostToolUse
-    session-start.sh   (Phase 1, new)
-    post-tool-use.sh   (Phase 1, new; opt-in CAPTURE_AUTO_ENABLED)
+    session-start.py   (Phase 1, new)
+    post-tool-use.py   (Phase 1, new; opt-in CAPTURE_AUTO_ENABLED)
 ```
 
-Skills are model-invoked workflows; hooks are non-blocking shell scripts
-that emit hints into the session context. Neither hook makes MCP calls
-directly -- the agent decides whether to invoke `recall-context` /
-`memory-commit` based on the hint.
+Skills are model-invoked workflows; hooks are non-blocking scripts run
+through `python3` that emit hints into the session context. Neither hook
+makes MCP calls directly -- the agent decides whether to invoke
+`recall-context` / `memory-commit` based on the hint.
 
 ## Migration model (Alembic)
 

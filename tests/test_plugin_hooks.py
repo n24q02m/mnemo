@@ -1,6 +1,6 @@
 """The plugin manifest must wire every hook to the script it ships.
 
-``hooks/hooks.json`` is what turns ``hooks/*.sh`` into live hooks: the host runs
+``hooks/hooks.json`` is what turns ``hooks/*.py`` into live hooks: the host runs
 exactly the commands declared there, so a renamed script or a stale path leaves
 the hook silently dead -- no error, just no run. Mnemo shipped both hook scripts
 with no test at all; these resolve every declared command against the repo so
@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 HOOKS_DIR = REPO_ROOT / "hooks"
 HOOKS_MANIFEST = HOOKS_DIR / "hooks.json"
 PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}"
-SESSION_START_HOOK = "hooks/session-start.sh"
+SESSION_START_HOOK = "hooks/session-start.py"
 
 
 def _commands() -> list[str]:
@@ -64,3 +64,10 @@ def test_plugin_root_paths_are_quoted():
     for command in _commands():
         if PLUGIN_ROOT_VAR in command:
             assert f'"{PLUGIN_ROOT_VAR}/' in command, command
+
+
+def test_hook_commands_name_their_interpreter():
+    """A bare script path is handed to the OS handler on Windows, where a .sh
+    opens in an editor instead of running, so the command must name python3."""
+    for command in _commands():
+        assert shlex.split(command)[0] == "python3", command
