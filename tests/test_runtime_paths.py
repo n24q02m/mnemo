@@ -196,6 +196,38 @@ class TestConfigInit:
         assert rc == 0
         assert "# stale" not in config_path.read_text(encoding="utf-8")
 
+    def test_second_run_refuses_with_message_not_traceback(
+        self, tmp_path: Path, monkeypatch, capsys
+    ):
+        """A second `config-init` is a usage error: message, rc 2, no traceback."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        assert cli._handle_config_init(argparse_ns(force=False)) == 0
+        capsys.readouterr()
+
+        rc = cli._handle_config_init(argparse_ns(force=False))
+
+        captured = capsys.readouterr()
+        assert rc == 2
+        assert captured.out == ""
+        assert captured.err.startswith("error: config already exists:")
+        assert "use --force to overwrite" in captured.err
+        assert "Traceback" not in captured.err
+
+    def test_main_second_config_init_is_a_refusal_not_a_crash(
+        self, tmp_path: Path, monkeypatch, capsys
+    ):
+        """End to end through argv: the operator never sees a Python traceback."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        monkeypatch.setattr(sys, "argv", ["n24q02m-mnemo", "config-init"])
+        assert cli.main() == 0
+        capsys.readouterr()
+
+        assert cli.main() == 2
+
+        captured = capsys.readouterr()
+        assert captured.err.startswith("error: config already exists:")
+        assert "Traceback" not in captured.err
+
 
 def test_main_bare_invocation_serves(monkeypatch):
     """Bare argv falls through to the serve path."""

@@ -61,7 +61,11 @@ def _handle_warmup(args: argparse.Namespace) -> int:
 def _handle_config_init(args: argparse.Namespace) -> int:
     from mnemo.runtime import write_default_config
 
-    path = write_default_config(force=args.force)
+    try:
+        path = write_default_config(force=args.force)
+    except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     print(f"Wrote {path}")
     return 0
 

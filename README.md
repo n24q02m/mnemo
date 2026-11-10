@@ -1,6 +1,6 @@
 # Mnemo MCP Server
 
-> **Distribution & CLI:** the repo and CLI are `mnemo`. The PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). The MCP server remains available: run `mnemo` (or legacy `mnemo-mcp`).
+> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
 
 mcp-name: io.github.n24q02m/mnemo
 
