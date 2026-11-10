@@ -2,6 +2,44 @@
 
 <!-- version list -->
 
+## v2.22.0-beta.2 (2026-11-10)
+
+### Bug Fixes
+
+- Assert hooks.json points at the shipped hook scripts
+  ([#1363](https://github.com/n24q02m/mnemo/pull/1363),
+  [`1ef145a`](https://github.com/n24q02m/mnemo/commit/1ef145aa8b1c2769af7ab36040f61ef7ab86d1bf))
+
+- Move discarded agent notes into docs/engineering-lessons.md
+  ([#1365](https://github.com/n24q02m/mnemo/pull/1365),
+  [`f91abda`](https://github.com/n24q02m/mnemo/commit/f91abda2821fb618ee3506ea9663c87b23b7ed46))
+
+- Name the installed mnemo command and reject repeat config-init
+  ([#1367](https://github.com/n24q02m/mnemo/pull/1367),
+  [`f3e30c4`](https://github.com/n24q02m/mnemo/commit/f3e30c456f82bc23a07e20efbc7a65bb8ff6a1bb))
+
+- Publish the final mnemo-mcp stub from the release workflow
+  ([#1362](https://github.com/n24q02m/mnemo/pull/1362),
+  [`2cb2a03`](https://github.com/n24q02m/mnemo/commit/2cb2a03f2d6a102c31302c0bbf9d9d064e4d5fa5))
+
+- Remove the email notification and bot rate-limit jobs
+  ([#1360](https://github.com/n24q02m/mnemo/pull/1360),
+  [`2031734`](https://github.com/n24q02m/mnemo/commit/20317343f76f06634902a7680bcce2d0e256fd4d))
+
+- Run plugin hooks through the python interpreter
+  ([#1364](https://github.com/n24q02m/mnemo/pull/1364),
+  [`08c5449`](https://github.com/n24q02m/mnemo/commit/08c54494878eb83b34398c49d4bbd8138e6036da))
+
+- **deps**: Update patch dependencies ([#1356](https://github.com/n24q02m/mnemo/pull/1356),
+  [`97fad1e`](https://github.com/n24q02m/mnemo/commit/97fad1e37d638f698d1a52b92b18b58800c2d00b))
+
+### Features
+
+- Rotate provider credentials through hull key pools
+  ([#1366](https://github.com/n24q02m/mnemo/pull/1366),
+  [`8541b70`](https://github.com/n24q02m/mnemo/commit/8541b700642e3cd680b4ca1a9e9264544bd6b59c))
+
+
 ## v2.22.0-beta.1 (2026-11-03)
 
 ### Bug Fixes
