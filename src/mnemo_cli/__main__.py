@@ -22,8 +22,9 @@ def _serialize(envelope: dict) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mnemo-pilot",
-        description="Mnemo pilot CLI (capture/recall/reflect/fetch) over the shared domain core",
+        prog="mnemo",
+        description="mnemo: CLI-first memory surface (capture/recall/reflect/fetch) "
+        "over the shared domain core",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
