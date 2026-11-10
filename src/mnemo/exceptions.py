@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hull_core.credentials import PoolExhaustedError
+
 
 class EmbeddingModelMismatch(RuntimeError):
     """Raised when the active embedding identity differs from the stored one.
@@ -33,4 +38,56 @@ class EmbeddingModelMismatch(RuntimeError):
             "REINDEX_ON_MODEL_CHANGE=true (this DROPS the stored vectors and "
             "re-embeds on the next pass). To keep the existing vectors, restore "
             "the previous embedding model configuration."
+        )
+
+
+class ProviderCredentialsExhausted(RuntimeError):
+    """No usable credential for a task cell's provider pool.
+
+    Raised instead of hull's ``PoolExhaustedError`` so call sites depend on
+    mnemo's error surface. The message is hull's already-redacted pool
+    diagnosis -- counts, the earliest ``retry_after`` in seconds, and a last
+    error with every stored key replaced by ``[redacted]`` -- so it is safe to
+    log.
+
+    Attributes:
+        provider: provider identity whose pool is exhausted.
+        account: named account scope, or ``None`` for the default pool.
+        total / disabled / cooling_down / leased: pool counts at failure time.
+        retry_after: seconds until the earliest cooldown expires, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        account: str | None = None,
+        total: int = 0,
+        disabled: int = 0,
+        cooling_down: int = 0,
+        leased: int = 0,
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.account = account
+        self.total = total
+        self.disabled = disabled
+        self.cooling_down = cooling_down
+        self.leased = leased
+        self.retry_after = retry_after
+
+    @classmethod
+    def from_pool_error(cls, error: PoolExhaustedError) -> ProviderCredentialsExhausted:
+        """Rebuild hull's exhaustion error without importing hull at module load."""
+        return cls(
+            str(error),
+            provider=error.provider,
+            account=error.account_id,
+            total=error.total,
+            disabled=error.disabled,
+            cooling_down=error.cooling_down,
+            leased=error.leased,
+            retry_after=error.retry_after,
         )

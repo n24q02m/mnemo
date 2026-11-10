@@ -74,6 +74,40 @@ the cell's `base_url`/`model` in the instance `config.toml`. Keys are
 host-only material (instance config, or the `HULL_<TASK>_API_KEY` env
 override, e.g. `HULL_EMBED_API_KEY`); end users never supply keys.
 
+### Key pools and named accounts
+
+A cell's key seeds an ordered credential pool per provider identity
+(`hull_core.credentials`); the pool is what rotates, so one revoked or
+rate-limited key no longer disables the feature.
+
+| Outcome | Pool action |
+|---|---|
+| 2xx | credential marked healthy |
+| `401` / `403` | credential disabled, next one used |
+| `429` | cooldown from `Retry-After` / `rate_limit_reset` (1 s..1 h, default 60 s), next one used |
+| `5xx` | one retry on the same credential, then the next one |
+| any other status | error re-raised, credential state untouched |
+| nothing usable | `ProviderCredentialsExhausted`: pool counts + earliest retry, key redacted |
+
+- Storage: `~/.mnemo/credentials.db` (SQLite WAL) with each key sealed by
+  `~/.mnemo/.credential-key`. Health views carry a 4-character hint only —
+  never a key.
+- Add keys through the library
+  (`hull_core.credentials.CredentialStore.add_credential(provider, key,
+  base_url=...)` against `mnemo.keys.credential_store()`); hull 0.5 has no
+  credential CLI. Optional
+  selectors in `[models.<task>]`: `provider = "openrouter"` (pool identity,
+  derived from `base_url` when absent) and `account = "<id>"` (named account's
+  own pool; rotation never crosses accounts). The default is the provider's
+  unaccounted pool.
+- A legacy key in config.toml / `HULL_<TASK>_API_KEY` is copied into the pool
+  on start **while that pool is empty** and keeps working; the env var is
+  never removed and repeated starts are a no-op. A pool an operator has already
+  populated wins over a stale cell key.
+- The cell owns the model id (four task cells can share one provider pool); a
+  pool entry supplies its key and endpoint.
+
+
 ## Environment variables
 
 | Variable | Default | Description |
@@ -91,8 +125,12 @@ override, e.g. `HULL_EMBED_API_KEY`); end users never supply keys.
 
 ## Storage and backup
 
-One SQLite file (WAL) under `~/.mnemo/`. There is no built-in sync;
-backup/sync with `rclone` outside the server (cron or manual).
+Two SQLite files (WAL) under `~/.mnemo/`: `memories.db` (memories, vectors,
+`subs/<ns>/memories.db` per namespace) and `credentials.db` (provider key
+pools + named accounts, keys sealed with `~/.mnemo/.credential-key`). There is
+no built-in sync; backup/sync with `rclone` outside the server (cron or
+manual) — backing up `credentials.db` without `.credential-key` restores
+unreadable envelopes.
 
 ## Removed (pre-de-host, historical)
 

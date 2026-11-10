@@ -100,10 +100,57 @@ uv run pytest           # dev group: pytest, pytest-asyncio, pytest-timeout, ruf
   `LLM_MODELS` (CSV `provider/model`, order = litellm fallback; provider
   inferred from the prefix; keys never select a model).
 
+### Provider credential pools (hull 0.5)
+
+One key per cell took a whole feature down on a 401/429. Cells now seed an
+ordered **pool** per provider identity, implemented in hull
+(`hull_core.credentials`: `CredentialStore`, `KeyPool`, `AccountRegistry`) and
+adopted by every mnemo provider call site (`mnemo/keys.py`):
+
+- Store: `~/.mnemo/credentials.db` (SQLite WAL, tables
+  `provider_credentials` / `provider_accounts`), keys AES-256-GCM sealed with
+  `~/.mnemo/.credential-key` (created once, `0600`). Instance-scoped on
+  purpose: the machine-wide `~/.hull/hull.db` belongs to other hull products.
+- Call path: lease the highest-priority usable credential → build the hull
+  `OpenAICompatClient` from that credential (`api_key` + `base_url`; the *cell*
+  keeps the model id, because four task cells share one provider pool) → call
+  → `record_success` / `record_failure(status)`.
+- Policy (hull's, not re-implemented here): 401/403 disable; 429 cooldown from
+  `Retry-After`/`rate_limit_reset` clamped 1 s…1 h (default 60 s); 5xx retry
+  once then rotate; any other status re-raises with the credential untouched;
+  bounded attempts `total × (1 + max_5xx_retries)`; exhaustion raises
+  `PoolExhaustedError`, remapped by mnemo to
+  `mnemo.exceptions.ProviderCredentialsExhausted` (counts + `retry_after` +
+  key-redacted last error).
+- Seeding: on server start (`lifespan`) and lazily on first use, a cell's
+  legacy key is migrated into its pool **only while the pool is empty**
+  (`ensure_seeded`, idempotent). The env var is never deleted; an
+  operator-removed key is not resurrected. Config: optional `provider` /
+  `account` keys in `[models.<task>]`; the default pool is the unaccounted one
+  and an unknown account is reported instead of silently creating one.
+- Concurrency: hull leases a credential for one in-flight attempt, so pooled
+  calls are gated to the pool size per event loop. Under one key that means
+  provider calls serialize; with N keys, N may run at once and rotation never
+  hands the same key to two attempts.
+- Operator surface: hull 0.5 ships the pool as a **library** (no credential
+  CLI yet), so keys and accounts are managed through
+  `hull_core.credentials` against `mnemo.keys.credential_store()`; the masked
+  health view is `mnemo.keys.pool_health(cell)`. Disabled keys are re-enabled
+  explicitly (`store.enable(id)`), never automatically.
+- Residual: hull's `ProviderError` carries the status but not the response
+  headers, so a real `429` cools down for hull's 60 s default; mnemo already
+  forwards `retry_after` / `rate_limit_reset` / `headers` when an error
+  carries them. The `Retry-After` hint needs a hull-side change (add response
+  headers to `ProviderError`), not another mnemo workaround.
+
+
 ## Data and safety invariants
 
-- Provider keys are host-only config (`config.toml` / `HULL_<TASK>_API_KEY`),
-  never visible to MCP clients.
+- Provider keys are host-only material (`config.toml` /
+  `HULL_<TASK>_API_KEY`, or the sealed pool store
+  `~/.mnemo/credentials.db`), never visible to MCP clients. No key reaches a
+  log line, an error message, or a tool response: pool health is exposed only
+  as a 4-character hint.
 - Every storage artifact lives under `~/.mnemo/` owned by your OS user.
 - `multi` mode isolates namespaces at the DB-file level; a namespace holder
   cannot see another namespace's memories.

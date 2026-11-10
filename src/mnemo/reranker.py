@@ -62,8 +62,8 @@ def describe_reranker(
 class CloudReranker:
     """Cloud reranking via the ``[models.rerank]`` provider cell.
 
-    Wraps exactly one :class:`~hull_core.providers.openai_spec.
-    OpenAICompatClient`; the cell owns base_url, api_key, and model. The hull
+    Wraps one :class:`mnemo.keys.PooledClient`; the cell owns base_url and
+    model, the call leases a credential from the provider's key pool. The hull
     client is async, so this backend drives it from a private event loop in
     the caller's thread (server dispatch runs rerank via ``asyncio.to_thread``).
     """

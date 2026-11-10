@@ -138,7 +138,9 @@ uvx n24q02m-mnemo   # http://127.0.0.1:8000/mcp (no-auth default)
 
 Provider cells song trong `~/.mnemo/config.toml` (`n24q02m-mnemo config-init`):
 `[models.<task>]` = `base_url` + `api_key` + `model`, OpenRouter pre-wired.
-Key co the dat trong file hoac qua `HULL_<TASK>_API_KEY`.
+Key co the dat trong file hoac qua `HULL_<TASK>_API_KEY`; key do chi la seed
+cho key pool cua hull (`~/.mnemo/credentials.db`, rotate tren 401/403/429/5xx,
+named account qua `account = "<id>"`).
 
 ## Embedding architecture
 
@@ -168,9 +170,10 @@ PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -
 - `match action:` pattern cho routing trong `memory` dispatcher.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.4,<0.5`).
+- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.5.0b1,<0.6`).
   Khong con litellm / mcp-core / native provider SDKs -- moi cloud call qua
-  hull-core OpenAICompatClient tren per-task cells.
+  hull-core OpenAICompatClient tren per-task cells, xoay vong credential
+  qua key pool cua hull (`mnemo/keys.py`, store `~/.mnemo/credentials.db`).
 - Pre-commit: gitleaks, ruff lint + format, ty check, pytest.
 - Secrets: skret SSM namespace `/mnemo/prod` (region `ap-southeast-1`)
 

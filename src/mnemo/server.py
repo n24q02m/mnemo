@@ -35,6 +35,7 @@ from mnemo.runtime import (
     db_path_for_namespace,
     hull_settings,
     model_cell,
+    seed_provider_credentials,
 )
 
 # Resolved via importlib.metadata (not ``from mnemo import __version__``)
@@ -258,6 +259,14 @@ async def lifespan(server: MCPServer) -> AsyncGenerator[dict]:
     (``~/.mnemo/memories.db``) serves the shared default namespace; mode-3
     namespaces resolve their own per-sub store lazily in :func:`_get_ctx`.
     """
+    # 0. Seed the provider key pools from any legacy single-key cells
+    # (idempotent: a pool that already holds a credential is left alone).
+    # A broken credential store must not stop the server, so it only warns.
+    try:
+        seed_provider_credentials(hull_settings())
+    except Exception as e:
+        logger.warning(f"Provider credential seeding skipped: {type(e).__name__}: {e}")
+
     # 1. Resolve initial embedding dims (may be refined by background task).
     # The identity stamped in store_meta guards against silent vector-space
     # corruption when the model changes.
