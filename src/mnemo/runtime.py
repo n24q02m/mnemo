@@ -11,10 +11,13 @@ One place wires the shared-core seams together:
   ``~/.mnemo/subs/<namespace>/memories.db`` so mode-3 users on one process
   can never read each other's memories (spec §4 Q2). The host-root store
   ``~/.mnemo/memories.db`` serves the shared ``default`` namespace;
-- provider clients: one :class:`hull_core.providers.openai_spec.
-  OpenAICompatClient` per task cell (embed / rerank / chat / jev_score),
-  built with the mode-derived SSRF policy (loopback self-hosted providers are
-  a no-auth single-instance feature only).
+- provider clients: one pool-backed
+  :class:`mnemo.keys.PooledClient` per task cell (embed / rerank / chat /
+  jev_score), built with the mode-derived SSRF policy (loopback self-hosted
+  providers are a no-auth single-instance feature only). Each call leases a
+  credential from that provider's pool in ``~/.mnemo/credentials.db`` and
+  records the outcome, so one revoked or rate-limited key no longer disables
+  the feature.
 """
 
 from __future__ import annotations
@@ -29,10 +32,14 @@ from hull_core.auth.middleware import Authenticator
 from hull_core.auth.users import User, load_users
 from hull_core.config.models import ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
-from hull_core.providers.openai_spec import OpenAICompatClient
+
+from mnemo import keys
 
 if TYPE_CHECKING:
+    from hull_core.credentials import MigrationResult
     from hull_core.limits.limiter import SlidingWindowLimiter
+
+    from mnemo.keys import PooledClient
 
 # Default storage width for sqlite-vec when EMBEDDING_DIMS is unset: the
 # native width of the default [models.embed] cell (voyage-4-lite, 1024d,
@@ -58,6 +65,12 @@ def mnemo_config_path() -> Path:
     return mnemo_config_dir() / "config.toml"
 
 
+# Pooled clients cache their transport per event loop, so one instance per
+# task keeps HTTP keep-alive across calls. Re-keyed whenever the settings
+# object changes (a config edit produces a new mtime-keyed HullSettings).
+_pooled_clients: dict[str, tuple[HullSettings, PooledClient]] = {}
+
+
 @lru_cache(maxsize=4)
 def _cached_settings(config_dir: Path, mtime: float) -> HullSettings:
     return load_settings(config_dir)
@@ -71,8 +84,9 @@ def hull_settings() -> HullSettings:
 
 
 def reset_settings_cache() -> None:
-    """Drop the cached instance settings (config edited, tests)."""
+    """Drop the cached instance settings and the clients built from them."""
     _cached_settings.cache_clear()
+    _pooled_clients.clear()
 
 
 def load_users_for(settings: HullSettings) -> dict[str, User] | None:
@@ -140,19 +154,54 @@ def provider_client(
     settings: HullSettings | None = None,
     *,
     timeout: float = 60.0,
-) -> OpenAICompatClient:
-    """Build an OpenAI-spec client for one task cell (SSRF policy by mode)."""
+) -> PooledClient:
+    """Pool-backed client for one task cell (rotates that provider's keys).
+
+    The returned client is safe to hold: every call re-leases a credential
+    from the pool, so a 401/429 on one key rotates to the next instead of
+    failing the feature.
+    """
     settings = settings if settings is not None else hull_settings()
-    return OpenAICompatClient(
+    cached = _pooled_clients.get(task)
+    if cached is not None and cached[0] is settings:
+        return cached[1]
+    client = keys.PooledClient(
         model_cell(task, settings),
         auth_mode=settings.server.auth,
         timeout=timeout,
     )
+    _pooled_clients[task] = (settings, client)
+    return client
+
+
+def reset_provider_clients() -> None:
+    """Drop the cached pooled clients (config edit, tests)."""
+    _pooled_clients.clear()
+
+
+def seed_provider_credentials(
+    settings: HullSettings | None = None,
+) -> list[MigrationResult]:
+    """Seed every configured cell's legacy key into its pool (idempotent).
+
+    Runs on server start and again wherever a client is first used; a pool
+    that already holds a credential is left alone.
+    """
+    settings = settings if settings is not None else hull_settings()
+    return keys.seed_from_cells(resolve_model_cells(settings.models).values())
 
 
 def cell_configured(task: str, settings: HullSettings | None = None) -> bool:
-    """True when the host configured a key for the task's cell."""
-    return model_cell(task, settings).configured
+    """True when the task's cell can call a provider.
+
+    Either the cell carries its own key (legacy single-key config) or the
+    provider's pool holds at least one credential, including keys added
+    straight to the pool with no config-file entry.
+    """
+    cell = model_cell(task, settings)
+    if cell.configured:
+        return True
+    return keys.cell_pool_configured(cell)
 
 
 def write_default_config(*, force: bool = False) -> Path:
@@ -184,6 +233,8 @@ __all__ = [
     "db_path_for_namespace",
     "model_cell",
     "provider_client",
+    "reset_provider_clients",
+    "seed_provider_credentials",
     "cell_configured",
     "write_default_config",
 ]

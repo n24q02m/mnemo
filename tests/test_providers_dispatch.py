@@ -4,6 +4,7 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from hull_core.config.models import ModelCell
 
 from mnemo.llm import _get_client, reset_client
 from mnemo.providers import BoundedReflectProvider, _count_tokens
@@ -156,11 +157,23 @@ def test_dispatch_builds_cell_from_model_and_key():
     client.aclose.assert_awaited_once()
 
 
+def _seed(provider: str, api_key: str, base_url: str) -> None:
+    """Store one credential so the task cell's pool can serve (no config key)."""
+    from mnemo.keys import credential_store
+
+    credential_store().add_credential(provider, api_key, base_url=base_url)
+
+
 def test_dispatch_falls_back_to_configured_chat_cell():
     fake_settings = MagicMock()
     fake_settings.server.auth = "token"
-    cell = MagicMock()
-    cell.model = "cell/chat-model"
+    cell = ModelCell(
+        task="chat",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="",
+        model="cell/chat-model",
+    )
+    _seed("openrouter", "stored-key-0001", cell.base_url)
     with _apply_runtime_patches(fake_settings):
         with patch("mnemo.runtime.model_cell", return_value=cell):
             provider = BoundedReflectProvider(model="", api_key="")
@@ -168,7 +181,10 @@ def test_dispatch_falls_back_to_configured_chat_cell():
 
     assert text == "llm text"
     client = _FakeClient.instances[0]
-    assert client.cell is cell
+    # The cell owns the model; the pool supplies the key it stored.
+    assert client.cell.model == "cell/chat-model"
+    assert client.cell.base_url == cell.base_url
+    assert client.cell.api_key == "stored-key-0001"
     assert client.auth_mode == "token"
 
 
@@ -176,8 +192,13 @@ def test_dispatch_via_synthesize_when_no_transport():
     """synthesize() without a transport runs the real dispatch pipeline."""
     fake_settings = MagicMock()
     fake_settings.server.auth = "no-auth"
-    cell = MagicMock()
-    cell.model = "cell/chat-model"
+    cell = ModelCell(
+        task="chat",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="",
+        model="cell/chat-model",
+    )
+    _seed("openrouter", "stored-key-0001", cell.base_url)
     with _apply_runtime_patches(fake_settings):
         with patch("mnemo.runtime.model_cell", return_value=cell):
             provider = BoundedReflectProvider(model="", api_key="")

@@ -106,8 +106,8 @@ class BoundedReflectProvider(ReflectPort):
 
         async def _run() -> tuple[str, int, int]:
             from hull_core.config.models import ModelCell
-            from hull_core.providers.openai_spec import OpenAICompatClient
 
+            from mnemo.keys import PooledClient
             from mnemo.runtime import hull_settings, model_cell
 
             if self.model and self._api_key:
@@ -119,7 +119,7 @@ class BoundedReflectProvider(ReflectPort):
                 )
             else:
                 cell = model_cell("chat")
-            client = OpenAICompatClient(cell, auth_mode=hull_settings().server.auth)
+            client = PooledClient(cell, auth_mode=hull_settings().server.auth)
             try:
                 text = await client.chat(
                     [{"role": "user", "content": prompt}],

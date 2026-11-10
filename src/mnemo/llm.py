@@ -6,7 +6,10 @@ consolidation summaries. The host configures the cell in
 ``~/.mnemo/config.toml`` (or ``HULL_CHAT_API_KEY``); an unconfigured cell
 skips optional enrichment — it never falls back to another provider.
 
-Provider errors return None to optional enrichment callers, not another model.
+Each call leases a credential from that provider's key pool, so a 401/429 on
+one key rotates to the next one instead of disabling the feature. When the
+pool is exhausted (or the call fails for a non-credential reason) the
+optional-enrichment contract still holds: return None, never another model.
 """
 
 from __future__ import annotations
@@ -29,9 +32,12 @@ def _get_client() -> Any:
 
 
 def reset_client() -> None:
-    """Drop the cached chat client (config edited, tests)."""
+    """Drop the cached chat client and the runtime's pooled clients."""
     global _client
     _client = None
+    from mnemo.runtime import reset_provider_clients
+
+    reset_provider_clients()
 
 
 async def call_llm(

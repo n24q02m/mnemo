@@ -202,16 +202,19 @@ def _reset_module_singletons():
     import mnemo.embedder as embedder_mod
     import mnemo.llm as llm_mod
     import mnemo.reranker as reranker_mod
+    from mnemo.keys import reset_credential_cache
     from mnemo.server import _sub_db_cache
 
     embedder_mod._backend = None
     reranker_mod.clear_reranker()
     llm_mod.reset_client()
+    reset_credential_cache()
     _sub_db_cache.clear()
     yield
     embedder_mod._backend = None
     reranker_mod.clear_reranker()
     llm_mod.reset_client()
+    reset_credential_cache()
     _sub_db_cache.clear()
 
 

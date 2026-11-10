@@ -25,6 +25,13 @@ auth = "token"
 # (any OpenAI-spec base_url works). api_key may be left empty here and
 # supplied via env instead: HULL_EMBED_API_KEY / HULL_RERANK_API_KEY /
 # HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY (host-only, never end-user).
+#
+# api_key seeds an ordered credential POOL per provider identity (stored in
+# ~/.mnemo/credentials.db with the keys sealed); the pool rotates on
+# 401/403/429/5xx and is the only thing that changes when a key dies. Optional
+# selectors:
+#   provider = "openrouter"      # pool identity; derived from base_url when absent
+#   account  = "openrouter:work" # named account's own pool (AccountRegistry.add)
 
 [models.embed]
 base_url = "https://openrouter.ai/api/v1"

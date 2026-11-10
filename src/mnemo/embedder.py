@@ -178,10 +178,9 @@ class EmbeddingBackend(Protocol):
 class CloudEmbeddingBackend:
     """Cloud embedding via the ``[models.embed]`` provider cell.
 
-    Wraps exactly one :class:`~hull_core.providers.openai_spec.
-    OpenAICompatClient` built from the cell; the cell owns base_url, api_key,
-    and model -- there is no provider prefix and no per-request credential
-    resolution.
+    Wraps one :class:`mnemo.keys.PooledClient`: the cell owns base_url, model
+    and the seed key, and every request leases a credential from the provider's
+    key pool (401/403 disable, 429 cooldown, 5xx retry-then-rotate).
     """
 
     MAX_BATCH_SIZE = 96  # Common safe batch size across providers
