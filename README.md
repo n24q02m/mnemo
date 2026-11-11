@@ -38,7 +38,7 @@ mcp-name: io.github.n24q02m/mnemo
 | [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
 | [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
 | [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
-| [mnemo](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
+| [mnemo](https://github.com/n24q02m/mnemo) | Persistent AI memory with hybrid search. Open, free, unlimi... | MCP |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval) | Multi-model retrieval runtime for ONNX/GGUF embeddings and reranking | Library |
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
