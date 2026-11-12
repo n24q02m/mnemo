@@ -346,6 +346,11 @@ _sub_db_cache: dict[str, MemoryDB] = {}
 
 def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
     """Resolve the caller's store, model, and dimensions from a tool ``Context``."""
+    if ctx is None:
+        raise ValueError(
+            "mnemo tools need a request context; start the server with "
+            "`n24q02m-mnemo` instead of calling a tool directly"
+        )
     return _resolve_state(ctx.request_context.lifespan_context)
 
 

@@ -34,10 +34,12 @@ context_type. (Set CAPTURE_AUTO_ENABLED=false to silence these hints.)
 
 def _emit(text: str) -> None:
     """Write exactly what the bash heredoc wrote: LF line endings, no CR."""
-    try:
-        sys.stdout.reconfigure(newline="\n")
-    except (AttributeError, ValueError):
-        pass
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(newline="\n")
+        except ValueError:
+            pass
     sys.stdout.write(text)
 
 
