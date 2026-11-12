@@ -1,7 +1,7 @@
 """Console-script entry for mnemo (de-host HTTP-only).
 
 Bare invocation starts the HTTP MCP server; subcommands run one-shot
-operator actions (auth token hashing, warmup, config bootstrap).
+operator actions (auth token hashing, warmup, config bootstrap and edits).
 """
 
 from __future__ import annotations
@@ -70,6 +70,58 @@ def _handle_config_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_config(args: argparse.Namespace) -> int:
+    """``mnemo config init|path|show|get|set`` -- same surface as hull/wet/crg.
+
+    The edits themselves come from ``hull_core.config.tomledit`` so quoting,
+    secret masking and error text are identical across the stack.
+    """
+    from hull_core.config import tomledit
+    from hull_core.config.settings import ConfigError
+
+    from mnemo.runtime import CONFIG_TEMPLATE, mnemo_config_path, write_default_config
+
+    path = mnemo_config_path()
+    action = args.config_action
+    if action == "init":
+        try:
+            written = write_default_config(force=args.force)
+        except FileExistsError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(f"Wrote {written}")
+        return 0
+    if action == "path":
+        print(path)
+        return 0
+    if action == "show":
+        print(path.read_text(encoding="utf-8") if path.is_file() else CONFIG_TEMPLATE, end="")
+        return 0
+    if action == "get":
+        try:
+            value = tomledit.get_value(path, args.key)
+        except (ConfigError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if tomledit.looks_secret(args.key):
+            print("*** (value not echoed)")
+        else:
+            print(tomledit.format_value(value))
+        return 0
+    try:
+        tomledit.set_value(path, args.key, args.value)
+    except (ConfigError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    shown = (
+        "*** (value not echoed)"
+        if tomledit.looks_secret(args.key)
+        else tomledit.toml_scalar(args.value)
+    )
+    print(f"set {args.key} = {shown} in {path}")
+    return 0
+
+
 def _version() -> str:
     from mnemo import __version__
 
@@ -102,6 +154,25 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("config-init", help="Write the default config template")
     c.add_argument("--force", action="store_true")
     c.set_defaults(func=_handle_config_init)
+
+    cfg = sub.add_parser("config", help="Config file utilities (init, path, show, get, set)")
+    cfg_sub = cfg.add_subparsers(dest="config_action", required=True)
+    cfg_init = cfg_sub.add_parser("init", help="Write the default config template (--force)")
+    cfg_init.add_argument("--force", action="store_true")
+    cfg_init.set_defaults(func=_handle_config)
+    cfg_sub.add_parser("path", help="Print the config file path").set_defaults(
+        func=_handle_config
+    )
+    cfg_sub.add_parser("show", help="Print the config file (template if absent)").set_defaults(
+        func=_handle_config
+    )
+    cfg_get = cfg_sub.add_parser("get", help="Print one value (dotted key, e.g. server.port)")
+    cfg_get.add_argument("key")
+    cfg_get.set_defaults(func=_handle_config)
+    cfg_set = cfg_sub.add_parser("set", help="Set one value in place, keeping comments")
+    cfg_set.add_argument("key")
+    cfg_set.add_argument("value")
+    cfg_set.set_defaults(func=_handle_config)
 
     return parser
 

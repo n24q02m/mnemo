@@ -90,3 +90,64 @@ class TestWarmupSubcommand:
             rc = cli.main()
 
         assert rc == 1
+
+
+class TestConfigSubcommands:
+    """`mnemo config set|get|path|show` edits the file in place, like hull."""
+
+    @staticmethod
+    def _config(tmp_path, monkeypatch):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            '[server]\nhost = "127.0.0.1"\nport = 8000\n# auth = "token"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("mnemo.runtime.mnemo_config_path", lambda: path)
+        return path
+
+    def test_set_keeps_comments_and_get_reads_it_back(self, tmp_path, monkeypatch, capsys):
+        from mnemo import cli
+
+        path = self._config(tmp_path, monkeypatch)
+        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "set", "server.port", "8771"]):
+            assert cli.main() == 0
+        body = path.read_text(encoding="utf-8")
+        assert "port = 8771" in body
+        assert '# auth = "token"' in body
+
+        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "get", "server.port"]):
+            assert cli.main() == 0
+        assert capsys.readouterr().out.strip().splitlines()[-1] == "8771"
+
+    def test_a_token_is_masked_and_a_hash_is_not(self, tmp_path, monkeypatch, capsys):
+        from mnemo import cli
+
+        self._config(tmp_path, monkeypatch)
+        with patch.object(
+            sys, "argv", ["n24q02m-mnemo", "config", "set", "server.token_hash", "scrypt$abc"]
+        ):
+            assert cli.main() == 0
+        assert "scrypt$abc" in capsys.readouterr().out
+
+        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "set", "server.token", "s3cr3t"]):
+            assert cli.main() == 0
+        out = capsys.readouterr().out
+        assert "s3cr3t" not in out and "*** (value not echoed)" in out
+
+    def test_set_on_a_missing_section_fails_with_a_reason(self, tmp_path, monkeypatch, capsys):
+        from mnemo import cli
+
+        self._config(tmp_path, monkeypatch)
+        with patch.object(
+            sys, "argv", ["n24q02m-mnemo", "config", "set", "nope.key", "1"]
+        ):
+            assert cli.main() == 2
+        assert "section [nope] not found" in capsys.readouterr().err
+
+    def test_path_prints_the_config_location(self, tmp_path, monkeypatch, capsys):
+        from mnemo import cli
+
+        path = self._config(tmp_path, monkeypatch)
+        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "path"]):
+            assert cli.main() == 0
+        assert capsys.readouterr().out.strip() == str(path)
