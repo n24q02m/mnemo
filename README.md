@@ -26,7 +26,7 @@ mcp-name: io.github.n24q02m/mnemo
 
 | Project | Tagline | Tag |
 |---|---|---|
-| [better-code-review-graph](https://github.com/n24q02m/better-code-review-graph) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
+| [crg](https://github.com/n24q02m/crg) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
 | [better-drive](https://github.com/n24q02m/better-drive) | 2-way Google Drive sync with .driveignore filter — rclone engine, Windows tray | Tooling |
 | [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP |
 | [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Composite MCP server for Godot Engine -- 17 composite tools for AI-assisted g... | MCP |
@@ -43,7 +43,7 @@ mcp-name: io.github.n24q02m/mnemo
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
 | [web-core](https://github.com/n24q02m/web-core) | Shared web infrastructure package for search, scraping, HTTP security, and st... | Library |
-| [wet-mcp](https://github.com/n24q02m/wet-mcp) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
+| [wet](https://github.com/n24q02m/wet) | Open-source MCP server for AI agents: web search, content extraction, and lib... | MCP |
 
 </details>
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
@@ -171,13 +171,13 @@ or the client's equivalent).
 > next publish carries correct metadata.
 >
 > **Related plugins from the same author**:
-> - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
+> - [wet](https://github.com/n24q02m/wet) -- Web search + content extraction
 > - [imagine-mcp](https://github.com/n24q02m/imagine-mcp) -- Image/video understanding + generation
 > - [better-notion-mcp](https://github.com/n24q02m/better-notion-mcp) -- Notion API
 > - [better-email-mcp](https://github.com/n24q02m/better-email-mcp) -- Email management
 > - [better-telegram-mcp](https://github.com/n24q02m/better-telegram-mcp) -- Telegram
 > - [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) -- Godot Engine
-> - [better-code-review-graph](https://github.com/n24q02m/better-code-review-graph) -- Code review knowledge graph
+> - [crg](https://github.com/n24q02m/crg) -- Code review knowledge graph
 >
 > All plugins share the same architecture -- install once, learn pattern transfers.
 
@@ -191,7 +191,7 @@ Full docs at **[docs.n24q02m.com/servers/mnemo/setup/](https://docs.n24q02m.com/
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
-> Install MCP server `mnemo-mcp` following the steps at
+> Install MCP server `n24q02m-mnemo` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/mnemo/setup-with-agent.md
 
 ## Smithery
