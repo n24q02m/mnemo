@@ -490,3 +490,22 @@ def test_store_is_reopened_when_the_instance_root_moves(
     assert second is not first
     assert second.path != first.path
     assert second.path.parent.is_dir()
+
+
+def test_cancelled_call_releases_the_only_lease() -> None:
+    """A call cancelled mid-flight (the server's embed deadline) returns its lease.
+
+    Before the fix the single credential stayed leased for LEASE_SECONDS, so the
+    next call failed with ``leased=1`` even though the provider was healthy.
+    """
+    _seed(KEY_ONE)
+    client = keys.PooledClient(_cell())
+
+    async def run() -> str:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                client.chat([{"role": "user", "content": "slow"}]), timeout=0.005
+            )
+        return await client.chat([{"role": "user", "content": "after"}])
+
+    assert asyncio.run(run()) == f"answer from {KEY_ONE}"

@@ -351,11 +351,21 @@ class PooledClient:
     ) -> Any:
         pool = pool_for(self.cell)
         total = int(pool.store.diagnose(pool.provider, pool.account_id)["total"])
+
+        async def attempt(credential: Credential) -> Any:
+            try:
+                return await call(self._client_for(credential))
+            except BaseException as exc:
+                if not isinstance(exc, Exception):
+                    # Cancellation (e.g. the server's embed deadline) bypasses
+                    # KeyPool.arun, which releases only on Exception; release the
+                    # lease here so the next call is not refused for LEASE_SECONDS.
+                    pool.report_failure(credential, None)
+                raise
+
         async with self._gate(total):
             try:
-                return await pool.arun(
-                    lambda credential: call(self._client_for(credential))
-                )
+                return await pool.arun(attempt)
             except PoolExhaustedError as exc:
                 logger.warning(f"{op}: provider pool exhausted: {exc}")
                 raise ProviderCredentialsExhausted.from_pool_error(exc) from exc
