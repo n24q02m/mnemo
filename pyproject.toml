@@ -111,7 +111,7 @@ markers = [
 addopts = "-m 'not integration and not live and not full and not e2e'"
 
 [tool.ty]
-rules = { unresolved-import = "ignore", unresolved-attribute = "ignore", possibly-missing-attribute = "ignore" }
+rules = { import-not-found = "ignore", missing-attribute = "ignore", possibly-missing-attribute = "ignore" }
 
 # Local worktree checkouts are not part of the source tree; without this the
 # pre-commit ty hook lints stale copies under .worktrees/ and fails on
