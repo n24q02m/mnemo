@@ -2,6 +2,50 @@
 
 <!-- version list -->
 
+## v2.22.0 (2026-11-12)
+
+### Bug Fixes
+
+- Align the registry metadata with the readme tagline
+  ([#1361](https://github.com/n24q02m/mnemo/pull/1361),
+  [`07bb150`](https://github.com/n24q02m/mnemo/commit/07bb1506fb5d4b34275d2ac8265e6b983d12550d))
+
+- Apply the formatter to the new CLI tests ([#1372](https://github.com/n24q02m/mnemo/pull/1372),
+  [`ae1078c`](https://github.com/n24q02m/mnemo/commit/ae1078c78f6f5a21a8976bcd0951fbf73ba87849))
+
+- Drop the removed embedded sync from the package docstrings
+  ([#1370](https://github.com/n24q02m/mnemo/pull/1370),
+  [`d348c37`](https://github.com/n24q02m/mnemo/commit/d348c377f8e79c2f1138c0b43fb6100c0e1552d3))
+
+- Drop the stale embedded sync claim from the README project row
+  ([#1368](https://github.com/n24q02m/mnemo/pull/1368),
+  [`a7aca6e`](https://github.com/n24q02m/mnemo/commit/a7aca6e73d96c520802c3df73abb1feba7e71644))
+
+- Keep the pre-commit ruff hooks off the vendored checker scripts
+  ([#1361](https://github.com/n24q02m/mnemo/pull/1361),
+  [`07bb150`](https://github.com/n24q02m/mnemo/commit/07bb1506fb5d4b34275d2ac8265e6b983d12550d))
+
+- Keep the type check green under the stricter ty rules
+  ([#1357](https://github.com/n24q02m/mnemo/pull/1357),
+  [`5f3c1d9`](https://github.com/n24q02m/mnemo/commit/5f3c1d93af0ad954144b0522c09b14344d2fba61))
+
+- Release the key lease when a pooled call is cancelled
+  ([#1369](https://github.com/n24q02m/mnemo/pull/1369),
+  [`fd146bf`](https://github.com/n24q02m/mnemo/commit/fd146bf2880f2bc344c5015df40e63f4a06f6316))
+
+- Run ci on uv-managed python with one coverage gate on every os
+  ([#1361](https://github.com/n24q02m/mnemo/pull/1361),
+  [`07bb150`](https://github.com/n24q02m/mnemo/commit/07bb1506fb5d4b34275d2ac8265e6b983d12550d))
+
+- **deps**: Lock file maintenance ([#1357](https://github.com/n24q02m/mnemo/pull/1357),
+  [`5f3c1d9`](https://github.com/n24q02m/mnemo/commit/5f3c1d93af0ad954144b0522c09b14344d2fba61))
+
+### Features
+
+- Add config get and set to the mnemo CLI ([#1372](https://github.com/n24q02m/mnemo/pull/1372),
+  [`ae1078c`](https://github.com/n24q02m/mnemo/commit/ae1078c78f6f5a21a8976bcd0951fbf73ba87849))
+
+
 ## v2.22.0-beta.2 (2026-11-10)
 
 ### Bug Fixes

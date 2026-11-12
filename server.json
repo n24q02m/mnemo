@@ -6,12 +6,12 @@
     "url": "https://github.com/n24q02m/mnemo.git",
     "source": "github"
   },
-  "version": "2.22.0-beta.2",
+  "version": "2.22.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "n24q02m-mnemo",
-      "version": "2.22.0-beta.2",
+      "version": "2.22.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "streamable-http",
