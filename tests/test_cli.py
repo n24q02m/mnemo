@@ -105,17 +105,23 @@ class TestConfigSubcommands:
         monkeypatch.setattr("mnemo.runtime.mnemo_config_path", lambda: path)
         return path
 
-    def test_set_keeps_comments_and_get_reads_it_back(self, tmp_path, monkeypatch, capsys):
+    def test_set_keeps_comments_and_get_reads_it_back(
+        self, tmp_path, monkeypatch, capsys
+    ):
         from mnemo import cli
 
         path = self._config(tmp_path, monkeypatch)
-        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "set", "server.port", "8771"]):
+        with patch.object(
+            sys, "argv", ["n24q02m-mnemo", "config", "set", "server.port", "8771"]
+        ):
             assert cli.main() == 0
         body = path.read_text(encoding="utf-8")
         assert "port = 8771" in body
         assert '# auth = "token"' in body
 
-        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "get", "server.port"]):
+        with patch.object(
+            sys, "argv", ["n24q02m-mnemo", "config", "get", "server.port"]
+        ):
             assert cli.main() == 0
         assert capsys.readouterr().out.strip().splitlines()[-1] == "8771"
 
@@ -124,17 +130,23 @@ class TestConfigSubcommands:
 
         self._config(tmp_path, monkeypatch)
         with patch.object(
-            sys, "argv", ["n24q02m-mnemo", "config", "set", "server.token_hash", "scrypt$abc"]
+            sys,
+            "argv",
+            ["n24q02m-mnemo", "config", "set", "server.token_hash", "scrypt$abc"],
         ):
             assert cli.main() == 0
         assert "scrypt$abc" in capsys.readouterr().out
 
-        with patch.object(sys, "argv", ["n24q02m-mnemo", "config", "set", "server.token", "s3cr3t"]):
+        with patch.object(
+            sys, "argv", ["n24q02m-mnemo", "config", "set", "server.token", "s3cr3t"]
+        ):
             assert cli.main() == 0
         out = capsys.readouterr().out
         assert "s3cr3t" not in out and "*** (value not echoed)" in out
 
-    def test_set_on_a_missing_section_fails_with_a_reason(self, tmp_path, monkeypatch, capsys):
+    def test_set_on_a_missing_section_fails_with_a_reason(
+        self, tmp_path, monkeypatch, capsys
+    ):
         from mnemo import cli
 
         self._config(tmp_path, monkeypatch)

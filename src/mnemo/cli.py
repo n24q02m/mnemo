@@ -95,7 +95,10 @@ def _handle_config(args: argparse.Namespace) -> int:
         print(path)
         return 0
     if action == "show":
-        print(path.read_text(encoding="utf-8") if path.is_file() else CONFIG_TEMPLATE, end="")
+        print(
+            path.read_text(encoding="utf-8") if path.is_file() else CONFIG_TEMPLATE,
+            end="",
+        )
         return 0
     if action == "get":
         try:
@@ -155,18 +158,24 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--force", action="store_true")
     c.set_defaults(func=_handle_config_init)
 
-    cfg = sub.add_parser("config", help="Config file utilities (init, path, show, get, set)")
+    cfg = sub.add_parser(
+        "config", help="Config file utilities (init, path, show, get, set)"
+    )
     cfg_sub = cfg.add_subparsers(dest="config_action", required=True)
-    cfg_init = cfg_sub.add_parser("init", help="Write the default config template (--force)")
+    cfg_init = cfg_sub.add_parser(
+        "init", help="Write the default config template (--force)"
+    )
     cfg_init.add_argument("--force", action="store_true")
     cfg_init.set_defaults(func=_handle_config)
     cfg_sub.add_parser("path", help="Print the config file path").set_defaults(
         func=_handle_config
     )
-    cfg_sub.add_parser("show", help="Print the config file (template if absent)").set_defaults(
-        func=_handle_config
+    cfg_sub.add_parser(
+        "show", help="Print the config file (template if absent)"
+    ).set_defaults(func=_handle_config)
+    cfg_get = cfg_sub.add_parser(
+        "get", help="Print one value (dotted key, e.g. server.port)"
     )
-    cfg_get = cfg_sub.add_parser("get", help="Print one value (dotted key, e.g. server.port)")
     cfg_get.add_argument("key")
     cfg_get.set_defaults(func=_handle_config)
     cfg_set = cfg_sub.add_parser("set", help="Set one value in place, keeping comments")
