@@ -1,4 +1,4 @@
-"""Mnemo MCP Server - Persistent AI memory with embedded sync.
+"""Mnemo MCP Server - Persistent AI memory with hybrid search.
 
 MCP Interface:
 - 11 granular memory tools (add_memory, search_memory, list_memories,
