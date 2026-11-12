@@ -1,10 +1,10 @@
 # Mnemo MCP Server
 
-> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
-
 mcp-name: io.github.n24q02m/mnemo
 
 **Persistent AI memory with hybrid search. Open, free, unlimited.**
+
+> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
@@ -63,8 +63,6 @@ mcp-name: io.github.n24q02m/mnemo
 - [Remote (HTTP mode)](#remote-http-mode)
 - [Trust Model](#trust-model)
 - [License](#license)
-
-
 
 <a href="https://glama.ai/mcp/servers/n24q02m/mnemo-mcp">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/mnemo-mcp/badge" alt="Mnemo MCP server" />
@@ -403,7 +401,6 @@ credential, records the outcome, and rotates:
 - The cell always owns the model id: all four task cells may share one provider
   pool, so an entry contributes its key and endpoint, not a model override.
 
-
 ## Remote (HTTP mode)
 
 mnemo speaks Streamable HTTP on a single `/mcp` endpoint — remote access is a
@@ -427,7 +424,6 @@ mnemo is **TC-Local** (machine-bound): every storage artifact lives under
 | `no-auth` (default) | loopback only (non-loopback bind refused) | `~/.mnemo/memories.db` + `config.toml` | Only your OS user |
 | `token` | any | same, one shared `default` namespace | Anyone holding the shared token |
 | `multi` | any | per-namespace `~/.mnemo/subs/<ns>/memories.db` (via `users.toml`) | Each token holder sees only their own namespace |
-
 
 ## License
 

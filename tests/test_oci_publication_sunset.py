@@ -26,7 +26,11 @@ def _read(relative: str) -> str:
 def test_release_graph_has_no_public_oci_or_cf_deploy_jobs():
     """Release chain publishes PyPI/registry/marketplace only; the de-host
     removed the Cloudflare image deploy entirely, so no deploy-cf job and no
-    registry docker steps may reappear."""
+    registry docker steps may reappear.
+
+    The shared registry step keeps an OCI branch in its version stamping; it
+    never runs here because server.json lists only the PyPI package, which
+    test_registry_metadata_publishes_only_the_pypi_package holds."""
     workflow = _read(".github/workflows/cd.yml")
 
     for marker in (
@@ -37,14 +41,17 @@ def test_release_graph_has_no_public_oci_or_cf_deploy_jobs():
         "docker/login-action",
         "docker/build-push-action",
         "peter-evans/dockerhub-description",
-        'registryType == "oci"',
     ):
         assert marker not in workflow
 
     assert "packages: write" not in workflow
     assert "id-token: write" in workflow
 
-    assert re.search(r"(?m)^  publish-pypi:\n(?:.*\n)*?    needs: release\n", workflow)
+    # publish-pypi also waits for the README registry metadata check.
+    assert re.search(
+        r"(?m)^  publish-pypi:\n(?:.*\n)*?    needs: \[readme-sync, release\]\n",
+        workflow,
+    )
     assert re.search(
         r"(?m)^  publish-mcp-registry:\n(?:.*\n)*?    needs: \[release, publish-pypi\]\n",
         workflow,

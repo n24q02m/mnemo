@@ -1,5 +1,9 @@
 {
   "name": "mnemo",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/n24q02m/mnemo.git"
+  },
   "type": "module"
 }

@@ -1,21 +1,286 @@
+# =============================================================================
+# CI Template: Public Python MCP Server (mnemo)
+# Source: https://github.com/n24q02m/.github/templates/ci/public-python.yml
+#
+# Runner strategy: runner profile `cross-platform` (declared in
+# .repo-bootstrap.toml): ubuntu-latest (GitHub-hosted) for every single-runner job; the
+# lint-and-test job runs on the profile's test runners. Triggers follow the repo's
+# visibility. Harden-runner everywhere; every job has a timeout.
+# =============================================================================
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+  # Public repo (spec 2026-10-30): ci.yml may also start by itself, because Actions minutes
+  # are free on a public repo. cd.yml stays dispatch-only on every repo. ci_policy_lint.py
+  # allows these triggers in ci.yml of a public repo only. `sha` is read by the
+  # main-integrity job only.
   push:
     branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit for the main-integrity job to verify (default: the tip of the dispatched ref)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
-  pull-requests: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # ============================================================================
+  # README registry metadata: the package carries this repo's README to PyPI,
+  # so a manifest naming a file that is not there publishes an empty project
+  # page. Keep the local check in CI as well as pre-commit and CD.
+  # ============================================================================
+  readme-sync:
+    name: Verify README registry metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Verify README registry metadata
+        run: python scripts/repo-bootstrap/verify_readme_sync.py --repo-root=.
+      - name: Project SOT
+        run: python -I scripts/repo-bootstrap/sot_check.py --repo . --mode gate
+
+  # ============================================================================
+  # Lint & Test (Python)
+  # ============================================================================
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults: {run: {shell: bash}}
+    # The interpreter is the one uv installs (python-build-standalone), on every OS.
+    # The macOS CPython of actions/setup-python is built without loadable SQLite
+    # extensions, so extension-backed tests skip there and that leg falls under the
+    # coverage gate. only-managed keeps uv from picking the runner's own Python.
+    env:
+      UV_PYTHON: "3.13"
+      UV_PYTHON_PREFERENCE: only-managed
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv python install
+
+      - run: uv sync --locked --group dev
+      # The files apply.py copies in (scripts/repo-bootstrap/ with its vendored tomli,
+      # scripts/main_integrity.py, scripts/merge_gate.py) are replaced on every apply
+      # and follow the toolkit's style, not this repo's ruff config.
+      - run: uv run ruff check . --extend-exclude scripts/repo-bootstrap,scripts/main_integrity.py,scripts/merge_gate.py
+      - run: uv run ruff format --check . --extend-exclude scripts/repo-bootstrap,scripts/main_integrity.py,scripts/merge_gate.py
+      - run: uv run ty check --exit-zero-on-warning
+
+      # ------------------------------------------------------------------
+      # Architecture boundary guardrails — opt-in per repo:
+      # import-linter: tạo .import-linter + thêm dep vào dev group. Repo cũ
+      #   áp baseline-mode: ghi violation cũ vào ADR, contract chỉ chặn
+      #   violation mới (chuẩn portfolio-standard, mục guardrail).
+      # deptry: runs when pyproject.toml has a [tool.deptry] table, where the repo
+      #   declares what deptry cannot infer (first-party names, optional deps, ignores).
+      # slotscheck: runs when the package exists; it imports the module by name (-m),
+      #   which resolves in the flat and the src layout alike.
+      # ------------------------------------------------------------------
+      - name: Architecture boundary check (import-linter, opt-in)
+        run: |
+          if [ -f ".import-linter" ]; then
+            uv run --with import-linter lint-imports
+          else
+            echo "No .import-linter config, skipping..."
+          fi
+      - name: Dependency hygiene (deptry, opt-in)
+        run: |
+          if [ -f "pyproject.toml" ] && grep -q '^\[tool\.deptry[].]' pyproject.toml; then
+            uv run --with deptry deptry .
+          else
+            echo "No [tool.deptry] in pyproject.toml, skipping..."
+          fi
+      - name: Slots check (slotscheck, opt-in)
+        run: |
+          if [ -d "src/mnemo" ] || [ -d "mnemo" ]; then
+            uv run --with slotscheck slotscheck -m mnemo
+          else
+            echo "No package dir, skipping..."
+          fi
+
+      - name: Run tests with coverage
+        run: |
+          if [ -d "tests" ] && [ "$(ls -A tests/*.py 2>/dev/null)" ]; then
+            uv run pytest --tb=short --cov=mnemo --cov-report=xml
+          else
+            echo "No tests found, skipping..."
+          fi
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ============================================================================
+  # Contract compatibility — opt-in (chuẩn portfolio-standard, contract-first).
+  # Job tự skip khi repo chưa có contract; bật thật khi:
+  # - proto:   có buf.yaml (root hoặc proto/)  → buf lint + buf breaking.
+  # - OpenAPI: có contracts/openapi*.{yaml,json} → oasdiff breaking.
+  # Không fake contract chỉ để bật job.
+  # ============================================================================
+  contract-compat:
+    name: Contract compatibility (opt-in)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: buf lint + breaking (proto, opt-in)
+        run: |
+          if [ -f "buf.yaml" ]; then
+            DIR="."
+          elif [ -f "proto/buf.yaml" ]; then
+            DIR="proto"
+          else
+            echo "No buf.yaml, skipping..."
+            exit 0
+          fi
+          (cd "$DIR" && npx --yes --package @bufbuild/buf@1 -- buf lint --error-format=json)
+          (cd "$DIR" && npx --yes --package @bufbuild/buf@1 -- buf breaking --against ".git#branch=main")
+
+      # oasdiff không có trên PyPI (404) và npm chỉ còn placeholder 0.0.1-security
+      # (đã probe 07/10) → tải binary release pin version từ repo chính thức.
+      - name: oasdiff breaking (OpenAPI, opt-in)
+        run: |
+          SPEC=$(ls contracts/openapi*.yaml contracts/openapi*.yml contracts/openapi*.json 2>/dev/null | head -1 || true)
+          if [ -z "$SPEC" ]; then
+            echo "No OpenAPI spec in contracts/, skipping..."
+            exit 0
+          fi
+          OASDIFF_VER=1.33.0
+          # The runner profile decides the architecture (arm64 for oci-arm, amd64
+          # otherwise): pick the release asset by machine.
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          curl -sSfL "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VER}/oasdiff_${OASDIFF_VER}_linux_${ARCH}.tar.gz" \
+            | tar -xz -C /tmp oasdiff
+          chmod +x /tmp/oasdiff
+          if git cat-file -e "origin/main:$SPEC" 2>/dev/null; then
+            git show "origin/main:$SPEC" > /tmp/base-openapi.yaml
+          else
+            echo "Base branch has no spec yet; comparing spec against itself (first version)."
+            cp "$SPEC" /tmp/base-openapi.yaml
+          fi
+          /tmp/oasdiff breaking /tmp/base-openapi.yaml "$SPEC"
+
+  # ============================================================================
+  # Docker image build check (no push)
+  # Rendered into ci.yml only for a repo whose root carries a Dockerfile
+  # (repo-bootstrap: templates/fragments/docker-build-check.yml). Builds that
+  # Dockerfile with context `.` for the platforms a release publishes, but never
+  # pushes and needs no registry secrets. Without it a Dockerfile defect (e.g. a digest-pinned interpreter
+  # below the requires-python floor, which makes `uv sync --frozen` fail) only
+  # surfaces when a release is already in flight.
+  # No path filter on purpose: the image depends on pyproject.toml, uv.lock,
+  # src/ and the Dockerfile, and a skipped check passes without proving
+  # anything. Like the rest of ci.yml it runs only on dispatch.
+  # Not a required status check by default; add `Docker build check (linux/amd64)`
+  # and `... (linux/arm64)` to the ruleset's required checks to gate on it.
+  # ============================================================================
+  docker-build-check:
+    name: Docker build check (${{ matrix.platform }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            artifact: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            artifact: linux-arm64
+    # The image is published for linux/amd64 too, and the build check must run on the
+    # architecture it checks (an emulated amd64 build on arm is slow and can diverge).
+    # ci-policy: allow runs-on reason: release image targets linux/amd64, checked on an amd64 runner
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          cache-from: type=gha,scope=ci-docker-${{ matrix.artifact }}
+          cache-to: type=gha,mode=max,scope=ci-docker-${{ matrix.artifact }}
+
+  # CodeQL runs from GitHub's default setup (Settings > Security > Code scanning),
+  # so there is no advanced CodeQL job here: an advanced analysis next to the default
+  # setup is rejected by GitHub. audit.py accepts the default setup's analyses.
+
+  # ============================================================================
+  # main-integrity: detective control for the default branch (scripts/main_integrity.py).
+  # Rendered into ci.yml from templates/fragments/main-integrity-job.yml. It used to
+  # be a third workflow file (main-integrity.yml); the two-file standard (ci.yml +
+  # cd.yml, spec 2026-10-30) keeps it here. It runs only on main:
+  # dispatch CI on main after a merge; `sha` audits one specific commit
+  # instead of the tip. On any other ref the job is skipped.
+  # ============================================================================
+  main-integrity:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/main_integrity.py
+          sparse-checkout-cone-mode: false
+      - name: Verify the commit on the branch came from a merged pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ inputs.sha || github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: python3 scripts/main_integrity.py --repo "$REPO" --sha "$SHA" --branch "$BRANCH"
+
   # ============================================================================
   # PR Title Lint (Conventional Commits subset)
   # ============================================================================
@@ -31,6 +296,7 @@ jobs:
     name: Validate PR title (Conventional Commits subset)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     steps:
@@ -55,70 +321,13 @@ jobs:
           subjectPatternError: |
             The subject must not start with an uppercase character.
 
-  lint-and-test:
-    name: Lint & Test (${{ matrix.os }})
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        # macOS hosted runners build CPython without
-        # --enable-loadable-sqlite-extensions, so the sqlite-vec test modules
-        # skip (~20 tests) and the vec-only source paths go uncovered. That
-        # pins the darwin lane at ~94.5-94.7% against the shared 95% gate --
-        # observed transient FAILs at 94.58%/94.73% that rerun green. Give the
-        # mac lane its own floor instead of weakening the gate for everyone.
-        include:
-          - os: ubuntu-latest
-            cov_fail_under: "88"
-          - os: windows-latest
-            cov_fail_under: "88"
-          - os: macos-latest
-            cov_fail_under: "88"
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Harden Runner
-        if: matrix.os == 'ubuntu-latest'
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
-        with:
-          egress-policy: audit
-          disable-telemetry: true
-
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-
-      - name: Setup Python 3.13
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: uv sync --group dev
-
-      - name: Run Ruff check
-        run: uv run --no-sync ruff check .
-
-      - name: Run Ruff format check
-        run: uv run --no-sync ruff format --check .
-
-      - name: Run ty type check
-        run: uv run --no-sync ty check
-
-      - name: Run tests with coverage
-        run: uv run --no-sync pytest --tb=short --cov=mnemo --cov-report=xml --cov-fail-under=${{ matrix.cov_fail_under }}
-
-      - name: Upload coverage to Codecov
-        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-
   docs-sync-check:
     name: CLAUDE.md ≡ AGENTS.md sync
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -136,6 +345,10 @@ jobs:
     name: Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Harden Runner

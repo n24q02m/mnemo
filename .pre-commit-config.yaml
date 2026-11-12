@@ -31,8 +31,10 @@ repos:
       - id: ruff
         name: ruff lint
         args: [--fix, --target-version=py313]
+        exclude: ^scripts/(repo-bootstrap/|main_integrity\.py$|merge_gate\.py$)
       - id: ruff-format
         name: ruff format
+        exclude: ^scripts/(repo-bootstrap/|main_integrity\.py$|merge_gate\.py$)
 
   # ty: Static type checker for Python
   - repo: local
