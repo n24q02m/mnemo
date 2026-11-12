@@ -1,4 +1,4 @@
-"""Mnemo MCP Server - Persistent AI memory with embedded sync."""
+"""Mnemo MCP Server - Persistent AI memory with hybrid search."""
 
 from importlib.metadata import version
 
