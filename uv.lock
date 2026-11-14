@@ -316,7 +316,7 @@ wheels = [
 
 [[package]]
 name = "cyclopts"
-version = "5.4.2"
+version = "5.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -324,9 +324,9 @@ dependencies = [
     { name = "rich" },
     { name = "rich-rst" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/49/a2/34a66cdd2c2a5ffcfb15c195091bb944cf25bc8c1c0faeb4726ecb906c18/cyclopts-5.4.2.tar.gz", hash = "sha256:f0374ffae32bba180db7eae1d17a97a1bcd656455a3b7436f2133c4132f7c5b5", size = 257872, upload-time = "2026-11-12T13:25:49.482Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/2c/b6d63f4963883f9c5d6faa8153dd401a410ee72d6caf0ba1a74ce5fcbaac/cyclopts-5.5.0.tar.gz", hash = "sha256:995f779ef1cabdae1fd5fd4a92d303dc80a060c11c205137b77fb75bec079237", size = 257871, upload-time = "2026-11-14T02:13:36.903Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/03/9347dfa31741d38a02f365a5cca5b76fd1288e8f9ee0fa8120eb301e9876/cyclopts-5.4.2-py3-none-any.whl", hash = "sha256:f8a07bf41d14447960fb75d07b564b13faea1b9a7530cb669db08e43134bbff9", size = 300704, upload-time = "2026-11-12T13:25:47.475Z" },
+    { url = "https://files.pythonhosted.org/packages/51/af/7e6590a562ed6ac0fe9f35cdb24958d754fdf84021cec536037f3ae7dd02/cyclopts-5.5.0-py3-none-any.whl", hash = "sha256:ddc58a8e2035292ec7b81666ff07c4b32a4118ad4d7ef55593b91a02b6e34754", size = 300703, upload-time = "2026-11-14T02:13:35.244Z" },
 ]
 
 [[package]]
@@ -455,7 +455,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.12.1"
+version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -466,9 +466,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/24/ed/891de456611c4523204346213c697adc0f02e54332450b631e7eb3daab57/fastretrieval-1.12.1.tar.gz", hash = "sha256:c23c9198a58125eb1abdeaaa5817923de139482be28c5671260de5910f621581", size = 340338, upload-time = "2026-10-27T13:51:49.59Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/26/1ea4f998f3c2037b040da3657dbdd646048047f2e47330c15e0ec4ad8e21/fastretrieval-1.13.0.tar.gz", hash = "sha256:3aa72e5317fb0be682911b4e80d98d9a4974b759ba8ee1ca9e38b383ab292973", size = 390631, upload-time = "2026-11-14T03:57:47.328Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/c5/4a68ad72a3d5cd21e4bb082eeea2b630cf3b75d9bcb89e368fc1fa6e3e2f/fastretrieval-1.12.1-py3-none-any.whl", hash = "sha256:6d1d0148e9c5eec3fac975d4565518d5a69c8386445137fbb57386d15c48ae26", size = 149757, upload-time = "2026-10-27T13:51:48.213Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/e7/0afacbade4178aa70c4d8fd47f56bf595a2cd476420a56a59a97942281c9/fastretrieval-1.13.0-py3-none-any.whl", hash = "sha256:c112de73f418f9884a5a7132c6b13861ec3280924b9929999d77d418feb7ebb5", size = 159567, upload-time = "2026-11-14T03:57:45.416Z" },
 ]
 
 [[package]]
