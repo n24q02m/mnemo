@@ -170,7 +170,7 @@ PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -
 - `match action:` pattern cho routing trong `memory` dispatcher.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.5.0b1,<0.6`).
+- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.7.0,<0.8`).
   Khong con litellm / mcp-core / native provider SDKs -- moi cloud call qua
   hull-core OpenAICompatClient tren per-task cells, xoay vong credential
   qua key pool cua hull (`mnemo/keys.py`, store `~/.mnemo/credentials.db`).

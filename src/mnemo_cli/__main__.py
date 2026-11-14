@@ -26,6 +26,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="mnemo: CLI-first memory surface (capture/recall/reflect/fetch) "
         "over the shared domain core",
     )
+    from mnemo import __version__
+
+    parser.add_argument("--version", action="version", version=f"mnemo {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common(p: argparse.ArgumentParser) -> None:
