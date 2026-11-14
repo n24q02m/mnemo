@@ -34,3 +34,15 @@ def test_missing_command_error_names_the_installed_command(
     assert err.startswith("usage: mnemo ")
     assert "mnemo-pilot" not in err
     assert "the following arguments are required: command" in err
+
+
+def test_version_flag_prints_the_installed_version(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from mnemo import __version__
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out == f"mnemo {__version__}\n"
