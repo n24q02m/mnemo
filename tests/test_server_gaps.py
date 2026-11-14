@@ -472,6 +472,37 @@ def test_build_http_app_returns_authenticated_starlette_app():
     assert app.routes[0].path in ("", "/")
 
 
+async def test_build_http_app_enters_server_lifespan_once(tmp_path):
+    """Regression: the HTTP app must run mnemo's lifespan exactly once.
+
+    The MCP session manager already enters the server lifespan in ``run()``.
+    Entering it again from the outer Starlette lifespan opened a second store
+    on the same file and started a second pair of embed/rerank init tasks, so
+    every local ONNX model loaded twice in parallel.
+    """
+    entered: list[int] = []
+
+    def count_lifespan(_hull_settings):
+        entered.append(1)
+
+    with (
+        patch("mnemo.server.build_authenticator", return_value=MagicMock()),
+        patch("mnemo.server.seed_provider_credentials", side_effect=count_lifespan),
+        patch("mnemo.server.settings", _mock_settings()),
+        patch("mnemo.server.cell_configured", return_value=False),
+        patch(
+            "mnemo.server.db_path_for_namespace",
+            return_value=tmp_path / "http-app" / "memories.db",
+        ),
+        patch("mnemo.server._init_embedding_backend", new_callable=AsyncMock),
+        patch("mnemo.server._init_reranker_backend", new_callable=AsyncMock),
+    ):
+        app = build_http_app(_mock_settings())
+        async with app.router.lifespan_context(app):
+            assert len(entered) == 1
+    assert len(entered) == 1
+
+
 def test_is_loopback_host():
     assert _is_loopback_host("localhost") is True
     assert _is_loopback_host("::1") is True

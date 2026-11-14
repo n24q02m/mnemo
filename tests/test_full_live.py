@@ -9,8 +9,10 @@ Usage:
     uv run pytest tests/test_full_live.py -m full -v --tb=short
 """
 
+import asyncio
 import json
 import os
+import time
 import warnings
 
 import pytest
@@ -47,6 +49,15 @@ def parse_json(r) -> dict:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+# Host-only provider keys for the hull [models.*] cells (env wins over the
+# instance config.toml).
+_CELL_KEY_ENV = (
+    "HULL_EMBED_API_KEY",
+    "HULL_RERANK_API_KEY",
+    "HULL_CHAT_API_KEY",
+    "HULL_JEV_SCORE_API_KEY",
+)
+
 
 @pytest.fixture
 async def mcp_session(tmp_path):
@@ -60,8 +71,11 @@ async def mcp_session(tmp_path):
         "USERPROFILE": str(home),
         "LOG_LEVEL": "WARNING",
         "SYNC_ENABLED": "false",
-        "EMBEDDING_BACKEND": "local",
     }
+    # Local ONNX mode: a host-exported cell key would switch the suite to the
+    # cloud cells (env wins over the tmp home's config.toml).
+    for key in _CELL_KEY_ENV:
+        env.pop(key, None)
     try:
         async with mnemo_http_server(env, tmp_path / "server.log") as port:
             async with mcp_client_session(port) as session:
@@ -373,20 +387,39 @@ class TestFullSecurity:
 
 
 # ---------------------------------------------------------------------------
-# Cloud embedding mode (SDK mode via API_KEYS)
+# Cloud embedding mode ([models.embed] cell keyed via HULL_EMBED_API_KEY)
 # ---------------------------------------------------------------------------
 
-API_KEYS = os.environ.get("API_KEYS", "")
+# The server takes the cloud embed backend when the [models.embed] cell has a
+# key; the host passes it as HULL_EMBED_API_KEY (default cell: OpenRouter).
+CLOUD_EMBED_KEY = os.environ.get("HULL_EMBED_API_KEY", "")
+
+_LOCAL_EMBED_MODELS = {
+    "n24q02m/Qwen3-Embedding-0.6B-ONNX",
+    "n24q02m/Qwen3-Embedding-0.6B-GGUF",
+}
 
 
-@pytest.mark.skipif(not API_KEYS, reason="API_KEYS not set")
+async def _wait_embedding_ready(session: ClientSession, timeout: float = 60.0) -> dict:
+    """Poll config.status until the background embed init has finished."""
+    deadline = time.monotonic() + timeout
+    while True:
+        status = parse_json(await session.call_tool("config", {"action": "status"}))
+        if status.get("embedding", {}).get("available") is True:
+            return status
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"Embedding backend not ready: {status}")
+        await asyncio.sleep(0.5)
+
+
+@pytest.mark.skipif(not CLOUD_EMBED_KEY, reason="HULL_EMBED_API_KEY not set")
 @pytest.mark.timeout(120)
 class TestFullCloudMode:
-    """Tests with cloud embedding via API_KEYS (SDK mode)."""
+    """Tests with cloud embedding through the [models.embed] cell."""
 
     @pytest.fixture
     async def cloud_session(self, tmp_path):
-        """MCP session using cloud SDK mode via API_KEYS."""
+        """MCP session whose embed cell is keyed from the host env."""
         home = tmp_path / "cloud-home"
         env = {
             **os.environ,
@@ -394,7 +427,7 @@ class TestFullCloudMode:
             "USERPROFILE": str(home),
             "LOG_LEVEL": "WARNING",
             "SYNC_ENABLED": "false",
-            "API_KEYS": API_KEYS,
+            "HULL_EMBED_API_KEY": CLOUD_EMBED_KEY,
         }
         try:
             async with mnemo_http_server(env, tmp_path / "server-cloud.log") as port:
@@ -413,6 +446,8 @@ class TestFullCloudMode:
 
     async def test_search_cloud_embed(self, cloud_session: ClientSession):
         """Add memory then search with cloud embedding."""
+        await _wait_embedding_ready(cloud_session)
+
         # Add a memory
         r = await cloud_session.call_tool(
             "memory",
@@ -425,6 +460,7 @@ class TestFullCloudMode:
         )
         data = parse_json(r)
         assert data.get("status") == "saved", f"Expected saved, got: {data}"
+        assert data.get("semantic") is True, f"Memory stored without a vector: {data}"
 
         # Search for it
         r = await cloud_session.call_tool(
@@ -433,11 +469,20 @@ class TestFullCloudMode:
         data = parse_json(r)
         memories = data.get("memories", data.get("results", []))
         assert len(memories) >= 1, f"No search results with cloud embedding: {data}"
+        assert data.get("semantic") is True, f"Search ran without a vector: {data}"
 
     async def test_config_status_shows_cloud(self, cloud_session: ClientSession):
-        """config.status should show cloud/sdk embedding mode."""
-        r = await cloud_session.call_tool("config", {"action": "status"})
-        data = parse_json(r)
-        embedding = data.get("embedding", {})
-        backend = embedding.get("backend", "")
-        assert backend != "local", f"Expected cloud backend, got: {backend}"
+        """config.status reports the keyed embed cell as the live backend."""
+        status = await _wait_embedding_ready(cloud_session)
+        assert status["provider_cells"]["embed"] is True, status
+        embedding = status["embedding"]
+        assert embedding["model"] not in _LOCAL_EMBED_MODELS, status
+        assert embedding["dims"] > 0, status
+
+        # warmup probes the same cell and names the mode it served.
+        warmup = parse_json(
+            await cloud_session.call_tool("config", {"action": "warmup"})
+        )
+        assert warmup.get("status") == "ok", warmup
+        assert warmup.get("mode") == "cloud", warmup
+        assert warmup["embedding"]["model"] == embedding["model"], warmup

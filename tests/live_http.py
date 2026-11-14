@@ -22,6 +22,7 @@ import httpx
 import httpx2
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from process_lifeline import stop_supervised, supervised_argv
 
 
 def free_port() -> int:
@@ -38,14 +39,26 @@ def spawn_mnemo_server(
 
     MNEMO_HOST/MNEMO_PORT are set here (not by the caller) so the bind is
     always the test's ephemeral loopback. Server logs go to ``log_path``.
-    Returns the running subprocess; the caller owns termination
+    Returns the supervisor process; stop it with ``stop_supervised``
     (see ``mnemo_http_server``).
     """
     env = {**env, "MNEMO_HOST": "127.0.0.1", "MNEMO_PORT": str(port)}
+    return spawn_supervised([sys.executable, "-m", "mnemo"], env, log_path)
+
+
+def spawn_supervised(
+    argv: list[str], env: dict[str, str], log_path: Path
+) -> subprocess.Popen[bytes]:
+    """Start ``argv`` under ``process_lifeline``; stop it with ``stop_supervised``.
+
+    The returned process is the supervisor. Its stdin is the lifeline: closing
+    it, or this process dying by any means, stops the whole server tree.
+    """
     log_fh = open(log_path, "ab")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mnemo"],
+        supervised_argv(argv),
         env=env,
+        stdin=subprocess.PIPE,
         stdout=log_fh,
         stderr=log_fh,
         close_fds=True,
@@ -114,8 +127,4 @@ async def mnemo_http_server(env: dict[str, str], log_path: Path) -> AsyncGenerat
         wait_until_up(proc, port, log_path)
         yield port
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        stop_supervised(proc)

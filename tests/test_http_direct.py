@@ -13,8 +13,10 @@ protocol; excluded from the default ``pytest`` invocation but runs under
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from pathlib import Path
 
+import psutil
 import pytest
 from live_http import mcp_client_session, mnemo_http_server
 
@@ -72,3 +74,19 @@ async def test_http_direct_tools_list_returns_expected_tools(tmp_path):
             assert expected == tool_names, (
                 f"missing={expected - tool_names} unexpected={tool_names - expected}"
             )
+
+
+def _cmdline(proc: psutil.Process) -> str:
+    with suppress(psutil.Error):
+        return " ".join(proc.cmdline())
+    return ""
+
+
+async def test_http_server_tree_is_gone_after_context_exit(tmp_path):
+    """Leaving the context stops every process the server run started."""
+    async with mnemo_http_server(_server_env(tmp_path), tmp_path / "server.log"):
+        tree = psutil.Process().children(recursive=True)
+        assert any("-m mnemo" in _cmdline(p) for p in tree), [_cmdline(p) for p in tree]
+
+    _, alive = psutil.wait_procs(tree, timeout=5)
+    assert alive == [], f"leaked: {[(p.pid, _cmdline(p)) for p in alive]}"

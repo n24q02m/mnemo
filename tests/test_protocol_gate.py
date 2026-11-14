@@ -47,6 +47,7 @@ import pytest
 import pytest_asyncio
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from process_lifeline import stop_supervised, supervised_argv
 
 pytestmark = [
     pytest.mark.timeout(60),
@@ -204,15 +205,16 @@ def server(tmp_path_factory):
     out_path = state_dir / "server-stdout.log"
     err_path = state_dir / "server-stderr.log"
     with out_path.open("w") as out_f, err_path.open("w") as err_f:
-        # The test interpreter, not ``uv run``: on Windows terminate() only
-        # kills the direct child, and uv does not take its own children down
-        # with it, so every run left a live server holding the venv's
-        # n24q02m-mnemo.exe (and the next ``uv sync`` failed with os error 32).
+        # The test interpreter, not ``uv run``: uv does not take its own
+        # children down with it, so every run left a live server holding the
+        # venv's n24q02m-mnemo.exe (and the next ``uv sync`` failed with os
+        # error 32). The lifeline supervisor stops the whole server tree on
+        # teardown and also when this process dies without one (timeout).
         proc = subprocess.Popen(
-            [sys.executable, "-m", "mnemo"],
+            supervised_argv([sys.executable, "-m", "mnemo"]),
             cwd=str(_REPO_ROOT),
             env=_build_gate_env(state_dir, port=port),
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
             stdout=out_f,
             stderr=err_f,
         )
@@ -238,12 +240,7 @@ def server(tmp_path_factory):
                     time.sleep(0.25)
             yield f"http://127.0.0.1:{port}"
         finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=10)
+            stop_supervised(proc)
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

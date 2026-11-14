@@ -32,6 +32,7 @@ here.
 from __future__ import annotations
 
 import asyncio
+import time
 import weakref
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -62,6 +63,9 @@ STORE_FILENAME = "credentials.db"
 
 # One in-flight attempt per leased credential; the lease is hull's default.
 LEASE_SECONDS = 60.0
+# Backoff while every usable key is leased by another in-flight call.
+LEASE_POLL_SECONDS = 0.05
+LEASE_POLL_MAX_SECONDS = 0.5
 MAX_5XX_RETRIES = 1
 
 _store: CredentialStore | None = None
@@ -267,10 +271,15 @@ class PooledClient:
     ``cell`` stays the configured cell (display identity for logs and model
     names); each attempt is served by a real
     :class:`~hull_core.providers.openai_spec.OpenAICompatClient` built from the
-    leased credential. Attempts are gated to the pool size because hull leases
-    a credential exclusively for one in-flight attempt: without the gate a
-    second concurrent call on a one-key pool would read that lease as
-    exhaustion instead of waiting for it.
+    leased credential. Hull leases a credential exclusively for one in-flight
+    attempt, and the lease lives in the shared store, so a call can find every
+    usable key leased by another call: a sibling cell on the same key, a call
+    on another event loop (the rerank path runs one ``asyncio.run`` per call),
+    or another process. A rotation that never got to try a key therefore waits
+    for a lease to come back (at most :data:`LEASE_SECONDS`, after which hull
+    reclaims a stale lease) instead of reporting exhaustion. Attempts are also
+    gated per loop to the pool size so one client does not poll for its own
+    leases.
 
     Underlying clients are cached per event loop so a long-lived server loop
     keeps HTTP keep-alive across calls; a loop that dies with its thread (the
@@ -352,7 +361,11 @@ class PooledClient:
         pool = pool_for(self.cell)
         total = int(pool.store.diagnose(pool.provider, pool.account_id)["total"])
 
+        attempts = 0
+
         async def attempt(credential: Credential) -> Any:
+            nonlocal attempts
+            attempts += 1
             try:
                 return await call(self._client_for(credential))
             except BaseException as exc:
@@ -364,11 +377,20 @@ class PooledClient:
                 raise
 
         async with self._gate(total):
-            try:
-                return await pool.arun(attempt)
-            except PoolExhaustedError as exc:
-                logger.warning(f"{op}: provider pool exhausted: {exc}")
-                raise ProviderCredentialsExhausted.from_pool_error(exc) from exc
+            deadline = time.monotonic() + LEASE_SECONDS
+            delay = LEASE_POLL_SECONDS
+            while True:
+                try:
+                    return await pool.arun(attempt)
+                except PoolExhaustedError as exc:
+                    if attempts == 0 and exc.leased > 0 and time.monotonic() < deadline:
+                        # Every usable key is leased by another in-flight call;
+                        # the lease is that call's, not a provider answer.
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, LEASE_POLL_MAX_SECONDS)
+                        continue
+                    logger.warning(f"{op}: provider pool exhausted: {exc}")
+                    raise ProviderCredentialsExhausted.from_pool_error(exc) from exc
 
     def _gate(self, total: int) -> asyncio.Semaphore:
         loop = asyncio.get_running_loop()
