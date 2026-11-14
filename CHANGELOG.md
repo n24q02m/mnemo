@@ -2,6 +2,46 @@
 
 <!-- version list -->
 
+## v2.23.0-beta.1 (2026-11-14)
+
+### Bug Fixes
+
+- Drop the Worker toolchain files left after the de-host
+  ([#1371](https://github.com/n24q02m/mnemo/pull/1371),
+  [`395c1f2`](https://github.com/n24q02m/mnemo/commit/395c1f2ac1e83c3e0727f9cb0d81c9413e0ef8fa))
+
+- Point the related-repo links at the renamed projects
+  ([#1373](https://github.com/n24q02m/mnemo/pull/1373),
+  [`c4517d4`](https://github.com/n24q02m/mnemo/commit/c4517d44fd6c44e0502a3a4bbc59baba42ba33fd))
+
+- **deps**: Lock file maintenance ([#1379](https://github.com/n24q02m/mnemo/pull/1379),
+  [`a4cc303`](https://github.com/n24q02m/mnemo/commit/a4cc3036fa54f946059a1b7d9a7a654360c84d89))
+
+- **deps**: Lock file maintenance ([#1377](https://github.com/n24q02m/mnemo/pull/1377),
+  [`77f67c4`](https://github.com/n24q02m/mnemo/commit/77f67c44968b5706599c36ff24bb2a9ee83f0686))
+
+- **deps**: Lock file maintenance ([#1375](https://github.com/n24q02m/mnemo/pull/1375),
+  [`a8de884`](https://github.com/n24q02m/mnemo/commit/a8de8849dd107f2eea39785dfef156ee9d5b8c72))
+
+- **deps**: Update amannn/action-semantic-pull-request action to v6.1.2
+  ([#1374](https://github.com/n24q02m/mnemo/pull/1374),
+  [`a10c8bc`](https://github.com/n24q02m/mnemo/commit/a10c8bc94911e6b657c434fb55acf6da48f05140))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to a5a7017
+  ([#1376](https://github.com/n24q02m/mnemo/pull/1376),
+  [`f459f1e`](https://github.com/n24q02m/mnemo/commit/f459f1e157de46b7b15382e1a5ee78efbb85f437))
+
+- **deps**: Update step-security/harden-runner action to v2.22.4
+  ([#1378](https://github.com/n24q02m/mnemo/pull/1378),
+  [`3b5980e`](https://github.com/n24q02m/mnemo/commit/3b5980e9d06f935a52b2fed1a651c5c7c3813a10))
+
+### Features
+
+- Add mnemo --version, attach hash-pinned requirements.lock to releases, bump tap and bucket on
+  stable, allow hull 0.7 ([#1380](https://github.com/n24q02m/mnemo/pull/1380),
+  [`186f866`](https://github.com/n24q02m/mnemo/commit/186f86647e9c774fe60a882445c5b8822a84c79b))
+
+
 ## v2.22.0 (2026-11-12)
 
 ### Bug Fixes
