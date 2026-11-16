@@ -16,10 +16,14 @@ import re
 import shutil
 import sqlite3
 import struct
+import threading
 import time
 import uuid
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Concatenate
 
 import sqlite_vec
 from loguru import logger
@@ -246,25 +250,45 @@ class MemoryDB:
         # Create parent directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Open connection (allow cross-thread use for asyncio.to_thread)
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode = WAL")
-        self._conn.execute("PRAGMA synchronous = NORMAL")
-        self._conn.execute("PRAGMA busy_timeout = 5000")
-        self._conn.execute("PRAGMA foreign_keys = ON")
+        # One connection is shared by asyncio.to_thread workers and the event
+        # loop thread, so check_same_thread is off and every use of it holds
+        # this lock instead: concurrent callers on one sqlite3 connection
+        # interleave their statements, and one caller's commit() or rollback()
+        # lands in the middle of another caller's transaction. Reentrant
+        # because methods that hold it call other methods that take it too.
+        # Code outside this class reaches the connection only through
+        # connection() / run().
+        #
+        # The lock is not enough on its own: pysqlite opens a transaction
+        # before the first write and keeps it open until a commit or rollback,
+        # so a write that raises part-way, or that finds nothing to change and
+        # returns early, would leave it open for the next caller, on any
+        # thread, to commit. Each method that owns a write transaction
+        # therefore enters the connection as a context manager inside the lock
+        # (``with self._lock, self._conn:``), which rolls back when the body
+        # raises and commits on every other exit, before the lock is released.
+        # Helpers called from such a method take the plain lock only: entering
+        # the connection again would commit the caller's transaction early.
+        self._lock = threading.RLock()
+        with self._lock:
+            self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA synchronous = NORMAL")
+            self._conn.execute("PRAGMA busy_timeout = 5000")
+            self._conn.execute("PRAGMA foreign_keys = ON")
 
-        # Load sqlite-vec extension for vector search
-        self._vec_enabled = False
-        if embedding_dims > 0:
-            try:
-                self._conn.enable_load_extension(True)
-                sqlite_vec.load(self._conn)
-                self._conn.enable_load_extension(False)
-                self._vec_enabled = True
-                logger.debug(f"sqlite-vec loaded (dims={embedding_dims})")
-            except Exception as e:
-                logger.warning(f"sqlite-vec load failed: {e}")
+            # Load sqlite-vec extension for vector search
+            self._vec_enabled = False
+            if embedding_dims > 0:
+                try:
+                    self._conn.enable_load_extension(True)
+                    sqlite_vec.load(self._conn)
+                    self._conn.enable_load_extension(False)
+                    self._vec_enabled = True
+                    logger.debug(f"sqlite-vec loaded (dims={embedding_dims})")
+                except Exception as e:
+                    logger.warning(f"sqlite-vec load failed: {e}")
 
         self._init_schema()
 
@@ -274,6 +298,35 @@ class MemoryDB:
         # never block server startup.
         self._run_migrations()
 
+    @contextmanager
+    def connection(self) -> Generator[sqlite3.Connection]:
+        """Hold the database lock and yield the shared connection.
+
+        The only way for code outside this class to use the connection. The
+        block runs as one transaction: it commits when the block exits
+        normally and rolls back when it raises, so a half-done write never
+        outlives the lock and gets committed by another caller. Fetch every
+        result inside the block, and keep slow non-database work (embedding,
+        LLM or network calls) outside it.
+        """
+        with self._lock, self._conn:
+            yield self._conn
+
+    def run[**P, T](
+        self,
+        fn: Callable[Concatenate[sqlite3.Connection, P], T],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Call ``fn(connection, *args, **kwargs)`` inside :meth:`connection`.
+
+        Lets a function that takes a connection run as one locked transaction
+        from ``asyncio.to_thread``.
+        """
+        with self.connection() as conn:
+            return fn(conn, *args, **kwargs)
+
     def _init_schema(self) -> None:
         """Initialize database schema.
 
@@ -281,18 +334,19 @@ class MemoryDB:
         tables, knowledge graph, archive, vector index) owns its own SQL
         script and can be read / tested in isolation.
         """
-        self._init_memory_schema()
-        self._init_graph_schema()
-        self._init_archive_schema()
-        self._init_store_meta_schema()
-        # Guard BEFORE _ensure_vec_table: the latter detects an existing
-        # memories_vec and silently adopts its stored dimension, which would
-        # mask a dims mismatch. The guard compares the REQUESTED identity
-        # against the stamped one, and on opt-in reindex drops + recreates the
-        # vec table itself.
-        self._guard_embedding_identity()
-        self._ensure_vec_table(self._embedding_dims)
-        self._conn.commit()
+        with self._lock:
+            self._init_memory_schema()
+            self._init_graph_schema()
+            self._init_archive_schema()
+            self._init_store_meta_schema()
+            # Guard BEFORE _ensure_vec_table: the latter detects an existing
+            # memories_vec and silently adopts its stored dimension, which would
+            # mask a dims mismatch. The guard compares the REQUESTED identity
+            # against the stamped one, and on opt-in reindex drops + recreates the
+            # vec table itself.
+            self._guard_embedding_identity()
+            self._ensure_vec_table(self._embedding_dims)
+            self._conn.commit()
 
     def _init_store_meta_schema(self) -> None:
         """Initialize the ``store_meta`` key/value table.
@@ -302,31 +356,34 @@ class MemoryDB:
         to record which embedding model + dimension produced the stored vectors
         so a later model change cannot silently corrupt similarity search.
         """
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS store_meta (
-                key TEXT PRIMARY KEY NOT NULL,
-                value TEXT
-            )
-        """)
+        with self._lock:
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS store_meta (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    value TEXT
+                )
+            """)
 
     def get_store_meta(self, key: str) -> str | None:
         """Return the ``store_meta`` value for ``key`` or ``None`` if unset."""
-        try:
-            row = self._conn.execute(
-                "SELECT value FROM store_meta WHERE key = ?", (key,)
-            ).fetchone()
-        except sqlite3.OperationalError:
-            return None
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT value FROM store_meta WHERE key = ?", (key,)
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return None
         if row is None:
             return None
         return row[0] if not isinstance(row, sqlite3.Row) else row["value"]
 
     def _set_store_meta(self, key: str, value: str) -> None:
         """Insert-or-replace a ``store_meta`` key/value pair."""
-        self._conn.execute(
-            "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
-            (key, value),
-        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)",
+                (key, value),
+            )
 
     def _guard_embedding_identity(self) -> None:
         """Stamp or verify the embedding-model identity of the vector store.
@@ -405,87 +462,91 @@ class MemoryDB:
         on the next pass. The dropped table is recreated immediately at the new
         dimension so subsequent inserts have a target.
         """
-        try:
-            self._conn.execute("DROP TABLE IF EXISTS memories_vec")
-        except Exception as e:  # pragma: no cover - runtime guard
-            logger.warning(f"Failed to drop memories_vec during reindex: {e}")
-        try:
-            self._conn.execute("DROP TABLE IF EXISTS memory_entities_vec")
-        except Exception as e:  # pragma: no cover - runtime guard
-            logger.warning(f"Failed to drop memory_entities_vec during reindex: {e}")
-        # Recreate memories_vec at the new dimension for immediate writes.
-        self._ensure_vec_table(self._embedding_dims)
+        with self._lock:
+            try:
+                self._conn.execute("DROP TABLE IF EXISTS memories_vec")
+            except Exception as e:  # pragma: no cover - runtime guard
+                logger.warning(f"Failed to drop memories_vec during reindex: {e}")
+            try:
+                self._conn.execute("DROP TABLE IF EXISTS memory_entities_vec")
+            except Exception as e:  # pragma: no cover - runtime guard
+                logger.warning(
+                    f"Failed to drop memory_entities_vec during reindex: {e}"
+                )
+            # Recreate memories_vec at the new dimension for immediate writes.
+            self._ensure_vec_table(self._embedding_dims)
 
     def _init_memory_schema(self) -> None:
         """Initialize core memory tables, indexes, FTS5, and importance column."""
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS memories (
-                id TEXT PRIMARY KEY NOT NULL,
-                content TEXT NOT NULL,
-                category TEXT NOT NULL DEFAULT 'general',
-                tags TEXT NOT NULL DEFAULT '[]',
-                source TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                last_accessed TEXT NOT NULL
-            );
+        with self._lock:
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    content TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'general',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    source TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    access_count INTEGER NOT NULL DEFAULT 0,
+                    last_accessed TEXT NOT NULL
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_memories_category
-                ON memories(category);
-            CREATE INDEX IF NOT EXISTS idx_memories_updated
-                ON memories(updated_at);
-            CREATE INDEX IF NOT EXISTS idx_memories_accessed
-                ON memories(last_accessed);
+                CREATE INDEX IF NOT EXISTS idx_memories_category
+                    ON memories(category);
+                CREATE INDEX IF NOT EXISTS idx_memories_updated
+                    ON memories(updated_at);
+                CREATE INDEX IF NOT EXISTS idx_memories_accessed
+                    ON memories(last_accessed);
 
-            -- Bolt Performance Optimization:
-            -- Compound index to eliminate O(N log N) file-sort overhead during
-            -- list_memories pagination queries (WHERE category = ? ORDER BY updated_at DESC)
-            CREATE INDEX IF NOT EXISTS idx_memories_category_updated
-                ON memories(category, updated_at DESC);
-        """)
+                -- Bolt Performance Optimization:
+                -- Compound index to eliminate O(N log N) file-sort overhead during
+                -- list_memories pagination queries (WHERE category = ? ORDER BY updated_at DESC)
+                CREATE INDEX IF NOT EXISTS idx_memories_category_updated
+                    ON memories(category, updated_at DESC);
+            """)
 
-        # FTS5 full-text search (always available)
-        self._conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-            USING fts5(
-                id UNINDEXED,
-                content,
-                category UNINDEXED,
-                tags,
-                content=memories,
-                content_rowid=rowid,
-                tokenize='porter unicode61'
-            )
-        """)
+            # FTS5 full-text search (always available)
+            self._conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
+                USING fts5(
+                    id UNINDEXED,
+                    content,
+                    category UNINDEXED,
+                    tags,
+                    content=memories,
+                    content_rowid=rowid,
+                    tokenize='porter unicode61'
+                )
+            """)
 
-        # FTS5 triggers to keep index in sync
-        self._conn.executescript("""
-            CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                INSERT INTO memories_fts(rowid, id, content, tags)
-                VALUES (new.rowid, new.id, new.content, new.tags);
-            END;
+            # FTS5 triggers to keep index in sync
+            self._conn.executescript("""
+                CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+                    INSERT INTO memories_fts(rowid, id, content, tags)
+                    VALUES (new.rowid, new.id, new.content, new.tags);
+                END;
 
-            CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
-                VALUES ('delete', old.rowid, old.id, old.content, old.tags);
-            END;
+                CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+                    INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
+                    VALUES ('delete', old.rowid, old.id, old.content, old.tags);
+                END;
 
-            CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
-                VALUES ('delete', old.rowid, old.id, old.content, old.tags);
-                INSERT INTO memories_fts(rowid, id, content, tags)
-                VALUES (new.rowid, new.id, new.content, new.tags);
-            END;
-        """)
+                CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+                    INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
+                    VALUES ('delete', old.rowid, old.id, old.content, old.tags);
+                    INSERT INTO memories_fts(rowid, id, content, tags)
+                    VALUES (new.rowid, new.id, new.content, new.tags);
+                END;
+            """)
 
-        # Add importance column to memories (migration for existing DBs)
-        try:
-            self._conn.execute(
-                "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.5"
-            )
-        except Exception:
-            pass  # Column already exists
+            # Add importance column to memories (migration for existing DBs)
+            try:
+                self._conn.execute(
+                    "ALTER TABLE memories ADD COLUMN importance REAL NOT NULL DEFAULT 0.5"
+                )
+            except Exception:
+                pass  # Column already exists
 
     def _init_graph_schema(self) -> None:
         """Initialize knowledge graph tables.
@@ -503,75 +564,77 @@ class MemoryDB:
         between the legacy ``memory_entities`` join table and the new
         ``memory_entities`` entity table.
         """
-        legacy_entities = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
-        ).fetchone()
-        if legacy_entities is not None:
-            # Pre-Phase-3 DB: leave legacy graph tables untouched. The
-            # mem_003_temporal migration will RENAME them to canonical names.
-            return
+        with self._lock:
+            legacy_entities = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='entities'"
+            ).fetchone()
+            if legacy_entities is not None:
+                # Pre-Phase-3 DB: leave legacy graph tables untouched. The
+                # mem_003_temporal migration will RENAME them to canonical names.
+                return
 
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS memory_entities (
-                id TEXT PRIMARY KEY NOT NULL,
-                name TEXT NOT NULL,
-                entity_type TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_entities_name_type
-                ON memory_entities(name, entity_type);
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS memory_entities (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_entities_name_type
+                    ON memory_entities(name, entity_type);
 
-            CREATE TABLE IF NOT EXISTS memory_edges (
-                id TEXT PRIMARY KEY NOT NULL,
-                source_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
-                target_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
-                relation_type TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                memory_id TEXT,
-                valid_from DATETIME,
-                valid_to DATETIME
-            );
-            CREATE INDEX IF NOT EXISTS idx_memory_edges_source ON memory_edges(source_id);
-            CREATE INDEX IF NOT EXISTS idx_memory_edges_target ON memory_edges(target_id);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_edges_unique
-                ON memory_edges(source_id, target_id, relation_type);
+                CREATE TABLE IF NOT EXISTS memory_edges (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    source_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+                    target_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+                    relation_type TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    memory_id TEXT,
+                    valid_from DATETIME,
+                    valid_to DATETIME
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_edges_source ON memory_edges(source_id);
+                CREATE INDEX IF NOT EXISTS idx_memory_edges_target ON memory_edges(target_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_edges_unique
+                    ON memory_edges(source_id, target_id, relation_type);
 
-            CREATE TABLE IF NOT EXISTS memory_entity_links (
-                memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-                entity_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
-                PRIMARY KEY (memory_id, entity_id)
-            );
+                CREATE TABLE IF NOT EXISTS memory_entity_links (
+                    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+                    entity_id TEXT NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+                    PRIMARY KEY (memory_id, entity_id)
+                );
 
-            -- Index on entity_id to eliminate full table scans during knowledge graph
-            -- traversal in find_related_memory_ids.
-            CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity_id
-                ON memory_entity_links(entity_id);
-        """)
+                -- Index on entity_id to eliminate full table scans during knowledge graph
+                -- traversal in find_related_memory_ids.
+                CREATE INDEX IF NOT EXISTS idx_memory_entity_links_entity_id
+                    ON memory_entity_links(entity_id);
+            """)
 
     def _init_archive_schema(self) -> None:
         """Initialize archive tables and pagination-supporting indexes."""
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS archived_memories (
-                id TEXT PRIMARY KEY NOT NULL,
-                content TEXT NOT NULL,
-                category TEXT NOT NULL DEFAULT 'general',
-                tags TEXT NOT NULL DEFAULT '[]',
-                source TEXT,
-                importance REAL NOT NULL DEFAULT 0.5,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                access_count INTEGER NOT NULL DEFAULT 0,
-                last_accessed TEXT NOT NULL,
-                archived_at TEXT NOT NULL
-            );
+        with self._lock:
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS archived_memories (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    content TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'general',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    source TEXT,
+                    importance REAL NOT NULL DEFAULT 0.5,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    access_count INTEGER NOT NULL DEFAULT 0,
+                    last_accessed TEXT NOT NULL,
+                    archived_at TEXT NOT NULL
+                );
 
-            -- Bolt Performance Optimization:
-            -- Index on archived_at DESC to eliminate O(N log N) file-sort overhead during
-            -- list_archived pagination queries.
-            CREATE INDEX IF NOT EXISTS idx_archived_memories_archived_at
-                ON archived_memories(archived_at DESC);
-        """)
+                -- Bolt Performance Optimization:
+                -- Index on archived_at DESC to eliminate O(N log N) file-sort overhead during
+                -- list_archived pagination queries.
+                CREATE INDEX IF NOT EXISTS idx_archived_memories_archived_at
+                    ON archived_memories(archived_at DESC);
+            """)
 
     def _ensure_vec_table(self, dims: int) -> None:
         """Idempotently ensure the vector table exists with correct dimensions.
@@ -582,41 +645,44 @@ class MemoryDB:
         if not self._vec_enabled or dims <= 0:
             return
 
-        # Try to detect dimension from existing table
-        row = self._conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_vec'"
-        ).fetchone()
+        with self._lock:
+            # Try to detect dimension from existing table
+            row = self._conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_vec'"
+            ).fetchone()
 
-        if row:
-            # Extract dimension from 'float[N]'
-            match = re.search(r"float\s*\[\s*(\d+)\s*\]", row["sql"], re.IGNORECASE)
-            if match:
-                detected_dims = int(match.group(1))
-                if detected_dims != dims:
-                    logger.warning(
-                        f"memories_vec dimension mismatch: requested {dims}, "
-                        f"found {detected_dims}. Using detected dimension."
-                    )
-                    self._embedding_dims = detected_dims
-            return
+            if row:
+                # Extract dimension from 'float[N]'
+                match = re.search(r"float\s*\[\s*(\d+)\s*\]", row["sql"], re.IGNORECASE)
+                if match:
+                    detected_dims = int(match.group(1))
+                    if detected_dims != dims:
+                        logger.warning(
+                            f"memories_vec dimension mismatch: requested {dims}, "
+                            f"found {detected_dims}. Using detected dimension."
+                        )
+                        self._embedding_dims = detected_dims
+                return
 
-        # Validate dimension bounds before f-string interpolation to prevent
-        # SQL injection via crafted dims and to fail fast on invalid values.
-        # sqlite-vec enforces a maximum of 8192 dimensions per vector column.
-        if not (1 <= dims <= 8192):
-            raise ValueError(f"embedding_dims must be between 1 and 8192, got {dims}")
+            # Validate dimension bounds before f-string interpolation to prevent
+            # SQL injection via crafted dims and to fail fast on invalid values.
+            # sqlite-vec enforces a maximum of 8192 dimensions per vector column.
+            if not (1 <= dims <= 8192):
+                raise ValueError(
+                    f"embedding_dims must be between 1 and 8192, got {dims}"
+                )
 
-        # Create table if not exists
-        self._conn.execute(
-            """
-            CREATE VIRTUAL TABLE memories_vec
-            USING vec0(
-                id TEXT PRIMARY KEY,
-                embedding float[placeholder_dims]
+            # Create table if not exists
+            self._conn.execute(
+                """
+                CREATE VIRTUAL TABLE memories_vec
+                USING vec0(
+                    id TEXT PRIMARY KEY,
+                    embedding float[placeholder_dims]
+                )
+            """.replace("placeholder_dims", str(dims))
             )
-        """.replace("placeholder_dims", str(dims))
-        )
-        logger.debug(f"Created memories_vec table with {dims} dims")
+            logger.debug(f"Created memories_vec table with {dims} dims")
 
     @property
     def vec_enabled(self) -> bool:
@@ -649,32 +715,34 @@ class MemoryDB:
             params.extend(excluded)
 
         params.append(limit)
-        rows = self._conn.execute(
-            f"""
-            SELECT m.id, m.content
-            FROM memories AS m
-            LEFT JOIN memories_vec AS v ON v.id = m.id
-            WHERE m.valid_to IS NULL AND {where}
-            ORDER BY m.created_at ASC, m.id ASC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT m.id, m.content
+                FROM memories AS m
+                LEFT JOIN memories_vec AS v ON v.id = m.id
+                WHERE m.valid_to IS NULL AND {where}
+                ORDER BY m.created_at ASC, m.id ASC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def write_vector(self, memory_id: str, vector: list[float]) -> None:
         """Persist or replace one memory vector for an active vector store."""
         if not self._vec_enabled:
             raise RuntimeError("vector storage is not enabled for this database")
-        if not self.get(memory_id):
-            raise KeyError(f"memory not found: {memory_id}")
+        with self._lock, self._conn:
+            if not self.get(memory_id):
+                raise KeyError(f"memory not found: {memory_id}")
 
-        self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
-        self._conn.execute(
-            "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-            (memory_id, _serialize_f32(vector, self._embedding_dims)),
-        )
-        self._conn.commit()
+            self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
+            self._conn.execute(
+                "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                (memory_id, _serialize_f32(vector, self._embedding_dims)),
+            )
+            self._conn.commit()
 
     def add(
         self,
@@ -705,21 +773,32 @@ class MemoryDB:
         # Prevent expensive json.dumps calls for the default empty list.
         tags_json = "[]" if not tags else json.dumps(tags)
 
-        self._conn.execute(
-            """INSERT INTO memories (id, content, category, tags, source,
-               subject, created_at, updated_at, access_count, last_accessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
-            (memory_id, content, category, tags_json, source, subject, now, now, now),
-        )
-
-        # Store embedding if provided
-        if embedding and self._vec_enabled:
+        with self._lock, self._conn:
             self._conn.execute(
-                "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
+                """INSERT INTO memories (id, content, category, tags, source,
+                   subject, created_at, updated_at, access_count, last_accessed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                (
+                    memory_id,
+                    content,
+                    category,
+                    tags_json,
+                    source,
+                    subject,
+                    now,
+                    now,
+                    now,
+                ),
             )
 
-        self._conn.commit()
+            # Store embedding if provided
+            if embedding and self._vec_enabled:
+                self._conn.execute(
+                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                    (memory_id, _serialize_f32(embedding, self._embedding_dims)),
+                )
+
+            self._conn.commit()
         logger.info(f"[AUDIT] add id={memory_id} cat={category} len={len(content)}")
         return memory_id
 
@@ -788,62 +867,63 @@ class MemoryDB:
 
         compressed_int = 1 if compressed else 0
 
-        if importance is not None:
-            importance = max(0.0, min(1.0, importance))
-            self._conn.execute(
-                """INSERT INTO memories (id, content, category, tags, source,
-                   subject, created_at, updated_at, access_count, last_accessed,
-                   context_type, importance,
-                   text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
-                (
-                    memory_id,
-                    content,
-                    category,
-                    tags_json,
-                    source,
-                    subject,
-                    now,
-                    now,
-                    now,
-                    context_type,
-                    importance,
-                    text_raw,
-                    compressed_int,
-                    compression_provider,
-                ),
-            )
-        else:
-            self._conn.execute(
-                """INSERT INTO memories (id, content, category, tags, source,
-                   subject, created_at, updated_at, access_count, last_accessed,
-                   context_type,
-                   text_raw, compressed, compression_provider)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
-                (
-                    memory_id,
-                    content,
-                    category,
-                    tags_json,
-                    source,
-                    subject,
-                    now,
-                    now,
-                    now,
-                    context_type,
-                    text_raw,
-                    compressed_int,
-                    compression_provider,
-                ),
-            )
+        with self._lock, self._conn:
+            if importance is not None:
+                importance = max(0.0, min(1.0, importance))
+                self._conn.execute(
+                    """INSERT INTO memories (id, content, category, tags, source,
+                       subject, created_at, updated_at, access_count, last_accessed,
+                       context_type, importance,
+                       text_raw, compressed, compression_provider)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        memory_id,
+                        content,
+                        category,
+                        tags_json,
+                        source,
+                        subject,
+                        now,
+                        now,
+                        now,
+                        context_type,
+                        importance,
+                        text_raw,
+                        compressed_int,
+                        compression_provider,
+                    ),
+                )
+            else:
+                self._conn.execute(
+                    """INSERT INTO memories (id, content, category, tags, source,
+                       subject, created_at, updated_at, access_count, last_accessed,
+                       context_type,
+                       text_raw, compressed, compression_provider)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+                    (
+                        memory_id,
+                        content,
+                        category,
+                        tags_json,
+                        source,
+                        subject,
+                        now,
+                        now,
+                        now,
+                        context_type,
+                        text_raw,
+                        compressed_int,
+                        compression_provider,
+                    ),
+                )
 
-        if embedding and self._vec_enabled:
-            self._conn.execute(
-                "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                (memory_id, _serialize_f32(embedding, self._embedding_dims)),
-            )
+            if embedding and self._vec_enabled:
+                self._conn.execute(
+                    "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                    (memory_id, _serialize_f32(embedding, self._embedding_dims)),
+                )
 
-        self._conn.commit()
+            self._conn.commit()
         logger.info(
             f"[AUDIT] capture id={memory_id} cat={category} "
             f"ctx_type={context_type} len={len(content)} "
@@ -955,7 +1035,8 @@ class MemoryDB:
                     placeholder_fragments
                 """.replace("placeholder_fragments", " ".join(vec_fragments))
 
-                vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
+                with self._lock:
+                    vec_rows = self._conn.execute(vec_sql, vec_params).fetchall()
 
                 missing_ids = []
                 vec_scores = {}
@@ -969,10 +1050,11 @@ class MemoryDB:
                         missing_ids.append(mid)
 
                 if missing_ids:
-                    missing_mems = self._conn.execute(
-                        "SELECT * FROM memories WHERE id IN (SELECT value FROM json_each(?))",
-                        (json.dumps(missing_ids),),
-                    ).fetchall()
+                    with self._lock:
+                        missing_mems = self._conn.execute(
+                            "SELECT * FROM memories WHERE id IN (SELECT value FROM json_each(?))",
+                            (json.dumps(missing_ids),),
+                        ).fetchall()
                     for mem in missing_mems:
                         mid = mem["id"]
                         results[mid] = {
@@ -1127,7 +1209,8 @@ class MemoryDB:
             """.replace("placeholder_filter_sql", filter_sql)
 
             try:
-                rows = self._conn.execute(fts_sql, query_params).fetchall()
+                with self._lock:
+                    rows = self._conn.execute(fts_sql, query_params).fetchall()
                 if rows:
                     for row in rows:
                         mid = row["id"]
@@ -1299,14 +1382,15 @@ class MemoryDB:
             return
 
         ids = [m["id"] for m in top]
-        self._conn.execute(
-            """UPDATE memories
-                SET access_count = access_count + 1,
-                    last_accessed = ?
-                WHERE id IN (SELECT value FROM json_each(?))""",
-            (_now_iso(), json.dumps(ids)),
-        )
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """UPDATE memories
+                    SET access_count = access_count + 1,
+                        last_accessed = ?
+                    WHERE id IN (SELECT value FROM json_each(?))""",
+                (_now_iso(), json.dumps(ids)),
+            )
+            self._conn.commit()
 
     def list_memories(
         self,
@@ -1344,7 +1428,8 @@ class MemoryDB:
                     "ORDER BY updated_at DESC "
                     "LIMIT ? OFFSET ?"
                 )
-            rows = self._conn.execute(sql, (category, limit, offset)).fetchall()
+            with self._lock:
+                rows = self._conn.execute(sql, (category, limit, offset)).fetchall()
         else:
             if include_archived:
                 sql = (
@@ -1360,7 +1445,8 @@ class MemoryDB:
                     "ORDER BY updated_at DESC "
                     "LIMIT ? OFFSET ?"
                 )
-            rows = self._conn.execute(sql, (limit, offset)).fetchall()
+            with self._lock:
+                rows = self._conn.execute(sql, (limit, offset)).fetchall()
 
         return [dict(r) for r in rows]
 
@@ -1381,7 +1467,8 @@ class MemoryDB:
         if subject is not None:
             sql += " AND subject = ?"
             params.append(subject)
-        row = self._conn.execute(sql, tuple(params)).fetchone()
+        with self._lock:
+            row = self._conn.execute(sql, tuple(params)).fetchone()
         return dict(row) if row else None
 
     def update(
@@ -1427,88 +1514,89 @@ class MemoryDB:
         # supersession stays pending and the next unrelated commit() makes it
         # durable, leaving the predecessor closed against a successor row that
         # was never written.
-        try:
-            # Close the predecessor and read it back in ONE statement. Split
-            # into SELECT-then-UPDATE, a competing writer can supersede the
-            # same row in between, which leaves two live rows and a broken
-            # supersession chain; the ``valid_to IS NULL`` guard is what makes
-            # the loser of that race fall through to the not-found branch.
-            old_row = self._conn.execute(
-                "UPDATE memories SET valid_to = ?, superseded_by = ? "
-                "WHERE id = ? AND valid_to IS NULL RETURNING *",
-                (now, new_id, memory_id),
-            ).fetchone()
-            if old_row is None:
-                # pysqlite opens a write transaction for an UPDATE even when it
-                # matches zero rows. Returning without closing it would hold
-                # the database locked against every other writer for as long as
-                # this connection lives.
-                self._conn.rollback()
-                return None
-
-            # RETURNING yields the row AFTER the update was applied, so the
-            # two columns it just wrote have to be reset for the successor.
-            new_row = dict(old_row)
-            new_row["id"] = new_id
-            new_row["created_at"] = now
-            new_row["updated_at"] = now
-            new_row["last_accessed"] = now
-            new_row["access_count"] = 0
-            new_row["valid_from"] = now
-            new_row["valid_to"] = None
-            new_row["superseded_by"] = None
-            if "commit_sha" in new_row:
-                new_row["commit_sha"] = None
-
-            if content is not None:
-                new_row["content"] = content
-            if category is not None:
-                new_row["category"] = category
-            if tags is not None:
-                # Bolt Performance Optimization:
-                # Prevent expensive json.dumps calls for the default empty list.
-                new_row["tags"] = "[]" if not tags else json.dumps(tags)
-            if source is not None:
-                new_row["source"] = source
-            if importance is not None:
-                new_row["importance"] = max(0.0, min(1.0, importance))
-
-            columns = list(new_row.keys())
-            column_list = ", ".join(columns)
-            placeholders = ", ".join("?" for _ in columns)
-
-            self._conn.execute(
-                f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
-                [new_row[c] for c in columns],
-            )
-
-            # Embedding: an explicit value replaces; otherwise carry the old
-            # vector forward under the new id so semantic search keeps working
-            # for metadata-only edits (content-only re-embedding is the
-            # caller's responsibility, e.g. server._handle_update).
-            if self._vec_enabled:
-                # memories_vec is a virtual table; it does not support RETURNING.
-                old_vec = self._conn.execute(
-                    "SELECT embedding FROM memories_vec WHERE id = ?", (memory_id,)
+        with self._lock:
+            try:
+                # Close the predecessor and read it back in ONE statement. Split
+                # into SELECT-then-UPDATE, a competing writer can supersede the
+                # same row in between, which leaves two live rows and a broken
+                # supersession chain; the ``valid_to IS NULL`` guard is what makes
+                # the loser of that race fall through to the not-found branch.
+                old_row = self._conn.execute(
+                    "UPDATE memories SET valid_to = ?, superseded_by = ? "
+                    "WHERE id = ? AND valid_to IS NULL RETURNING *",
+                    (now, new_id, memory_id),
                 ).fetchone()
-                self._conn.execute(
-                    "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
-                )
-                if embedding:
-                    self._conn.execute(
-                        "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                        (new_id, _serialize_f32(embedding, self._embedding_dims)),
-                    )
-                elif old_vec is not None:
-                    self._conn.execute(
-                        "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
-                        (new_id, old_vec["embedding"]),
-                    )
+                if old_row is None:
+                    # pysqlite opens a write transaction for an UPDATE even when it
+                    # matches zero rows. Returning without closing it would hold
+                    # the database locked against every other writer for as long as
+                    # this connection lives.
+                    self._conn.rollback()
+                    return None
 
-            self._conn.commit()
-        except BaseException:
-            self._conn.rollback()
-            raise
+                # RETURNING yields the row AFTER the update was applied, so the
+                # two columns it just wrote have to be reset for the successor.
+                new_row = dict(old_row)
+                new_row["id"] = new_id
+                new_row["created_at"] = now
+                new_row["updated_at"] = now
+                new_row["last_accessed"] = now
+                new_row["access_count"] = 0
+                new_row["valid_from"] = now
+                new_row["valid_to"] = None
+                new_row["superseded_by"] = None
+                if "commit_sha" in new_row:
+                    new_row["commit_sha"] = None
+
+                if content is not None:
+                    new_row["content"] = content
+                if category is not None:
+                    new_row["category"] = category
+                if tags is not None:
+                    # Bolt Performance Optimization:
+                    # Prevent expensive json.dumps calls for the default empty list.
+                    new_row["tags"] = "[]" if not tags else json.dumps(tags)
+                if source is not None:
+                    new_row["source"] = source
+                if importance is not None:
+                    new_row["importance"] = max(0.0, min(1.0, importance))
+
+                columns = list(new_row.keys())
+                column_list = ", ".join(columns)
+                placeholders = ", ".join("?" for _ in columns)
+
+                self._conn.execute(
+                    f"INSERT INTO memories ({column_list}) VALUES ({placeholders})",
+                    [new_row[c] for c in columns],
+                )
+
+                # Embedding: an explicit value replaces; otherwise carry the old
+                # vector forward under the new id so semantic search keeps working
+                # for metadata-only edits (content-only re-embedding is the
+                # caller's responsibility, e.g. server._handle_update).
+                if self._vec_enabled:
+                    # memories_vec is a virtual table; it does not support RETURNING.
+                    old_vec = self._conn.execute(
+                        "SELECT embedding FROM memories_vec WHERE id = ?", (memory_id,)
+                    ).fetchone()
+                    self._conn.execute(
+                        "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
+                    )
+                    if embedding:
+                        self._conn.execute(
+                            "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                            (new_id, _serialize_f32(embedding, self._embedding_dims)),
+                        )
+                    elif old_vec is not None:
+                        self._conn.execute(
+                            "INSERT INTO memories_vec (id, embedding) VALUES (?, ?)",
+                            (new_id, old_vec["embedding"]),
+                        )
+
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
 
         logger.info(f"[AUDIT] update id={memory_id} -> new_id={new_id}")
         return new_id
@@ -1523,18 +1611,21 @@ class MemoryDB:
         and to ``history_for_entity`` for audit trails. ``superseded_by``
         stays NULL -- deletion has no forward pointer, unlike ``update``.
         """
-        cursor = self._conn.execute(
-            "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL",
-            (_now_iso(), memory_id),
-        )
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL",
+                (_now_iso(), memory_id),
+            )
 
-        if cursor.rowcount == 0:
-            return False
+            if cursor.rowcount == 0:
+                return False
 
-        if self._vec_enabled:
-            self._conn.execute("DELETE FROM memories_vec WHERE id = ?", (memory_id,))
+            if self._vec_enabled:
+                self._conn.execute(
+                    "DELETE FROM memories_vec WHERE id = ?", (memory_id,)
+                )
 
-        self._conn.commit()
+            self._conn.commit()
         logger.info(f"[AUDIT] delete id={memory_id}")
         return True
 
@@ -1545,10 +1636,11 @@ class MemoryDB:
         (``valid_to IS NULL``) -- superseded/soft-deleted history is not
         double-counted into totals or category breakdowns.
         """
-        categories = self._conn.execute(
-            "SELECT category, COUNT(*) as cnt, MAX(updated_at) as max_updated FROM memories "
-            "WHERE valid_to IS NULL GROUP BY category ORDER BY cnt DESC"
-        ).fetchall()
+        with self._lock:
+            categories = self._conn.execute(
+                "SELECT category, COUNT(*) as cnt, MAX(updated_at) as max_updated FROM memories "
+                "WHERE valid_to IS NULL GROUP BY category ORDER BY cnt DESC"
+            ).fetchall()
 
         total = sum(row["cnt"] for row in categories)
         last_updated = max(
@@ -1585,23 +1677,25 @@ class MemoryDB:
             FROM memories
             ORDER BY created_at
         """
-        cursor = self._conn.execute(query)
-        output = io.StringIO()
-        count = 0
+        with self._lock:
+            cursor = self._conn.execute(query)
+            output = io.StringIO()
+            count = 0
 
-        for row in cursor:
-            output.write(row[0])
-            output.write("\n")
-            count += 1
+            for row in cursor:
+                output.write(row[0])
+                output.write("\n")
+                count += 1
 
         return output.getvalue(), count
 
     def _clear_for_import(self, mode: str) -> None:
         """Clear memories if mode is 'replace'."""
-        if mode == "replace":
-            self._conn.execute("DELETE FROM memories")
-            if self._vec_enabled:
-                self._conn.execute("DELETE FROM memories_vec")
+        with self._lock:
+            if mode == "replace":
+                self._conn.execute("DELETE FROM memories")
+                if self._vec_enabled:
+                    self._conn.execute("DELETE FROM memories_vec")
 
     def _parse_import_data(self, data: str | list | dict) -> tuple[list[dict], int]:
         """Parse input data into a list of dictionaries."""
@@ -1671,16 +1765,17 @@ class MemoryDB:
         """Execute the batch insertion and return (imported, skipped) counts."""
         if not to_insert:
             return 0, 0
-        cursor = self._conn.cursor()
-        # Column list and placeholders come from MEMORY_COLUMNS, never from the
-        # imported records, so the statement carries no caller-controlled text.
-        columns = ", ".join(MEMORY_COLUMNS)
-        placeholders = ", ".join("?" for _ in MEMORY_COLUMNS)
-        op = "REPLACE" if mode == "replace" else "IGNORE"
-        sql = f"INSERT OR {op} INTO memories ({columns}) VALUES ({placeholders})"
-        cursor.executemany(sql, to_insert)
-        imported = cursor.rowcount
-        skipped = len(to_insert) - imported if mode != "replace" else 0
+        with self._lock:
+            cursor = self._conn.cursor()
+            # Column list and placeholders come from MEMORY_COLUMNS, never from the
+            # imported records, so the statement carries no caller-controlled text.
+            columns = ", ".join(MEMORY_COLUMNS)
+            placeholders = ", ".join("?" for _ in MEMORY_COLUMNS)
+            op = "REPLACE" if mode == "replace" else "IGNORE"
+            sql = f"INSERT OR {op} INTO memories ({columns}) VALUES ({placeholders})"
+            cursor.executemany(sql, to_insert)
+            imported = cursor.rowcount
+            skipped = len(to_insert) - imported if mode != "replace" else 0
         return imported, skipped
 
     def import_jsonl(self, data: str | list | dict, mode: str = "merge") -> dict:
@@ -1693,20 +1788,23 @@ class MemoryDB:
         Returns:
             Dict with import stats (imported, skipped, rejected).
         """
-        self._clear_for_import(mode)
-        items, rejected = self._parse_import_data(data)
-        imported = 0
-        skipped = 0
-        BATCH_SIZE = 900
-        now = _now_iso()
-        for i in range(0, len(items), BATCH_SIZE):
-            batch_items = items[i : i + BATCH_SIZE]
-            to_insert, batch_rejected = self._process_import_batch(batch_items, now)
-            rejected += batch_rejected
-            batch_imported, batch_skipped = self._execute_import_batch(to_insert, mode)
-            imported += batch_imported
-            skipped += batch_skipped
-        self._conn.commit()
+        with self._lock, self._conn:
+            self._clear_for_import(mode)
+            items, rejected = self._parse_import_data(data)
+            imported = 0
+            skipped = 0
+            BATCH_SIZE = 900
+            now = _now_iso()
+            for i in range(0, len(items), BATCH_SIZE):
+                batch_items = items[i : i + BATCH_SIZE]
+                to_insert, batch_rejected = self._process_import_batch(batch_items, now)
+                rejected += batch_rejected
+                batch_imported, batch_skipped = self._execute_import_batch(
+                    to_insert, mode
+                )
+                imported += batch_imported
+                skipped += batch_skipped
+            self._conn.commit()
         if imported > 0:
             logger.info(f"[AUDIT] import count={imported} mode={mode}")
         return {"imported": imported, "skipped": skipped, "rejected": rejected}
@@ -1729,25 +1827,26 @@ class MemoryDB:
         Returns:
             Count of newly archived rows (already-archived rows are skipped).
         """
-        cursor = self._conn.cursor()
+        with self._lock, self._conn:
+            cursor = self._conn.cursor()
 
-        # Bolt Performance Optimization:
-        # Replaced SELECT + Python loop + executemany with a single pure SQL UPDATE.
-        # This completely bypasses Python's runtime memory allocation and execution
-        # overhead for date math and iteration, executing entirely in SQLite.
-        now = _now_iso()
-        cursor.execute(
-            """UPDATE memories
-               SET archived_at = ?
-               WHERE archived_at IS NULL
-                 AND last_accessed < datetime('now', ?)
-                 AND importance < ?""",
-            (now, f"-{days} days", importance_threshold),
-        )
-        count = cursor.rowcount
-        if count > 0:
-            self._conn.commit()
-            logger.info(f"[AUDIT] archived count={count} mode=soft")
+            # Bolt Performance Optimization:
+            # Replaced SELECT + Python loop + executemany with a single pure SQL UPDATE.
+            # This completely bypasses Python's runtime memory allocation and execution
+            # overhead for date math and iteration, executing entirely in SQLite.
+            now = _now_iso()
+            cursor.execute(
+                """UPDATE memories
+                   SET archived_at = ?
+                   WHERE archived_at IS NULL
+                     AND last_accessed < datetime('now', ?)
+                     AND importance < ?""",
+                (now, f"-{days} days", importance_threshold),
+            )
+            count = cursor.rowcount
+            if count > 0:
+                self._conn.commit()
+                logger.info(f"[AUDIT] archived count={count} mode=soft")
         return count
 
     def archive_by_score(
@@ -1787,32 +1886,35 @@ class MemoryDB:
                 archive_after_days = 90
         archive_after_days = max(1, int(archive_after_days))
 
-        cursor = self._conn.cursor()
-        archive_ts = _now_iso()
+        with self._lock, self._conn:
+            cursor = self._conn.cursor()
+            archive_ts = _now_iso()
 
-        # Bolt Performance Optimization:
-        # Replaced Python row iteration, datetime parsing, and executemany
-        # with a single native SQL UPDATE statement.
-        # This completely bypasses Python's runtime overhead, leveraging SQLite's
-        # julianday() to compute dates natively.
-        query = """
-        UPDATE memories
-        SET archived_at = ?
-        WHERE archived_at IS NULL
-        AND (
-            MAX(0.0, julianday('now') - julianday(updated_at)) / ?
-        ) * (1.0 - MAX(0.0, MIN(1.0, COALESCE(importance, 0.0)))) > ?
-        """
+            # Bolt Performance Optimization:
+            # Replaced Python row iteration, datetime parsing, and executemany
+            # with a single native SQL UPDATE statement.
+            # This completely bypasses Python's runtime overhead, leveraging SQLite's
+            # julianday() to compute dates natively.
+            query = """
+            UPDATE memories
+            SET archived_at = ?
+            WHERE archived_at IS NULL
+            AND (
+                MAX(0.0, julianday('now') - julianday(updated_at)) / ?
+            ) * (1.0 - MAX(0.0, MIN(1.0, COALESCE(importance, 0.0)))) > ?
+            """
 
-        cursor.execute(query, (archive_ts, float(archive_after_days), score_threshold))
-        count = cursor.rowcount
-
-        if count > 0:
-            self._conn.commit()
-            logger.info(
-                f"[AUDIT] archived_by_score count={count} "
-                f"after_days={archive_after_days} threshold={score_threshold}"
+            cursor.execute(
+                query, (archive_ts, float(archive_after_days), score_threshold)
             )
+            count = cursor.rowcount
+
+            if count > 0:
+                self._conn.commit()
+                logger.info(
+                    f"[AUDIT] archived_by_score count={count} "
+                    f"after_days={archive_after_days} threshold={score_threshold}"
+                )
         return count
 
     def restore_memory(self, memory_id: str) -> bool:
@@ -1823,51 +1925,52 @@ class MemoryDB:
         copy-back behaviour for backward compatibility with pre-mem_001 DBs
         that still hold rows in the side table.
         """
-        cursor = self._conn.cursor()
-        now = _now_iso()
+        with self._lock, self._conn:
+            cursor = self._conn.cursor()
+            now = _now_iso()
 
-        # Bolt Performance Optimization:
-        # Avoided N+1 SELECT overhead by executing UPDATE directly and checking rowcount.
-        # This completely bypasses Python's memory allocation for the SELECT result.
-        # New path: row exists in memories and is soft-archived.
-        cursor.execute(
-            "UPDATE memories SET archived_at = NULL, last_accessed = ? "
-            "WHERE id = ? AND archived_at IS NOT NULL",
-            (now, memory_id),
-        )
-        if cursor.rowcount > 0:
+            # Bolt Performance Optimization:
+            # Avoided N+1 SELECT overhead by executing UPDATE directly and checking rowcount.
+            # This completely bypasses Python's memory allocation for the SELECT result.
+            # New path: row exists in memories and is soft-archived.
+            cursor.execute(
+                "UPDATE memories SET archived_at = NULL, last_accessed = ? "
+                "WHERE id = ? AND archived_at IS NOT NULL",
+                (now, memory_id),
+            )
+            if cursor.rowcount > 0:
+                self._conn.commit()
+                logger.info(f"[AUDIT] restore id={memory_id} mode=soft")
+                return True
+
+            # Legacy path: row was hard-moved to archived_memories.
+            legacy = cursor.execute(
+                "SELECT * FROM archived_memories WHERE id = ?", (memory_id,)
+            ).fetchone()
+            if not legacy:
+                return False
+            cursor.execute(
+                """INSERT OR REPLACE INTO memories
+                   (id, content, category, tags, source, importance,
+                    created_at, updated_at, access_count, last_accessed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    legacy[0],
+                    legacy[1],
+                    legacy[2],
+                    legacy[3],
+                    legacy[4],
+                    legacy[5],
+                    legacy[6],
+                    now,
+                    legacy[8],
+                    now,
+                ),
+            )
+            cursor.execute("DELETE FROM archived_memories WHERE id = ?", (memory_id,))
             self._conn.commit()
-            logger.info(f"[AUDIT] restore id={memory_id} mode=soft")
+            logger.info(f"[AUDIT] restore id={memory_id} mode=legacy")
             return True
-
-        # Legacy path: row was hard-moved to archived_memories.
-        legacy = cursor.execute(
-            "SELECT * FROM archived_memories WHERE id = ?", (memory_id,)
-        ).fetchone()
-        if not legacy:
-            return False
-        cursor.execute(
-            """INSERT OR REPLACE INTO memories
-               (id, content, category, tags, source, importance,
-                created_at, updated_at, access_count, last_accessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                legacy[0],
-                legacy[1],
-                legacy[2],
-                legacy[3],
-                legacy[4],
-                legacy[5],
-                legacy[6],
-                now,
-                legacy[8],
-                now,
-            ),
-        )
-        cursor.execute("DELETE FROM archived_memories WHERE id = ?", (memory_id,))
-        self._conn.commit()
-        logger.info(f"[AUDIT] restore id={memory_id} mode=legacy")
-        return True
 
     def list_archived(self, limit: int = 20) -> list[dict]:
         """List archived memories from BOTH the soft-archive column and the
@@ -1880,28 +1983,29 @@ class MemoryDB:
         """
         if isinstance(limit, int):
             limit = max(1, min(limit, 100))
-        cursor = self._conn.cursor()
+        with self._lock:
+            cursor = self._conn.cursor()
 
-        # Bolt Performance Optimization:
-        # Offload merging and pagination entirely to SQLite via UNION ALL.
-        # This completely bypasses the O(N log N) Python-side file-sort overhead
-        # and unnecessary memory allocation for rows that would be discarded.
-        rows = cursor.execute(
-            """
-            SELECT id, content, category, tags, importance, archived_at
-            FROM (
+            # Bolt Performance Optimization:
+            # Offload merging and pagination entirely to SQLite via UNION ALL.
+            # This completely bypasses the O(N log N) Python-side file-sort overhead
+            # and unnecessary memory allocation for rows that would be discarded.
+            rows = cursor.execute(
+                """
                 SELECT id, content, category, tags, importance, archived_at
-                FROM memories
-                WHERE archived_at IS NOT NULL
-                UNION ALL
-                SELECT id, content, category, tags, importance, archived_at
-                FROM archived_memories
-            )
-            ORDER BY archived_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+                FROM (
+                    SELECT id, content, category, tags, importance, archived_at
+                    FROM memories
+                    WHERE archived_at IS NOT NULL
+                    UNION ALL
+                    SELECT id, content, category, tags, importance, archived_at
+                    FROM archived_memories
+                )
+                ORDER BY archived_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
 
         merged = []
         for r in rows:
@@ -1958,17 +2062,19 @@ class MemoryDB:
     def update_importance(self, memory_id: str, importance: float) -> bool:
         """Update importance score for a memory."""
         importance = max(0.0, min(1.0, importance))
-        cursor = self._conn.cursor()
-        cursor.execute(
-            "UPDATE memories SET importance = ? WHERE id = ?",
-            (importance, memory_id),
-        )
-        self._conn.commit()
-        return cursor.rowcount > 0
+        with self._lock, self._conn:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "UPDATE memories SET importance = ? WHERE id = ?",
+                (importance, memory_id),
+            )
+            self._conn.commit()
+            return cursor.rowcount > 0
 
     def close(self) -> None:
         """Close database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def _run_migrations(self) -> None:
         """Run Alembic migrations to head, with backup-before-migrate.
@@ -2001,7 +2107,8 @@ class MemoryDB:
             return
 
         try:
-            self._conn.commit()  # Flush any pending baseline writes
+            with self._lock:
+                self._conn.commit()  # Flush any pending baseline writes
 
             cfg = Config(str(_ALEMBIC_INI_PATH))
             cfg.set_main_option("script_location", str(_ALEMBIC_SCRIPT_LOCATION))
@@ -2057,72 +2164,79 @@ class MemoryDB:
         """
         import hashlib
 
-        try:
-            cursor = self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
-            ).fetchone()
-            if cursor is None:
-                return
-            cols = {
-                row[1]
-                for row in self._conn.execute("PRAGMA table_info(memories)").fetchall()
-            }
-            if "commit_sha" not in cols or "valid_from" not in cols:
-                # Phase 3 columns missing -- migration did not run.
-                return
-
-            rows = self._conn.execute(
-                "SELECT id, content, created_at FROM memories "
-                "WHERE commit_sha IS NULL OR valid_from IS NULL"
-            ).fetchall()
-            if not rows:
-                return
-
-            # Legacy rows may not be indexed in memories_fts (the FTS5
-            # trigger only fires from this connection's INSERT). Force
-            # an FTS rebuild before running UPDATEs so the AFTER UPDATE
-            # trigger does not corrupt the contentless FTS index with a
-            # DELETE on an unindexed rowid ("database disk image is
-            # malformed" on Windows SQLite).
+        with self._lock:
             try:
-                self._conn.execute(
-                    "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
+                cursor = self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='memories'"
+                ).fetchone()
+                if cursor is None:
+                    return
+                cols = {
+                    row[1]
+                    for row in self._conn.execute(
+                        "PRAGMA table_info(memories)"
+                    ).fetchall()
+                }
+                if "commit_sha" not in cols or "valid_from" not in cols:
+                    # Phase 3 columns missing -- migration did not run.
+                    return
+
+                rows = self._conn.execute(
+                    "SELECT id, content, created_at FROM memories "
+                    "WHERE commit_sha IS NULL OR valid_from IS NULL"
+                ).fetchall()
+                if not rows:
+                    return
+
+                # Legacy rows may not be indexed in memories_fts (the FTS5
+                # trigger only fires from this connection's INSERT). Force
+                # an FTS rebuild before running UPDATEs so the AFTER UPDATE
+                # trigger does not corrupt the contentless FTS index with a
+                # DELETE on an unindexed rowid ("database disk image is
+                # malformed" on Windows SQLite).
+                try:
+                    self._conn.execute(
+                        "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
+                    )
+                    self._conn.commit()
+                except Exception:
+                    pass
+
+                batch = []
+                for row in rows:
+                    is_row = isinstance(row, sqlite3.Row)
+                    row_id = row["id"] if is_row else row[0]
+                    content = row["content"] if is_row else row[1]
+                    created_at = row["created_at"] if is_row else row[2]
+                    digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
+                    batch.append((digest, created_at, row_id))
+
+                self._conn.executemany(
+                    "UPDATE memories SET "
+                    "  commit_sha = COALESCE(commit_sha, ?), "
+                    "  valid_from = COALESCE(valid_from, ?) "
+                    "WHERE id = ?",
+                    batch,
                 )
                 self._conn.commit()
-            except Exception:
-                pass
-
-            batch = []
-            for row in rows:
-                is_row = isinstance(row, sqlite3.Row)
-                row_id = row["id"] if is_row else row[0]
-                content = row["content"] if is_row else row[1]
-                created_at = row["created_at"] if is_row else row[2]
-                digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
-                batch.append((digest, created_at, row_id))
-
-            self._conn.executemany(
-                "UPDATE memories SET "
-                "  commit_sha = COALESCE(commit_sha, ?), "
-                "  valid_from = COALESCE(valid_from, ?) "
-                "WHERE id = ?",
-                batch,
-            )
-            self._conn.commit()
-            logger.info(
-                f"Phase 3 backfill: commit_sha + valid_from for {len(rows)} legacy rows"
-            )
-        except Exception as e:  # pragma: no cover - runtime guard
-            logger.warning(f"Phase 3 temporal backfill failed: {e}")
+                logger.info(
+                    f"Phase 3 backfill: commit_sha + valid_from for {len(rows)} legacy rows"
+                )
+            except Exception as e:
+                # The failure is swallowed below, so no caller's context
+                # manager will see it: undo the partial backfill here.
+                self._conn.rollback()
+                logger.warning(f"Phase 3 temporal backfill failed: {e}")
 
     def _read_alembic_version(self) -> str | None:
         """Return the current ``alembic_version`` revision, or ``None`` if unstamped."""
-        try:
-            row = self._conn.execute(
-                "SELECT version_num FROM alembic_version"
-            ).fetchone()
-        except sqlite3.OperationalError:
-            return None
+        with self._lock:
+            try:
+                row = self._conn.execute(
+                    "SELECT version_num FROM alembic_version"
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return None
         if not row:
             return None
         return row[0] if not isinstance(row, sqlite3.Row) else row["version_num"]

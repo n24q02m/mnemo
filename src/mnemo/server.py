@@ -629,7 +629,7 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
             graph_data = await t_extract(content)
             if graph_data and graph_data.get("entities"):
                 await asyncio.to_thread(
-                    store_kg_with_memory_id, db._conn, memory_id, graph_data
+                    db.run, store_kg_with_memory_id, memory_id, graph_data
                 )
             return
         except Exception as e:
@@ -639,17 +639,21 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
     try:
         graph_data = await extract_entities(content)
         if graph_data and graph_data.get("entities"):
-            conn = db._conn
-            entity_ids = upsert_entities(conn, graph_data["entities"])
-            name_to_id = {}
-            for ent, eid in zip(graph_data["entities"], entity_ids, strict=False):
-                ent_name = ent.get("name", "").strip()
-                if ent_name:
-                    name_to_id[ent_name] = eid
-            if graph_data.get("relations"):
-                create_relations(conn, graph_data["relations"], name_to_id)
-            link_memory_entities(conn, memory_id, entity_ids)
-            conn.commit()
+            # The graph writes run as one locked transaction off the event
+            # loop; the extraction above stays outside the database lock.
+            def store_graph(conn, graph_data: dict) -> None:
+                entity_ids = upsert_entities(conn, graph_data["entities"])
+                name_to_id = {}
+                for ent, eid in zip(graph_data["entities"], entity_ids, strict=False):
+                    ent_name = ent.get("name", "").strip()
+                    if ent_name:
+                        name_to_id[ent_name] = eid
+                if graph_data.get("relations"):
+                    create_relations(conn, graph_data["relations"], name_to_id)
+                link_memory_entities(conn, memory_id, entity_ids)
+                conn.commit()
+
+            await asyncio.to_thread(db.run, store_graph, graph_data)
     except Exception as e:
         logger.debug(f"Entity extraction background error: {e}")
 
@@ -756,8 +760,10 @@ async def _handle_search(
             from mnemo.graph import find_related_memory_ids
 
             top_id = results[0]["id"]
+            # A lambda rather than to_thread(db.run, ...): ty does not carry
+            # run's generic result type through to_thread.
             related_ids = await asyncio.to_thread(
-                find_related_memory_ids, db._conn, top_id
+                lambda: db.run(find_related_memory_ids, top_id)
             )
             if related_ids:
                 related_set = set(related_ids)
@@ -1926,19 +1932,21 @@ async def _handle_memory_compress(
 
     from datetime import UTC, datetime
 
-    cursor = db._conn.cursor()
-    cursor.execute(
-        "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
-        "compression_provider = ?, updated_at = ? WHERE id = ?",
-        (
-            result["text"],
-            result["text_raw"],
-            result["compression_provider"],
-            datetime.now(UTC).isoformat(),
-            memory_id,
-        ),
-    )
-    db._conn.commit()
+    def apply_compression(conn) -> None:
+        conn.execute(
+            "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
+            "compression_provider = ?, updated_at = ? WHERE id = ?",
+            (
+                result["text"],
+                result["text_raw"],
+                result["compression_provider"],
+                datetime.now(UTC).isoformat(),
+                memory_id,
+            ),
+        )
+
+    # Committed by db.run when apply_compression returns.
+    await asyncio.to_thread(db.run, apply_compression)
     return {
         "status": "compressed",
         "id": memory_id,
