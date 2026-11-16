@@ -76,6 +76,10 @@ jobs:
     env:
       UV_PYTHON: "3.13"
       UV_PYTHON_PREFERENCE: only-managed
+    permissions:
+      contents: read
+      # The Codecov upload authenticates with this job's OIDC token.
+      id-token: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -134,12 +138,17 @@ jobs:
             echo "No tests found, skipping..."
           fi
 
+      # Codecov refuses a tokenless upload for the default branch, and no upload token
+      # is stored, so the upload authenticates with OIDC and fails the job when Codecov
+      # refuses it. Pull requests skip it: a fork or Dependabot run cannot always mint
+      # an OIDC token, and the required check must not depend on Codecov being reachable.
       - name: Upload coverage to Codecov
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.event_name != 'pull_request'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
+          fail_ci_if_error: true
 
   # ============================================================================
   # Contract compatibility — opt-in (chuẩn portfolio-standard, contract-first).
