@@ -6,3 +6,10 @@ environments:
     provider: aws
     region: ap-southeast-1
     path: /mnemo-mcp/prod
+sync:
+  targets:
+    - type: github
+      repo: n24q02m/mnemo
+      sources:
+        - keys:
+            - CI_APP_KEY
