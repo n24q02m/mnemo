@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v2.23.0-beta.3 (2026-11-16)
+
+### Bug Fixes
+
+- Close every MemoryDB write transaction before releasing the lock
+  ([#1397](https://github.com/n24q02m/mnemo/pull/1397),
+  [`cb8fb4b`](https://github.com/n24q02m/mnemo/commit/cb8fb4bfc0ba0765f81a62e601f09324f241e944))
+
+- Lock hull 0.8.0-beta.2 so token checks no longer block the event loop
+  ([#1395](https://github.com/n24q02m/mnemo/pull/1395),
+  [`db776db`](https://github.com/n24q02m/mnemo/commit/db776db3d4d889c2637abff79a1f84b623ee0ca6))
+
+- Serialize every use of the shared MemoryDB connection
+  ([#1397](https://github.com/n24q02m/mnemo/pull/1397),
+  [`cb8fb4b`](https://github.com/n24q02m/mnemo/commit/cb8fb4bfc0ba0765f81a62e601f09324f241e944))
+
+- Serialize the shared MemoryDB connection and close every write transaction under its lock
+  ([#1397](https://github.com/n24q02m/mnemo/pull/1397),
+  [`cb8fb4b`](https://github.com/n24q02m/mnemo/commit/cb8fb4bfc0ba0765f81a62e601f09324f241e944))
+
+- **deps**: Lock file maintenance ([#1398](https://github.com/n24q02m/mnemo/pull/1398),
+  [`07aa1c9`](https://github.com/n24q02m/mnemo/commit/07aa1c959122e248505ef787f27c46c3cffd2f82))
+
+- **deps**: Lock file maintenance ([#1396](https://github.com/n24q02m/mnemo/pull/1396),
+  [`6e2eb00`](https://github.com/n24q02m/mnemo/commit/6e2eb001e695b660b0a1043a97d7585fe08c392c))
+
+
 ## v2.23.0-beta.2 (2026-11-16)
 
 ### Bug Fixes
