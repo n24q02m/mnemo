@@ -53,33 +53,37 @@ def entity_search(
         "SELECT id, name, entity_type FROM memory_entities "
         f"WHERE {' AND '.join(where)} LIMIT 5"
     )
-    entities = db._conn.execute(ent_sql, params).fetchall()
+    with db.connection() as conn:
+        entities = conn.execute(ent_sql, params).fetchall()
 
-    if not entities:
-        # Fallback: fuzzy substring match.
-        # Escape LIKE wildcards to prevent injection/broad matching.
-        escaped_name = (
-            name.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        if not entities:
+            # Fallback: fuzzy substring match.
+            # Escape LIKE wildcards to prevent injection/broad matching.
+            escaped_name = (
+                name.strip()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            like_sql = (
+                "SELECT id, name, entity_type FROM memory_entities "
+                "WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT 5"
+            )
+            entities = conn.execute(like_sql, (f"%{escaped_name}%",)).fetchall()
+        if not entities:
+            return []
+
+        entity_ids = [e[0] if not hasattr(e, "keys") else e["id"] for e in entities]
+
+        mem_sql = (
+            "SELECT m.*, mel.entity_id FROM memories m "
+            "JOIN memory_entity_links mel ON mel.memory_id = m.id "
+            "WHERE mel.entity_id IN (SELECT value FROM json_each(?)) "
+            "  AND m.archived_at IS NULL "
+            "  AND (m.valid_to IS NULL) "
+            "ORDER BY m.updated_at DESC LIMIT ?"
         )
-        like_sql = (
-            "SELECT id, name, entity_type FROM memory_entities "
-            "WHERE name LIKE ? ESCAPE '\\' COLLATE NOCASE LIMIT 5"
-        )
-        entities = db._conn.execute(like_sql, (f"%{escaped_name}%",)).fetchall()
-    if not entities:
-        return []
-
-    entity_ids = [e[0] if not hasattr(e, "keys") else e["id"] for e in entities]
-
-    mem_sql = (
-        "SELECT m.*, mel.entity_id FROM memories m "
-        "JOIN memory_entity_links mel ON mel.memory_id = m.id "
-        "WHERE mel.entity_id IN (SELECT value FROM json_each(?)) "
-        "  AND m.archived_at IS NULL "
-        "  AND (m.valid_to IS NULL) "
-        "ORDER BY m.updated_at DESC LIMIT ?"
-    )
-    rows = db._conn.execute(mem_sql, (json.dumps(entity_ids), limit)).fetchall()
+        rows = conn.execute(mem_sql, (json.dumps(entity_ids), limit)).fetchall()
 
     # Map entity_id back to name for the response annotation.
     name_by_id = {
@@ -117,53 +121,54 @@ def entity_graph(
     Returns:
         ``{"nodes": [...], "edges": [...], "depth": int, "anchor": str}``.
     """
-    if entity_id is None and name:
-        row = db._conn.execute(
-            "SELECT id FROM memory_entities WHERE name = ? COLLATE NOCASE LIMIT 1",
-            (name.strip(),),
-        ).fetchone()
-        if row is not None:
-            entity_id = row[0] if not hasattr(row, "keys") else row["id"]
-    if not entity_id:
-        return {"nodes": [], "edges": [], "depth": depth, "anchor": name or ""}
+    with db.connection() as conn:
+        if entity_id is None and name:
+            row = conn.execute(
+                "SELECT id FROM memory_entities WHERE name = ? COLLATE NOCASE LIMIT 1",
+                (name.strip(),),
+            ).fetchone()
+            if row is not None:
+                entity_id = row[0] if not hasattr(row, "keys") else row["id"]
+        if not entity_id:
+            return {"nodes": [], "edges": [], "depth": depth, "anchor": name or ""}
 
-    depth = max(1, min(int(depth), 2))
-    limit = max(1, min(int(limit), 500))
+        depth = max(1, min(int(depth), 2))
+        limit = max(1, min(int(limit), 500))
 
-    # BFS via recursive CTE, bounded by depth.
-    cte = """
-        WITH RECURSIVE traverse(entity_id, depth) AS (
-            SELECT ?, 0
-            UNION
-            SELECT e.target_id, t.depth + 1
-              FROM memory_edges e
-              JOIN traverse t ON e.source_id = t.entity_id
-             WHERE t.depth < ?
-            UNION
-            SELECT e.source_id, t.depth + 1
-              FROM memory_edges e
-              JOIN traverse t ON e.target_id = t.entity_id
-             WHERE t.depth < ?
-        )
-        SELECT DISTINCT entity_id FROM traverse LIMIT ?
-    """
-    rows = db._conn.execute(cte, (entity_id, depth, depth, limit)).fetchall()
-    node_ids = [r[0] if not hasattr(r, "keys") else r["entity_id"] for r in rows]
+        # BFS via recursive CTE, bounded by depth.
+        cte = """
+            WITH RECURSIVE traverse(entity_id, depth) AS (
+                SELECT ?, 0
+                UNION
+                SELECT e.target_id, t.depth + 1
+                  FROM memory_edges e
+                  JOIN traverse t ON e.source_id = t.entity_id
+                 WHERE t.depth < ?
+                UNION
+                SELECT e.source_id, t.depth + 1
+                  FROM memory_edges e
+                  JOIN traverse t ON e.target_id = t.entity_id
+                 WHERE t.depth < ?
+            )
+            SELECT DISTINCT entity_id FROM traverse LIMIT ?
+        """
+        rows = conn.execute(cte, (entity_id, depth, depth, limit)).fetchall()
+        node_ids = [r[0] if not hasattr(r, "keys") else r["entity_id"] for r in rows]
 
-    if not node_ids:
-        return {"nodes": [], "edges": [], "depth": depth, "anchor": entity_id}
+        if not node_ids:
+            return {"nodes": [], "edges": [], "depth": depth, "anchor": entity_id}
 
-    node_ids_json = json.dumps(node_ids)
-    nodes = db._conn.execute(
-        "SELECT id, name, entity_type FROM memory_entities WHERE id IN (SELECT value FROM json_each(?))",
-        (node_ids_json,),
-    ).fetchall()
-    edges = db._conn.execute(
-        "SELECT id, source_id, target_id, relation_type, memory_id, valid_from, valid_to "
-        "FROM memory_edges WHERE source_id IN (SELECT value FROM json_each(?)) "
-        "  AND target_id IN (SELECT value FROM json_each(?))",
-        (node_ids_json, node_ids_json),
-    ).fetchall()
+        node_ids_json = json.dumps(node_ids)
+        nodes = conn.execute(
+            "SELECT id, name, entity_type FROM memory_entities WHERE id IN (SELECT value FROM json_each(?))",
+            (node_ids_json,),
+        ).fetchall()
+        edges = conn.execute(
+            "SELECT id, source_id, target_id, relation_type, memory_id, valid_from, valid_to "
+            "FROM memory_edges WHERE source_id IN (SELECT value FROM json_each(?)) "
+            "  AND target_id IN (SELECT value FROM json_each(?))",
+            (node_ids_json, node_ids_json),
+        ).fetchall()
 
     return {
         "anchor": entity_id,
@@ -185,7 +190,8 @@ def history_for_entity(db: MemoryDB, entity_id: str) -> list[dict]:
         "WHERE mel.entity_id = ? "
         "ORDER BY COALESCE(m.valid_from, m.created_at) ASC"
     )
-    rows = db._conn.execute(sql, (entity_id,)).fetchall()
+    with db.connection() as conn:
+        rows = conn.execute(sql, (entity_id,)).fetchall()
     out = []
     for row in rows:
         d = dict(row)
@@ -225,5 +231,6 @@ def memories_as_of(
         )
         params = (as_of, as_of, limit)
 
-    rows = db._conn.execute(sql, params).fetchall()
+    with db.connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
