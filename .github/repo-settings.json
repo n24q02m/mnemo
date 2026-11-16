@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tier": 1,
+  "description": "Persistent AI memory with hybrid search. Open, free, unlimited.",
+  "homepage": "https://docs.n24q02m.com/servers/mnemo/",
+  "topics": [
+    "ai-agents",
+    "ai-coding",
+    "ai-memory",
+    "claude",
+    "claude-code",
+    "cursor",
+    "docker",
+    "hybrid-search",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "open-source",
+    "python",
+    "sqlite"
+  ]
+}
