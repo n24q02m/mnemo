@@ -37,7 +37,7 @@ dependencies = [
     # OpenAI-spec provider client. PyPI dist `n24q02m-hull` (import package
     # `hull_core`). Beta floor: 0.5.0b1 is the first release that ships
     # ``hull_core.credentials``.
-    "n24q02m-hull>=0.7.0,<0.8",
+    "n24q02m-hull>=0.8.0b1,<0.9",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.21.0",
     "alembic>=1.20.1",
@@ -59,6 +59,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "syrupy>=6.1.1",
     "bandit>=1.9.4",
+    "psutil>=7.2.2",
 ]
 
 [project.scripts]

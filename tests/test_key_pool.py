@@ -357,6 +357,98 @@ def test_concurrent_calls_never_share_a_leased_credential() -> None:
     ]
 
 
+def test_cells_sharing_one_key_wait_for_the_lease() -> None:
+    """Chat, embed and rerank cells on one provider key queue, never exhaust.
+
+    One OpenRouter key usually serves every cell. Each ``PooledClient`` gates
+    only its own attempts, so an embed call racing a chat call used to read the
+    chat lease as ``leased=1`` exhaustion instead of waiting for it.
+    """
+    _seed(KEY_ONE)
+    chat = keys.PooledClient(_cell())
+    embed = keys.PooledClient(_cell(task="embed"))
+    rerank = keys.PooledClient(_cell(task="rerank"))
+
+    async def run() -> tuple[str, list[list[float]], list[dict]]:
+        return await asyncio.gather(
+            chat.chat([{"role": "user", "content": "q"}]),
+            embed.embeddings(["a"], dimensions=8),
+            rerank.rerank("q", ["a"], top_n=1),
+        )
+
+    answer, vectors, ranked = asyncio.run(run())
+
+    assert answer == f"answer from {KEY_ONE}"
+    assert vectors == [[1, 8]]
+    assert ranked == [{"index": 0, "relevance_score": 1.0, "query": "q"}]
+    assert _ScriptedClient.overlap is False
+
+
+def test_a_call_on_another_loop_waits_for_the_lease() -> None:
+    """The rerank path runs one ``asyncio.run`` per call on its own thread.
+
+    No in-process gate spans two event loops, so a rerank racing the server
+    loop's embed calls on the same key must wait on the store lease itself.
+    """
+    _seed(KEY_ONE)
+    embed = keys.PooledClient(_cell(task="embed"))
+    rerank = keys.PooledClient(_cell(task="rerank"))
+
+    def rerank_on_its_own_loop() -> list:
+        async def run() -> list:
+            return [await rerank.rerank("q", ["a"], top_n=1) for _ in range(5)]
+
+        return asyncio.run(run())
+
+    async def run() -> tuple:
+        return await asyncio.gather(
+            asyncio.gather(*(embed.embeddings(["a"], dimensions=8) for _ in range(5))),
+            asyncio.to_thread(rerank_on_its_own_loop),
+        )
+
+    vectors, ranked = asyncio.run(run())
+
+    assert vectors == [[[1, 8]]] * 5
+    assert ranked == [[{"index": 0, "relevance_score": 1.0, "query": "q"}]] * 5
+    assert _ScriptedClient.overlap is False
+
+
+def test_a_lease_held_elsewhere_is_waited_for() -> None:
+    """A lease held by another process is a queue, not exhaustion."""
+    _seed(KEY_ONE)
+    pool = keys.pool_for(_cell())
+    held = pool.acquire()
+    rerank = keys.PooledClient(_cell(task="rerank"))
+
+    async def run() -> list:
+        call = asyncio.create_task(rerank.rerank("q", ["a"], top_n=1))
+        await asyncio.sleep(0.3)
+        assert not call.done(), "the call gave up while the key was leased"
+        pool.release(held)
+        return await call
+
+    assert asyncio.run(run()) == [{"index": 0, "relevance_score": 1.0, "query": "q"}]
+
+
+def test_a_lease_never_returned_still_ends_in_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wait is bounded by the lease lifetime, then the pool error surfaces.
+
+    The held lease keeps hull's full lifetime; only the waiter's bound shrinks,
+    standing in for a holder that keeps re-leasing the key.
+    """
+    _seed(KEY_ONE)
+    keys.pool_for(_cell()).acquire()
+    monkeypatch.setattr(keys, "LEASE_SECONDS", 0.3)
+
+    with pytest.raises(ProviderCredentialsExhausted) as caught:
+        asyncio.run(keys.PooledClient(_cell()).chat([{"role": "user", "content": "q"}]))
+
+    assert (caught.value.total, caught.value.leased) == (1, 1)
+    assert _ScriptedClient.instances == []
+
+
 def test_lease_state_is_shared_through_the_store() -> None:
     """Two pools (two processes) never lease the same credential at once."""
     _seed(KEY_ONE, KEY_TWO)

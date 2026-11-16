@@ -2234,16 +2234,15 @@ def recall_context(topic: str) -> str:
 def build_http_app(settings=None):
     """Build the authenticated HTTP MCP app (Starlette), no port bind.
 
-    Composition (de-host): the MCP SDK's ``streamable_http_app()`` carries
-    only the session-manager lifespan, so this outer Starlette app runs BOTH
-    lifespans — mnemo's own (store init, embedding/rerank warmup) and the
-    session manager's — via an AsyncExitStack. :class:`HullAuthMiddleware`
-    (pure ASGI) authenticates every request BEFORE the MCP handler and binds
-    the identity to a contextvar that tools read with
-    :func:`mnemo.runtime.current_sub`.
+    Composition (de-host): the outer Starlette app runs the lifespan of the
+    MCP SDK's ``streamable_http_app()``, whose session manager enters the
+    server lifespan (mnemo's store init and embedding/rerank warmup) once for
+    the app's lifetime. Entering :func:`lifespan` here as well would open a
+    second store and load every local model twice.
+    :class:`HullAuthMiddleware` (pure ASGI) authenticates every request
+    BEFORE the MCP handler and binds the identity to a contextvar that tools
+    read with :func:`mnemo.runtime.current_sub`.
     """
-    from contextlib import AsyncExitStack, asynccontextmanager
-
     from hull_core.auth.asgi import HullAuthMiddleware
     from starlette.applications import Starlette
     from starlette.routing import Mount
@@ -2251,15 +2250,10 @@ def build_http_app(settings=None):
     inner = mcp.streamable_http_app()
     authenticator = build_authenticator(settings)
 
-    @asynccontextmanager
-    async def _combined_lifespan(app):  # noqa: ANN001, ANN202
-        async with AsyncExitStack() as stack:
-            await stack.enter_async_context(lifespan(mcp))
-            await stack.enter_async_context(inner.router.lifespan_context(inner))
-            yield
-
     app = HullAuthMiddleware(inner, authenticator)
-    return Starlette(lifespan=_combined_lifespan, routes=[Mount("/", app=app)])
+    return Starlette(
+        lifespan=inner.router.lifespan_context, routes=[Mount("/", app=app)]
+    )
 
 
 def _is_loopback_host(host: str) -> bool:
