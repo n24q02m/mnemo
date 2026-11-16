@@ -258,6 +258,17 @@ class MemoryDB:
         # because methods that hold it call other methods that take it too.
         # Code outside this class reaches the connection only through
         # connection() / run().
+        #
+        # The lock is not enough on its own: pysqlite opens a transaction
+        # before the first write and keeps it open until a commit or rollback,
+        # so a write that raises part-way, or that finds nothing to change and
+        # returns early, would leave it open for the next caller, on any
+        # thread, to commit. Each method that owns a write transaction
+        # therefore enters the connection as a context manager inside the lock
+        # (``with self._lock, self._conn:``), which rolls back when the body
+        # raises and commits on every other exit, before the lock is released.
+        # Helpers called from such a method take the plain lock only: entering
+        # the connection again would commit the caller's transaction early.
         self._lock = threading.RLock()
         with self._lock:
             self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
@@ -722,7 +733,7 @@ class MemoryDB:
         """Persist or replace one memory vector for an active vector store."""
         if not self._vec_enabled:
             raise RuntimeError("vector storage is not enabled for this database")
-        with self._lock:
+        with self._lock, self._conn:
             if not self.get(memory_id):
                 raise KeyError(f"memory not found: {memory_id}")
 
@@ -762,7 +773,7 @@ class MemoryDB:
         # Prevent expensive json.dumps calls for the default empty list.
         tags_json = "[]" if not tags else json.dumps(tags)
 
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 """INSERT INTO memories (id, content, category, tags, source,
                    subject, created_at, updated_at, access_count, last_accessed)
@@ -856,7 +867,7 @@ class MemoryDB:
 
         compressed_int = 1 if compressed else 0
 
-        with self._lock:
+        with self._lock, self._conn:
             if importance is not None:
                 importance = max(0.0, min(1.0, importance))
                 self._conn.execute(
@@ -1371,7 +1382,7 @@ class MemoryDB:
             return
 
         ids = [m["id"] for m in top]
-        with self._lock:
+        with self._lock, self._conn:
             self._conn.execute(
                 """UPDATE memories
                     SET access_count = access_count + 1,
@@ -1600,7 +1611,7 @@ class MemoryDB:
         and to ``history_for_entity`` for audit trails. ``superseded_by``
         stays NULL -- deletion has no forward pointer, unlike ``update``.
         """
-        with self._lock:
+        with self._lock, self._conn:
             cursor = self._conn.execute(
                 "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL",
                 (_now_iso(), memory_id),
@@ -1777,7 +1788,7 @@ class MemoryDB:
         Returns:
             Dict with import stats (imported, skipped, rejected).
         """
-        with self._lock:
+        with self._lock, self._conn:
             self._clear_for_import(mode)
             items, rejected = self._parse_import_data(data)
             imported = 0
@@ -1816,7 +1827,7 @@ class MemoryDB:
         Returns:
             Count of newly archived rows (already-archived rows are skipped).
         """
-        with self._lock:
+        with self._lock, self._conn:
             cursor = self._conn.cursor()
 
             # Bolt Performance Optimization:
@@ -1875,7 +1886,7 @@ class MemoryDB:
                 archive_after_days = 90
         archive_after_days = max(1, int(archive_after_days))
 
-        with self._lock:
+        with self._lock, self._conn:
             cursor = self._conn.cursor()
             archive_ts = _now_iso()
 
@@ -1914,7 +1925,7 @@ class MemoryDB:
         copy-back behaviour for backward compatibility with pre-mem_001 DBs
         that still hold rows in the side table.
         """
-        with self._lock:
+        with self._lock, self._conn:
             cursor = self._conn.cursor()
             now = _now_iso()
 
@@ -2051,7 +2062,7 @@ class MemoryDB:
     def update_importance(self, memory_id: str, importance: float) -> bool:
         """Update importance score for a memory."""
         importance = max(0.0, min(1.0, importance))
-        with self._lock:
+        with self._lock, self._conn:
             cursor = self._conn.cursor()
             cursor.execute(
                 "UPDATE memories SET importance = ? WHERE id = ?",
@@ -2211,7 +2222,10 @@ class MemoryDB:
                 logger.info(
                     f"Phase 3 backfill: commit_sha + valid_from for {len(rows)} legacy rows"
                 )
-            except Exception as e:  # pragma: no cover - runtime guard
+            except Exception as e:
+                # The failure is swallowed below, so no caller's context
+                # manager will see it: undo the partial backfill here.
+                self._conn.rollback()
                 logger.warning(f"Phase 3 temporal backfill failed: {e}")
 
     def _read_alembic_version(self) -> str | None:

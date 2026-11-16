@@ -106,7 +106,11 @@ def store_kg_with_memory_id(
         # safe contract for this idempotent update batch.
         rowcount = getattr(cursor, "rowcount", -1)
         edge_count = rowcount if rowcount != -1 else len(params)
-        conn.commit()
+
+    # Commit even without edges to backfill: the entity upserts and memory
+    # links above are writes too, and an open transaction must not outlive
+    # this call.
+    conn.commit()
 
     logger.debug(
         f"temporal.store: memory_id={memory_id} "

@@ -13,6 +13,12 @@ The hammer test drives that path with many threads and a tiny GIL switch
 interval. The static guards keep the fix from eroding: every ``self._conn``
 use in ``MemoryDB`` must sit inside ``with self._lock``, and no module outside
 ``db.py`` may reach for ``._conn`` directly.
+
+The lock alone is not enough: transaction state must not outlive it either.
+pysqlite opens a transaction before the first write and keeps it open until
+someone commits or rolls back, so a write that raises part-way, or that finds
+nothing to change and returns, would leave its transaction open for the next
+caller on any thread to commit. The rollback and no-op tests cover that.
 """
 
 from __future__ import annotations
@@ -23,12 +29,22 @@ import sqlite3
 import sys
 import textwrap
 import threading
+from collections.abc import Generator
 from pathlib import Path
 
+import pytest
+
+from mnemo import db as db_module
 from mnemo.db import MemoryDB
+from mnemo.temporal.store import store_kg_with_memory_id
 
 THREADS = 8
 ADDS_PER_THREAD = 150
+
+HALF_WRITTEN = "half-written memory"
+UNRELATED = "unrelated committed write"
+EMBEDDING = [0.1, 0.2, 0.3, 0.4]
+TIMESTAMP = "2026-01-01T00:00:00+00:00"
 
 
 def _hammer(workers: list) -> list[BaseException]:
@@ -58,15 +74,67 @@ def _hammer(workers: list) -> list[BaseException]:
     return errors
 
 
-def _committed_count(path: Path, where: str = "1 = 1") -> int:
+def _committed_count(path: Path, where: str = "1 = 1", table: str = "memories") -> int:
     """Count rows through a separate connection, so only committed rows show."""
     conn = sqlite3.connect(path)
     try:
-        return conn.execute(f"SELECT COUNT(*) FROM memories WHERE {where}").fetchone()[
-            0
-        ]
+        return conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
     finally:
         conn.close()
+
+
+def _in_transaction(db: MemoryDB) -> bool:
+    """Whether the shared connection has a transaction open, read under the lock."""
+    with db._lock:
+        return db._conn.in_transaction
+
+
+def _commit_from_another_thread(db: MemoryDB) -> None:
+    """Run an unrelated committing write on another thread.
+
+    Whatever a failed call left pending on the shared connection would ride
+    along with this commit and become durable.
+    """
+    thread = threading.Thread(target=db.add, args=(UNRELATED,))
+    thread.start()
+    thread.join()
+    assert _committed_count(db._db_path, f"content = '{UNRELATED}'") == 1
+
+
+def _fail_on(db: MemoryDB, event: str) -> None:
+    """Make every statement that fires the trigger ``event`` abort."""
+    with db.connection() as conn:
+        conn.execute(
+            f"CREATE TEMP TRIGGER injected_failure {event} "
+            "BEGIN SELECT RAISE(ABORT, 'injected'); END"
+        )
+
+
+def _boom(*_args, **_kwargs):
+    raise RuntimeError("injected")
+
+
+def _search_a_hit(db: MemoryDB) -> list[dict]:
+    """Search for a row that exists, so search() updates its access stats."""
+    db.add("anchor")
+    return db.search("anchor")
+
+
+@pytest.fixture
+def vec_db(tmp_path: Path) -> Generator[MemoryDB]:
+    """A MemoryDB that writes vectors, into a plain stand-in table.
+
+    sqlite-vec does not load on every CI platform, and the paths under test
+    only insert into and delete from ``memories_vec``, so a regular table with
+    the same columns stands in for the vec0 one, as in test_db_vec_coverage.
+    """
+    db = MemoryDB(tmp_path / "vec.db", embedding_dims=len(EMBEDDING))
+    with db.connection() as conn:
+        conn.execute("DROP TABLE IF EXISTS memories_vec")
+        conn.execute("CREATE TABLE memories_vec (id TEXT PRIMARY KEY, embedding BLOB)")
+    db._vec_enabled = True
+    yield db
+    db.close()
 
 
 class TestConcurrentWrites:
@@ -169,6 +237,205 @@ class TestEntryPoints:
             ).fetchone()[0]
 
         assert tmp_db.run(read_category, mid, column="category") == "fact"
+
+
+class TestFailedWritesRollBack:
+    """A write that raises part-way must not leave its earlier statements pending.
+
+    Each test makes a later statement of one write fail, checks that no
+    transaction is open once the call has raised, then commits an unrelated
+    write from another thread -- the commit that would make a half-applied
+    write durable -- and reads the committed state through a separate
+    connection.
+    """
+
+    @pytest.mark.parametrize(
+        "write",
+        [
+            pytest.param(
+                lambda db: db.add(HALF_WRITTEN, embedding=EMBEDDING), id="add"
+            ),
+            pytest.param(
+                lambda db: db.add_with_context_type(
+                    HALF_WRITTEN, context_type="fact", embedding=EMBEDDING
+                ),
+                id="add_with_context_type",
+            ),
+        ],
+    )
+    def test_add_rolls_back_when_the_vector_insert_fails(
+        self, vec_db: MemoryDB, monkeypatch, write
+    ):
+        monkeypatch.setattr(db_module, "_serialize_f32", _boom)
+        with pytest.raises(RuntimeError, match="injected"):
+            write(vec_db)
+        assert _in_transaction(vec_db) is False
+        _commit_from_another_thread(vec_db)
+        assert _committed_count(vec_db._db_path, f"content = '{HALF_WRITTEN}'") == 0
+
+    def test_write_vector_keeps_the_old_vector_when_the_insert_fails(
+        self, vec_db: MemoryDB, monkeypatch
+    ):
+        mid = vec_db.add("anchor", embedding=EMBEDDING)
+        monkeypatch.setattr(db_module, "_serialize_f32", _boom)
+        with pytest.raises(RuntimeError, match="injected"):
+            vec_db.write_vector(mid, EMBEDDING)
+        assert _in_transaction(vec_db) is False
+        _commit_from_another_thread(vec_db)
+        assert (
+            _committed_count(vec_db._db_path, f"id = '{mid}'", table="memories_vec")
+            == 1
+        )
+
+    def test_update_keeps_the_predecessor_when_the_successor_vector_fails(
+        self, vec_db: MemoryDB, monkeypatch
+    ):
+        mid = vec_db.add("anchor")
+        monkeypatch.setattr(db_module, "_serialize_f32", _boom)
+        with pytest.raises(RuntimeError, match="injected"):
+            vec_db.update(mid, content=HALF_WRITTEN, embedding=EMBEDDING)
+        assert _in_transaction(vec_db) is False
+        _commit_from_another_thread(vec_db)
+        path = vec_db._db_path
+        assert _committed_count(path, f"id = '{mid}' AND valid_to IS NULL") == 1
+        assert _committed_count(path, f"content = '{HALF_WRITTEN}'") == 0
+
+    def test_delete_keeps_the_row_live_when_the_vector_delete_fails(
+        self, vec_db: MemoryDB
+    ):
+        mid = vec_db.add("anchor", embedding=EMBEDDING)
+        _fail_on(vec_db, "BEFORE DELETE ON memories_vec")
+        with pytest.raises(sqlite3.IntegrityError, match="injected"):
+            vec_db.delete(mid)
+        assert _in_transaction(vec_db) is False
+        _commit_from_another_thread(vec_db)
+        assert (
+            _committed_count(vec_db._db_path, f"id = '{mid}' AND valid_to IS NULL") == 1
+        )
+
+    def test_replace_import_keeps_the_store_when_a_record_fails_to_bind(
+        self, tmp_db: MemoryDB
+    ):
+        for i in range(3):
+            tmp_db.add(f"seeded {i}")
+        records = [
+            {"content": HALF_WRITTEN},
+            # Not a scalar: sqlite3 refuses to bind it, after the replace-mode
+            # clear and the first record have already run.
+            {"content": "unbindable", "source": {"nested": True}},
+        ]
+        with pytest.raises(sqlite3.ProgrammingError):
+            tmp_db.import_jsonl(records, mode="replace")
+        assert _in_transaction(tmp_db) is False
+        _commit_from_another_thread(tmp_db)
+        path = tmp_db._db_path
+        assert _committed_count(path, "content LIKE 'seeded %'") == 3
+        assert _committed_count(path, f"content = '{HALF_WRITTEN}'") == 0
+
+    def test_legacy_restore_stays_archived_when_the_side_table_delete_fails(
+        self, tmp_db: MemoryDB
+    ):
+        with tmp_db.connection() as conn:
+            conn.execute(
+                "INSERT INTO archived_memories (id, content, created_at, "
+                "updated_at, last_accessed, archived_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("legacy-id", "legacy row", TIMESTAMP, TIMESTAMP, TIMESTAMP, TIMESTAMP),
+            )
+        _fail_on(tmp_db, "BEFORE DELETE ON archived_memories")
+        with pytest.raises(sqlite3.IntegrityError, match="injected"):
+            tmp_db.restore_memory("legacy-id")
+        assert _in_transaction(tmp_db) is False
+        _commit_from_another_thread(tmp_db)
+        path = tmp_db._db_path
+        assert _committed_count(path, "id = 'legacy-id'") == 0
+        assert (
+            _committed_count(path, "id = 'legacy-id'", table="archived_memories") == 1
+        )
+
+    @pytest.mark.parametrize(
+        ("event", "write"),
+        [
+            pytest.param(
+                "BEFORE UPDATE OF importance ON memories",
+                lambda db: db.update_importance(db.add("anchor"), 0.9),
+                id="update_importance",
+            ),
+            pytest.param(
+                "BEFORE UPDATE OF access_count ON memories",
+                _search_a_hit,
+                id="search-access-stats",
+            ),
+        ],
+    )
+    def test_failed_single_statement_write_closes_its_transaction(
+        self, tmp_db: MemoryDB, event, write
+    ):
+        _fail_on(tmp_db, event)
+        with pytest.raises(sqlite3.IntegrityError, match="injected"):
+            write(tmp_db)
+        assert _in_transaction(tmp_db) is False
+
+    def test_failed_temporal_backfill_rolls_back(self, tmp_db: MemoryDB):
+        """The backfill logs and swallows its failure, so it must roll back."""
+        tmp_db.add("backfill first")
+        tmp_db.add("backfill poison")
+        _fail_on(
+            tmp_db,
+            "BEFORE UPDATE OF commit_sha ON memories "
+            "WHEN OLD.content = 'backfill poison'",
+        )
+        tmp_db._backfill_phase3_temporal()
+        assert _in_transaction(tmp_db) is False
+        _commit_from_another_thread(tmp_db)
+        assert (
+            _committed_count(
+                tmp_db._db_path, "content LIKE 'backfill %' AND commit_sha IS NULL"
+            )
+            == 2
+        )
+
+
+class TestNoOpWritesCloseTheTransaction:
+    """pysqlite opens a transaction before any UPDATE or DELETE, even one that
+    matches no row, so a write that finds nothing to do must still close it."""
+
+    @pytest.mark.parametrize(
+        ("call", "expected"),
+        [
+            pytest.param(lambda db: db.delete("missing"), False, id="delete"),
+            pytest.param(
+                lambda db: db.archive_old_memories(), 0, id="archive_old_memories"
+            ),
+            pytest.param(lambda db: db.archive_by_score(), 0, id="archive_by_score"),
+            pytest.param(
+                lambda db: db.restore_memory("missing"), False, id="restore_memory"
+            ),
+            pytest.param(
+                lambda db: db.update("missing", content="x"), None, id="update"
+            ),
+            pytest.param(
+                lambda db: db.update_importance("missing", 0.9),
+                False,
+                id="update_importance",
+            ),
+        ],
+    )
+    def test_write_with_nothing_to_do_leaves_no_transaction_open(
+        self, tmp_db: MemoryDB, call, expected
+    ):
+        # A fresh, unarchived row: nothing old enough to archive, nothing to restore.
+        tmp_db.add("fresh memory")
+        assert call(tmp_db) == expected
+        assert _in_transaction(tmp_db) is False
+
+    def test_kg_store_without_relations_commits_its_writes(self, tmp_db: MemoryDB):
+        mid = tmp_db.add("Alice reviews the release")
+        extracted = {"entities": [{"name": "Alice", "type": "person"}], "relations": []}
+        with tmp_db._lock:
+            result = store_kg_with_memory_id(tmp_db._conn, mid, extracted)
+            assert tmp_db._conn.in_transaction is False
+        assert result == {"entities": 1, "edges": 0, "links": 1}
+        assert _committed_count(tmp_db._db_path, table="memory_entity_links") == 1
 
 
 class TestStaticGuards:

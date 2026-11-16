@@ -226,6 +226,15 @@ class TestSearchVecBranch:
             def commit(self):
                 return self._inner.commit()
 
+            # search() commits its access-count update through the
+            # connection's context manager, and special methods bypass
+            # __getattr__, so the proxy forwards them explicitly.
+            def __enter__(self):
+                return self._inner.__enter__()
+
+            def __exit__(self, *exc_info):
+                return self._inner.__exit__(*exc_info)
+
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
@@ -271,6 +280,15 @@ class TestSearchVecBranch:
             def commit(self):
                 return self._inner.commit()
 
+            # search() commits its access-count update through the
+            # connection's context manager, and special methods bypass
+            # __getattr__, so the proxy forwards them explicitly.
+            def __enter__(self):
+                return self._inner.__enter__()
+
+            def __exit__(self, *exc_info):
+                return self._inner.__exit__(*exc_info)
+
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
@@ -309,6 +327,15 @@ class TestSearchVecBranch:
 
             def commit(self):
                 return self._inner.commit()
+
+            # search() commits its access-count update through the
+            # connection's context manager, and special methods bypass
+            # __getattr__, so the proxy forwards them explicitly.
+            def __enter__(self):
+                return self._inner.__enter__()
+
+            def __exit__(self, *exc_info):
+                return self._inner.__exit__(*exc_info)
 
             def __getattr__(self, name):
                 return getattr(self._inner, name)
@@ -360,6 +387,15 @@ class TestSearchVecBranch:
 
             def commit(self):
                 return self._inner.commit()
+
+            # search() commits its access-count update through the
+            # connection's context manager, and special methods bypass
+            # __getattr__, so the proxy forwards them explicitly.
+            def __enter__(self):
+                return self._inner.__enter__()
+
+            def __exit__(self, *exc_info):
+                return self._inner.__exit__(*exc_info)
 
             def __getattr__(self, name):
                 return getattr(self._inner, name)
