@@ -84,7 +84,7 @@ def _blocked(host: object, port: object) -> OutboundNetworkBlocked:
         "Unit tests must not talk to the internet. Patch the boundary the "
         "call crosses instead -- e.g. patch('mnemo.embedder.init_backend') "
         "or patch('mnemo.embedder._cell_client') for embedding backends, "
-        "patch('mnemo.reranker.init_reranker') for rerankers, or "
+        "patch('mnemo.reranker.build_reranker') for rerankers, or "
         "patch('mnemo.runtime.provider_client') / "
         "patch('mnemo.llm._get_client') for provider-cell calls. A test "
         "that genuinely needs the network belongs behind one of the "

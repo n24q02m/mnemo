@@ -540,7 +540,7 @@ async def test_ambient_env_keys_do_not_initialize_backends(monkeypatch):
         pytest.fail("Startup initialized a process-wide provider/model")
 
     monkeypatch.setattr("mnemo.embedder.init_backend", forbidden)
-    monkeypatch.setattr("mnemo.reranker.init_reranker", forbidden)
+    monkeypatch.setattr("mnemo.reranker.build_reranker", forbidden)
     monkeypatch.setattr("mnemo.server.cell_configured", lambda task: False)
     monkeypatch.setattr(
         "mnemo.server.settings",

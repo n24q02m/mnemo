@@ -12,10 +12,12 @@ import mnemo.reranker as reranker_mod
 from mnemo.reranker import (
     CloudReranker,
     Qwen3Reranker,
+    build_reranker,
     describe_reranker,
     get_reranker,
     init_reranker,
     rerank_with_identity,
+    set_reranker,
 )
 
 
@@ -203,6 +205,26 @@ class TestInitReranker:
         backend = init_reranker("local")
         assert isinstance(backend, Qwen3Reranker)
         assert get_reranker() is backend
+
+    @pytest.mark.parametrize("backend_type", ["cloud", "local"])
+    def test_build_does_not_publish(self, backend_type):
+        """build_reranker returns a backend but leaves get_reranker() unchanged."""
+        client = _cell_client()
+        with patch("mnemo.reranker._cell_client", return_value=client):
+            backend = build_reranker(backend_type)
+        assert backend.backend_name == backend_type
+        assert get_reranker() is None
+
+    def test_set_reranker_publishes(self):
+        """set_reranker makes the backend visible to get_reranker()."""
+        backend = Qwen3Reranker()
+        set_reranker(backend)
+        assert get_reranker() is backend
+
+    def test_build_unknown_backend(self):
+        """build_reranker raises ValueError for unknown backend."""
+        with pytest.raises(ValueError, match="Unknown reranker backend"):
+            build_reranker("invalid")
 
     def test_init_unknown_backend(self):
         """init_reranker raises ValueError for unknown backend."""
