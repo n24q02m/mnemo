@@ -2,6 +2,71 @@
 
 <!-- version list -->
 
+## v2.23.0-beta.2 (2026-11-16)
+
+### Bug Fixes
+
+- Add repo-settings.json and .skret.yaml ([#1387](https://github.com/n24q02m/mnemo/pull/1387),
+  [`9af8608`](https://github.com/n24q02m/mnemo/commit/9af86080e5355d7c549b9d7c0e21ea410ab0ca89))
+
+- Add the process lifeline supervisor that the live and protocol tests import
+  ([#1385](https://github.com/n24q02m/mnemo/pull/1385),
+  [`814c316`](https://github.com/n24q02m/mnemo/commit/814c3163fbb22dd19440a60d00cdf8b284285b22))
+
+- Bring CI workflows in line with the fleet CI policy lint
+  ([#1390](https://github.com/n24q02m/mnemo/pull/1390),
+  [`b317c5e`](https://github.com/n24q02m/mnemo/commit/b317c5eb3c357145a8eb78e9dc508005e9d71984))
+
+- Declare skret sync sources for github secrets
+  ([#1392](https://github.com/n24q02m/mnemo/pull/1392),
+  [`69ce926`](https://github.com/n24q02m/mnemo/commit/69ce926f4dace9d7b553ae2f97a7b52da14a3ec3))
+
+- Dispatch the cd.yml workflows that replaced core-update.yml and bump.yml
+  ([#1389](https://github.com/n24q02m/mnemo/pull/1389),
+  [`5ca9036`](https://github.com/n24q02m/mnemo/commit/5ca9036de7c447681c84a2f50ee2997039a3ab76))
+
+- Let renovate merge only after every check is green
+  ([#1381](https://github.com/n24q02m/mnemo/pull/1381),
+  [`0e34460`](https://github.com/n24q02m/mnemo/commit/0e34460947fb19647afec61f297dda81c88d9a0e))
+
+- Pin hull 0.8.0-beta.1, whose store reads hold the connection lock
+  ([#1385](https://github.com/n24q02m/mnemo/pull/1385),
+  [`814c316`](https://github.com/n24q02m/mnemo/commit/814c3163fbb22dd19440a60d00cdf8b284285b22))
+
+- Require CI checks on main and limit the Renovate bypass to pull requests
+  ([#1383](https://github.com/n24q02m/mnemo/pull/1383),
+  [`14db40b`](https://github.com/n24q02m/mnemo/commit/14db40bddb9629f7c2fd0a9e3529912b8eacfc44))
+
+- Start the marketplace plugin sync with workflow_dispatch
+  ([#1388](https://github.com/n24q02m/mnemo/pull/1388),
+  [`249daa0`](https://github.com/n24q02m/mnemo/commit/249daa01726b50545b5a22dba8a19d093b406417))
+
+- Upload coverage to codecov over oidc and fail the job when it is refused
+  ([#1391](https://github.com/n24q02m/mnemo/pull/1391),
+  [`5647f61`](https://github.com/n24q02m/mnemo/commit/5647f61dd37bcf0344c316b6c6976016139c7003))
+
+- Wait for a key leased by another call instead of reporting pool exhaustion
+  ([#1385](https://github.com/n24q02m/mnemo/pull/1385),
+  [`814c316`](https://github.com/n24q02m/mnemo/commit/814c3163fbb22dd19440a60d00cdf8b284285b22))
+
+- **deps**: Lock file maintenance ([#1394](https://github.com/n24q02m/mnemo/pull/1394),
+  [`53a0148`](https://github.com/n24q02m/mnemo/commit/53a0148ecc5cf3b1d2e133d8b3d3276115eaff15))
+
+- **deps**: Lock file maintenance ([#1386](https://github.com/n24q02m/mnemo/pull/1386),
+  [`00e8fe0`](https://github.com/n24q02m/mnemo/commit/00e8fe0e7a99251df34b392d7573dd0df7196269))
+
+- **deps**: Lock file maintenance ([#1384](https://github.com/n24q02m/mnemo/pull/1384),
+  [`81a2ca9`](https://github.com/n24q02m/mnemo/commit/81a2ca94b7fbfee9e65294eb86a00387acfac124))
+
+- **deps**: Lock file maintenance ([#1382](https://github.com/n24q02m/mnemo/pull/1382),
+  [`f29afc8`](https://github.com/n24q02m/mnemo/commit/f29afc8b18098c04a3484e470a598fbc53e6cf6a))
+
+### Features
+
+- Sync cross-promo section ([#1393](https://github.com/n24q02m/mnemo/pull/1393),
+  [`164c2f9`](https://github.com/n24q02m/mnemo/commit/164c2f98ed0c83f706d15f85ba535aa0b662add1))
+
+
 ## v2.23.0-beta.1 (2026-11-14)
 
 ### Bug Fixes
