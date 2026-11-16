@@ -54,7 +54,7 @@ class TestInitRerankerBackend:
         """Disabled reranker clears the singleton and never initializes."""
         with (
             patch("mnemo.server.settings") as mock_settings,
-            patch("mnemo.reranker.init_reranker") as mock_init,
+            patch("mnemo.reranker.build_reranker") as mock_init,
         ):
             mock_settings.rerank_enabled = False
             await _init_reranker_backend()
@@ -70,12 +70,13 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch(
-                "mnemo.reranker.init_reranker", return_value=cloud_backend
+                "mnemo.reranker.build_reranker", return_value=cloud_backend
             ) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             await _init_reranker_backend()
         mock_init.assert_called_once_with("cloud")
+        assert get_reranker() is cloud_backend
 
     async def test_cloud_cell_unavailable_falls_back_to_local(self):
         """Unavailable rerank cell clears and falls back to the local ONNX leg."""
@@ -92,13 +93,14 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
-            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
+            patch("mnemo.reranker.build_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
             mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
             await _init_reranker_backend()
         assert [c.args[0] for c in mock_init.call_args_list] == ["cloud", "local"]
+        assert get_reranker() is local_backend
 
     async def test_cloud_cell_probe_exception_falls_back_to_local(self):
         """A raising cell probe is contained and the local leg still runs."""
@@ -115,7 +117,7 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=True),
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
-            patch("mnemo.reranker.init_reranker", side_effect=fake_init) as mock_init,
+            patch("mnemo.reranker.build_reranker", side_effect=fake_init) as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -129,7 +131,7 @@ class TestInitRerankerBackend:
         with (
             patch("mnemo.server.settings") as mock_settings,
             patch("mnemo.server.cell_configured", return_value=False),
-            patch("mnemo.reranker.init_reranker") as mock_init,
+            patch("mnemo.reranker.build_reranker") as mock_init,
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = True
@@ -146,7 +148,7 @@ class TestInitRerankerBackend:
             patch("mnemo.server.cell_configured", return_value=False),
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
-            patch("mnemo.reranker.init_reranker", return_value=local_backend),
+            patch("mnemo.reranker.build_reranker", return_value=local_backend),
         ):
             mock_settings.rerank_enabled = True
             mock_settings.disable_local_rerank = False
@@ -162,7 +164,7 @@ class TestInitRerankerBackend:
             _passthrough_to_thread(),
             patch("mnemo.server._maybe_register_custom_rerank"),
             patch(
-                "mnemo.reranker.init_reranker",
+                "mnemo.reranker.build_reranker",
                 side_effect=Exception("ONNX not installed"),
             ),
         ):
@@ -171,6 +173,50 @@ class TestInitRerankerBackend:
             mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
             await _init_reranker_backend()  # must not raise
         assert get_reranker() is None
+
+    @pytest.mark.parametrize("available", [True, False])
+    @pytest.mark.parametrize("leg", ["cloud", "local"])
+    async def test_reranker_is_published_only_after_its_probe_passes(
+        self, leg, available
+    ):
+        """Searches read ``get_reranker()``; while the probe runs they see nothing.
+
+        The probe loads the model (seconds for local ONNX) on a background
+        task while the server already serves requests. A backend visible
+        before its probe finishes sends a concurrent search into a second,
+        parallel model load, and the search waits for it.
+        """
+        seen_during_probe = []
+
+        class ProbeRecordingBackend:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def check_available(self):
+                seen_during_probe.append(get_reranker())
+                return available
+
+        with (
+            patch("mnemo.server.settings") as mock_settings,
+            patch("mnemo.server.cell_configured", return_value=leg == "cloud"),
+            patch("mnemo.server.model_cell"),
+            _passthrough_to_thread(),
+            patch("mnemo.server._maybe_register_custom_rerank"),
+            patch("mnemo.reranker._cell_client"),
+            patch("mnemo.reranker.CloudReranker", ProbeRecordingBackend),
+            patch("mnemo.reranker.Qwen3Reranker", ProbeRecordingBackend),
+        ):
+            mock_settings.rerank_enabled = True
+            mock_settings.disable_local_rerank = False
+            mock_settings.resolve_local_rerank_model.return_value = "local/reranker"
+            await _init_reranker_backend()
+
+        assert seen_during_probe
+        assert all(backend is None for backend in seen_during_probe)
+        if available:
+            assert isinstance(get_reranker(), ProbeRecordingBackend)
+        else:
+            assert get_reranker() is None
 
 
 # ---------------------------------------------------------------------------

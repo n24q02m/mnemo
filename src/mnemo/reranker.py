@@ -198,6 +198,31 @@ def clear_reranker() -> None:
     _backend = None
 
 
+def set_reranker(backend: RerankerBackend) -> None:
+    """Publish ``backend`` as the reranker that searches use."""
+    global _backend
+    _backend = backend
+
+
+def build_reranker(backend_type: str, model: str | Any = None) -> RerankerBackend:
+    """Build a reranker backend without publishing it.
+
+    Args:
+        backend_type: 'cloud' or 'local'
+        model: Model name for 'local'; for 'cloud' either the hull provider
+            client itself (preferred) or unused (the cell owns the model).
+
+    Returns:
+        New backend instance; ``get_reranker()`` is unchanged.
+    """
+    if backend_type == "cloud":
+        client = model if model is not None else _cell_client()
+        return CloudReranker(client)
+    if backend_type == "local":
+        return Qwen3Reranker(model if isinstance(model, str) else None)
+    raise ValueError(f"Unknown reranker backend: {backend_type}")
+
+
 def init_reranker(
     backend_type: str,
     model: str | Any = None,
@@ -216,17 +241,9 @@ def init_reranker(
     Returns:
         Initialized backend instance.
     """
-    global _backend
-
-    if backend_type == "cloud":
-        client = model if model is not None else _cell_client()
-        _backend = CloudReranker(client)
-    elif backend_type == "local":
-        _backend = Qwen3Reranker(model if isinstance(model, str) else None)
-    else:
-        raise ValueError(f"Unknown reranker backend: {backend_type}")
-
-    return _backend
+    backend = build_reranker(backend_type, model)
+    set_reranker(backend)
+    return backend
 
 
 def _cell_client() -> Any:

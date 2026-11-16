@@ -199,8 +199,15 @@ async def _init_embedding_backend(ctx: dict) -> None:
 
 
 async def _init_reranker_backend() -> None:
-    """Initialize the reranker: rerank cell when configured, else local ONNX."""
-    from mnemo.reranker import clear_reranker, init_reranker
+    """Initialize the reranker: rerank cell when configured, else local ONNX.
+
+    Runs as a background task while the server already serves searches, so a
+    backend is published only after its probe passes. The probe loads the
+    model; a backend visible earlier would send a concurrent search into its
+    own parallel model load. Until then searches run without reranking, the
+    same way they run FTS5-only until the embedding probe passes.
+    """
+    from mnemo.reranker import build_reranker, clear_reranker, set_reranker
 
     clear_reranker()
 
@@ -210,15 +217,14 @@ async def _init_reranker_backend() -> None:
 
     if cell_configured("rerank"):
         try:
-            backend = await asyncio.to_thread(init_reranker, "cloud")
+            backend = await asyncio.to_thread(build_reranker, "cloud")
             available = await asyncio.to_thread(backend.check_available)
             if available:
+                set_reranker(backend)
                 logger.info(f"Reranker: {model_cell('rerank').model}")
                 return
-            clear_reranker()
         except Exception as e:
             logger.warning(f"Rerank cell probe failed: {e}")
-            clear_reranker()
         logger.warning(
             "Rerank cell configured but unavailable -- falling back to local ONNX"
         )
@@ -232,16 +238,15 @@ async def _init_reranker_backend() -> None:
     local_model = settings.resolve_local_rerank_model()
     try:
         await asyncio.to_thread(_maybe_register_custom_rerank, local_model)
-        backend = await asyncio.to_thread(init_reranker, "local", local_model)
+        backend = await asyncio.to_thread(build_reranker, "local", local_model)
         available = await asyncio.to_thread(backend.check_available)
         if available:
+            set_reranker(backend)
             logger.info(f"Reranker: local {local_model}")
         else:
             logger.error("Local reranker not available")
-            clear_reranker()
     except Exception as e:
         logger.error(f"Local reranker init failed: {e}")
-        clear_reranker()
 
 
 # Lifespan state of the running server. Static MCP resources cannot take a
