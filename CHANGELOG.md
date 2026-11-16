@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.23.0-beta.4 (2026-11-16)
+
+### Bug Fixes
+
+- Publish the reranker only after its warm-up probe passes
+  ([#1399](https://github.com/n24q02m/mnemo/pull/1399),
+  [`a423f8d`](https://github.com/n24q02m/mnemo/commit/a423f8da4891a1a05f0c7c4a56e63b1205bc662f))
+
+
 ## v2.23.0-beta.3 (2026-11-16)
 
 ### Bug Fixes
