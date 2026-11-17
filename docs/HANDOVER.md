@@ -1,7 +1,12 @@
 # mnemo Handover
 
 Operational handover for [mnemo](https://github.com/n24q02m/mnemo) — MCP
-server for persistent AI memory. Current stable line: **n24q02m-mnemo 2.21.x**.
+server for persistent AI memory.
+
+**Version:** `project.version` in `pyproject.toml` is the only source; the release
+tooling keeps `server.json` and `.claude-plugin/plugin.json` on the same value, and
+the published version is the latest `n24q02m-mnemo` release on PyPI. This file does
+not repeat the number, so a release never leaves it stale.
 
 ## Current operation
 
