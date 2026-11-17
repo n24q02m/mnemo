@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.23.0 (2026-11-17)
+
+### Bug Fixes
+
+- Pin hull to 0.8.0 stable ([#1400](https://github.com/n24q02m/mnemo/pull/1400),
+  [`1eb20b1`](https://github.com/n24q02m/mnemo/commit/1eb20b1335e451955ed23507ce1440538edae8ff))
+
+
 ## v2.23.0-beta.4 (2026-11-16)
 
 ### Bug Fixes
