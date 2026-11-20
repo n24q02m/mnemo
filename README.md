@@ -185,7 +185,7 @@ Full docs at **[docs.n24q02m.com/servers/mnemo/setup/](https://docs.n24q02m.com/
 
 - [Setup](https://docs.n24q02m.com/servers/mnemo/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- http
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
+- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-user bearer tokens mapped to credential namespaces
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
@@ -238,7 +238,7 @@ Plugin trinity (Claude Code marketplace install):
 
 ## Security
 
-- **Graceful fallbacks** -- cloud provider cells degrade to local ONNX; an unconfigured cell never silently selects a paid provider
+- **Graceful fallbacks** -- an unconfigured embed/rerank cell uses local ONNX; a rerank cell that fails its probe degrades to local ONNX, an embed cell that fails its probe leaves search FTS5-only; an unconfigured cell never silently selects a paid provider
 - **Host-only credentials** -- provider keys live in the host-owned `config.toml` or `HULL_<TASK>_API_KEY` env vars; end users never see them
 - **Auth-gated HTTP** -- `auth = "no-auth"` refuses non-loopback binds; `token` / `multi` require credential checks
 - **Error sanitization** -- No credentials in error messages
@@ -262,8 +262,8 @@ The package ships two distinct console scripts:
   `mnemo-pilot` is a legacy alias of the same entry point.
 - **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) -- the MCP server plus one-shot operator subcommands. A
   bare invocation starts the HTTP server; a leading subcommand
-  (`config-init`, `warmup`, `token-hash`, `token-verify`) runs an action
-  and exits.
+  (`config-init`, `config`, `warmup`, `token-hash`, `token-verify`) runs an
+  action and exits.
 
 CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
@@ -286,6 +286,9 @@ n24q02m-mnemo                       # start the Streamable HTTP MCP server
                                 # (bind host/port from config.toml or MNEMO_HOST/MNEMO_PORT)
 
 n24q02m-mnemo config-init [--force] # write ~/.mnemo/config.toml from the template
+n24q02m-mnemo config path|show      # print the config path / the file (template if absent)
+n24q02m-mnemo config get server.port          # print one value (dotted key)
+n24q02m-mnemo config set server.port 8001     # set one value in place, keeping comments
 n24q02m-mnemo warmup                # pre-download local embedding model / probe cells
 n24q02m-mnemo token-hash            # print a scrypt$ hash for [server] token_hash
                                 # (reads MNEMO_AUTH_TOKEN or prompts)
@@ -295,7 +298,8 @@ n24q02m-mnemo token-verify <token> <scrypt$...>   # verify a token against a has
 | Subcommand | Purpose |
 |:-----------|:--------|
 | `config-init [--force]` | Write the default instance `config.toml` (server auth + `[models.*]` provider cells) |
-| `warmup` | Pre-download the Fastretrieval-managed local ONNX embedding model so first use works offline |
+| `config init\|path\|show\|get\|set` | Config file utilities: `init [--force]` (same as `config-init`), `path`, `show` (template if absent), `get <key>`, `set <key> <value>` (dotted keys, comments kept) |
+| `warmup` | Probe the `[models.embed]` cell when it is configured; otherwise pre-download the Fastretrieval-managed local ONNX embedding model so first use works offline |
 | `token-hash` | Mint a `scrypt$` hash for `[server] token_hash` (shared-token auth) |
 | `token-verify` | Verify a candidate token against a stored `scrypt$` hash |
 

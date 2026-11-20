@@ -6,7 +6,7 @@
 > XAI), LiteLLM strings -- describe **removed** architecture and are kept
 > only as history. Current truth: local SQLite (WAL) storage; all cloud
 > LLM/embedding/rerank calls go through hull-core per-task provider cells
-> (`[models.chat]` / `[models.embed]` / `[models.rerank]` / `[models.jev]`:
+> (`[models.chat]` / `[models.embed]` / `[models.rerank]` / `[models.jev_score]`:
 > `base_url` + `api_key` + `model`, plain OpenAI-spec HTTP; OpenRouter
 > pre-wired default). Keys are host-only; there is no BYOK and no
 > provider-env-key registry. See `README.md` for setup.
@@ -32,6 +32,19 @@
                               +--------------------+
          (Cloudflare D1/Vectorize/KV deployment: REMOVED 2026-09)
 ```
+
+claude.ai web reaches mnemo as a custom connector added by URL, under the
+conditions in Anthropic's connector docs:
+
+- The `/mcp` endpoint must be reachable from the internet (Anthropic's MCP
+  tunnels for private networks are a research preview for Enterprise
+  organizations). `no-auth` refuses non-loopback binds, so this needs `token`
+  or `multi`.
+- mnemo has no OAuth flow, so the Bearer token goes in the connector's request
+  headers (authentication "No sign-in", header value
+  `Authorization: Bearer <token>`). Anthropic documents request-header
+  authentication as a beta available to a limited set of organizations.
+
 The server supports one storage authority (post-de-host):
 
 - **Local / Self-Host Mode**: Stores memories in a single SQLite file under `~/.mnemo/memories.db` (or `$DB_PATH`). FTS5 + `sqlite-vec` virtual tables back the hybrid retrieval pipeline. Backup/sync = rclone OUTSIDE the product (spec 2026-09-26 §3); the old GDrive/S3 passport sync and the Cloudflare D1/Vectorize/KV deployment mode were **removed** in the 2026-09 de-host and are shown below only as history.
@@ -47,7 +60,7 @@ caller text
 [embedding] (cloud or local Qwen3 ONNX)
    |
    v
-[dedup probe] check_duplicate(text, threshold=DEDUP_THRESHOLD/0.9)
+[dedup probe] check_duplicate(text, threshold=DEDUP_THRESHOLD/0.92)
    |
    +-- duplicate? -----> return existing memory_id, status="deduplicated"
    |
@@ -107,9 +120,9 @@ query string
                 |
                 v
           [cross-encoder rerank]
-            chain: fastretrieval reranker (local) ->
-            [models.rerank] cell (OpenRouter default)
-            graceful skip when none available
+            [models.rerank] cell when configured and its probe
+            passes, else local fastretrieval ONNX reranker;
+            skipped when none is available
                 |
                 v
           top-N reranked (default RERANK_TOP_N=10)
@@ -163,10 +176,10 @@ Restore: `memory(action="restore", memory_id=...)` clears `archived_at`.
 
 There is no provider registry and no provider env-key detection. Cloud
 LLM calls (fact extraction, compression, importance scoring, reflect)
-resolve the `[models.chat]` cell (and `[models.jev]` for jev-score) from
+resolve the `[models.chat]` cell (and `[models.jev_score]` for jev-score) from
 the host-owned instance config: `base_url` + `api_key` + `model`, plain
 OpenAI-spec HTTP through hull-core. OpenRouter is the pre-wired default
-(`hull config init`); any OpenAI-compatible endpoint (self-hosted
+(`n24q02m-mnemo config-init`); any OpenAI-compatible endpoint (self-hosted
 Ollama/vLLM included) works by editing the cell -- config, not code.
 Unconfigured cell -> graceful skip, capture stores raw text.
 
@@ -208,7 +221,12 @@ alembic/
   env.py          -- runs migrations against the live SQLite path
   script.py.mako  -- revision template
   versions/
-    mem_001_context_types.py   -- Phase 1 schema upgrade
+    baseline_001_existing_schema.py  -- no-op anchor for the pre-Alembic schema
+    mem_001_context_types.py         -- Phase 1 schema upgrade
+    mem_002_compression.py           -- Phase 2 compression columns
+    mem_003_temporal.py              -- Phase 3 temporal knowledge graph
+    mem_004_store_meta.py            -- store_meta table (embedding identity)
+    mem_006_subject.py               -- memories.subject column + index
 ```
 
 `MemoryDB.__init__` runs:
@@ -220,8 +238,9 @@ alembic/
 4. Re-open and proceed.
 
 Migrations are idempotent: re-running `alembic upgrade head` on a current
-schema is a no-op. Backup-before-migrate is mandatory; the server refuses
-to upgrade when the backup write fails.
+schema is a no-op. Backup-before-migrate is best-effort: a failed backup
+write is logged as a warning and the upgrade still runs, and a failed
+migration is logged without blocking server startup.
 
 ## Trust model
 
@@ -398,8 +417,8 @@ memory(action="capture", text=..., context_type="fact")
 ```
 
 `KG_AUTO_ENABLED` defaults to **False** so Phase 1/2 callers see no
-behavioural change. Explicit opt-in via env var or
-`config(action="set", key="kg_auto_enabled", value="true")`.
+behavioural change. Opt in with the `KG_AUTO_ENABLED=true` env var
+(`config(action="set")` only accepts `log_level`).
 
 ### Entity resolution
 

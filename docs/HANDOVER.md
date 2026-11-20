@@ -98,12 +98,15 @@ uv run pytest           # dev group: pytest, pytest-asyncio, pytest-timeout, ruf
 - **No sanctioned default cloud model.** An unconfigured cell disables its
   feature — e.g. LLM compression (`[models.chat]`) gracefully skips per-turn
   compression when unconfigured, targeting ~3x token reduction at >=0.9 fact
-  retention when configured. Empty embedding/rerank chains select local
-  Fastretrieval ONNX/GGUF models; configured cloud chains never silently fall
-  back to local.
-- Per-task chain selection: `EMBEDDING_MODELS` / `RERANK_MODELS` /
-  `LLM_MODELS` (CSV `provider/model`, order = litellm fallback; provider
-  inferred from the prefix; keys never select a model).
+  retention when configured. An unconfigured `[models.embed]` /
+  `[models.rerank]` cell selects the local Fastretrieval ONNX/GGUF model. A
+  configured embed cell that fails its probe never falls back to local
+  (search stays FTS5-only); a configured rerank cell that fails its probe
+  falls back to the local reranker with a warning (unless
+  `DISABLE_LOCAL_RERANK` is set).
+- Per-task model selection is the cell's own `model` (`[models.<task>]`). The
+  old `EMBEDDING_MODELS` / `RERANK_MODELS` / `LLM_MODELS` env chains were
+  removed and are not read.
 
 ### Provider credential pools (hull 0.5)
 

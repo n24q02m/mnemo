@@ -19,10 +19,28 @@
       },
       "environmentVariables": [
         {
-          "description": "Provider API keys (format: PROVIDER_API_KEY:key,...). Select models per task with EMBEDDING_MODELS / RERANK_MODELS / LLM_MODELS (CSV provider/model, order = litellm fallback); provider is inferred from the model prefix. Empty embedding/rerank chains select Fastretrieval local ONNX/GGUF models; configured cloud chains never silently fall back to local.",
+          "description": "API key for the [models.embed] provider cell; overrides the cell's api_key in ~/.mnemo/config.toml. With no key for the cell, embeddings use the local ONNX model unless DISABLE_LOCAL_EMBED is set.",
           "isRequired": false,
           "isSecret": true,
-          "name": "API_KEYS"
+          "name": "HULL_EMBED_API_KEY"
+        },
+        {
+          "description": "API key for the [models.rerank] provider cell; overrides the cell's api_key in ~/.mnemo/config.toml. With no key for the cell, reranking uses the local ONNX model unless DISABLE_LOCAL_RERANK is set.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HULL_RERANK_API_KEY"
+        },
+        {
+          "description": "API key for the [models.chat] provider cell (entity extraction, consolidate); overrides the cell's api_key in ~/.mnemo/config.toml.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HULL_CHAT_API_KEY"
+        },
+        {
+          "description": "API key for the [models.jev_score] provider cell (importance scoring); overrides the cell's api_key in ~/.mnemo/config.toml. With no key for the cell, importance defaults to 0.5.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HULL_JEV_SCORE_API_KEY"
         }
       ]
     }

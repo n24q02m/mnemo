@@ -8,29 +8,36 @@
 
 ## Overview
 
-The `config` tool shows server status, updates a few runtime settings, and
-pre-downloads the local embedding model.
+The `config` tool shows server status, updates the runtime log level,
+pre-downloads the local embedding model, and backfills missing embedding
+vectors.
 
 ## Actions
 
-Active actions: `status`, `set`, `warmup`.
+Active actions: `status`, `set`, `warmup`, `backfill_embeddings`.
 
 ### `status` - Show current configuration
 
-Returns database stats, the resolved embedding identity, and dimensions.
+Returns database stats, the resolved embedding identity, which provider
+cells are configured, and the auth mode.
 
 **Parameters:** None
 
 **Returns:**
-- `path`: the SQLite store backing the server (default `~/.mnemo/memories.db`)
-- `total_memories`: total memory count
-- `categories`: memory count by category
-- `embedding`: the resolved model identity, storage dimensions, and
-  availability (`null` model = FTS-only mode)
+- `database`: `path` (the SQLite store backing the caller's namespace,
+  default `~/.mnemo/memories.db`), `total_memories`, `categories` (memory
+  count by category), `vec_enabled`
+- `embedding`: `model`, `dims` (storage dimensions), `available` (`null`
+  model = FTS-only mode)
+- `provider_cells`: `embed` / `rerank` / `chat` / `jev_score`, each `true`
+  when that `[models.<task>]` cell is configured
+- `auth_mode`: `[server] auth` (`no-auth`, `token` or `multi`)
 
 ### `set` - Update a configuration value
 
-Change runtime settings. Changes persist for the current session.
+Change a runtime setting for the current server process. The only valid key
+is `log_level` (`TRACE`, `DEBUG`, `INFO`, `SUCCESS`, `WARNING`, `ERROR`,
+`CRITICAL`).
 
 **Parameters:**
 - `key` (required): setting name
@@ -55,6 +62,24 @@ download is needed.
 {"action": "warmup"}
 ```
 
+### `backfill_embeddings` - Embed rows that have no vector
+
+Embeds active memories that do not have a stored vector yet, using the
+server's embedding backend, page by page. Rows with empty content are
+skipped. Re-running it only picks up rows that still lack a vector.
+
+**Parameters:**
+- `batch_size` (optional): rows per page, an integer from 1 to 100 (default 32)
+
+**Returns:** `status` (`completed`, `partial` when any row failed, or
+`unavailable` when no embedding backend is configured), `model`,
+`dimensions`, `scanned`, `embedded`, `skipped`, `failed`.
+
+**Example:**
+```json
+{"action": "backfill_embeddings", "batch_size": 32}
+```
+
 ## Provider configuration (hull per-task cells)
 
 There are no provider API-key env vars and no BYOK. All cloud calls go
@@ -68,7 +93,8 @@ through hull-core per-task cells -- each an independent
 | `[models.rerank]` | cloud reranking (local fastretrieval reranker is the default fallback) |
 | `[models.jev_score]` | jev-score calls |
 
-OpenRouter is the pre-wired default (`hull config init` writes the config).
+OpenRouter is the pre-wired default (`n24q02m-mnemo config-init` writes
+`~/.mnemo/config.toml`).
 To use a different provider -- including a self-hosted Ollama/vLLM -- edit
 the cell's `base_url`/`model` in the instance `config.toml`. Keys are
 host-only material (instance config, or the `HULL_<TASK>_API_KEY` env
@@ -112,11 +138,11 @@ rate-limited key no longer disables the feature.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MNEMO_HOST` | localhost | HTTP bind host |
-| `MNEMO_PORT` | (server default) | HTTP bind port |
+| `MNEMO_HOST` | `[server] host` (`127.0.0.1`) | HTTP bind host override |
+| `MNEMO_PORT` | `[server] port` (`8000`) | HTTP bind port override |
 | `MNEMO_DB_PATH` | `~/.mnemo/memories.db` | SQLite database path (WAL) |
-| `MNEMO_AUTH_TOKEN` | (none) | Shared bearer token (auth mode 2); unset = localhost no-auth (mode 1). Multi-user mode uses `users.toml` (mode 3) |
-| `DEDUP_THRESHOLD` | `0.92` | Capture dedup similarity threshold (reject-only) |
+| `MNEMO_AUTH_TOKEN` | (none) | Token read by `n24q02m-mnemo token-hash` (prompts when unset). The auth mode itself is `[server] auth` in `config.toml` |
+| `DEDUP_THRESHOLD` | `0.92` capture / `0.9` add | Dedup similarity threshold |
 | `COMPRESSION_ENABLED` | `true` | LLM compression on capture (needs `[models.chat]` cell) |
 | `ARCHIVE_TRIGGER_EVERY` | `100` | Auto-archive sweep every Nth capture |
 | `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD` | (code default) | Temporal entity-resolution similarity floor |

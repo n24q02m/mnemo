@@ -101,9 +101,9 @@ def store_kg_with_memory_id(
             "WHERE source_id = ? AND target_id = ? AND relation_type = ?",
             params,
         )
-        # SQLite exposes affected-row count; D1 /query does not. The D1 adapter
-        # returns the unknown sentinel, so the prepared relation count is the
-        # safe contract for this idempotent update batch.
+        # sqlite3 reports the affected-row count; when a cursor reports the
+        # unknown sentinel (-1), the prepared relation count is the safe
+        # contract for this idempotent update batch.
         rowcount = getattr(cursor, "rowcount", -1)
         edge_count = rowcount if rowcount != -1 else len(params)
 

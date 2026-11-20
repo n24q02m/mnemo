@@ -56,7 +56,7 @@ mise run fix       # ruff fix + format
 - `asyncio_mode = "auto"` -- khong can `@pytest.mark.asyncio`
 - Timeout: 30s/test
 - Integration marker: `@pytest.mark.integration` (can network/services)
-- Default: `-m 'not integration and not live and not full'`
+- Default: `-m 'not integration and not live and not full and not e2e'`
 - Snapshot testing: syrupy
 
 ## Cau truc thu muc
@@ -65,7 +65,8 @@ mise run fix       # ruff fix + format
 src/mnemo/
   __main__.py      # python -m mnemo entrypoint
   cli.py           # n24q02m-mnemo entry (alias mnemo-mcp): bare = HTTP server; subcommands
-                   # (config-init, warmup, token-hash, token-verify)
+                   # (config-init, config init|path|show|get|set, warmup,
+                   # token-hash, token-verify)
   server.py        # FastMCP tools/resources/prompts + hull HTTP app
   runtime.py       # bridge sang hull-core: settings, model cells, auth,
                    # per-namespace DB paths
@@ -77,7 +78,7 @@ src/mnemo/
   reranker.py      # local Qwen3 cross-encoder + [models.rerank] cell chain
   graph.py         # entity/relation extraction qua chat cell
   temporal/        # bitemporal KG: extract, resolve, store, queries
-  alembic/         # schema migrations (mem_001..mem_003)
+  alembic/         # schema migrations (baseline_001, mem_001..mem_004, mem_006)
   setup_tool.py    # warmup logic
   providers.py     # bounded paid reflect provider (cap USD)
   pilot_tools.py   # CLI-surface handlers over mnemo_core
@@ -103,7 +104,8 @@ tests/             # 1:1 mapping voi source modules
 - `RERANK_ENABLED`, `RERANK_TOP_N` (10)
 - `ARCHIVE_ENABLED`, `ARCHIVE_AFTER_DAYS` (90),
   `ARCHIVE_IMPORTANCE_THRESHOLD` (0.3), `ARCHIVE_TRIGGER_EVERY` (100)
-- `DEDUP_THRESHOLD` (0.9), `DEDUP_WARN_THRESHOLD` (0.7)
+- `DEDUP_THRESHOLD` (0.9 for add; capture defaults to 0.92),
+  `DEDUP_WARN_THRESHOLD` (0.7)
 - `RECENCY_HALF_LIFE_DAYS` (7)
 - `COMPRESSION_ENABLED` (true)
 - `KG_AUTO_ENABLED` (false), `TEMPORAL_ENTITY_RESOLUTION_THRESHOLD` (0.85),
@@ -170,7 +172,7 @@ PSR v10 (workflow_dispatch) -> PyPI + GitHub Release; eligible stable releases -
 - `match action:` pattern cho routing trong `memory` dispatcher.
 - `asyncio.to_thread()` cho blocking I/O (SQLite, embedding).
 - Local embedding: first run download ~570MB model, cached.
-- Dependencies: `fastretrieval>=1.11.1`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.7.0,<0.8`).
+- Dependencies: `fastretrieval>=1.12.1,<2`, `sqlite-vec`, `n24q02m-hull` (PyPI, `>=0.8.0,<0.9`).
   Khong con litellm / mcp-core / native provider SDKs -- moi cloud call qua
   hull-core OpenAICompatClient tren per-task cells, xoay vong credential
   qua key pool cua hull (`mnemo/keys.py`, store `~/.mnemo/credentials.db`).
