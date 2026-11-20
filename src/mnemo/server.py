@@ -1967,10 +1967,10 @@ async def _handle_config_backfill(
 ) -> dict[str, typing.Any]:
     """Backfill active rows through the request-scoped store and embedder.
 
-    This is intentionally a bounded MCP operation rather than a laptop-side
-    D1 shortcut: the D1 and Vectorize transports are only available inside the
-    deployed container. The migration-0003 ledger makes each page idempotent,
-    while the authenticated subject selects the model, endpoint, and key.
+    This is intentionally a bounded MCP operation: it pages through rows that
+    still lack a vector (``db.rows_without_vectors``), so re-running it only
+    picks up what is left. The caller's namespace selects the store; the
+    embedding backend is the server's configured one.
     """
     if batch_size is None:
         batch_size = 32

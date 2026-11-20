@@ -49,18 +49,13 @@ _STRUCT_CACHE: dict[int, struct.Struct] = {}
 # by `_init_schema` + the Alembic lineage. That is asserted by
 # `tests/test_column_fidelity.py`, which fails when a migration adds a column
 # without updating this tuple -- the drift that caused the original defect.
-# `tests/test_d1_migrations.py` separately pins `migrations/0001_init.sql`
-# against the same lineage, so the D1 backend inherits the guarantee.
 #
 # Kept explicit rather than introspected from the open connection. Introspection
 # would make the serialized column set a property of whichever database happens
 # to be open: a store still missing a column would export without it and import
 # clean into a store that has it, which is the same silent data loss one layer
 # down. An explicit tuple gives the schema a second opinion to disagree with,
-# which is what makes a drift test possible at all. It also keeps
-# the import batcher a module constant instead of coupling
-# D1 statement sizing to connection state, and avoids asking D1 -- which serves
-# a fixed SQLite subset -- for `PRAGMA table_info` at runtime.
+# which is what makes a drift test possible at all.
 MEMORY_COLUMNS: tuple[str, ...] = (
     "id",
     "content",

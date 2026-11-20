@@ -152,7 +152,8 @@ Import memories from JSONL string, list of objects, or single object.
 
 ### `stats` - Get database statistics
 
-Returns total count, categories breakdown, last update time, and sync status.
+Returns total count, categories breakdown, last update time, whether vector
+search is enabled, the database path, and the embedding model and dimensions.
 
 **Parameters:** None
 
@@ -183,7 +184,7 @@ Browse memories that have been auto-archived (old + low importance).
 ### `consolidate` - Summarize related memories
 
 Uses LLM to summarize multiple memories in a category into a single consolidated text.
-Requires LLM access (proxy or SDK mode). Returns a summary for review — does not
+Requires the `[models.chat]` provider cell. Returns a summary for review — does not
 automatically modify memories.
 
 **Parameters:**
@@ -197,14 +198,15 @@ automatically modify memories.
 ## Intelligence Features
 
 ### Knowledge Graph
-When LLM is available (proxy or SDK mode), adding or updating a memory automatically:
+When the `[models.chat]` provider cell is configured, adding or updating a memory automatically:
 - Extracts entities (person, project, tool, concept, org, location, event)
 - Identifies relations (uses, works_on, related_to, depends_on, created_by, part_of)
 - Links entities to memories for graph-boosted search results
 
 ### Importance Scoring
-Each memory is scored 0.0-1.0 by an LLM based on its value for future recall.
-Defaults to 0.5 when LLM is unavailable. Used by auto-archive to identify low-value memories.
+Each memory is scored 0.0-1.0 by an LLM (the `[models.jev_score]` provider cell)
+based on its value for future recall. Defaults to 0.5 when that cell is not
+configured. Used by auto-archive to identify low-value memories.
 
 ### Duplicate Detection
 Before adding a memory, the system checks for semantic duplicates:
@@ -220,10 +222,10 @@ with `memory(action="archive_now")`. Use `restore` to recover archived rows.
 
 ### Reranking
 Search results are reranked using a cross-encoder model for improved precision.
-A configured cloud chain goes through the `[models.rerank]` provider cell
-(OpenRouter pre-wired default). An empty chain selects the local
-Fastretrieval Qwen3 model; a configured cloud chain never silently falls back
-to local execution.
+A configured `[models.rerank]` provider cell (OpenRouter pre-wired default) is
+used when its startup probe passes. An unconfigured cell selects the local
+Fastretrieval Qwen3 model; a configured cell that fails its probe falls back to
+the local model with a logged warning, unless `DISABLE_LOCAL_RERANK` is set.
 
 ## Proactive Memory Guidelines
 
