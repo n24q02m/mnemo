@@ -889,7 +889,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
-    { name = "fastretrieval", specifier = ">=1.12.1,<2" },
+    { name = "fastretrieval", specifier = ">=1.14.0,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.20" },
     { name = "loguru" },
@@ -913,7 +913,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff" },
-    { name = "syrupy", specifier = ">=6.1.1" },
+    { name = "syrupy", specifier = ">=7.0.0" },
     { name = "ty" },
 ]
 
