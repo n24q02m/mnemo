@@ -4,7 +4,7 @@ mcp-name: io.github.n24q02m/mnemo
 
 **Persistent AI memory with hybrid search. Open, free, unlimited.**
 
-> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
+> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx --python 3.13 n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
@@ -104,7 +104,7 @@ mcp-name: io.github.n24q02m/mnemo
 /plugin install mnemo@n24q02m-plugins
 
 # Method 2: run the HTTP server yourself and register the endpoint
-uvx n24q02m-mnemo                      # serves http://127.0.0.1:8000/mcp by default
+uvx --python 3.13 n24q02m-mnemo        # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # Method 3 (remote): point a client at an existing HTTP deployment
@@ -118,7 +118,7 @@ transport post-de-host; see the
 | Client | Install |
 |---|---|
 | Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
-| Claude Code (HTTP) | start the server (`uvx n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
+| Claude Code (HTTP) | start the server (`uvx --python 3.13 n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
 | Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
 | Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
 
@@ -268,7 +268,7 @@ CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
 
 ```bash
-uvx --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
+uvx --python 3.13 --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
 
 mnemo capture --db ./mem.db "keep PyPI name n24q02m-mnemo; repo is mnemo" --tags decision --category decision
 mnemo recall --db ./mem.db "release ladder" --k 5        # search a subject's memories
