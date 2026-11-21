@@ -2,6 +2,58 @@
 
 <!-- version list -->
 
+## v2.24.0-beta.1 (2026-11-21)
+
+### Bug Fixes
+
+- Align docs and registry manifest with code ([#1408](https://github.com/n24q02m/mnemo/pull/1408),
+  [`9d01d44`](https://github.com/n24q02m/mnemo/commit/9d01d4469444d0e94c4c264e2d0191e15f2c0bbc))
+
+- Drop the Renovate bypass and the update rule from the main ruleset
+  ([#1403](https://github.com/n24q02m/mnemo/pull/1403),
+  [`bc4c6f1`](https://github.com/n24q02m/mnemo/commit/bc4c6f10da1a8b43cc19916491d632927570bfb2))
+
+- Let Renovate digest updates clear the release-age hold
+  ([#1411](https://github.com/n24q02m/mnemo/pull/1411),
+  [`184760c`](https://github.com/n24q02m/mnemo/commit/184760c83c4c1ab4ec4c06068e710ae76b3893b5))
+
+- Pass the publish_existing_tag input to the recovery step through env
+  ([#1404](https://github.com/n24q02m/mnemo/pull/1404),
+  [`1064476`](https://github.com/n24q02m/mnemo/commit/106447615f4de295803a2ef4ba9b333b908f06f6))
+
+- Pin Python 3.13 in documented uvx launches ([#1414](https://github.com/n24q02m/mnemo/pull/1414),
+  [`61c615c`](https://github.com/n24q02m/mnemo/commit/61c615c4b03ad22dcd542e5b9298e55c0839f0d3))
+
+- Resolve dependencies under the same 7-day hold as Renovate
+  ([#1409](https://github.com/n24q02m/mnemo/pull/1409),
+  [`ef75ff9`](https://github.com/n24q02m/mnemo/commit/ef75ff91801488f40241a81f10d99629e6c41069))
+
+- Stop repeating the version number in the handover
+  ([#1401](https://github.com/n24q02m/mnemo/pull/1401),
+  [`cc56340`](https://github.com/n24q02m/mnemo/commit/cc56340d8c653b616fbde796d9c8528be8e95d43))
+
+- Wait for the package registry to serve the release before publishing to the MCP Registry
+  ([#1402](https://github.com/n24q02m/mnemo/pull/1402),
+  [`b4f3026`](https://github.com/n24q02m/mnemo/commit/b4f30264467e9c9400a079313ad4e7644d3ac316))
+
+- **deps**: Lock file maintenance ([#1412](https://github.com/n24q02m/mnemo/pull/1412),
+  [`192a38f`](https://github.com/n24q02m/mnemo/commit/192a38f5273b38e2c125f807015d9c56ae60efdd))
+
+- **deps**: Lock file maintenance ([#1407](https://github.com/n24q02m/mnemo/pull/1407),
+  [`f3fd520`](https://github.com/n24q02m/mnemo/commit/f3fd520194895ab69134bcbb8d8ae8a39000bd08))
+
+- **deps**: Lock file maintenance ([#1406](https://github.com/n24q02m/mnemo/pull/1406),
+  [`c4d4985`](https://github.com/n24q02m/mnemo/commit/c4d4985a4c5943d38b014dc147b73fd1d6a2579b))
+
+- **deps**: Update patch dependencies ([#1405](https://github.com/n24q02m/mnemo/pull/1405),
+  [`e01fa87`](https://github.com/n24q02m/mnemo/commit/e01fa8754f7a476f2878a912e090aa3fff649646))
+
+### Features
+
+- Sync cross-promo section ([#1413](https://github.com/n24q02m/mnemo/pull/1413),
+  [`43a1de0`](https://github.com/n24q02m/mnemo/commit/43a1de0abda86dd54643b9d73e5bce1f4eeb2520))
+
+
 ## v2.23.0 (2026-11-17)
 
 ### Bug Fixes
