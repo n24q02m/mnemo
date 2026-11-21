@@ -127,7 +127,7 @@ Server chi noi Streamable HTTP -- khong co stdio spawn. Chay instance roi
 point client vao endpoint:
 
 ```bash
-uvx n24q02m-mnemo   # http://127.0.0.1:8000/mcp (no-auth default)
+uvx --python 3.13 n24q02m-mnemo   # http://127.0.0.1:8000/mcp (no-auth default)
 ```
 
 ```json

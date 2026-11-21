@@ -30,11 +30,11 @@ not repeat the number, so a release never leaves it stale.
 
 ```bash
 # Run the HTTP server (uvx)
-uvx n24q02m-mnemo                 # serves http://127.0.0.1:8000/mcp by default
+uvx --python 3.13 n24q02m-mnemo   # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # CLI consumer without a server
-uvx --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3
+uvx --python 3.13 --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3
 
 # Claude Code plugin (needs a running instance)
 /plugin marketplace add n24q02m/claude-plugins
