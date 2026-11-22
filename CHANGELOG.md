@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.24.0-beta.2 (2026-11-22)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1415](https://github.com/n24q02m/mnemo/pull/1415),
+  [`f6e4be2`](https://github.com/n24q02m/mnemo/commit/f6e4be2610346374dd876b7135ed36629b7d4424))
+
+
 ## v2.24.0-beta.1 (2026-11-21)
 
 ### Bug Fixes
