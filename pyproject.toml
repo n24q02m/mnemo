@@ -57,7 +57,7 @@ dev = [
     "pre-commit",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
-    "syrupy>=7.0.0",
+    "syrupy>=7.0.1",
     "bandit>=1.9.4",
     "psutil>=7.2.2",
 ]
