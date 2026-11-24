@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.25.0-beta.3 (2026-11-24)
+
+### Bug Fixes
+
+- Accept subject scope in MemoryDB.delete for forget --hard
+  ([#1425](https://github.com/n24q02m/mnemo/pull/1425),
+  [`28d271b`](https://github.com/n24q02m/mnemo/commit/28d271bc6100bf255499c686f613a4d8c6a88585))
+
+
 ## v2.25.0-beta.2 (2026-11-24)
 
 ### Features
