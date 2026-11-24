@@ -55,6 +55,19 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_recall)
     p_recall.add_argument("query")
     p_recall.add_argument("--k", type=int, default=5)
+    p_recall.add_argument(
+        "--compact",
+        action="store_true",
+        help="Return progressive-disclosure compact index entries (id, snippet, score)",
+    )
+    p_recall.add_argument(
+        "--context",
+        action="append",
+        default=None,
+        help="Preceding turn context for coreference resolution (repeatable)",
+    )
+    p_recall.add_argument("--since", default=None, help="ISO start timestamp bound")
+    p_recall.add_argument("--until", default=None, help="ISO end timestamp bound")
 
     p_reflect = sub.add_parser("reflect", help="Bounded cited reflect over retrieval")
     add_common(p_reflect)
@@ -92,6 +105,34 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(p_sinv)
     p_sinv.add_argument("key")
     p_sinv.add_argument("--question", default="")
+
+    p_forget = sub.add_parser(
+        "forget", help="Forget (soft-archive or hard-delete) one memory"
+    )
+    add_common(p_forget)
+    p_forget.add_argument("memory_id")
+    p_forget.add_argument(
+        "--hard",
+        action="store_true",
+        help="Permanently delete instead of soft-archiving",
+    )
+
+    p_tl = sub.add_parser("timeline", help="Show chronological memory timeline")
+    add_common(p_tl)
+    p_tl.add_argument("--entity", default=None, help="Filter by entity name or text")
+    p_tl.add_argument("--since", default=None, help="ISO start timestamp bound")
+    p_tl.add_argument("--until", default=None, help="ISO end timestamp bound")
+    p_tl.add_argument("--limit", type=int, default=50)
+    p_tl.add_argument(
+        "--active-only",
+        action="store_true",
+        help="Exclude superseded and archived entries",
+    )
+
+    p_graph = sub.add_parser("graph", help="Show entity graph and evolution timeline")
+    add_common(p_graph)
+    p_graph.add_argument("entity_query")
+    p_graph.add_argument("--limit", type=int, default=50)
 
     return parser
 
@@ -152,7 +193,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                     store, args.subject, args.query, k=args.k, provider=provider
                 )
         elif args.command == "recall":
-            envelope = operations.recall(store, args.subject, args.query, k=args.k)
+            envelope = operations.recall(
+                store,
+                args.subject,
+                args.query,
+                k=args.k,
+                context=args.context,
+                compact=args.compact,
+                since=args.since,
+                until=args.until,
+            )
+        elif args.command == "forget":
+            envelope = operations.forget(
+                store, args.subject, args.memory_id, hard=args.hard
+            )
+        elif args.command == "timeline":
+            envelope = operations.timeline(
+                store,
+                args.subject,
+                entity=args.entity,
+                since=args.since,
+                until=args.until,
+                include_superseded=not args.active_only,
+                limit=args.limit,
+            )
+        elif args.command == "graph":
+            envelope = operations.entity_graph(
+                store, args.subject, args.entity_query, limit=args.limit
+            )
         elif args.command == "standing-refresh":
             envelope = standing.standing_refresh(
                 store, args.subject, args.key, args.question, k=args.k

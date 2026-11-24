@@ -29,7 +29,16 @@ def pilot_capture(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> di
 
 def pilot_recall(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:
     """MCP tool ``pilot_recall``: args dict in, envelope out."""
-    return operations.recall(db, subject, args.get("query", ""), k=args.get("k", 5))
+    return operations.recall(
+        db,
+        subject,
+        args.get("query", ""),
+        k=args.get("k", 5),
+        context=args.get("context"),
+        compact=bool(args.get("compact", False)),
+        since=args.get("since"),
+        until=args.get("until"),
+    )
 
 
 def pilot_fetch(db: MemoryDB, subject: str | None, args: dict[str, Any]) -> dict:

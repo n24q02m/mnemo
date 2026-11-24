@@ -77,6 +77,7 @@ MEMORY_COLUMNS: tuple[str, ...] = (
     "valid_to",
     "superseded_by",
     "subject",
+    "confidence",
 )
 
 # What the importer writes when a JSONL record omits a column. Mirrors the
@@ -101,6 +102,7 @@ _IMPORT_DEFAULTS: dict[str, object] = {
     "valid_to": None,
     "superseded_by": None,
     "subject": None,
+    "confidence": 1.0,
 }
 
 # `tags` holds a JSON array as TEXT. Emitting it through `json()` makes the
@@ -1627,6 +1629,117 @@ class MemoryDB:
             self._conn.commit()
         logger.info(f"[AUDIT] delete id={memory_id}")
         return True
+
+    def soft_archive(self, memory_id: str, *, subject: str | None = None) -> bool:
+        """Soft-archive a single memory (set ``archived_at=now``) with optional subject scoping."""
+        now = _now_iso()
+        sql = "UPDATE memories SET archived_at = ?, last_accessed = ? WHERE id = ? AND archived_at IS NULL"
+        params: list[object] = [now, now, memory_id]
+        if subject is not None:
+            sql += " AND subject = ?"
+            params.append(subject)
+        with self._lock, self._conn:
+            cursor = self._conn.execute(sql, params)
+            self._conn.commit()
+        if cursor.rowcount > 0:
+            logger.info(f"[AUDIT] soft_archive id={memory_id} subject={subject!r}")
+            return True
+        return False
+
+    def set_confidence(self, memory_id: str, confidence: float) -> bool:
+        """Update the ``confidence`` trust score ``[0.0, 1.0]`` for a memory."""
+        clamped = max(0.0, min(1.0, float(confidence)))
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE memories SET confidence = ? WHERE id = ?",
+                (clamped, memory_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
+    def detect_contradictions(
+        self,
+        content: str,
+        *,
+        subject: str | None = None,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Find active memories that appear to contradict ``content``.
+
+        Uses deterministic polarity inversion (negation markers in EN/VI or
+        preference/state verbs) plus lexical overlap over existing active rows.
+        """
+        neg_cues = (
+            "not ",
+            "never ",
+            "no longer ",
+            "stopped ",
+            "instead of ",
+            "switched from ",
+            "không ",
+            "khong ",
+            "ngừng ",
+            "thay vì ",
+        )
+        raw_tokens = [
+            tok.lower()
+            for tok in re.findall(r"[A-Za-z0-9_.\-À-ỹ]{3,}", content)
+            if tok.lower()
+            not in {
+                "the",
+                "and",
+                "for",
+                "with",
+                "not",
+                "never",
+                "longer",
+                "instead",
+                "switched",
+                "from",
+                "stopped",
+                "use",
+                "using",
+                "prefer",
+                "prefers",
+                "không",
+                "khong",
+                "dùng",
+                "dung",
+                "thay",
+                "ngừng",
+                "đã",
+                "của",
+            }
+        ]
+        keywords = list(dict.fromkeys(raw_tokens))[:6]
+        if not keywords:
+            return []
+        candidates = self.search(
+            " ".join(keywords),
+            limit=max(1, min(limit * 2, 20)),
+            subject=subject,
+        )
+        new_neg = any(cue in content.lower() for cue in neg_cues)
+        contradictions: list[dict] = []
+        for cand in candidates:
+            cand_text = str(cand.get("content", ""))
+            cand_low = cand_text.lower()
+            overlap = [k for k in keywords if k in cand_low]
+            if not overlap:
+                continue
+            cand_neg = any(cue in cand_low for cue in neg_cues)
+            if cand_neg != new_neg or (
+                len(overlap) >= 2 and cand_text.strip() != content.strip()
+            ):
+                contradictions.append(
+                    {
+                        "id": cand["id"],
+                        "content": cand_text,
+                        "overlap": overlap,
+                        "polarity_conflict": cand_neg != new_neg,
+                    }
+                )
+        return contradictions[:limit]
 
     def stats(self) -> dict:
         """Get database statistics.

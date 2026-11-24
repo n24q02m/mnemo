@@ -1,0 +1,12 @@
+{
+  "eval": "longmemeval-retrieval-0llm",
+  "deterministic": true,
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "total_cases": 4,
+  "hits_at_5": 4,
+  "recall_at_5": 1.0,
+  "mrr_at_5": 1.0,
+  "p95_latency_ms": 6.079,
+  "failed_cases": []
+}

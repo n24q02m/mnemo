@@ -222,3 +222,96 @@ def resolve_entity(
     if existing is not None:
         return existing
     return insert_entity_with_embedding(conn, name, entity_type, embedding)
+
+
+def link_entities_with_fastretrieval(
+    conn,
+    entities: list[dict[str, str]],
+    embed_fn=None,
+    *,
+    threshold: float | None = None,
+) -> list[dict[str, str]]:
+    """Resolve and link a batch of entities, optionally using a fastretrieval embedder.
+
+    Falls back to deterministic lexical similarity (normalized lowercase + token overlap)
+    when ``embed_fn`` is None or offline, so local entity linking always works.
+    """
+    resolved: list[dict[str, str]] = []
+    for ent in entities:
+        name = (ent.get("name") or "").strip()
+        if not name:
+            continue
+        etype = (ent.get("type") or "concept").strip().lower()
+        vec = None
+        if embed_fn is not None:
+            try:
+                vec = embed_fn(name)
+            except Exception as exc:
+                logger.debug(f"temporal.resolve: embed_fn skipped for {name!r}: {exc}")
+        eid = find_similar_entity(conn, name, etype, vec, threshold=threshold)
+        if eid is None:
+            # Deterministic normalized alias match (case/spacing insensitive).
+            norm = "".join(name.lower().split())
+            rows = conn.execute(
+                "SELECT id, name FROM memory_entities WHERE entity_type = ?",
+                (etype,),
+            ).fetchall()
+            for r in rows:
+                r_id = r[0] if not hasattr(r, "keys") else r["id"]
+                r_name = r[1] if not hasattr(r, "keys") else r["name"]
+                if "".join(str(r_name).lower().split()) == norm:
+                    eid = r_id
+                    break
+        if eid is None:
+            eid = insert_entity_with_embedding(conn, name, etype, vec)
+        resolved.append({"id": eid, "name": name, "entity_type": etype})
+    return resolved
+
+
+def entity_evolution(
+    conn,
+    entity_query: str,
+    *,
+    subject: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """Return entity matches, linked relations, and chronological memory evolution."""
+    pat = f"%{entity_query.strip()}%"
+    entities = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM memory_entities WHERE name LIKE ? LIMIT 20",
+            (pat,),
+        ).fetchall()
+    ]
+
+    if not entities:
+        return {"query": entity_query, "entities": [], "relations": [], "timeline": []}
+
+    ent_ids = [e["id"] for e in entities]
+    placeholders = ",".join("?" for _ in ent_ids)
+    relations = [
+        dict(r)
+        for r in conn.execute(
+            f"SELECT * FROM memory_edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})",
+            ent_ids + ent_ids,
+        ).fetchall()
+    ]
+    mem_sql = (
+        "SELECT DISTINCT m.* FROM memories m "
+        "JOIN memory_entity_links l ON l.memory_id = m.id "
+        f"WHERE l.entity_id IN ({placeholders}) "
+    )
+    mem_params: list = list(ent_ids)
+    if subject is not None:
+        mem_sql += "AND m.subject = ? "
+        mem_params.append(subject)
+    mem_sql += "ORDER BY COALESCE(m.valid_from, m.created_at) ASC LIMIT ?"
+    mem_params.append(max(1, min(limit, 100)))
+    timeline = [dict(r) for r in conn.execute(mem_sql, mem_params).fetchall()]
+    return {
+        "query": entity_query,
+        "entities": entities,
+        "relations": relations,
+        "timeline": timeline,
+    }

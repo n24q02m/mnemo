@@ -90,3 +90,78 @@ def redact(text: str) -> tuple[str, list[str]]:
         cursor = finding["end"]
     out.append(text[cursor:])
     return "".join(out), kinds
+
+
+# Stage-1 prompt injection and memory poisoning patterns (MNEMO-8).
+_INJECTION_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
+    (
+        "instruction_override",
+        "critical",
+        re.compile(
+            r"(?i)(?:(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions?|rules?|prompts?)"
+            r"|(?:bỏ\s+qua|phớt\s+lờ|quên\s+đi)\s+(?:tất\s+cả\s+|mọi\s+)?(?:chỉ\s+dẫn|hướng\s+dẫn|lệnh|quy\s+tắc)(?:\s+trước|\s+này)?)"
+        ),
+    ),
+    (
+        "system_prompt_hijack",
+        "critical",
+        re.compile(
+            r"(?i)(?:new\s+system\s+prompt|you\s+are\s+now\s+(?:in\s+)?developer\s+mode|<\s*\|\s*im_start\s*\|\s*>|\[INST\]|###\s*system\s*:)"
+        ),
+    ),
+    (
+        "secret_exfiltration",
+        "critical",
+        re.compile(
+            r"(?i)(?:exfiltrate|reveal\s+(?:the\s+|your\s+)?system\s+prompt|dump\s+all\s+(?:secrets|tokens|keys))"
+        ),
+    ),
+    (
+        "hidden_comment_directive",
+        "high",
+        re.compile(r"(?is)<!--.*?(?:ignore|override|system|execute|exfiltrate).*?-->"),
+    ),
+]
+
+
+def scan_prompt_injection(text: str) -> list[dict[str, Any]]:
+    """Detect deterministic Stage-1 prompt-injection / memory-poisoning markers."""
+    if not text:
+        return []
+    hits: list[dict[str, Any]] = []
+    for kind, severity, pattern in _INJECTION_PATTERNS:
+        for match in pattern.finditer(text):
+            hits.append(
+                {
+                    "kind": kind,
+                    "severity": severity,
+                    "start": match.start(),
+                    "end": match.end(),
+                }
+            )
+    hits.sort(key=operator.itemgetter("start", "end"))  # type: ignore[arg-type]
+    return hits
+
+
+def evaluate_poison_risk(
+    text: str,
+    source: str | None = None,
+) -> tuple[bool, float, list[dict[str, Any]]]:
+    """Classify trust level for Stage-1 memory-poisoning defense.
+
+    Returns ``(blocked, confidence, findings)``.
+    Critical prompt-injection payloads are blocked (``confidence=0.0``).
+    Unverified external URL sources receive tempered trust (``confidence=0.7``)
+    unless clean, while ordinary memories default to ``confidence=1.0``.
+    """
+    findings = scan_prompt_injection(text)
+    if any(f["severity"] in {"critical", "high"} for f in findings):
+        return True, 0.0, findings
+    src = (source or "").strip().lower()
+    if src.startswith(("http://", "https://")) or src in {
+        "web",
+        "untrusted",
+        "external",
+    }:
+        return False, 0.7, []
+    return False, 1.0, []

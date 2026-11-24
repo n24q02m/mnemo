@@ -16,8 +16,9 @@ import sqlite3
 from typing import Any
 
 from mnemo_core import results
-from mnemo_core.defense import redact
+from mnemo_core.defense import evaluate_poison_risk, redact
 from mnemo_core.ports import CapExceeded, ReflectPort, StoragePort
+from mnemo_core.rewrite import rewrite_query
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,20 @@ def capture(
     """Store one memory for a subject. Returns the capture envelope."""
     if content is None or not content.strip():
         return results.err(results.VALIDATION, "content is required")
+    blocked, confidence, poison_findings = evaluate_poison_risk(content, source=source)
+    if blocked:
+        kinds_str = ", ".join(f["kind"] for f in poison_findings)
+        return results.err(
+            results.VALIDATION, f"blocked prompt injection ({kinds_str})"
+        )
     persisted, kinds = redact(content)
+    contradictions: list[dict[str, Any]] = []
+    detect_fn = getattr(store, "detect_contradictions", None)
+    if callable(detect_fn):
+        try:
+            contradictions = list(detect_fn(persisted, subject=subject) or [])
+        except Exception:
+            contradictions = []
     try:
         memory_id = store.add(
             content=persisted,
@@ -46,6 +60,10 @@ def capture(
             source=source,
             subject=subject,
         )
+        if confidence < 1.0:
+            set_conf = getattr(store, "set_confidence", None)
+            if callable(set_conf):
+                set_conf(memory_id, confidence)
     except ValueError as exc:
         return results.err(results.VALIDATION, str(exc))
     except sqlite3.Error:
@@ -54,15 +72,17 @@ def capture(
     except Exception:  # noqa: BLE001 - taxonomy boundary
         logger.exception("unexpected failure")
         return results.err(results.INTERNAL, "unexpected failure")
-    return results.ok(
-        {
-            "id": memory_id,
-            "subject": subject,
-            "category": category,
-            "tags": tags or [],
-            "redactions": kinds,
-        }
-    )
+    payload: dict[str, Any] = {
+        "id": memory_id,
+        "subject": subject,
+        "category": category,
+        "tags": tags or [],
+        "redactions": kinds,
+        "confidence": confidence,
+    }
+    if contradictions:
+        payload["contradictions"] = contradictions
+    return results.ok(payload)
 
 
 def recall(
@@ -71,6 +91,12 @@ def recall(
     query: str,
     k: int = 5,
     include_standing: bool = False,
+    *,
+    context: list[str] | None = None,
+    compact: bool = False,
+    rewrite: bool = True,
+    since: str | None = None,
+    until: str | None = None,
 ) -> dict[str, Any]:
     """Search a subject's memories. Returns the recall envelope.
 
@@ -83,8 +109,35 @@ def recall(
         return results.err(results.VALIDATION, "query is required")
     if k < 1:
         return results.err(results.VALIDATION, "k must be >= 1")
+    rw = (
+        rewrite_query(query, context=context)
+        if rewrite
+        else {
+            "original": query,
+            "resolved": query,
+            "bilingual_alternatives": [],
+            "resolved_pronouns": [],
+            "temporal": {
+                "since": None,
+                "until": None,
+                "prefer_recent": False,
+                "matched": None,
+            },
+        }
+    )
+    effective_query = rw["resolved"]
     try:
-        rows = store.search(query, limit=k, subject=subject)
+        rows = list(store.search(effective_query, limit=k, subject=subject))
+        seen_ids = {r.get("id") for r in rows if r.get("id") is not None}
+        if len(rows) < k and rw["bilingual_alternatives"]:
+            for alt in rw["bilingual_alternatives"][:2]:
+                for hit in store.search(alt, limit=k, subject=subject):
+                    hid = hit.get("id")
+                    if hid not in seen_ids:
+                        seen_ids.add(hid)
+                        rows.append(hit)
+                if len(rows) >= k:
+                    break
         if not include_standing:
             rows = [row for row in rows if row.get("category") != "_standing"]
     except sqlite3.Error:
@@ -93,11 +146,52 @@ def recall(
     except Exception:  # noqa: BLE001 - taxonomy boundary
         logger.exception("unexpected failure")
         return results.err(results.INTERNAL, "unexpected failure")
+
+    # Apply explicit temporal bounds if requested, or boost matches in inferred window.
+    win_since = since or rw["temporal"]["since"]
+    win_until = until or rw["temporal"]["until"]
+    if since or until:
+        filtered = []
+        for row in rows:
+            ts = str(row.get("valid_from") or row.get("created_at") or "")
+            if since and ts < since:
+                continue
+            if until and ts > until:
+                continue
+            filtered.append(row)
+        rows = filtered
+    elif win_since or win_until or rw["temporal"]["prefer_recent"]:
+
+        def _temporal_key(row: dict[str, Any]) -> tuple[int, str, float]:
+            ts = str(row.get("valid_from") or row.get("created_at") or "")
+            in_win = 1
+            if win_since and ts < win_since:
+                in_win = 0
+            if win_until and ts > win_until:
+                in_win = 0
+            return (in_win, ts, float(row.get("score") or 0.0))
+
+        rows = sorted(rows, key=_temporal_key, reverse=True)
+
+    rows = rows[:k]
     matches, egress_kinds = _redact_rows(rows)
+    if compact:
+        matches = [
+            {
+                "id": m.get("id"),
+                "snippet": str(m.get("content") or "")[:120],
+                "category": m.get("category"),
+                "score": m.get("score"),
+                "updated_at": m.get("updated_at"),
+                "valid_from": m.get("valid_from"),
+            }
+            for m in matches
+        ]
     return results.ok(
         {
             "subject": subject,
             "query": query,
+            "resolved_query": effective_query,
             "matches": matches,
             "redactions": egress_kinds,
         }
@@ -256,3 +350,124 @@ def _redact_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
         out.append(redacted)
         all_kinds.extend(kinds)
     return out, all_kinds
+
+
+def forget(
+    store: StoragePort,
+    subject: str | None,
+    memory_id: str,
+    *,
+    hard: bool = False,
+) -> dict[str, Any]:
+    """Forget a memory (soft-archive by default, or hard delete if ``hard=True``)."""
+    if not memory_id or not memory_id.strip():
+        return results.err(results.VALIDATION, "memory_id is required")
+    mid = memory_id.strip()
+    try:
+        if hard:
+            ok = bool(store.delete(mid, subject=subject))
+            mode = "hard"
+        else:
+            soft_fn = getattr(store, "soft_archive", None)
+            if callable(soft_fn):
+                ok = bool(soft_fn(mid, subject=subject))
+                mode = "soft_archive"
+            else:
+                ok = bool(store.delete(mid, subject=subject))
+                mode = "hard"
+    except sqlite3.Error:
+        logger.exception("forget failed")
+        return results.err(results.STORAGE, "forget failed")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        logger.exception("unexpected failure")
+        return results.err(results.INTERNAL, "unexpected failure")
+    if not ok:
+        return results.err(results.NOT_FOUND, f"memory not found: {mid}")
+    return results.ok(
+        {
+            "id": mid,
+            "subject": subject,
+            "forgotten": True,
+            "mode": mode,
+        }
+    )
+
+
+def timeline(
+    store: Any,
+    subject: str | None,
+    *,
+    entity: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    include_superseded: bool = True,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Return a chronological memory timeline, optionally filtered by entity and time."""
+    if limit < 1:
+        return results.err(results.VALIDATION, "limit must be >= 1")
+    try:
+        from mnemo.temporal.queries import build_timeline
+
+        entries = build_timeline(
+            store,
+            subject=subject,
+            entity=entity,
+            since=since,
+            until=until,
+            include_superseded=include_superseded,
+            limit=limit,
+        )
+    except sqlite3.Error:
+        logger.exception("timeline failed")
+        return results.err(results.STORAGE, "timeline failed")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        logger.exception("unexpected failure")
+        return results.err(results.INTERNAL, "unexpected failure")
+    redacted_entries, egress_kinds = _redact_rows(entries)
+    return results.ok(
+        {
+            "subject": subject,
+            "entity": entity,
+            "count": len(redacted_entries),
+            "entries": redacted_entries,
+            "redactions": egress_kinds,
+        }
+    )
+
+
+def entity_graph(
+    store: Any,
+    subject: str | None,
+    entity_query: str,
+    *,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Return matched entities, relations, and chronological evolution timeline."""
+    if not entity_query or not entity_query.strip():
+        return results.err(results.VALIDATION, "entity_query is required")
+    if limit < 1:
+        return results.err(results.VALIDATION, "limit must be >= 1")
+    try:
+        from mnemo.temporal.resolve import entity_evolution
+
+        if hasattr(store, "connection"):
+            with store.connection() as conn:
+                evo = entity_evolution(
+                    conn, entity_query.strip(), subject=subject, limit=limit
+                )
+        else:
+            return results.err(
+                results.VALIDATION, "store does not support graph queries"
+            )
+    except sqlite3.Error:
+        logger.exception("entity_graph failed")
+        return results.err(results.STORAGE, "entity_graph failed")
+    except Exception:  # noqa: BLE001 - taxonomy boundary
+        logger.exception("unexpected failure")
+        return results.err(results.INTERNAL, "unexpected failure")
+    timeline_rows, egress_kinds = _redact_rows(list(evo.get("timeline") or []))
+    evo["timeline"] = timeline_rows
+    evo["subject"] = subject
+    evo["redactions"] = egress_kinds
+    return results.ok(evo)
