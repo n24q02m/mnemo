@@ -463,7 +463,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.15.0"
+version = "1.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -474,9 +474,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/81/f5/b275171a45743135b639961fd5591a4db87653160fea0459d8462beaf758/fastretrieval-1.15.0.tar.gz", hash = "sha256:93ce0af4063cfb1a126e3732e0165047a68812df1eb6ed8819ab75da8fdadec0", size = 467248, upload-time = "2026-11-22T00:39:33.476Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/40/b3e1beb1c74223e096dbf8dee7e1d97c80035c04eedcf89b610701ec9727/fastretrieval-1.15.1.tar.gz", hash = "sha256:e7b1276398220984d54be25ba2158260efcd9663900d48dae1eabf59a7404759", size = 467789, upload-time = "2026-11-23T08:08:01.657Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/6d/faec7f2b6d0787eadb684343595c673f8812964ee0def13e294d965dd72e/fastretrieval-1.15.0-py3-none-any.whl", hash = "sha256:63e4626e312657b3e5cb491dbba0b0d9cffb5f46dba9680a1291cf893055300a", size = 159983, upload-time = "2026-11-22T00:39:31.864Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/bb/345d74d8e5e9472769de54e2464f8d08bd4b784cac4c29c380d88b0775d8/fastretrieval-1.15.1-py3-none-any.whl", hash = "sha256:fe5b8134e924e1d186e068029ff6de2c80aa4a8a36a54aa5ac124e79d1c98360", size = 159984, upload-time = "2026-11-23T08:08:00.196Z" },
 ]
 
 [[package]]
@@ -889,7 +889,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
-    { name = "fastretrieval", specifier = ">=1.14.0,<2" },
+    { name = "fastretrieval", specifier = ">=1.15.1,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.20" },
     { name = "loguru" },
@@ -913,7 +913,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff" },
-    { name = "syrupy", specifier = ">=7.0.1" },
+    { name = "syrupy", specifier = ">=7.0.2" },
     { name = "ty" },
 ]
 
@@ -1544,14 +1544,14 @@ wheels = [
 
 [[package]]
 name = "syrupy"
-version = "7.0.1"
+version = "7.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytest" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/84/a5/8c7a369e4476f6d311d2a46b2e11d3a3f62b7c435e8904c71014c0678d52/syrupy-7.0.1.tar.gz", hash = "sha256:90450e89d06a09b40ae028c6a3a7c51a6d0fc97bb275dcfd7e6eddddcb469d69", size = 122297, upload-time = "2026-11-14T21:11:09.421Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/ff/308f191363c1bc456323918619597aaf9f3a37405d038a350b45f90b6e9f/syrupy-7.0.2.tar.gz", hash = "sha256:b35d3efc800a3362c20f24026d1d116b91fcd4578a315745860ec234e023592c", size = 122668, upload-time = "2026-11-16T04:40:28.401Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/b9/2e2e6696f095881ade3136001a89fed8bbb97fa556ff8d454ae9c0f7c83f/syrupy-7.0.1-py3-none-any.whl", hash = "sha256:a34b0486259d666d5341df324754b3b438b2b12603620e1e8db607af6506d079", size = 68915, upload-time = "2026-11-14T21:11:08.141Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/eb/72e4460a4d36cf6781f3eacc8dd17256d067c841d147a011956c0d6218ef/syrupy-7.0.2-py3-none-any.whl", hash = "sha256:bb7999d6cc1cce6731154fe46ad98874b484904d3e3fba950e244c5666c53c1b", size = 68914, upload-time = "2026-11-16T04:40:26.776Z" },
 ]
 
 [[package]]
