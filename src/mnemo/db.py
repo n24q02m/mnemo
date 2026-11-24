@@ -23,7 +23,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Concatenate
+from typing import Concatenate, ParamSpec, TypeVar
 
 import sqlite_vec
 from loguru import logger
@@ -193,6 +193,10 @@ def _build_fts_queries(query: str) -> list[str]:
     ]
 
 
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
 class MemoryDB:
     """SQLite database for persistent AI memories."""
 
@@ -307,13 +311,13 @@ class MemoryDB:
         with self._lock, self._conn:
             yield self._conn
 
-    def run[**P, T](
+    def run(
         self,
-        fn: Callable[Concatenate[sqlite3.Connection, P], T],
+        fn: Callable[Concatenate[sqlite3.Connection, _P], _T],
         /,
-        *args: P.args,
-        **kwargs: P.kwargs,
-    ) -> T:
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T:
         """Call ``fn(connection, *args, **kwargs)`` inside :meth:`connection`.
 
         Lets a function that takes a connection run as one locked transaction

@@ -256,7 +256,7 @@ def test_legacy_config_key_is_seeded_once_and_keeps_working() -> None:
 def test_legacy_env_key_is_migrated_without_deleting_the_env_var(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    config_dir = Path(os.environ["HOME"]) / ".mnemo"
+    config_dir = Path(os.environ["HOME"]) / ".n24q02m" / "mnemo"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         f'[models.chat]\nbase_url = "{BASE_URL}"\nmodel = "z-ai/glm-5.3-flash"\n',
@@ -476,7 +476,10 @@ def test_provider_client_is_cached_per_task_and_config() -> None:
 
 
 def test_store_lives_under_the_instance_config_dir() -> None:
-    assert keys.store_path() == Path(os.environ["HOME"]) / ".mnemo" / "credentials.db"
+    assert (
+        keys.store_path()
+        == Path(os.environ["HOME"]) / ".n24q02m" / "mnemo" / "credentials.db"
+    )
     keys.credential_store()
     assert keys.store_path().is_file()
 

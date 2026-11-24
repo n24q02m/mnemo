@@ -32,6 +32,7 @@ from hull_core.auth.middleware import Authenticator
 from hull_core.auth.users import User, load_users
 from hull_core.config.models import ModelCell, resolve_model_cells
 from hull_core.config.settings import CONFIG_TEMPLATE, HullSettings, load_settings
+from hull_core.storage import data_dir, migrate_legacy_data_dir, resolve_profile
 
 from mnemo import keys
 
@@ -56,9 +57,12 @@ DEFAULT_NAMESPACE = "default"
 _NAMESPACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
-def mnemo_config_dir() -> Path:
-    """mnemo's instance-config + data root: ``~/.mnemo/``."""
-    return Path.home() / ".mnemo"
+def mnemo_config_dir(profile: str | None = None) -> Path:
+    """mnemo's instance-config + data root: ``~/.n24q02m/mnemo/`` (or ``profiles/<profile>/``)."""
+    migrate_legacy_data_dir("mnemo")
+    root = data_dir("mnemo")
+    prof = resolve_profile("mnemo", profile)
+    return root if prof == "default" else root / "profiles" / prof
 
 
 def mnemo_config_path() -> Path:

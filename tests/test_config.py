@@ -45,7 +45,7 @@ class TestSettingsDefaults:
 class TestDbPath:
     def test_default_path(self):
         s = Settings()
-        expected = Path.home() / ".mnemo" / "memories.db"
+        expected = Path.home() / ".n24q02m" / "mnemo" / "memories.db"
         assert s.get_db_path() == expected
 
     def test_custom_path(self):
@@ -62,7 +62,7 @@ class TestDbPath:
 
     def test_data_dir_default(self):
         s = Settings()
-        assert s.get_data_dir() == Path.home() / ".mnemo"
+        assert s.get_data_dir() == Path.home() / ".n24q02m" / "mnemo"
 
     def test_db_path_env(self, monkeypatch):
         """DB_PATH env var is honored (backward-compat)."""

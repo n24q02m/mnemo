@@ -46,8 +46,8 @@ COPY --from=builder /app/src /app/src
 # Set environment variables.
 # Persistence contract: every data path in the server (mnemo_config_dir,
 # db_path_for_namespace, hull instance settings) resolves under
-# Path.home()/.mnemo -- no env var relocates them -- so HOME must point at
-# the volume for memories.db, mode-3 subs/ and config.toml to persist in
+# ~/.n24q02m/mnemo via HOME (or N24Q02M_HOME), so HOME must point at
+# the volume for memories.db, subs/ and config.toml to persist in
 # /data instead of vanishing with the container layer.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app/src \
@@ -56,7 +56,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # Create non-root user and set permissions; pre-create the on-volume
 # instance dir so the app never writes into a volume root it does not own.
 RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser \
-    && mkdir -p /data/.mnemo \
+    && mkdir -p /data/.n24q02m/mnemo \
     && chown -R appuser:appuser /app /data /home/appuser
 
 VOLUME /data

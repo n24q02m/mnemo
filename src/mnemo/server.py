@@ -2321,6 +2321,17 @@ def run_server_blocking(
         uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
 
 
+def run_stdio() -> None:
+    """Run mnemo as an MCP stdio server (stdin/stdout JSON-RPC, logs on stderr)."""
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=(settings.log_level or "INFO").upper(),
+        diagnose=False,
+    )
+    mcp.run(transport="stdio")
+
+
 def main() -> None:
     """Blocking server entry.
 

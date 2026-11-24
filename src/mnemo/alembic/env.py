@@ -57,7 +57,9 @@ def _resolve_db_url() -> str:
     if ini_url and not ini_url.startswith("driver://"):
         return ini_url
 
-    default_path = (Path.home() / ".mnemo" / "memories.db").resolve()
+    from mnemo.runtime import mnemo_config_dir
+
+    default_path = (mnemo_config_dir() / "memories.db").resolve()
     return f"sqlite:///{default_path.as_posix()}"
 
 
