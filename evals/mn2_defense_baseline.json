@@ -10,7 +10,11 @@
   "tp_passed": 7,
   "fp_cases": 17,
   "fp_violations": [],
-  "probe_latency_ms": 0.11,
+  "injection_cases": 5,
+  "injection_passed": 5,
+  "injection_accuracy": 1.0,
+  "poisoning_fp": 0,
+  "probe_latency_ms": 0.122,
   "cost_usd": 0.0,
   "failed_cases": []
 }

@@ -1,0 +1,16 @@
+{
+  "eval": "locomo-retrieval-0llm",
+  "deterministic": true,
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "total_checks": 4,
+  "passed": 4,
+  "score": 1.0,
+  "latency_ms": 5.495,
+  "checks": {
+    "timeline_ordering": true,
+    "entity_dedup": true,
+    "entity_graph": true,
+    "compact_disclosure": true
+  }
+}

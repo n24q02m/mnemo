@@ -6,8 +6,8 @@ This document tracks Mnemo performance baselines and targets.
 
 | Metric | Baseline |
 |---|---|
-| Capture latency p95 (no compression) | <100 ms (FTS5 + dedup probe + insert) |
-| Search recall@5 (mem_001 dataset, hybrid FTS+vec) | TBD (Phase 1 retrieval polish) |
+| Capture latency p95 (no compression) | 0.784 ms measured (100-row WAL benchmark, `embedding_dims=0`) |
+| Search recall@5 (`mn1` dataset, FTS5 hybrid pilot) | 1.000 (`13/13`, p50 `0.898 ms`, p95 `2.189 ms`, `cost_usd=0.0`) |
 | Cold start (clean install, FTS5-only mode) | <500 ms |
 | Cold start (with Qwen3 ONNX local) | First-run: ~30s download (~570 MB) |
 
@@ -30,13 +30,13 @@ as the curated dataset matures.
 
 ## Phase 2 measured baselines
 
-(populated once the curated fixture lands + benchmark suite runs)
+(0-LLM deterministic baseline metrics; LLM-powered semantic compression is gated on `[models.chat]` API credentials and omitted in 0-LLM runs.)
 
 | Metric | Measured |
 |---|---|
-| Compression ratio | tbd |
-| Fact retention | tbd |
-| Compression latency p95 | tbd |
+| Compact disclosure payload reduction | 2.44x character reduction (`compact=True` vs `compact=False`, k=5) |
+| Deterministic defense TP/FP accuracy (`mn2-defense`) | 1.000 (`24/24` total: `7/7` secret TP, `0` FP on 17 benign, `5/5` prompt-injection block, `0` poison FP, `0.122 ms` probe) |
+| Capture latency p95 (no compression, WAL SQLite) | 0.784 ms |
 
 ## Phase 1 vs Phase 2 retrieval drift
 
@@ -59,17 +59,17 @@ Temporal knowledge graph performance gate.
 | Capture latency p95 (KG_AUTO_ENABLED=true) | <800 ms | Baseline capture + LLM extract round-trip (~200 ms) + KG store overhead. |
 | Bundle size growth (Phase 3 vs Phase 2, 10k memories) | ≤2x | KG sections add roughly N entities + 2N edges + N links to the bundle. AES-GCM compression overhead is constant. |
 
-## Phase 3 measured baselines
+## Phase 3 & Phase 4 measured baselines
 
-(populated as the entity-resolution eval fixture lands + benchmark
-suite runs against the migrated DB)
+(measured on migrated schema `head=mem_007_confidence` with `0` paid LLM calls)
 
 | Metric | Measured |
 |---|---|
-| Bitemporal query p95 | tbd |
-| Entity resolution P/R | tbd |
-| Capture latency p95 (KG_AUTO_ENABLED=true) | tbd |
-| Bundle size growth | tbd |
+| Bitemporal query p95 (`memories_as_of`) | 0.519 ms (50 iterations on 100-row migrated DB) |
+| Entity resolution P/R (`link_entities_with_fastretrieval`) | 1.00 P / 1.00 R on alias dedup & bilingual evolution probe (`locomo-retrieval-0llm`: `4/4`, `5.495 ms`) |
+| Capture latency p95 (with Phase 4 poison & contradiction gate) | 0.784 ms (0-LLM Stage-1 regex/lexical path; external KG extraction requires `[models.chat]`) |
+| Store size at 100 migrated memories | 212.0 KB (including FTS5 + bitemporal + KG tables) |
+| LongMemEval-0LLM retrieval (`run_longmemeval_retrieval`) | Recall@5 `1.000` (`4/4`), MRR@5 `1.000`, p95 latency `6.079 ms`, `cost_usd=0.0` |
 
 ## Phase 2 vs Phase 3 retrieval drift
 

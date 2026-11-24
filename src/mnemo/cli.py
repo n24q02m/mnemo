@@ -237,13 +237,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mcp_parser.set_defaults(func=_handle_mcp)
 
+    def _delegate_core(core_args: argparse.Namespace) -> int:
+        from mnemo_cli.__main__ import main as core_main
+
+        return core_main(getattr(core_args, "_raw_argv", None))
+
+    for name, help_text in (
+        ("capture", "Store one memory via domain core"),
+        ("recall", "Search a subject's memories"),
+        ("fetch", "Fetch one memory by id"),
+        ("reflect", "Bounded cited reflect over retrieval"),
+        ("forget", "Forget (soft-archive or hard-delete) one memory"),
+        ("timeline", "Show chronological memory timeline"),
+        ("graph", "Show entity graph and evolution timeline"),
+    ):
+        delegated = sub.add_parser(name, parents=[profile_parent], help=help_text)
+        delegated.add_argument("_rest", nargs=argparse.REMAINDER)
+        delegated.set_defaults(func=_delegate_core)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     raw_argv = list(sys.argv[1:]) if argv is None else list(argv)
-    args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(raw_argv)
+    if getattr(args, "command", None) in {
+        "capture",
+        "recall",
+        "fetch",
+        "reflect",
+        "forget",
+        "timeline",
+        "graph",
+    }:
+        rest = list(getattr(args, "_rest", []) or [])
+        forwarded = [args.command, *unknown, *rest]
+        if getattr(args, "profile", None):
+            forwarded.extend(["--profile", args.profile])
+        args._raw_argv = forwarded
+        return args.func(args)
+    if unknown:
+        parser.parse_args(raw_argv)
     profile = getattr(args, "profile", None)
     if profile:
         import os

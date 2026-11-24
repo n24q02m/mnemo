@@ -675,6 +675,7 @@ async def _handle_search(
     until: str | None = None,
     min_importance: float = 0.0,
     include_archived: bool = False,
+    compact: bool = False,
 ) -> dict[str, typing.Any]:
     db, embedding_model, embedding_dims = _get_ctx(ctx)
 
@@ -778,9 +779,25 @@ async def _handle_search(
         except Exception as e:
             logger.warning(f"Graph boost failed (non-blocking): {e}")
 
+    formatted_results = [_format_memory(r) for r in results]
+    if compact:
+        formatted_results = [
+            {
+                "id": item.get("id"),
+                "snippet": str(item.get("content") or "")[:120],
+                "category": item.get("category"),
+                "score": item.get("score"),
+                "updated_at": item.get("updated_at"),
+                "valid_from": item.get("valid_from"),
+                "confidence": item.get("confidence", 1.0),
+            }
+            for item in formatted_results
+        ]
+
     response: dict = {
         "count": len(results),
-        "results": [_format_memory(r) for r in results],
+        "results": formatted_results,
+        "compact": compact,
         "semantic": embedding is not None,
         "reranked": reranked,
         "reranker": {
@@ -796,7 +813,6 @@ async def _handle_search(
             "or use action='list' to browse all memories."
         )
 
-    return response
     return response
 
 
@@ -1424,9 +1440,10 @@ async def search_memory(
     category: str | None = None,
     tags: list[str] | None = None,
     limit: int = 5,
+    compact: bool = False,
     ctx: Context | None = None,
 ) -> dict[str, typing.Any]:
-    return await _handle_search(ctx, query, category, tags, limit)
+    return await _handle_search(ctx, query, category, tags, limit, compact=compact)
 
 
 @mcp.tool(
@@ -1666,6 +1683,7 @@ async def memory(
     entity_id: str | None = None,
     depth: int = 2,
     as_of: str | None = None,
+    compact: bool = False,
     ctx: Context | None = None,
 ) -> dict[str, typing.Any]:
     """Execute a memory action.
@@ -1736,6 +1754,7 @@ async def memory(
                 until=until,
                 min_importance=min_importance,
                 include_archived=include_archived,
+                compact=compact,
             )
         case "list":
             result = await _handle_list(ctx, category, limit)

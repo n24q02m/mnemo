@@ -234,3 +234,69 @@ def memories_as_of(
     with db.connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def build_timeline(
+    db: MemoryDB,
+    *,
+    subject: str | None = None,
+    entity: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    include_superseded: bool = True,
+    limit: int = 50,
+) -> list[dict]:
+    """Return chronological timeline of memories ordered oldest-to-newest.
+
+    Supports filtering by ``subject``, optional ``entity`` substring/name,
+    ISO bounds ``since``/``until``, and flags each item as ``active`` vs
+    ``superseded`` vs ``archived``.
+    """
+    limit = max(1, min(limit, 200))
+    clauses = ["1=1"]
+    params: list[object] = []
+
+    if subject is not None:
+        clauses.append("m.subject = ?")
+        params.append(subject)
+    if not include_superseded:
+        clauses.append("m.valid_to IS NULL AND m.archived_at IS NULL")
+    if since:
+        clauses.append("COALESCE(m.valid_from, m.created_at) >= ?")
+        params.append(since)
+    if until:
+        clauses.append("COALESCE(m.valid_from, m.created_at) <= ?")
+        params.append(until)
+    if entity:
+        ent_pat = f"%{entity.strip()}%"
+        clauses.append(
+            "(m.content LIKE ? OR EXISTS ("
+            "SELECT 1 FROM memory_entity_links l "
+            "JOIN memory_entities e ON l.entity_id = e.id "
+            "WHERE l.memory_id = m.id AND e.name LIKE ?))"
+        )
+        params.extend([ent_pat, ent_pat])
+
+    sql = (
+        "SELECT m.* FROM memories m "
+        f"WHERE {' AND '.join(clauses)} "
+        "ORDER BY COALESCE(m.valid_from, m.created_at) ASC, m.created_at ASC "
+        "LIMIT ?"
+    )
+    params.append(limit)
+    with db.connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+
+    timeline: list[dict] = []
+    for r in rows:
+        item = dict(r)
+        if item.get("archived_at"):
+            state = "archived"
+        elif item.get("valid_to") or item.get("superseded_by"):
+            state = "superseded"
+        else:
+            state = "active"
+        item["timeline_state"] = state
+        item["timestamp"] = item.get("valid_from") or item.get("created_at")
+        timeline.append(item)
+    return timeline
