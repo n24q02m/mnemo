@@ -188,6 +188,30 @@ def test_timeline_entity_linker_graph_and_cli(tmp_path: Path, capsys):
     out_fg = json.loads(capsys.readouterr().out)
     assert out_fg["data"]["forgotten"] is True
 
+    db = MemoryDB(db_path, embedding_dims=0)
+    try:
+        wrong_sub = operations.forget(db, "u2", m2, hard=True)
+        assert wrong_sub["ok"] is False
+        assert wrong_sub["error"]["code"] == "NOT_FOUND"
+        assert db.get(m2, subject="u1") is not None
+    finally:
+        db.close()
+
+    rc_fg_hard = mnemo_cli_main(
+        ["forget", m2, "--hard", "--db", str(db_path), "--subject", "u1"]
+    )
+    assert rc_fg_hard == 0
+    out_fg_hard = json.loads(capsys.readouterr().out)
+    assert out_fg_hard["ok"] is True
+    assert out_fg_hard["data"]["forgotten"] is True
+    assert out_fg_hard["data"]["mode"] == "hard"
+
+    db_check = MemoryDB(db_path, embedding_dims=0)
+    try:
+        assert db_check.get(m2, subject="u1") is None
+    finally:
+        db_check.close()
+
 
 def test_zero_llm_eval_runners_and_vi_diacritics_guard():
     with tempfile.TemporaryDirectory() as tmp:

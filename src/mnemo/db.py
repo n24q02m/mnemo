@@ -1602,8 +1602,8 @@ class MemoryDB:
         logger.info(f"[AUDIT] update id={memory_id} -> new_id={new_id}")
         return new_id
 
-    def delete(self, memory_id: str) -> bool:
-        """Delete a memory by ID. Returns True if found and deleted.
+    def delete(self, memory_id: str, *, subject: str | None = None) -> bool:
+        """Delete a memory by ID, optionally scoped to ``subject``. Returns True if found and deleted.
 
         Bitemporal (mem_003): soft-closes the row (``valid_to=now``) instead
         of physically removing it, so it drops out of get/search/list (same
@@ -1612,11 +1612,14 @@ class MemoryDB:
         and to ``history_for_entity`` for audit trails. ``superseded_by``
         stays NULL -- deletion has no forward pointer, unlike ``update``.
         """
+        sql = "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL"
+        params: list[object] = [_now_iso(), memory_id]
+        if subject is not None:
+            sql += " AND subject = ?"
+            params.append(subject)
+
         with self._lock, self._conn:
-            cursor = self._conn.execute(
-                "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL",
-                (_now_iso(), memory_id),
-            )
+            cursor = self._conn.execute(sql, params)
 
             if cursor.rowcount == 0:
                 return False
