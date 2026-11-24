@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v2.25.0-beta.1 (2026-11-24)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1420](https://github.com/n24q02m/mnemo/pull/1420),
+  [`069a312`](https://github.com/n24q02m/mnemo/commit/069a3123219d9a2e7965409fbb3a95b13b0b4ccd))
+
+- **deps**: Lock file maintenance ([#1418](https://github.com/n24q02m/mnemo/pull/1418),
+  [`c81195d`](https://github.com/n24q02m/mnemo/commit/c81195d37079c3afc8d1c8121fec6ebda8ace966))
+
+- **deps**: Update patch dependencies ([#1419](https://github.com/n24q02m/mnemo/pull/1419),
+  [`95afe03`](https://github.com/n24q02m/mnemo/commit/95afe034c34f915e0aed0718cd68a009fdd2a09c))
+
+- **deps**: Update syrupy to >=7.0.1 ([#1416](https://github.com/n24q02m/mnemo/pull/1416),
+  [`83692ec`](https://github.com/n24q02m/mnemo/commit/83692ec73e73af70b84aadb62b52a0d3debf7a58))
+
+### Features
+
+- Add python 3.14 support, hull v2 profiles, and stdio cli parity
+  ([#1421](https://github.com/n24q02m/mnemo/pull/1421),
+  [`9870262`](https://github.com/n24q02m/mnemo/commit/987026279905c37d70f9fb27a714c101d10753a4))
+
+
 ## v2.24.0 (2026-11-22)
 
 
