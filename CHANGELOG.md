@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.25.0-beta.2 (2026-11-24)
+
+### Features
+
+- Add prompt-injection defense, VI-EN coreference, timeline, entity graph, and 0-LLM evals
+  ([#1422](https://github.com/n24q02m/mnemo/pull/1422),
+  [`ccff437`](https://github.com/n24q02m/mnemo/commit/ccff437dcdd65b9068cadb5c22f039c1ac10017b))
+
+
 ## v2.25.0-beta.1 (2026-11-24)
 
 ### Bug Fixes
