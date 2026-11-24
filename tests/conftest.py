@@ -166,6 +166,8 @@ def _isolate_fake_home(tmp_path_factory, monkeypatch):
     fake_home = tmp_path_factory.mktemp("mnemo_test_home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    for var in ("N24Q02M_HOME", "N24Q02M_USE_XDG", "MNEMO_PROFILE", "HULL_PROFILE"):
+        monkeypatch.delenv(var, raising=False)
     reset_settings_cache()
     yield
     reset_settings_cache()

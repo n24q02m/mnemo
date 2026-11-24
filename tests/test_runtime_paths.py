@@ -24,9 +24,10 @@ from mnemo.runtime import (
 
 
 def test_config_paths_follow_home(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-    assert mnemo_config_dir() == tmp_path / ".mnemo"
-    assert mnemo_config_path() == tmp_path / ".mnemo" / "config.toml"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert mnemo_config_dir() == tmp_path / ".n24q02m" / "mnemo"
+    assert mnemo_config_path() == tmp_path / ".n24q02m" / "mnemo" / "config.toml"
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +113,12 @@ def test_cell_configured_reflects_model_cell(monkeypatch):
 def test_write_default_config_creates_then_refuses_then_forces(
     tmp_path: Path, monkeypatch
 ):
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     from mnemo.runtime import CONFIG_TEMPLATE
 
     path = write_default_config()
-    assert path == tmp_path / ".mnemo" / "config.toml"
+    assert path == tmp_path / ".n24q02m" / "mnemo" / "config.toml"
     assert path.read_text(encoding="utf-8") == CONFIG_TEMPLATE
 
     with pytest.raises(FileExistsError, match="use --force"):
@@ -180,16 +182,18 @@ def argparse_ns(**kw):
 
 class TestConfigInit:
     def test_writes_default_config(self, tmp_path: Path, monkeypatch, capsys):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         rc = cli._handle_config_init(argparse_ns(force=False))
         out = capsys.readouterr().out
         assert rc == 0
         assert "Wrote" in out
-        assert (tmp_path / ".mnemo" / "config.toml").is_file()
+        assert (tmp_path / ".n24q02m" / "mnemo" / "config.toml").is_file()
 
     def test_force_overwrites_existing(self, tmp_path: Path, monkeypatch, capsys):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-        config_path = tmp_path / ".mnemo" / "config.toml"
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        config_path = tmp_path / ".n24q02m" / "mnemo" / "config.toml"
         config_path.parent.mkdir(parents=True)
         config_path.write_text("# stale", encoding="utf-8")
         rc = cli._handle_config_init(argparse_ns(force=True))
@@ -200,7 +204,8 @@ class TestConfigInit:
         self, tmp_path: Path, monkeypatch, capsys
     ):
         """A second `config-init` is a usage error: message, rc 2, no traceback."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         assert cli._handle_config_init(argparse_ns(force=False)) == 0
         capsys.readouterr()
 
@@ -217,7 +222,8 @@ class TestConfigInit:
         self, tmp_path: Path, monkeypatch, capsys
     ):
         """End to end through argv: the operator never sees a Python traceback."""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setattr(sys, "argv", ["n24q02m-mnemo", "config-init"])
         assert cli.main() == 0
         capsys.readouterr()

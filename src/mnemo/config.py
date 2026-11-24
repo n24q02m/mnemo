@@ -17,8 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_data_dir() -> Path:
-    """Get default data directory (~/.mnemo/)."""
-    return Path.home() / ".mnemo"
+    """Get default data directory (~/.n24q02m/mnemo/)."""
+    from mnemo.runtime import mnemo_config_dir
+
+    return mnemo_config_dir()
 
 
 @functools.lru_cache(maxsize=1)

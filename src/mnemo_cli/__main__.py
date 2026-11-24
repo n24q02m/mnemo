@@ -32,7 +32,16 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--db", required=True, help="Path to the SQLite memory DB")
+        p.add_argument(
+            "--db",
+            default=None,
+            help="Path to the SQLite memory DB (defaults to active profile store)",
+        )
+        p.add_argument(
+            "--profile",
+            default=None,
+            help="Named profile under ~/.n24q02m/mnemo/profiles/<name>",
+        )
         p.add_argument("--subject", default=None, help="Explicit subject label")
 
     p_capture = sub.add_parser("capture", help="Store one memory")
@@ -90,7 +99,22 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point. Returns the taxonomy-mapped process exit code."""
     args = _build_parser().parse_args(argv)
-    store = MemoryDB(Path(args.db), embedding_dims=0)
+    if args.profile:
+        import os
+
+        from mnemo.keys import reset_credential_cache
+        from mnemo.runtime import reset_settings_cache
+
+        os.environ["MNEMO_PROFILE"] = args.profile
+        reset_settings_cache()
+        reset_credential_cache()
+    if args.db:
+        db_path = Path(args.db)
+    else:
+        from mnemo.config import Settings
+
+        db_path = Settings().get_db_path()
+    store = MemoryDB(db_path, embedding_dims=0)
     try:
         if args.command == "capture":
             tags = [t.strip() for t in args.tags.split(",") if t.strip()] or None

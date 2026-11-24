@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: Verify README registry metadata
         run: python scripts/repo-bootstrap/verify_readme_sync.py --repo-root=.
       - name: Project SOT
@@ -61,20 +61,26 @@ jobs:
   # Lint & Test (Python)
   # ============================================================================
   lint-and-test:
-    name: Lint & Test
+    name: Lint & Test (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.14"
     defaults: {run: {shell: bash}}
     # The interpreter is the one uv installs (python-build-standalone), on every OS.
     # The macOS CPython of actions/setup-python is built without loadable SQLite
     # extensions, so extension-backed tests skip there and that leg falls under the
     # coverage gate. only-managed keeps uv from picking the runner's own Python.
     env:
-      UV_PYTHON: "3.13"
+      UV_PYTHON: ${{ matrix.python-version }}
       UV_PYTHON_PREFERENCE: only-managed
     permissions:
       contents: read
@@ -143,12 +149,23 @@ jobs:
       # refuses it. Pull requests skip it: a fork or Dependabot run cannot always mint
       # an OIDC token, and the required check must not depend on Codecov being reachable.
       - name: Upload coverage to Codecov
-        if: runner.os == 'Linux' && github.event_name != 'pull_request'
+        if: runner.os == 'Linux' && matrix.python-version == '3.14' && github.event_name != 'pull_request'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.xml
           use_oidc: true
           fail_ci_if_error: true
+
+  lint-and-test-summary:
+    name: Lint & Test (ubuntu-latest)
+    needs: [lint-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check lint-and-test matrix result
+        if: needs.lint-and-test.result != 'success'
+        run: exit 1
 
   # ============================================================================
   # Contract compatibility — opt-in (chuẩn portfolio-standard, contract-first).

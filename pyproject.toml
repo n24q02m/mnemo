@@ -13,10 +13,13 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = "==3.13.*"
+requires-python = ">=3.11.5,<3.15"  # lts-exempt: onnxruntime/fastretrieval lack cp315
 dependencies = [
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
@@ -31,13 +34,13 @@ dependencies = [
     # SQLite vector search
     "sqlite-vec",
     # Local ONNX embedding (auto-fallback when no cloud API)
-    "fastretrieval>=1.15.1,<2",
+    "fastretrieval>=1.16.0b1,<2",
     # Shared stack core (de-host 2026-09): token auth 3-mode, per-task model cells,
     # provider key pools + account registry (0.5), limiter, lifecycle lock,
     # OpenAI-spec provider client. PyPI dist `n24q02m-hull` (import package
     # `hull_core`). Beta floor: 0.5.0b1 is the first release that ships
     # ``hull_core.credentials``.
-    "n24q02m-hull>=0.8.0,<0.9",
+    "n24q02m-hull>=0.11.0b1,<0.12",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.21.0",
     "alembic>=1.20.1",
@@ -124,6 +127,9 @@ addopts = "-m 'not integration and not live and not full and not e2e'"
 [tool.ty]
 rules = { import-not-found = "ignore", missing-attribute = "ignore", possibly-missing-attribute = "ignore" }
 
+[tool.ty.environment]
+python-version = "3.11"
+
 # Local worktree checkouts are not part of the source tree; without this the
 # pre-commit ty hook lints stale copies under .worktrees/ and fails on
 # diagnostics that were fixed long ago in the real tree.
@@ -159,7 +165,7 @@ type = "github"
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4"]
