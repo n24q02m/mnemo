@@ -1,7 +1,7 @@
 # Mise configuration for mnemo
 [tools]
-python = "3.13"
-node = "24"
+python = "3.14"
+node = "26"
 uv = "latest"
 
 [settings]
