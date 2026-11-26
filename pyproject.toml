@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.11.5,<3.15"  # lts-exempt: onnxruntime/fastretrieval lack cp315
+requires-python = ">=3.13.18,<3.15"  # lts-exempt: onnxruntime/fastretrieval lack cp315
 dependencies = [
     # MCP Server
     "mcp[cli]>=2.3.0,<3",
