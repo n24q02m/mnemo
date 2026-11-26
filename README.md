@@ -4,7 +4,7 @@ mcp-name: io.github.n24q02m/mnemo
 
 **Persistent AI memory with hybrid search. Open, free, unlimited.**
 
-> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx --python 3.13 n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) starts the HTTP MCP server, and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
+> **Distribution & CLI:** the repo is `mnemo`; the PyPI distribution is **`n24q02m-mnemo`** (install `pip install n24q02m-mnemo` / `uvx --python 3.14 n24q02m-mnemo`). Two console scripts ship: **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) runs the MCP server (`mcp` subcommand for stdio default or `--http`; bare invocation starts the HTTP server), and **`mnemo`** is the CLI-first memory surface that never serves. See [CLI](#cli).
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/mnemo/actions/workflows/ci.yml)
@@ -32,7 +32,6 @@ mcp-name: io.github.n24q02m/mnemo
 | [email](https://github.com/n24q02m/email)                                     | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP         |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval)                     | Fast multi-model retrieval runtime: ONNX and GGUF embeddings, reranking, and ... | Tooling     |
 | [hull](https://github.com/n24q02m/hull)                                       | hull is the shared monorepo core for the wet, crg and mnemo self-hosted stack    | MCP         |
-| [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver)         | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling     |
 | [mnemo](https://github.com/n24q02m/mnemo)                                     | Persistent AI memory with hybrid search. Open, free, unlimited.                  | MCP         |
 | [notion](https://github.com/n24q02m/notion)                                   | Markdown-first Notion for AI agents -- pages, databases, blocks, and comments... | MCP         |
 | [skret](https://github.com/n24q02m/skret)                                     | Secrets without the server.                                                      | CLI         |
@@ -103,22 +102,24 @@ mcp-name: io.github.n24q02m/mnemo
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install mnemo@n24q02m-plugins
 
-# Method 2: run the HTTP server yourself and register the endpoint
-uvx --python 3.13 n24q02m-mnemo        # serves http://127.0.0.1:8000/mcp by default
+# Method 2 (stdio default): register mnemo over stdio
+claude mcp add mnemo -- uvx --python 3.14 n24q02m-mnemo mcp
+
+# Method 2b (HTTP server): run locally and register endpoint
+uvx --python 3.14 n24q02m-mnemo        # serves http://127.0.0.1:8000/mcp by default
 claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp
 
 # Method 3 (remote): point a client at an existing HTTP deployment
 claude mcp add --transport http mnemo https://<your-host>/mcp
 ```
 
-Install matrix (the server speaks Streamable HTTP only — there is no stdio
-transport post-de-host; see the
-[Setup](https://docs.n24q02m.com/servers/mnemo/setup/) page for full steps):
+Install matrix (`stdio` via `n24q02m-mnemo mcp` or Streamable HTTP via `n24q02m-mnemo mcp --http` / bare `n24q02m-mnemo`; see the
+[Setup](https://docs.n24q02m.com/plugins/servers/mnemo/setup/) page for full steps):
 
 | Client | Install |
 |---|---|
 | Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install mnemo@n24q02m-plugins` (requires a running instance; see [Self-hosting](#self-hosting-local-http-instance)) |
-| Claude Code (HTTP) | start the server (`uvx --python 3.13 n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
+| Claude Code (HTTP) | start the server (`uvx --python 3.14 n24q02m-mnemo` or docker compose), then `claude mcp add --transport http mnemo http://127.0.0.1:8000/mcp` |
 | Codex / Gemini CLI / Cursor / Windsurf | start the server, then register the `http://<host>:<port>/mcp` HTTP endpoint in the client's MCP settings |
 | Any MCP client | point it at the `/mcp` endpoint of a running instance (Streamable HTTP) |
 
@@ -150,22 +151,12 @@ or the client's equivalent).
 >
 > The Cloudflare D1/Vectorize/KV deployment mode, embedded GDrive/S3 passport
 > sync, multi-provider key dispatch (per-provider API-key env vars + model
-> chains), and the stdio transport were removed. mnemo now runs one HTTP MCP
-> endpoint on a local SQLite (WAL) store, and all cloud calls go through
+> chains), and legacy cloud sync were removed. mnemo runs on a local SQLite (WAL) store with both stdio (`n24q02m-mnemo mcp`) and Streamable HTTP (`--http`) transports, and all cloud calls go through
 > per-task `[models.*]` provider cells (OpenRouter pre-wired default).
 > Backup across machines = `rclone` outside the server.
 >
 > If you encountered issues with prior versions, update to the latest release
-> and follow the current [setup docs](https://docs.n24q02m.com/servers/mnemo/setup/).
->
-> **MCP registry note (2026-10):** registry version 2.20.0 was published with a
-> stdio PyPI package claim (`uvx mnemo-mcp`) that no longer reflects the
-> product: post-de-host, mnemo speaks Streamable HTTP only — self-hosted, no
-> public URL. Registry versions are immutable, so the stale stdio claim cannot
-> be edited in place; the registry entry stays wrong until the owner de-lists
-> it or republishes as 2.20.1. `server.json` in this repo now declares the
-> package's true transport (`streamable-http`, default local endpoint), so the
-> next publish carries correct metadata.
+> and follow the current [setup docs](https://docs.n24q02m.com/plugins/servers/mnemo/setup/).
 >
 > **Related plugins from the same author**:
 > - [wet](https://github.com/n24q02m/wet) -- Web search + content extraction
@@ -180,11 +171,11 @@ or the client's equivalent).
 
 ## Documentation
 
-Full docs at **[docs.n24q02m.com/servers/mnemo/setup/](https://docs.n24q02m.com/servers/mnemo/setup/)**:
+Full docs at **[docs.n24q02m.com/plugins/servers/mnemo/setup/](https://docs.n24q02m.com/plugins/servers/mnemo/setup/)**:
 
-- [Setup](https://docs.n24q02m.com/servers/mnemo/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- http
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-user bearer tokens mapped to credential namespaces
+- [Setup](https://docs.n24q02m.com/plugins/servers/mnemo/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Modes overview](https://docs.n24q02m.com/plugins/get-started/modes-overview/) -- stdio / http
+- [Multi-user setup](https://docs.n24q02m.com/plugins/get-started/multi-user/) -- per-user bearer tokens mapped to credential namespaces
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
@@ -193,10 +184,7 @@ Full docs at **[docs.n24q02m.com/servers/mnemo/setup/](https://docs.n24q02m.com/
 
 ## Smithery
 
-mnemo was previously packaged for [Smithery](https://smithery.ai/) via a
-local stdio start command. Post-de-host the server is HTTP-only, so the local
-`smithery.yaml` was removed; publish a running instance's `https://<host>/mcp`
-endpoint to Smithery as a remote server instead.
+Connect via stdio (`uvx --python 3.14 n24q02m-mnemo mcp`) or publish a self-hosted instance's `https://<host>/mcp` endpoint as a Streamable HTTP remote server.
 
 ## Tools
 
@@ -268,7 +256,7 @@ CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
 
 ```bash
-uvx --python 3.13 --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
+uvx --python 3.14 --from n24q02m-mnemo mnemo recall --db ./mem.db "package naming" --k 3   # try without a persistent install
 
 mnemo capture --db ./mem.db "keep PyPI name n24q02m-mnemo; repo is mnemo" --tags decision --category decision
 mnemo recall --db ./mem.db "release ladder" --k 5        # search a subject's memories
