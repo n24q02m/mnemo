@@ -1,16 +1,58 @@
 {
-  "eval": "locomo-retrieval-0llm",
+  "eval": "locomo-retrieval",
+  "dataset": "snap-research/locomo (locomo10.json)",
+  "source_url": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
   "deterministic": true,
+  "with_llm_judge": false,
   "paid_calls": 0,
   "cost_usd": 0.0,
-  "total_checks": 4,
-  "passed": 4,
-  "score": 1.0,
-  "latency_ms": 5.495,
-  "checks": {
-    "timeline_ordering": true,
-    "entity_dedup": true,
-    "entity_graph": true,
-    "compact_disclosure": true
-  }
+  "conversations": 10,
+  "total_turns_ingested": 5882,
+  "skipped_turns": 0,
+  "adversarial_qa_excluded": 446,
+  "total_queries": 1536,
+  "hits_at_1": 472,
+  "hits_at_5": 837,
+  "hits_at_10": 979,
+  "recall_at_1": 0.3073,
+  "recall_at_5": 0.5449,
+  "recall_at_10": 0.6374,
+  "mrr_at_5": 0.3988,
+  "mrr_at_10": 0.4113,
+  "latency_ms": {
+    "p50": 10.589,
+    "p95": 16.512,
+    "mean": 11.253
+  },
+  "by_category": {
+    "multi_hop": {
+      "queries": 282,
+      "recall_at_1": 0.1773,
+      "recall_at_5": 0.4007,
+      "recall_at_10": 0.5319,
+      "mrr_at_5": 0.2593
+    },
+    "open_domain": {
+      "queries": 92,
+      "recall_at_1": 0.1413,
+      "recall_at_5": 0.2935,
+      "recall_at_10": 0.3696,
+      "mrr_at_5": 0.206
+    },
+    "single_hop": {
+      "queries": 841,
+      "recall_at_1": 0.3389,
+      "recall_at_5": 0.5898,
+      "recall_at_10": 0.6742,
+      "mrr_at_5": 0.4372
+    },
+    "temporal": {
+      "queries": 321,
+      "recall_at_1": 0.3863,
+      "recall_at_5": 0.6262,
+      "recall_at_10": 0.7103,
+      "mrr_at_5": 0.4761
+    }
+  },
+  "reproduce_cmd": "uv run python -m evals.run_locomo_retrieval"
 }

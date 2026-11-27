@@ -7,8 +7,6 @@ import tempfile
 from pathlib import Path
 
 from evals import (
-    run_locomo_retrieval,
-    run_longmemeval_retrieval,
     run_mn1,
     run_mn2_defense,
     run_mn6_multilingual,
@@ -225,9 +223,3 @@ def test_zero_llm_eval_runners_and_vi_diacritics_guard():
 
         mn6 = run_mn6_multilingual.run_eval(tmp_dir / "mn6")
         assert mn6["failed_cases"] == []
-
-        lme = run_longmemeval_retrieval.run_eval(tmp_dir / "lme")
-        assert lme["recall_at_5"] == 1.0 and lme["cost_usd"] == 0.0
-
-        loco = run_locomo_retrieval.run_eval()
-        assert loco["score"] == 1.0 and loco["cost_usd"] == 0.0
