@@ -2,6 +2,26 @@
 
 <!-- version list -->
 
+## v2.26.0-beta.1 (2026-11-27)
+
+### Bug Fixes
+
+- Remove beta classifiers and sync Wave 0 docs parity
+  ([#1427](https://github.com/n24q02m/mnemo/pull/1427),
+  [`6ccf6d4`](https://github.com/n24q02m/mnemo/commit/6ccf6d4b5debadfe06de2b83bbd9169a1aad7c78))
+
+- **deps**: Lock file maintenance ([#1426](https://github.com/n24q02m/mnemo/pull/1426),
+  [`2b946c2`](https://github.com/n24q02m/mnemo/commit/2b946c2d3c3de3b957c54a847c705ba741cee87b))
+
+- **deps**: Update patch dependencies ([#1423](https://github.com/n24q02m/mnemo/pull/1423),
+  [`d66b0b7`](https://github.com/n24q02m/mnemo/commit/d66b0b7906177bd6146109dfcc7f6522b70545c6))
+
+### Features
+
+- Upgrade to mcp 2026-07-28 skills and tasks ([#1428](https://github.com/n24q02m/mnemo/pull/1428),
+  [`61582f6`](https://github.com/n24q02m/mnemo/commit/61582f6f829f7acfc3d31e03637346943b405b21))
+
+
 ## v2.25.0 (2026-11-25)
 
 ### Bug Fixes
