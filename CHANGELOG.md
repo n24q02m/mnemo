@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v2.26.0 (2026-11-27)
+
+### Bug Fixes
+
+- Unpin hull beta floor for stable release ([#1430](https://github.com/n24q02m/mnemo/pull/1430),
+  [`e9c362e`](https://github.com/n24q02m/mnemo/commit/e9c362e0b31f153fab11fa537a2e20fe38a3a696))
+
+
 ## v2.26.0-beta.2 (2026-11-27)
 
 ### Features
