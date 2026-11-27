@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.26.0-beta.2 (2026-11-27)
+
+### Features
+
+- Add authentic LoCoMo, LongMemEval, and 500-turn Phase 2 benchmarks
+  ([#1429](https://github.com/n24q02m/mnemo/pull/1429),
+  [`b098c86`](https://github.com/n24q02m/mnemo/commit/b098c8653a77a4def7ff3d8a59799086c8772231))
+
+
 ## v2.26.0-beta.1 (2026-11-27)
 
 ### Bug Fixes

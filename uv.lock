@@ -1210,7 +1210,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mnemo"
-version = "2.26.0b1"
+version = "2.26.0b2"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
