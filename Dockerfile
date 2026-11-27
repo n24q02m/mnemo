@@ -42,6 +42,7 @@ WORKDIR /app
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/skills /app/skills
 
 # Set environment variables.
 # Persistence contract: every data path in the server (mnemo_config_dir,

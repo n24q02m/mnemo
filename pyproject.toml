@@ -40,7 +40,8 @@ dependencies = [
     # OpenAI-spec provider client. PyPI dist `n24q02m-hull` (import package
     # `hull_core`). Beta floor: 0.5.0b1 is the first release that ships
     # ``hull_core.credentials``.
-    "n24q02m-hull>=0.11.0,<0.12",
+    "n24q02m-hull>=0.12.0b1,<0.13",
+    "fastmcp[tasks]>=4.2.2,<5",
     # Pin Pygments to fix ReDoS (CVE in <2.20.0)
     "Pygments>=2.21.0",
     "alembic>=1.20.1",
@@ -96,6 +97,9 @@ packages = ["src/mnemo", "src/mnemo_core", "src/mnemo_cli"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "mnemo/skills"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "src/mnemo/**/*.py",
@@ -106,6 +110,7 @@ include = [
     "src/mnemo/py.typed",
     "src/mnemo_core/**/*.py",
     "src/mnemo_cli/**/*.py",
+    "skills/**/*.md",
 ]
 
 [tool.pytest.ini_options]
