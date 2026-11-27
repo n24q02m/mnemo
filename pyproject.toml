@@ -50,7 +50,7 @@ dependencies = [
     # idna floor patches CVE-2026-45409 (reached transitively via httpx chains).
     "idna>=3.20",
     # At-rest encryption: AES-256-GCM and the Argon2id KDF (added in 44.0).
-    "cryptography>=44.0.0",
+    "cryptography>=44.0.3",
 ]
 
 [dependency-groups]
