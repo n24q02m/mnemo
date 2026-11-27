@@ -227,6 +227,8 @@ alembic/
     mem_003_temporal.py              -- Phase 3 temporal knowledge graph
     mem_004_store_meta.py            -- store_meta table (embedding identity)
     mem_006_subject.py               -- memories.subject column + index
+    mem_007_confidence.py            -- memories.confidence column
+    mem_008_encryption_meta.py       -- store_meta encryption state
 ```
 
 `MemoryDB.__init__` runs:
@@ -254,6 +256,81 @@ mnemo is **TC-Local** (machine-bound): every storage artifact lives under
 | `no-auth` (default) | loopback only (non-loopback bind refused) | `~/.mnemo/config.toml` + `memories.db` | Only your OS user |
 | `token` | any | same, one shared `default` namespace | Anyone holding the shared token |
 | `multi` | any | per-namespace `~/.mnemo/subs/<ns>/memories.db` (via `users.toml`) | Each token holder sees only their own namespace |
+
+## At-rest encryption
+
+Opt-in, application-layer encryption of user text (`crypto.py`,
+`store_encryption.py`, `keyword_scan.py`). User-facing rules and limits
+are in the README section "Encryption at rest"; this section covers the
+design.
+
+**Keys.** `MNEMO_ENCRYPTION_KEY` is a raw key (`hex:` / `base64:`, 32
+bytes) or a passphrase (at least 12 characters, NFC-normalised). A
+passphrase goes through Argon2id (`iterations=3, lanes=4, memory=64 MiB`),
+or PBKDF2-SHA256 (600,000 iterations) when the OpenSSL build lacks
+Argon2id. A raw key is used as is. HKDF-SHA256 with the store's random 16-byte salt derives two
+subkeys from the result: the data key and a key-check key.
+
+**store_meta.** `mem_008_encryption_meta` records `encryption = none` on
+every store. An encrypted store adds `encryption_kdf`,
+`encryption_kdf_params`, `encryption_salt` and `encryption_key_check` (an
+AES-GCM seal of a fixed text under the key-check key). The key check makes
+a wrong key fail before any row is read. The downgrade refuses to run on
+an encrypted store.
+
+**Values.** `FieldCipher` seals one column value at a time:
+`enc:v1:` + base64(nonce(12) + ciphertext + tag(16)), AAD
+`mnemo/v1/<column>/<row id>`. Encrypted columns: `memories.content`,
+`text_raw`, `tags`, `source`, `subject`, `commit_sha`, and
+`archived_memories.content`, `tags`, `source`. `NULL` stays `NULL`.
+`MemoryDB` seals on every write path (add, capture, update, import,
+compression, archive, restore) and decodes on every read path. Anything
+that is not valid ciphertext for its row and column raises
+`EncryptedDataError`.
+
+**Opening a store** (`MemoryDB._resolve_encryption`), before any write:
+
+| store_meta scheme | Key set | Result |
+|---|---|---|
+| `aes-256-gcm-v1` | no | `EncryptionKeyMissing` |
+| `aes-256-gcm-v1` | wrong | `WrongEncryptionKey` |
+| `aes-256-gcm-v1` | right | Opens encrypted |
+| `none` / absent, with leftover encryption state | any | `EncryptedDataError` |
+| `none` / absent, holding memories | yes | `StoreNotEncrypted` |
+| `none` / absent, empty | yes | Created encrypted |
+| `none` / absent | no | Opens plaintext |
+| anything else | any | `EncryptionError` |
+
+Leftover encryption state means metadata keys, guard triggers, or
+`enc:v1:` values in the first or last memory row. An encrypted store has
+no FTS5 triggers and an empty `memories_fts`. Guard triggers
+(`mnemo_guard_*`) abort plaintext writes to encrypted columns and any
+insert into the graph tables. The migration path drops the guards around
+an Alembic upgrade and reinstalls them afterwards, so migrations that
+rebuild tables keep working.
+
+**Search.** Vector search is unchanged. The keyword leg uses
+`keyword_scan.rank` over the decrypted rows that pass the SQL metadata
+filters. Tiers and BM25 weights match the FTS5 path, without Porter
+stemming. Subject and tag filters, the timeline subject and entity
+filters, and the JSONL export all run after decryption.
+
+**Rewrite** (`n24q02m-mnemo encrypt|decrypt`). The steps are:
+
+1. Migrate and check the key through `MemoryDB`.
+2. Take an exclusive lock (`locking_mode=EXCLUSIVE`, `BEGIN EXCLUSIVE`).
+   A store another connection holds raises `StoreBusyError`.
+3. Write a backup through the SQLite backup API, in `journal_mode=DELETE`,
+   checked with `quick_check`. Create it as owner-only, fsync it, and
+   rename it into place.
+4. Rewrite every row in one `BEGIN IMMEDIATE` transaction.
+5. `encrypt` only: `VACUUM` and `wal_checkpoint(TRUNCATE)`.
+6. Verify: decrypt every value, check the index, triggers and metadata.
+
+A failure in steps 4 to 6 copies the backup back through the same locked
+connection and raises `StoreRewriteError`, whose message names the
+backup. Knowledge-graph rows block `encrypt` unless `--drop-graph` is
+given.
 
 ---
 

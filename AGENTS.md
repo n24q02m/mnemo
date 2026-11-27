@@ -66,7 +66,7 @@ src/mnemo/
   __main__.py      # python -m mnemo entrypoint
   cli.py           # n24q02m-mnemo entry (alias mnemo-mcp): bare = HTTP server; subcommands
                    # (config-init, config init|path|show|get|set, warmup,
-                   # token-hash, token-verify)
+                   # token-hash, token-verify, encrypt, decrypt)
   server.py        # FastMCP tools/resources/prompts + hull HTTP app
   runtime.py       # bridge sang hull-core: settings, model cells, auth,
                    # per-namespace DB paths
@@ -74,11 +74,15 @@ src/mnemo/
   capture.py       # typed capture pipeline (dedup + compression hook)
   compression.py   # LLM compression qua chat cell ("chat-cell" marker)
   db.py            # SQLite: CRUD, FTS5, vector search (sqlite-vec)
+  crypto.py        # at-rest encryption: key parsing, KDF, AES-256-GCM field cipher
+  store_encryption.py # offline encrypt/decrypt of a store (backup, rewrite,
+                   # verify, restore on failure)
+  keyword_scan.py  # keyword ranking over decrypted rows (encrypted stores)
   embedder.py      # [models.embed] cell + fastretrieval local fallback
   reranker.py      # local Qwen3 cross-encoder + [models.rerank] cell chain
   graph.py         # entity/relation extraction qua chat cell
   temporal/        # bitemporal KG: extract, resolve, store, queries
-  alembic/         # schema migrations (baseline_001, mem_001..mem_004, mem_006)
+  alembic/         # schema migrations (baseline_001, mem_001..mem_004, mem_006..mem_008)
   setup_tool.py    # warmup logic
   providers.py     # bounded paid reflect provider (cap USD)
   pilot_tools.py   # CLI-surface handlers over mnemo_core
@@ -92,6 +96,10 @@ tests/             # 1:1 mapping voi source modules
 ## Env vars
 
 - `MNEMO_DB_PATH` / `DB_PATH` -- default `~/.mnemo/memories.db`
+- `MNEMO_ENCRYPTION_KEY` -- opt-in at-rest encryption (`hex:`/`base64:` raw
+  key or passphrase); fail-closed when missing or wrong. Existing stores:
+  `n24q02m-mnemo encrypt|decrypt` (server stopped). See README
+  "Encryption at rest"
 - `MNEMO_HOST` / `MNEMO_PORT` -- HTTP bind overrides (config.toml `[server]`)
 - `MNEMO_AUTH_TOKEN` -- token source cho `n24q02m-mnemo token-hash`
 - `HULL_<TASK>_API_KEY` -- host-only provider key override per cell:

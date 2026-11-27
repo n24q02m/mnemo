@@ -91,3 +91,47 @@ class ProviderCredentialsExhausted(RuntimeError):
             leased=error.leased,
             retry_after=error.retry_after,
         )
+
+
+class EncryptionError(RuntimeError):
+    """Base class for at-rest encryption failures.
+
+    Every subclass is raised *instead of* reading or writing data, never
+    after: a store that cannot be opened safely stays untouched.
+    """
+
+
+class EncryptionKeyError(EncryptionError):
+    """``MNEMO_ENCRYPTION_KEY`` is malformed (bad prefix value, too short)."""
+
+
+class EncryptionKeyMissing(EncryptionError):
+    """The store is encrypted but no key was supplied."""
+
+
+class WrongEncryptionKey(EncryptionError):
+    """The supplied key does not match the key the store was encrypted with."""
+
+
+class StoreNotEncrypted(EncryptionError):
+    """A key was supplied for a plaintext store that already holds data.
+
+    Encrypting existing rows is an explicit offline rewrite
+    (``n24q02m-mnemo encrypt``), never a side effect of opening the store.
+    """
+
+
+class EncryptedDataError(EncryptionError):
+    """Stored ciphertext or encryption metadata is missing, corrupt or forged."""
+
+
+class StoreBusyError(EncryptionError):
+    """Another process holds the store open, so an offline rewrite cannot run."""
+
+
+class GraphDataPresentError(EncryptionError):
+    """The store holds knowledge-graph rows, which encryption does not cover."""
+
+
+class StoreRewriteError(EncryptionError):
+    """An encrypt or decrypt rewrite failed; the message says what was restored."""

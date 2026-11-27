@@ -6,6 +6,7 @@ Provides:
 - CRUD operations with category/tag filtering
 - Hybrid search scoring (text + semantic + recency + frequency)
 - Alembic schema migrations with backup-before-migrate
+- Optional AES-256-GCM at-rest encryption of user data (see ``mnemo.crypto``)
 """
 
 import io
@@ -19,16 +20,23 @@ import struct
 import threading
 import time
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Concatenate, ParamSpec, TypeVar
+from typing import Any, Concatenate, ParamSpec, TypeVar
 
 import sqlite_vec
 from loguru import logger
 
-from mnemo.exceptions import EmbeddingModelMismatch
+from mnemo import crypto, keyword_scan
+from mnemo.exceptions import (
+    EmbeddingModelMismatch,
+    EncryptedDataError,
+    EncryptionError,
+    EncryptionKeyMissing,
+    StoreNotEncrypted,
+)
 
 # Alembic migration constants
 _ALEMBIC_INI_PATH = Path(__file__).resolve().parent / "alembic.ini"
@@ -195,6 +203,206 @@ def _build_fts_queries(query: str) -> list[str]:
     ]
 
 
+def _normalize_fts_scores(results: dict[str, dict]) -> None:
+    """Min-max normalise the positive ``fts_score`` values of ``results``.
+
+    Shared by the FTS5 path and the encrypted keyword path so both hand the
+    hybrid scorer the same scale. Equal scores all become 1.0.
+    """
+    fts_nodes = []
+    min_f = float("inf")
+    max_f = float("-inf")
+    for m in results.values():
+        val = m["fts_score"]
+        if val > 0:
+            fts_nodes.append(m)
+            if val < min_f:
+                min_f = val
+            if val > max_f:
+                max_f = val
+
+    if fts_nodes:
+        rng = max_f - min_f
+        if rng > 0:
+            for m in fts_nodes:
+                m["fts_score"] = (m["fts_score"] - min_f) / rng
+        else:
+            for m in fts_nodes:
+                m["fts_score"] = 1.0
+
+
+# ---------------------------------------------------------------------------
+# At-rest encryption (see mnemo.crypto for the key and value format).
+#
+# In an encrypted store these columns hold ``enc:v1:`` ciphertext bound to the
+# row id and column name. Every other column (category, context_type, the
+# timestamps, importance, confidence, counters, ids and supersession pointers)
+# stays plaintext so SQL can keep filtering and sorting on it. ``commit_sha``
+# is a digest of the content, so it would confirm a guessed content and is
+# encrypted too.
+ENCRYPTED_MEMORY_COLUMNS: tuple[str, ...] = (
+    "content",
+    "tags",
+    "source",
+    "text_raw",
+    "subject",
+    "commit_sha",
+)
+# The legacy hard-archive side table holds the same values under the same ids.
+ENCRYPTED_ARCHIVE_COLUMNS: tuple[str, ...] = ("content", "tags", "source")
+# Knowledge-graph tables. Entity names, relation types and the memory links
+# would describe encrypted memories in plaintext, so an encrypted store keeps
+# them empty.
+GRAPH_TABLES: tuple[str, ...] = (
+    "memory_entities",
+    "memory_edges",
+    "memory_entity_links",
+)
+# Pre-mem_003 names of the graph tables, still present on stores that were
+# never migrated.
+LEGACY_GRAPH_TABLES: tuple[str, ...] = ("entities", "relations")
+
+FTS_TRIGGER_NAMES: tuple[str, ...] = ("memories_ai", "memories_ad", "memories_au")
+_FTS_TRIGGERS_SQL: tuple[str, ...] = (
+    """CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, id, content, tags)
+        VALUES (new.rowid, new.id, new.content, new.tags);
+    END""",
+    """CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
+        VALUES ('delete', old.rowid, old.id, old.content, old.tags);
+    END""",
+    """CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
+        VALUES ('delete', old.rowid, old.id, old.content, old.tags);
+        INSERT INTO memories_fts(rowid, id, content, tags)
+        VALUES (new.rowid, new.id, new.content, new.tags);
+    END""",
+)
+
+GUARD_TRIGGER_PREFIX = "mnemo_guard_"
+_GUARD_MESSAGE = (
+    "mnemo: store is encrypted; write through MemoryDB with "
+    f"{crypto.ENCRYPTION_KEY_ENV} set"
+)
+
+
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    """True when ``name`` is a table in the database behind ``conn``."""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone()
+    return row is not None
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    # ``table`` is always one of this module's constants.
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def install_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Create the triggers that keep ``memories_fts`` in sync (plaintext only)."""
+    for statement in _FTS_TRIGGERS_SQL:
+        conn.execute(statement)
+
+
+def drop_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Drop the FTS sync triggers so no write reaches the FTS5 index."""
+    for name in FTS_TRIGGER_NAMES:
+        conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+
+
+def _plaintext_condition(columns: Sequence[str]) -> str:
+    prefix = crypto.VALUE_PREFIX
+    return " OR ".join(
+        f"(NEW.{column} IS NOT NULL AND "
+        f"substr(NEW.{column}, 1, {len(prefix)}) != '{prefix}')"
+        for column in columns
+    )
+
+
+def install_encryption_guards(conn: sqlite3.Connection) -> None:
+    """Create triggers that reject plaintext writes to an encrypted store.
+
+    The triggers stop a process that does not hold the key (an older
+    release, or a direct SQL client) from adding plaintext next to the
+    ciphertext: any INSERT, or UPDATE of an encrypted column, whose value is
+    not ``enc:v1:`` ciphertext aborts, and any INSERT into a knowledge-graph
+    table aborts. Metadata-only updates (importance, access counters,
+    archive and supersession columns) stay allowed. Only columns present in
+    the current schema are named, so the triggers never block a migration
+    that renames a table.
+    """
+    abort = f"BEGIN SELECT RAISE(ABORT, '{_GUARD_MESSAGE}'); END"
+    statements = []
+    for table, secret_columns, short in (
+        ("memories", ENCRYPTED_MEMORY_COLUMNS, "memories"),
+        ("archived_memories", ENCRYPTED_ARCHIVE_COLUMNS, "archived"),
+    ):
+        if not table_exists(conn, table):
+            continue
+        present = _table_columns(conn, table)
+        columns = [column for column in secret_columns if column in present]
+        if not columns:
+            continue
+        condition = _plaintext_condition(columns)
+        statements.append(
+            f"CREATE TRIGGER {GUARD_TRIGGER_PREFIX}{short}_insert BEFORE INSERT "
+            f"ON {table} WHEN {condition} {abort}"
+        )
+        statements.append(
+            f"CREATE TRIGGER {GUARD_TRIGGER_PREFIX}{short}_update BEFORE UPDATE OF "
+            f"{', '.join(columns)} ON {table} WHEN {condition} {abort}"
+        )
+    for table in GRAPH_TABLES:
+        if table_exists(conn, table):
+            statements.append(
+                f"CREATE TRIGGER {GUARD_TRIGGER_PREFIX}{table}_insert BEFORE INSERT "
+                f"ON {table} {abort}"
+            )
+    for statement in statements:
+        conn.execute(statement)
+
+
+def drop_encryption_guards(conn: sqlite3.Connection) -> None:
+    """Drop every guard trigger installed by :func:`install_encryption_guards`."""
+    names = [
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' "
+            "AND substr(name, 1, ?) = ?",
+            (len(GUARD_TRIGGER_PREFIX), GUARD_TRIGGER_PREFIX),
+        ).fetchall()
+    ]
+    for name in names:
+        quoted = name.replace('"', '""')
+        conn.execute(f'DROP TRIGGER IF EXISTS "{quoted}"')
+
+
+def _tags_match(tags_json: object, wanted: Sequence[str]) -> bool:
+    """Python twin of the SQL tag filter that plaintext stores run.
+
+    Mirrors ``tags != '[]' AND json_valid(tags) AND EXISTS (SELECT 1 FROM
+    json_each(tags) WHERE value IN wanted)``: an array matches on any
+    element, an object on any value and a scalar on itself. Text that is not
+    JSON never matches.
+    """
+    if not isinstance(tags_json, str) or tags_json == "[]":
+        return False
+    try:
+        parsed = json.loads(tags_json)
+    except ValueError:
+        return False
+    if isinstance(parsed, list):
+        values = parsed
+    elif isinstance(parsed, dict):
+        values = list(parsed.values())
+    else:
+        values = [parsed]
+    wanted_set = set(wanted)
+    return any(isinstance(value, str) and value in wanted_set for value in values)
+
+
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 
@@ -210,6 +418,7 @@ class MemoryDB:
         *,
         embedding_model: str = "",
         reindex_on_model_change: bool = False,
+        encryption_key: str | None = None,
     ):
         """Open or create memory database.
 
@@ -226,10 +435,23 @@ class MemoryDB:
                 the requested one, DROP the vector table + clear stored vectors
                 and re-stamp the new identity instead of raising. The embed
                 pipeline re-populates on the next pass.
+            encryption_key: At-rest encryption key setting (see
+                :func:`mnemo.crypto.parse_key`). ``None`` reads
+                ``MNEMO_ENCRYPTION_KEY``; an empty string means "no key". An
+                encrypted store needs the key it was encrypted with. A new or
+                empty store opened with a key is created encrypted.
 
         Raises:
             EmbeddingModelMismatch: When the stored embedding identity differs
                 from the requested one and ``reindex_on_model_change`` is False.
+            EncryptionKeyError: When the key setting is malformed. Raised
+                before anything is created on disk.
+            EncryptionKeyMissing: When the store is encrypted and no key is set.
+            WrongEncryptionKey: When the key does not match the store.
+            StoreNotEncrypted: When a key is set but the store already holds
+                plaintext memories (convert it with ``n24q02m-mnemo encrypt``).
+            EncryptionError: For an unknown scheme or corrupt or leftover
+                encryption state. The store is never opened as plaintext.
             RuntimeError: When the linked SQLite is older than
                 :data:`MIN_SQLITE_VERSION`.
         """
@@ -247,6 +469,15 @@ class MemoryDB:
         self._embedding_model = embedding_model
         self._reindex_on_model_change = reindex_on_model_change
         self._recency_half_life = float(recency_half_life_days)
+
+        # Parse the key before anything touches the disk, so a malformed key
+        # never leaves an empty store behind.
+        key = crypto.load_key(encryption_key)
+        self._cipher: crypto.FieldCipher | None = None
+        # Key and metadata of a new encrypted store, recorded by _init_schema.
+        self._pending_encryption: tuple[crypto.EncryptionKey, dict[str, str]] | None = (
+            None
+        )
 
         # Create parent directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,6 +522,14 @@ class MemoryDB:
                 except Exception as e:
                     logger.warning(f"sqlite-vec load failed: {e}")
 
+            # Decide plaintext vs encrypted before any schema work, so a store
+            # that cannot be opened safely is left exactly as it was found.
+            try:
+                self._resolve_encryption(key)
+            except BaseException:
+                self._conn.close()
+                raise
+
         self._init_schema()
 
         # Run Alembic migrations after the baseline schema is materialised so
@@ -298,6 +537,9 @@ class MemoryDB:
         # forward. ``_run_migrations`` is best-effort: failures are logged but
         # never block server startup.
         self._run_migrations()
+
+        if self._cipher is not None:
+            self._seal_encrypted_schema()
 
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection]:
@@ -328,6 +570,238 @@ class MemoryDB:
         with self.connection() as conn:
             return fn(conn, *args, **kwargs)
 
+    # ------------------------------------------------------------------
+    # At-rest encryption
+    # ------------------------------------------------------------------
+
+    @property
+    def encrypted(self) -> bool:
+        """Whether user data in this store is encrypted at rest."""
+        return self._cipher is not None
+
+    def _read_encryption_meta(self) -> dict[str, str | None]:
+        placeholders = ", ".join("?" for _ in crypto.META_KEYS)
+        with self._lock:
+            if not table_exists(self._conn, "store_meta"):
+                return {}
+            rows = self._conn.execute(
+                f"SELECT key, value FROM store_meta WHERE key IN ({placeholders})",
+                crypto.META_KEYS,
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def _resolve_encryption(self, key: crypto.EncryptionKey | None) -> None:
+        """Pick the store's mode from its metadata and the configured key.
+
+        Fails closed: an encrypted store without the right key, an unknown
+        scheme, or a plaintext store that shows signs of encrypted data all
+        raise instead of opening, and nothing is written before the decision.
+        """
+        if (
+            self._open_recorded_encryption(self._read_encryption_meta(), key)
+            or key is None
+        ):
+            return
+        self._refuse_plaintext_data()
+        meta, self._cipher = crypto.new_store_encryption(key)
+        self._pending_encryption = (key, meta)
+
+    def _open_recorded_encryption(
+        self, meta: dict[str, str | None], key: crypto.EncryptionKey | None
+    ) -> bool:
+        """Open the store as ``meta`` records it; True when it is encrypted.
+
+        Raises when the store is encrypted and ``key`` is missing or wrong,
+        when the scheme is unknown, and when a store marked plaintext still
+        carries encrypted state.
+        """
+        scheme = meta.get(crypto.META_SCHEME)
+        if scheme == crypto.SCHEME_AES_GCM_V1:
+            if key is None:
+                raise EncryptionKeyMissing(
+                    f"{self._db_path} is encrypted at rest; set "
+                    f"{crypto.ENCRYPTION_KEY_ENV} to the key it was encrypted with"
+                )
+            self._cipher = crypto.open_store_encryption(meta, key)
+            return True
+        if scheme not in (None, crypto.SCHEME_NONE):
+            raise EncryptionError(
+                f"{self._db_path} uses an unknown encryption scheme {scheme!r}; "
+                "it was written by a newer release or is corrupt"
+            )
+        self._refuse_encrypted_leftovers(meta)
+        return False
+
+    def _refuse_plaintext_data(self) -> None:
+        """Refuse to start encrypting a store that already holds plaintext."""
+        if self._store_has_data():
+            raise StoreNotEncrypted(
+                f"{self._db_path} holds plaintext memories; run "
+                "`n24q02m-mnemo encrypt` to encrypt it in place, or unset "
+                f"{crypto.ENCRYPTION_KEY_ENV} to keep using it unencrypted"
+            )
+
+    def _record_new_encryption(
+        self, key: crypto.EncryptionKey, meta: dict[str, str]
+    ) -> None:
+        """Record the metadata of a new encrypted store, or adopt a rival's.
+
+        Two processes can open the same empty store with a key at once, each
+        with a salt of its own. The metadata is written in one write
+        transaction that reads it again first, so the first opener records
+        its metadata and never has it overwritten. A later opener adopts that
+        metadata when its key matches, and fails with
+        :class:`WrongEncryptionKey` when it does not, or with
+        :class:`StoreNotEncrypted` when plaintext memories were added in the
+        meantime.
+        """
+        with self._lock:
+            # The schema set-up before this point is DDL only, which never
+            # leaves a transaction open.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                if not self._open_recorded_encryption(
+                    self._read_encryption_meta(), key
+                ):
+                    self._refuse_plaintext_data()
+                    for meta_key, meta_value in meta.items():
+                        self._set_store_meta(meta_key, meta_value)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                self._conn.close()
+                raise
+
+    def _refuse_encrypted_leftovers(self, meta: dict[str, str | None]) -> None:
+        """Refuse a store marked plaintext that still carries encrypted state.
+
+        Opening such a store as plaintext would mix new plaintext rows with
+        ciphertext the server cannot read, so treat it as damaged instead.
+        """
+        leftover = [name for name in crypto.META_KEYS[1:] if meta.get(name)]
+        with self._lock:
+            if leftover:
+                reason = "encryption metadata (" + ", ".join(leftover) + ")"
+            elif self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'trigger' "
+                "AND substr(name, 1, ?) = ? LIMIT 1",
+                (len(GUARD_TRIGGER_PREFIX), GUARD_TRIGGER_PREFIX),
+            ).fetchone():
+                reason = "encryption guard triggers"
+            else:
+                return
+        raise EncryptedDataError(
+            f"{self._db_path} is marked unencrypted but still holds {reason}; "
+            "restore it from the backup written by `n24q02m-mnemo encrypt` or "
+            "`n24q02m-mnemo decrypt`"
+        )
+
+    def _store_has_data(self) -> bool:
+        """True when any memory, archive or knowledge-graph row exists."""
+        tables = ("memories", "archived_memories", *GRAPH_TABLES, *LEGACY_GRAPH_TABLES)
+        with self._lock:
+            for table in tables:
+                if (
+                    table_exists(self._conn, table)
+                    and self._conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+                ):
+                    return True
+        return False
+
+    def _seal_encrypted_schema(self) -> None:
+        """Make sure an encrypted store never indexes or accepts plaintext.
+
+        Runs on every open of an encrypted store, after migrations: it drops
+        the FTS5 sync triggers (an older release may have recreated them),
+        empties the FTS5 index if anything reached it, and reinstalls the
+        guard triggers against the current schema.
+        """
+        with self._lock, self._conn:
+            drop_fts_triggers(self._conn)
+            if self._conn.execute(
+                "SELECT 1 FROM memories_fts_docsize LIMIT 1"
+            ).fetchone():
+                self._conn.execute(
+                    "INSERT INTO memories_fts(memories_fts) VALUES('delete-all')"
+                )
+            drop_encryption_guards(self._conn)
+            install_encryption_guards(self._conn)
+
+    def _seal(self, row_id: str, column: str, value: str | None) -> str | None:
+        """Encrypt one value when the store is encrypted; else return it as is."""
+        if self._cipher is None:
+            return value
+        return self._cipher.encrypt(row_id, column, value)
+
+    def _seal_row(self, row_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        """Encrypt the user-data columns of a full row dict bound to ``row_id``."""
+        if self._cipher is None:
+            return values
+        sealed = dict(values)
+        for column in ENCRYPTED_MEMORY_COLUMNS:
+            if column in sealed:
+                sealed[column] = self._cipher.encrypt(row_id, column, sealed[column])
+        return sealed
+
+    def decode_row(self, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        """Return a ``memories`` row as a dict with user data decrypted.
+
+        A plaintext store returns ``dict(row)`` unchanged. An encrypted store
+        decrypts every encrypted column present in the row, bound to the
+        row's ``id``, and raises :class:`EncryptedDataError` when a value was
+        tampered with or moved from another row or column.
+        """
+        data = dict(row)
+        if self._cipher is None:
+            return data
+        row_id = str(data["id"])
+        for column in ENCRYPTED_MEMORY_COLUMNS:
+            if column in data:
+                data[column] = self._cipher.decrypt(row_id, column, data[column])
+        return data
+
+    def _encrypted_subject_matches(
+        self, memory_id: str, subject: str, condition: str
+    ) -> bool:
+        """Check a row's decrypted subject inside the caller's transaction."""
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT id, subject FROM memories WHERE id = ? AND {condition}",
+                (memory_id,),
+            ).fetchone()
+        return row is not None and self.decode_row(row)["subject"] == subject
+
+    @staticmethod
+    def _matches_encrypted_filters(
+        data: dict[str, Any], subject: str | None, tags: Sequence[str] | None
+    ) -> bool:
+        """Apply the subject and tag filters that SQL cannot run on ciphertext."""
+        if subject is not None and data.get("subject") != subject:
+            return False
+        return not tags or _tags_match(data.get("tags"), tags)
+
+    def set_compressed(
+        self, memory_id: str, content: str, text_raw: str, provider: str
+    ) -> bool:
+        """Replace a memory's content with its compressed form in place.
+
+        Keeps the original text in ``text_raw`` and flags the row with the
+        compression provider. Returns False when no row has ``memory_id``.
+        """
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
+                "compression_provider = ?, updated_at = ? WHERE id = ?",
+                (
+                    self._seal(memory_id, "content", content),
+                    self._seal(memory_id, "text_raw", text_raw),
+                    provider,
+                    _now_iso(),
+                    memory_id,
+                ),
+            )
+        return cursor.rowcount > 0
+
     def _init_schema(self) -> None:
         """Initialize database schema.
 
@@ -340,6 +814,11 @@ class MemoryDB:
             self._init_graph_schema()
             self._init_archive_schema()
             self._init_store_meta_schema()
+            if self._pending_encryption is not None:
+                # A new encrypted store: record the scheme, KDF, salt and key
+                # check before migrations run, so mem_008 leaves them alone.
+                self._record_new_encryption(*self._pending_encryption)
+                self._pending_encryption = None
             # Guard BEFORE _ensure_vec_table: the latter detects an existing
             # memories_vec and silently adopts its stored dimension, which would
             # mask a dims mismatch. The guard compares the REQUESTED identity
@@ -521,25 +1000,10 @@ class MemoryDB:
                 )
             """)
 
-            # FTS5 triggers to keep index in sync
-            self._conn.executescript("""
-                CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-                    INSERT INTO memories_fts(rowid, id, content, tags)
-                    VALUES (new.rowid, new.id, new.content, new.tags);
-                END;
-
-                CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-                    INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
-                    VALUES ('delete', old.rowid, old.id, old.content, old.tags);
-                END;
-
-                CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-                    INSERT INTO memories_fts(memories_fts, rowid, id, content, tags)
-                    VALUES ('delete', old.rowid, old.id, old.content, old.tags);
-                    INSERT INTO memories_fts(rowid, id, content, tags)
-                    VALUES (new.rowid, new.id, new.content, new.tags);
-                END;
-            """)
+            # FTS5 triggers to keep index in sync. An encrypted store keeps the
+            # index empty: FTS5 would store every token in plaintext.
+            if self._cipher is None:
+                install_fts_triggers(self._conn)
 
             # Add importance column to memories (migration for existing DBs)
             try:
@@ -728,7 +1192,7 @@ class MemoryDB:
                 """,
                 params,
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self.decode_row(row) for row in rows]
 
     def write_vector(self, memory_id: str, vector: list[float]) -> None:
         """Persist or replace one memory vector for an active vector store."""
@@ -781,11 +1245,11 @@ class MemoryDB:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
                 (
                     memory_id,
-                    content,
+                    self._seal(memory_id, "content", content),
                     category,
-                    tags_json,
-                    source,
-                    subject,
+                    self._seal(memory_id, "tags", tags_json),
+                    self._seal(memory_id, "source", source),
+                    self._seal(memory_id, "subject", subject),
                     now,
                     now,
                     now,
@@ -868,6 +1332,12 @@ class MemoryDB:
 
         compressed_int = 1 if compressed else 0
 
+        sealed_content = self._seal(memory_id, "content", content)
+        sealed_tags = self._seal(memory_id, "tags", tags_json)
+        sealed_source = self._seal(memory_id, "source", source)
+        sealed_subject = self._seal(memory_id, "subject", subject)
+        sealed_text_raw = self._seal(memory_id, "text_raw", text_raw)
+
         with self._lock, self._conn:
             if importance is not None:
                 importance = max(0.0, min(1.0, importance))
@@ -879,17 +1349,17 @@ class MemoryDB:
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
                     (
                         memory_id,
-                        content,
+                        sealed_content,
                         category,
-                        tags_json,
-                        source,
-                        subject,
+                        sealed_tags,
+                        sealed_source,
+                        sealed_subject,
                         now,
                         now,
                         now,
                         context_type,
                         importance,
-                        text_raw,
+                        sealed_text_raw,
                         compressed_int,
                         compression_provider,
                     ),
@@ -903,16 +1373,16 @@ class MemoryDB:
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
                     (
                         memory_id,
-                        content,
+                        sealed_content,
                         category,
-                        tags_json,
-                        source,
-                        subject,
+                        sealed_tags,
+                        sealed_source,
+                        sealed_subject,
                         now,
                         now,
                         now,
                         context_type,
-                        text_raw,
+                        sealed_text_raw,
                         compressed_int,
                         compression_provider,
                     ),
@@ -1003,7 +1473,14 @@ class MemoryDB:
         # Spec section 4.2: rerank tops at ~50 candidates -> top-N. Caller can
         # override via ``candidate_pool`` when it knows the rerank budget.
         pool = candidate_pool if candidate_pool is not None else max(limit * 10, 50)
-        results = self._search_fts(query, category, tags, pool, **filter_kwargs)
+        # An encrypted store has an empty FTS5 index, so it ranks keywords over
+        # the decrypted candidate rows instead (see mnemo.keyword_scan).
+        if self._cipher is None:
+            results = self._search_fts(query, category, tags, pool, **filter_kwargs)
+        else:
+            results = self._search_encrypted_keywords(
+                query, category, tags, pool, **filter_kwargs
+            )
 
         # 2. Semantic search (if embedding provided)
         if embedding and self._vec_enabled:
@@ -1015,13 +1492,19 @@ class MemoryDB:
                     vec_fragments.append("AND m.category = ?")
                     vec_params.append(category)
 
-                if tags:
+                # Tags and subject are ciphertext in an encrypted store; they
+                # are filtered in Python below, over the same k nearest rows
+                # that SQL would have filtered after the KNN step.
+                if tags and self._cipher is None:
                     vec_fragments.append(
                         "AND m.tags != '[]' AND json_valid(m.tags) AND EXISTS (SELECT 1 FROM json_each(m.tags) WHERE value IN (SELECT value FROM json_each(?)))"
                     )
                     vec_params.append(json.dumps(tags))
 
-                extra_sql, extra_params = self._build_filter_sql(**filter_kwargs)
+                sql_filters: dict[str, Any] = dict(filter_kwargs)
+                if self._cipher is not None:
+                    sql_filters["subject"] = None
+                extra_sql, extra_params = self._build_filter_sql(**sql_filters)
                 if extra_sql:
                     vec_fragments.append(extra_sql)
                     vec_params.extend(extra_params)
@@ -1057,12 +1540,20 @@ class MemoryDB:
                             (json.dumps(missing_ids),),
                         ).fetchall()
                     for mem in missing_mems:
-                        mid = mem["id"]
+                        data = self.decode_row(mem)
+                        if self._cipher is not None and not (
+                            self._matches_encrypted_filters(data, subject, tags)
+                        ):
+                            continue
+                        mid = data["id"]
                         results[mid] = {
-                            **dict(mem),
+                            **data,
                             "fts_score": 0.0,
                             "vec_score": vec_scores[mid],
                         }
+            except EncryptionError:
+                # Tampered ciphertext must surface, never read as "no hits".
+                raise
             except Exception as e:
                 logger.debug(f"Vector search error: {e}")
 
@@ -1224,27 +1715,70 @@ class MemoryDB:
             except Exception as e:
                 logger.error(f"FTS search failed for tier '{fts_query}': {e}")
 
-        fts_nodes = []
-        min_f = float("inf")
-        max_f = float("-inf")
-        for m in results.values():
-            val = m["fts_score"]
-            if val > 0:
-                fts_nodes.append(m)
-                if val < min_f:
-                    min_f = val
-                if val > max_f:
-                    max_f = val
+        _normalize_fts_scores(results)
+        return results
 
-        if fts_nodes:
-            rng = max_f - min_f
-            if rng > 0:
-                for m in fts_nodes:
-                    m["fts_score"] = (m["fts_score"] - min_f) / rng
-            else:
-                for m in fts_nodes:
-                    m["fts_score"] = 1.0
+    def _search_encrypted_keywords(
+        self,
+        query: str,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 5,
+        *,
+        context_type: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        min_importance: float = 0.0,
+        include_archived: bool = False,
+        subject: str | None = None,
+    ) -> dict[str, dict]:
+        """Keyword search for an encrypted store, without an FTS5 index.
 
+        SQL applies every filter on plaintext columns (category, context
+        type, time window, importance, archive and supersession state). The
+        remaining rows are decrypted, filtered on subject and tags, and ranked
+        by :func:`mnemo.keyword_scan.rank` with the FTS5 query tiers and bm25
+        weights. Returns the same mapping shape as :meth:`_search_fts`.
+        Cost is linear in the number of rows that pass the SQL filters.
+        """
+        results: dict[str, dict] = {}
+        if not keyword_scan.build_tiers(query):
+            return results
+
+        sql = "SELECT m.* FROM memories m WHERE 1 = 1"
+        params: list = []
+        if category:
+            sql += " AND m.category = ?"
+            params.append(category)
+        extra_sql, extra_params = self._build_filter_sql(
+            context_type=context_type,
+            since=since,
+            until=until,
+            min_importance=min_importance,
+            include_archived=include_archived,
+        )
+        sql += extra_sql + " ORDER BY m.rowid"
+        params.extend(extra_params)
+
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        candidates = [
+            data
+            for data in (self.decode_row(row) for row in rows)
+            if self._matches_encrypted_filters(data, subject, tags)
+        ]
+        ranked = keyword_scan.rank(
+            query, [(c["content"], c["tags"]) for c in candidates], limit * 3
+        )
+        for index, score in ranked:
+            data = candidates[index]
+            results[data["id"]] = {
+                **data,
+                "bm25_score": -score,
+                "fts_score": score,
+                "vec_score": 0.0,
+            }
+        _normalize_fts_scores(results)
         return results
 
     def _calc_recency(self, updated_at: str, now: datetime) -> float:
@@ -1449,7 +1983,7 @@ class MemoryDB:
             with self._lock:
                 rows = self._conn.execute(sql, (limit, offset)).fetchall()
 
-        return [dict(r) for r in rows]
+        return [self.decode_row(r) for r in rows]
 
     def get(self, memory_id: str, subject: str | None = None) -> dict | None:
         """Get a single memory by ID.
@@ -1465,12 +1999,17 @@ class MemoryDB:
         """
         sql = "SELECT * FROM memories WHERE id = ? AND valid_to IS NULL"
         params: list = [memory_id]
-        if subject is not None:
+        if subject is not None and self._cipher is None:
             sql += " AND subject = ?"
             params.append(subject)
         with self._lock:
             row = self._conn.execute(sql, tuple(params)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        data = self.decode_row(row)
+        if subject is not None and data.get("subject") != subject:
+            return None
+        return data
 
     def update(
         self,
@@ -1537,7 +2076,10 @@ class MemoryDB:
 
                 # RETURNING yields the row AFTER the update was applied, so the
                 # two columns it just wrote have to be reset for the successor.
-                new_row = dict(old_row)
+                # In an encrypted store every value is bound to its row id, so
+                # the predecessor is decrypted here and re-encrypted below
+                # under the successor's id.
+                new_row = self.decode_row(old_row)
                 new_row["id"] = new_id
                 new_row["created_at"] = now
                 new_row["updated_at"] = now
@@ -1562,6 +2104,7 @@ class MemoryDB:
                 if importance is not None:
                     new_row["importance"] = max(0.0, min(1.0, importance))
 
+                new_row = self._seal_row(new_id, new_row)
                 columns = list(new_row.keys())
                 column_list = ", ".join(columns)
                 placeholders = ", ".join("?" for _ in columns)
@@ -1614,11 +2157,19 @@ class MemoryDB:
         """
         sql = "UPDATE memories SET valid_to = ? WHERE id = ? AND valid_to IS NULL"
         params: list[object] = [_now_iso(), memory_id]
-        if subject is not None:
+        if subject is not None and self._cipher is None:
             sql += " AND subject = ?"
             params.append(subject)
 
         with self._lock, self._conn:
+            if (
+                subject is not None
+                and self._cipher is not None
+                and not self._encrypted_subject_matches(
+                    memory_id, subject, "valid_to IS NULL"
+                )
+            ):
+                return False
             cursor = self._conn.execute(sql, params)
 
             if cursor.rowcount == 0:
@@ -1638,10 +2189,18 @@ class MemoryDB:
         now = _now_iso()
         sql = "UPDATE memories SET archived_at = ?, last_accessed = ? WHERE id = ? AND archived_at IS NULL"
         params: list[object] = [now, now, memory_id]
-        if subject is not None:
+        if subject is not None and self._cipher is None:
             sql += " AND subject = ?"
             params.append(subject)
         with self._lock, self._conn:
+            if (
+                subject is not None
+                and self._cipher is not None
+                and not self._encrypted_subject_matches(
+                    memory_id, subject, "archived_at IS NULL"
+                )
+            ):
+                return False
             cursor = self._conn.execute(sql, params)
             self._conn.commit()
         if cursor.rowcount > 0:
@@ -1781,6 +2340,9 @@ class MemoryDB:
         Returns:
             Tuple of (jsonl_string, count_of_records).
         """
+        if self._cipher is not None:
+            return self._export_encrypted_jsonl()
+
         # Bolt Performance Optimization: Offload JSON construction to SQLite.
         # Avoids O(N) Python dict creations and json.dumps calls, resulting in ~78% faster exports.
         #
@@ -1803,6 +2365,29 @@ class MemoryDB:
                 count += 1
 
         return output.getvalue(), count
+
+    def _export_encrypted_jsonl(self) -> tuple[str, int]:
+        """Export an encrypted store as decrypted JSONL.
+
+        Produces the same records as the plaintext export: columns in
+        :data:`MEMORY_COLUMNS` order, ``tags`` as a JSON array, compact
+        separators and non-ASCII text kept as is (what SQLite's
+        ``json_object`` emits). The output is plaintext; protect it.
+        """
+        columns = ", ".join(MEMORY_COLUMNS)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT {columns} FROM memories ORDER BY created_at"
+            ).fetchall()
+            output = io.StringIO()
+            for row in rows:
+                record = self.decode_row(row)
+                record["tags"] = json.loads(record["tags"])
+                output.write(
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                )
+                output.write("\n")
+        return output.getvalue(), len(rows)
 
     def _clear_for_import(self, mode: str) -> None:
         """Clear memories if mode is 'replace'."""
@@ -1860,15 +2445,21 @@ class MemoryDB:
                 )
 
                 derived = {"id": memory_id, "content": content, "tags": tags_json}
-                row = []
+                row = {}
                 for column in MEMORY_COLUMNS:
                     if column in _IMPORT_DERIVED_COLUMNS:
-                        row.append(derived[column])
+                        row[column] = derived[column]
                     elif column in _IMPORT_TIMESTAMP_COLUMNS:
-                        row.append(mem.get(column, now))
+                        row[column] = mem.get(column, now)
                     else:
-                        row.append(mem.get(column, _IMPORT_DEFAULTS[column]))
-                to_insert.append(tuple(row))
+                        row[column] = mem.get(column, _IMPORT_DEFAULTS[column])
+                if self._cipher is not None:
+                    # Values are bound to the row id, so it has to be text;
+                    # a non-text user-data value is rejected, not stored.
+                    if not isinstance(memory_id, str):
+                        raise TypeError("memory id must be text to encrypt")
+                    row = self._seal_row(memory_id, row)
+                to_insert.append(tuple(row[column] for column in MEMORY_COLUMNS))
             except Exception:
                 rejected += 1
                 continue
@@ -2124,11 +2715,14 @@ class MemoryDB:
 
         merged = []
         for r in rows:
-            tags_val = r[3]
+            # Archived rows in both tables keep their ids, so the values
+            # decrypt with the same row binding.
+            plain = self.decode_row({"id": r[0], "content": r[1], "tags": r[3]})
+            tags_val = plain["tags"]
             merged.append(
                 {
                     "id": r[0],
-                    "content": r[1][:200],
+                    "content": plain["content"][:200],
                     "category": r[2],
                     "tags": [] if tags_val == "[]" else json.loads(tags_val),
                     "importance": r[4],
@@ -2249,6 +2843,13 @@ class MemoryDB:
                 if current_rev == head_rev:
                     return
 
+            if self._cipher is not None:
+                # Guard triggers name the current columns, and a trigger that
+                # names a missing column breaks ALTER TABLE ... RENAME. They are
+                # reinstalled against the migrated schema right after.
+                with self._lock, self._conn:
+                    drop_encryption_guards(self._conn)
+
             # Backup before applying any forward migration
             self._backup_db_file()
 
@@ -2308,14 +2909,16 @@ class MemoryDB:
                 # an FTS rebuild before running UPDATEs so the AFTER UPDATE
                 # trigger does not corrupt the contentless FTS index with a
                 # DELETE on an unindexed rowid ("database disk image is
-                # malformed" on Windows SQLite).
-                try:
-                    self._conn.execute(
-                        "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
-                    )
-                    self._conn.commit()
-                except Exception:
-                    pass
+                # malformed" on Windows SQLite). An encrypted store has no FTS
+                # triggers and must keep its index empty, so it skips this.
+                if self._cipher is None:
+                    try:
+                        self._conn.execute(
+                            "INSERT INTO memories_fts(memories_fts) VALUES('rebuild')"
+                        )
+                        self._conn.commit()
+                    except Exception:
+                        pass
 
                 batch = []
                 for row in rows:
@@ -2323,8 +2926,14 @@ class MemoryDB:
                     row_id = row["id"] if is_row else row[0]
                     content = row["content"] if is_row else row[1]
                     created_at = row["created_at"] if is_row else row[2]
+                    if self._cipher is not None:
+                        content = self._cipher.decrypt(row_id, "content", content)
                     digest = hashlib.sha256((content or "").encode("utf-8")).hexdigest()
-                    batch.append((digest, created_at, row_id))
+                    # The digest would confirm a guessed content, so it is
+                    # stored encrypted like the content itself.
+                    batch.append(
+                        (self._seal(row_id, "commit_sha", digest), created_at, row_id)
+                    )
 
                 self._conn.executemany(
                     "UPDATE memories SET "
