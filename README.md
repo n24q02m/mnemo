@@ -53,6 +53,7 @@ mcp-name: io.github.n24q02m/mnemo
 - [Smithery](#smithery)
 - [Tools](#tools)
 - [Security](#security)
+- [Encryption at rest](#encryption-at-rest)
 - [Build from Source](#build-from-source)
 - [CLI](#cli)
 - [Self-hosting (local HTTP instance)](#self-hosting-local-http-instance)
@@ -89,6 +90,7 @@ mcp-name: io.github.n24q02m/mnemo
 - **Duplicate detection** -- Warns before adding semantically similar memories
 - **Zero config** -- Fastretrieval's built-in local registry resolves Qwen3 ONNX embedding + reranking, no API keys needed. Optional cloud calls go through per-task `[models.<task>]` provider cells (OpenAI-spec; OpenRouter pre-wired default)
 - **Local-first storage** -- one SQLite file (WAL) under `~/.mnemo/`; backup and cross-machine migration = `rclone` outside the server (no embedded sync)
+- **Encryption at rest (opt-in)** -- with `MNEMO_ENCRYPTION_KEY` set, memory text, tags, source and subject are stored AES-256-GCM encrypted; `n24q02m-mnemo encrypt` / `decrypt` convert an existing store (see [Encryption at rest](#encryption-at-rest))
 - **Plugin trinity** -- Ships `/recall-context` + `/memory-commit` skills and SessionStart + opt-in PostToolUse hooks (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md))
 - **Proactive memory** -- Tool descriptions and skills guide AI to save preferences, decisions, facts at the right moment
 - **LLM compression** -- Per-turn compression through the `[models.chat]` provider cell targets ~3x token reduction at >=0.9 fact retention; graceful skip when the cell is unconfigured (see [docs/compression.md](docs/compression.md))
@@ -229,6 +231,89 @@ Plugin trinity (Claude Code marketplace install):
 - **Host-only credentials** -- provider keys live in the host-owned `config.toml` or `HULL_<TASK>_API_KEY` env vars; end users never see them
 - **Auth-gated HTTP** -- `auth = "no-auth"` refuses non-loopback binds; `token` / `multi` require credential checks
 - **Error sanitization** -- No credentials in error messages
+- **Encryption at rest (opt-in)** -- AES-256-GCM per value, fail-closed on a missing or wrong key; see [Encryption at rest](#encryption-at-rest) for what it covers and what it does not
+
+## Encryption at rest
+
+Off by default. With `MNEMO_ENCRYPTION_KEY` set, mnemo encrypts the user
+text of every memory before it reaches SQLite: `content`, `text_raw` (the
+original of a compressed memory), `tags`, `source`, `subject` and
+`commit_sha`, in live and archived rows. Each value is sealed with
+AES-256-GCM under a fresh random nonce and bound to its row id and column,
+so a value copied into another row or column fails to decrypt.
+
+The key setting takes one of three forms:
+
+| Value | Meaning |
+|:------|:--------|
+| `hex:<64 hex characters>` | A raw 256-bit key |
+| `base64:<32 bytes, standard or URL-safe>` | A raw 256-bit key |
+| Anything else, at least 12 characters | A passphrase, stretched with Argon2id (PBKDF2-SHA256 when the OpenSSL build has no Argon2id) |
+
+Generate a raw key:
+
+```bash
+python -c "import secrets; print('hex:' + secrets.token_hex(32))"
+```
+
+The store records the scheme, the KDF and its parameters, a random salt and
+a key check in `store_meta` (Alembic revision `mem_008_encryption_meta`).
+The key itself is never stored. Keep it in your secret manager: without it
+the data cannot be recovered.
+
+Fail-closed rules:
+
+- An encrypted store refuses to open without the key or with the wrong key.
+  It never falls back to plaintext.
+- A plaintext store that already holds memories refuses to open while a key
+  is set, so data is never mixed. Convert it with `n24q02m-mnemo encrypt`.
+  A new, empty store opened with a key is created encrypted.
+- SQLite triggers abort any write of a non-ciphertext value to an encrypted
+  column, and any insert into the knowledge-graph tables, so an older
+  release or a direct SQL client cannot add plaintext next to the
+  ciphertext.
+
+Convert an existing store. Stop the server first: both commands refuse a
+store that another process has open.
+
+```bash
+n24q02m-mnemo encrypt [--db PATH | --namespace NS] [--drop-graph]
+n24q02m-mnemo decrypt [--db PATH | --namespace NS]
+```
+
+Both read the key from `MNEMO_ENCRYPTION_KEY`, or prompt for it (twice for
+`encrypt`). Each run:
+
+1. Migrates the store to the current schema and checks the key.
+2. Writes a consistent, single-file backup
+   `<store>.<encrypt|decrypt>-<UTC time>.bak` next to the store.
+3. Rewrites every row in one transaction, then verifies the result.
+4. On any failure, restores the backup and says so.
+
+`encrypt` then runs `VACUUM` and truncates the WAL, so no plaintext stays in
+freed pages or in the `-wal` file. **The backup written by `encrypt` is
+plaintext.** Once the server starts with the key, delete it securely.
+Running either command again on a converted store does nothing. In
+`auth = "multi"` mode every namespace has its own store; encrypt each one.
+
+What encryption at rest does not cover:
+
+- **Embedding vectors** are stored as is, and vectors can leak information
+  about the text they were computed from.
+- **Metadata**: ids, `category`, `context_type`, importance, confidence,
+  access counts, timestamps, compression flags, version links, and whether
+  a column is empty.
+- **Full-text index**: the FTS5 index would hold every token in plaintext,
+  so an encrypted store keeps it empty. Keyword search decrypts the rows
+  that pass the metadata filters and ranks them in memory with the same
+  query tiers and BM25 weights, without stemming. Its cost grows linearly
+  with the number of memories, and rankings can differ slightly from FTS5.
+- **Knowledge graph**: entity names and relations would be plaintext, so an
+  encrypted store keeps the graph empty. Automatic entity extraction is
+  skipped, and `encrypt` refuses a store with graph rows unless
+  `--drop-graph` deletes them.
+- **Provider calls**: text sent to the embed, rerank and chat cells leaves
+  the machine as before. Encryption at rest protects the files on disk only.
 
 ## Build from Source
 
@@ -249,8 +334,8 @@ The package ships two distinct console scripts:
   `mnemo-pilot` is a legacy alias of the same entry point.
 - **`n24q02m-mnemo`** (legacy alias `mnemo-mcp`) -- the MCP server plus one-shot operator subcommands. A
   bare invocation starts the HTTP server; a leading subcommand
-  (`config-init`, `config`, `warmup`, `token-hash`, `token-verify`) runs an
-  action and exits.
+  (`config-init`, `config`, `warmup`, `token-hash`, `token-verify`,
+  `encrypt`, `decrypt`) runs an action and exits.
 
 CLI-first memory surface (`mnemo`; every subcommand takes `--db <path>`,
 prints a JSON envelope, and exits with a taxonomy-mapped code):
@@ -280,6 +365,8 @@ n24q02m-mnemo warmup                # pre-download local embedding model / probe
 n24q02m-mnemo token-hash            # print a scrypt$ hash for [server] token_hash
                                 # (reads MNEMO_AUTH_TOKEN or prompts)
 n24q02m-mnemo token-verify <token> <scrypt$...>   # verify a token against a hash
+n24q02m-mnemo encrypt [--db PATH | --namespace NS] [--drop-graph]   # encrypt a stopped store in place
+n24q02m-mnemo decrypt [--db PATH | --namespace NS]                  # decrypt it back to plaintext
 ```
 
 | Subcommand | Purpose |
@@ -289,6 +376,8 @@ n24q02m-mnemo token-verify <token> <scrypt$...>   # verify a token against a has
 | `warmup` | Probe the `[models.embed]` cell when it is configured; otherwise pre-download the Fastretrieval-managed local ONNX embedding model so first use works offline |
 | `token-hash` | Mint a `scrypt$` hash for `[server] token_hash` (shared-token auth) |
 | `token-verify` | Verify a candidate token against a stored `scrypt$` hash |
+| `encrypt` | Encrypt a stopped store in place with `MNEMO_ENCRYPTION_KEY`, after a plaintext backup; see [Encryption at rest](#encryption-at-rest) |
+| `decrypt` | Decrypt an encrypted store in place, after a backup |
 
 ## Self-hosting (local HTTP instance)
 

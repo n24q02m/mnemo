@@ -25,6 +25,9 @@ from mnemo.server import (
     run_server_blocking,
 )
 
+# Obvious test key; never a real one.
+TEST_HEX_KEY = "hex:" + bytes(range(32)).hex()
+
 
 @pytest.fixture
 def ctx_with_db(tmp_path: Path):
@@ -290,6 +293,37 @@ class TestEnrichMemory:
         assert edges == 1
         assert links == 2
 
+    async def test_encrypted_store_skips_graph_extraction(self, tmp_path):
+        db = MemoryDB(
+            tmp_path / "encrypted.db", embedding_dims=0, encryption_key=TEST_HEX_KEY
+        )
+        try:
+            mid = db.add("Python powers MCP")
+            extract = AsyncMock(return_value={"entities": [{"name": "Python"}]})
+            with (
+                patch("mnemo.server.settings", _mock_settings(kg_auto_enabled=True)),
+                _passthrough_to_thread(),
+                patch(
+                    "mnemo.graph.score_importance",
+                    new_callable=AsyncMock,
+                    return_value=0.8,
+                ),
+                patch("mnemo.temporal.extract.extract_entities", extract),
+                patch("mnemo.graph.extract_entities", extract),
+            ):
+                await _enrich_memory(db, mid, "Python powers MCP")
+            # Importance is still scored; the graph is never touched.
+            row = db.get(mid)
+            assert row is not None and row["importance"] == 0.8
+            extract.assert_not_called()
+            with db.connection() as conn:
+                count = conn.execute("SELECT COUNT(*) FROM memory_entities").fetchone()[
+                    0
+                ]
+            assert count == 0
+        finally:
+            db.close()
+
 
 # ---------------------------------------------------------------------------
 # manual compression handler
@@ -356,6 +390,47 @@ class TestHandleMemoryCompress:
         assert row["content"] == "dense"
         assert row["compressed"] == 1
         assert row["compression_provider"] == "gemini"
+
+    async def test_compression_in_encrypted_store_stays_encrypted(self, tmp_path):
+        db = MemoryDB(
+            tmp_path / "encrypted.db", embedding_dims=0, encryption_key=TEST_HEX_KEY
+        )
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            "db": db,
+            "embedding_model": None,
+            "embedding_dims": 0,
+        }
+        try:
+            mid = db.add("long uncompressed zqxsecret content")
+            compress_result = {
+                "compressed": True,
+                "text": "dense zqxsecret",
+                "text_raw": "long uncompressed zqxsecret content",
+                "compression_provider": "chat-cell",
+                "tokens_in": 12,
+                "tokens_out": 3,
+            }
+            with (
+                _passthrough_to_thread(),
+                patch(
+                    "mnemo.compression.compress",
+                    new_callable=AsyncMock,
+                    return_value=compress_result,
+                ),
+            ):
+                resp = await _handle_memory_compress(ctx, mid)
+            assert resp["status"] == "compressed"
+            row = db.get(mid)
+            assert row is not None
+            assert row["content"] == "dense zqxsecret"
+            assert row["text_raw"] == "long uncompressed zqxsecret content"
+            stored = db._conn.execute(
+                "SELECT content, text_raw FROM memories WHERE id = ?", (mid,)
+            ).fetchone()
+            assert all(value.startswith("enc:v1:") for value in stored)
+        finally:
+            db.close()
 
 
 # ---------------------------------------------------------------------------

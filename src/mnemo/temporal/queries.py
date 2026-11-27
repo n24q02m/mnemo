@@ -95,7 +95,7 @@ def entity_search(
 
     out: list[dict] = []
     for row in rows:
-        d = dict(row)
+        d = db.decode_row(row)
         ent_id = d.pop("entity_id", None)
         d["matched_entity"] = name_by_id.get(ent_id, name)
         out.append(d)
@@ -194,7 +194,7 @@ def history_for_entity(db: MemoryDB, entity_id: str) -> list[dict]:
         rows = conn.execute(sql, (entity_id,)).fetchall()
     out = []
     for row in rows:
-        d = dict(row)
+        d = db.decode_row(row)
         d.pop("entity_id", None)
         out.append(d)
     return out
@@ -233,7 +233,7 @@ def memories_as_of(
 
     with db.connection() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    return [db.decode_row(r) for r in rows]
 
 
 def build_timeline(
@@ -251,12 +251,19 @@ def build_timeline(
     Supports filtering by ``subject``, optional ``entity`` substring/name,
     ISO bounds ``since``/``until``, and flags each item as ``active`` vs
     ``superseded`` vs ``archived``.
+
+    In a store encrypted at rest, ``subject`` and ``entity`` are matched
+    after decryption: the subject exactly, and the entity as a literal,
+    case-insensitive substring of the content (an encrypted store has no
+    knowledge-graph rows to match entity names against).
     """
     limit = max(1, min(limit, 200))
     clauses = ["1=1"]
     params: list[object] = []
+    # Ciphertext columns cannot be filtered in SQL; see the docstring.
+    filter_in_sql = not db.encrypted
 
-    if subject is not None:
+    if subject is not None and filter_in_sql:
         clauses.append("m.subject = ?")
         params.append(subject)
     if not include_superseded:
@@ -267,7 +274,7 @@ def build_timeline(
     if until:
         clauses.append("COALESCE(m.valid_from, m.created_at) <= ?")
         params.append(until)
-    if entity:
+    if entity and filter_in_sql:
         ent_pat = f"%{entity.strip()}%"
         clauses.append(
             "(m.content LIKE ? OR EXISTS ("
@@ -280,16 +287,25 @@ def build_timeline(
     sql = (
         "SELECT m.* FROM memories m "
         f"WHERE {' AND '.join(clauses)} "
-        "ORDER BY COALESCE(m.valid_from, m.created_at) ASC, m.created_at ASC "
-        "LIMIT ?"
+        "ORDER BY COALESCE(m.valid_from, m.created_at) ASC, m.created_at ASC"
     )
-    params.append(limit)
+    if filter_in_sql:
+        sql += " LIMIT ?"
+        params.append(limit)
     with db.connection() as conn:
         rows = conn.execute(sql, params).fetchall()
 
+    needle = entity.strip().casefold() if entity else ""
     timeline: list[dict] = []
     for r in rows:
-        item = dict(r)
+        if len(timeline) >= limit:
+            break
+        item = db.decode_row(r)
+        if not filter_in_sql:
+            if subject is not None and item.get("subject") != subject:
+                continue
+            if needle and needle not in (item.get("content") or "").casefold():
+                continue
         if item.get("archived_at"):
             state = "archived"
         elif item.get("valid_to") or item.get("superseded_by"):

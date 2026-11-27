@@ -182,6 +182,8 @@ def _clear_provider_environment(monkeypatch):
         "HULL_RERANK_API_KEY",
         "HULL_CHAT_API_KEY",
         "HULL_JEV_SCORE_API_KEY",
+        # At-rest encryption key: a workstation value must never reach a test.
+        "MNEMO_ENCRYPTION_KEY",
     ) + tuple(_settings_env_keys()):
         monkeypatch.delenv(key, raising=False)
 

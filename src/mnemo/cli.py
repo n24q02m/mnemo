@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 
 def _serve(argv: list[str]) -> int | None:
@@ -135,6 +136,91 @@ def _handle_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
+def _store_path(args: argparse.Namespace) -> Path:
+    """Resolve the store for ``encrypt``/``decrypt``: ``--db`` or a namespace."""
+    from mnemo.runtime import db_path_for_namespace
+
+    if args.db:
+        return Path(args.db)
+    return db_path_for_namespace(args.namespace or "default")
+
+
+def _read_encryption_key(confirm: bool) -> str | None:
+    """Key from MNEMO_ENCRYPTION_KEY, else from a prompt (twice when confirming).
+
+    Prints the reason and returns None when no usable key was given.
+    """
+    import getpass
+    import os
+
+    from mnemo.crypto import ENCRYPTION_KEY_ENV
+
+    value = os.environ.get(ENCRYPTION_KEY_ENV, "")
+    if value.strip():
+        return value
+    value = getpass.getpass(f"{ENCRYPTION_KEY_ENV}: ")
+    if not value.strip():
+        print("mnemo: empty key", file=sys.stderr)
+        return None
+    if confirm and getpass.getpass("repeat the key: ") != value:
+        print("mnemo: the keys do not match", file=sys.stderr)
+        return None
+    return value
+
+
+def _handle_store_rewrite(args: argparse.Namespace) -> int:
+    """``mnemo encrypt`` / ``mnemo decrypt``: rewrite a stopped store in place."""
+    from mnemo import store_encryption
+    from mnemo.crypto import ENCRYPTION_KEY_ENV
+    from mnemo.exceptions import EncryptionError, StoreRewriteError
+
+    encrypt = args.command == "encrypt"
+    try:
+        path = _store_path(args)
+    except ValueError as exc:
+        print(f"mnemo: {exc}", file=sys.stderr)
+        return 2
+    key = _read_encryption_key(confirm=encrypt)
+    if key is None:
+        return 2
+    try:
+        if encrypt:
+            result = store_encryption.encrypt_store(
+                path, key, drop_graph=args.drop_graph
+            )
+        else:
+            result = store_encryption.decrypt_store(path, key)
+    except StoreRewriteError as exc:
+        print(f"mnemo: {exc}", file=sys.stderr)
+        return 1
+    except (EncryptionError, FileNotFoundError) as exc:
+        print(f"mnemo: {exc}", file=sys.stderr)
+        return 2
+
+    if result.action == "already-encrypted":
+        print(f"{path} is already encrypted with this key; nothing to do")
+        return 0
+    if result.action == "not-encrypted":
+        print(f"{path} is not encrypted; nothing to do")
+        return 0
+    verb = "Encrypted" if encrypt else "Decrypted"
+    print(f"{verb} {path}: {result.memories} memories, {result.archived} archived rows")
+    if result.graph_rows_dropped:
+        print(f"Dropped {result.graph_rows_dropped} knowledge-graph rows")
+    if encrypt:
+        print(
+            f"Plaintext backup: {result.backup_path}\n"
+            "This backup is NOT encrypted. Check that the server starts with "
+            f"{ENCRYPTION_KEY_ENV} set, then delete it securely."
+        )
+    else:
+        print(
+            f"Backup of the encrypted store: {result.backup_path}\n"
+            f"Unset {ENCRYPTION_KEY_ENV} before starting the server again."
+        )
+    return 0
+
+
 def _version() -> str:
     from mnemo import __version__
 
@@ -236,6 +322,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--port", type=int, default=None, help="Bind port for --http"
     )
     mcp_parser.set_defaults(func=_handle_mcp)
+
+    for name, help_text in (
+        ("encrypt", "Encrypt a stopped store in place (key: MNEMO_ENCRYPTION_KEY)"),
+        ("decrypt", "Decrypt an encrypted store in place, back to plaintext"),
+    ):
+        rewrite = sub.add_parser(name, parents=[profile_parent], help=help_text)
+        target = rewrite.add_mutually_exclusive_group()
+        target.add_argument("--db", default=None, help="Path of the store file")
+        target.add_argument(
+            "--namespace",
+            default=None,
+            help="Per-namespace store under the mnemo config dir (default: default)",
+        )
+        if name == "encrypt":
+            rewrite.add_argument(
+                "--drop-graph",
+                action="store_true",
+                help="Delete knowledge-graph rows, which encryption does not cover",
+            )
+        rewrite.set_defaults(func=_handle_store_rewrite)
 
     def _delegate_core(core_args: argparse.Namespace) -> int:
         from mnemo_cli.__main__ import main as core_main

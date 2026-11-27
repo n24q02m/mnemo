@@ -653,6 +653,11 @@ async def _enrich_memory(db: MemoryDB, memory_id: str, content: str) -> None:
     except Exception as e:
         logger.debug(f"Importance scoring background error: {e}")
 
+    # Entity names and relations are stored in plaintext, so a store that is
+    # encrypted at rest keeps no knowledge graph.
+    if db.encrypted:
+        return
+
     # Phase 3 KG_AUTO_ENABLED path: temporal.extract + temporal.store with
     # bitemporal bookkeeping. Falls back to legacy on import failure so a
     # broken Phase 3 install never blocks captures.
@@ -1988,23 +1993,14 @@ async def _handle_memory_compress(
             "reason": "no LLM provider available or compression disabled",
         }
 
-    from datetime import UTC, datetime
-
-    def apply_compression(conn) -> None:
-        conn.execute(
-            "UPDATE memories SET content = ?, text_raw = ?, compressed = 1, "
-            "compression_provider = ?, updated_at = ? WHERE id = ?",
-            (
-                result["text"],
-                result["text_raw"],
-                result["compression_provider"],
-                datetime.now(UTC).isoformat(),
-                memory_id,
-            ),
-        )
-
-    # Committed by db.run when apply_compression returns.
-    await asyncio.to_thread(db.run, apply_compression)
+    # Through MemoryDB, so an encrypted store gets the new text encrypted.
+    await asyncio.to_thread(
+        db.set_compressed,
+        memory_id,
+        result["text"],
+        result["text_raw"],
+        result["compression_provider"],
+    )
     return {
         "status": "compressed",
         "id": memory_id,
