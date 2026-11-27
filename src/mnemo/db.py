@@ -474,7 +474,10 @@ class MemoryDB:
         # never leaves an empty store behind.
         key = crypto.load_key(encryption_key)
         self._cipher: crypto.FieldCipher | None = None
-        self._pending_encryption_meta: dict[str, str] | None = None
+        # Key and metadata of a new encrypted store, recorded by _init_schema.
+        self._pending_encryption: tuple[crypto.EncryptionKey, dict[str, str]] | None = (
+            None
+        )
 
         # Create parent directory
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -594,7 +597,24 @@ class MemoryDB:
         scheme, or a plaintext store that shows signs of encrypted data all
         raise instead of opening, and nothing is written before the decision.
         """
-        meta = self._read_encryption_meta()
+        if (
+            self._open_recorded_encryption(self._read_encryption_meta(), key)
+            or key is None
+        ):
+            return
+        self._refuse_plaintext_data()
+        meta, self._cipher = crypto.new_store_encryption(key)
+        self._pending_encryption = (key, meta)
+
+    def _open_recorded_encryption(
+        self, meta: dict[str, str | None], key: crypto.EncryptionKey | None
+    ) -> bool:
+        """Open the store as ``meta`` records it; True when it is encrypted.
+
+        Raises when the store is encrypted and ``key`` is missing or wrong,
+        when the scheme is unknown, and when a store marked plaintext still
+        carries encrypted state.
+        """
         scheme = meta.get(crypto.META_SCHEME)
         if scheme == crypto.SCHEME_AES_GCM_V1:
             if key is None:
@@ -603,22 +623,54 @@ class MemoryDB:
                     f"{crypto.ENCRYPTION_KEY_ENV} to the key it was encrypted with"
                 )
             self._cipher = crypto.open_store_encryption(meta, key)
-            return
+            return True
         if scheme not in (None, crypto.SCHEME_NONE):
             raise EncryptionError(
                 f"{self._db_path} uses an unknown encryption scheme {scheme!r}; "
                 "it was written by a newer release or is corrupt"
             )
         self._refuse_encrypted_leftovers(meta)
-        if key is None:
-            return
+        return False
+
+    def _refuse_plaintext_data(self) -> None:
+        """Refuse to start encrypting a store that already holds plaintext."""
         if self._store_has_data():
             raise StoreNotEncrypted(
                 f"{self._db_path} holds plaintext memories; run "
                 "`n24q02m-mnemo encrypt` to encrypt it in place, or unset "
                 f"{crypto.ENCRYPTION_KEY_ENV} to keep using it unencrypted"
             )
-        self._pending_encryption_meta, self._cipher = crypto.new_store_encryption(key)
+
+    def _record_new_encryption(
+        self, key: crypto.EncryptionKey, meta: dict[str, str]
+    ) -> None:
+        """Record the metadata of a new encrypted store, or adopt a rival's.
+
+        Two processes can open the same empty store with a key at once, each
+        with a salt of its own. The metadata is written in one write
+        transaction that reads it again first, so the first opener records
+        its metadata and never has it overwritten. A later opener adopts that
+        metadata when its key matches, and fails with
+        :class:`WrongEncryptionKey` when it does not, or with
+        :class:`StoreNotEncrypted` when plaintext memories were added in the
+        meantime.
+        """
+        with self._lock:
+            # The schema set-up before this point is DDL only, which never
+            # leaves a transaction open.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                if not self._open_recorded_encryption(
+                    self._read_encryption_meta(), key
+                ):
+                    self._refuse_plaintext_data()
+                    for meta_key, meta_value in meta.items():
+                        self._set_store_meta(meta_key, meta_value)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                self._conn.close()
+                raise
 
     def _refuse_encrypted_leftovers(self, meta: dict[str, str | None]) -> None:
         """Refuse a store marked plaintext that still carries encrypted state.
@@ -636,15 +688,6 @@ class MemoryDB:
                 (len(GUARD_TRIGGER_PREFIX), GUARD_TRIGGER_PREFIX),
             ).fetchone():
                 reason = "encryption guard triggers"
-            elif table_exists(self._conn, "memories") and any(
-                crypto.is_ciphertext(row[0])
-                for row in self._conn.execute(
-                    "SELECT content FROM memories WHERE rowid IN "
-                    "((SELECT min(rowid) FROM memories), "
-                    "(SELECT max(rowid) FROM memories))"
-                ).fetchall()
-            ):
-                reason = "encrypted memory rows"
             else:
                 return
         raise EncryptedDataError(
@@ -771,12 +814,11 @@ class MemoryDB:
             self._init_graph_schema()
             self._init_archive_schema()
             self._init_store_meta_schema()
-            if self._pending_encryption_meta is not None:
+            if self._pending_encryption is not None:
                 # A new encrypted store: record the scheme, KDF, salt and key
                 # check before migrations run, so mem_008 leaves them alone.
-                for meta_key, meta_value in self._pending_encryption_meta.items():
-                    self._set_store_meta(meta_key, meta_value)
-                self._pending_encryption_meta = None
+                self._record_new_encryption(*self._pending_encryption)
+                self._pending_encryption = None
             # Guard BEFORE _ensure_vec_table: the latter detects an existing
             # memories_vec and silently adopts its stored dimension, which would
             # mask a dims mismatch. The guard compares the REQUESTED identity

@@ -83,13 +83,16 @@ _KEY_CHECK_PLAINTEXT = b"mnemo key check v1"
 
 # Accepted parameter ranges per KDF. The ranges only reject corrupt metadata
 # (or values that would make opening the store hang); the key check is what
-# proves the parameters are the ones the store was encrypted with.
+# proves the parameters are the ones the store was encrypted with. Argon2id
+# memory is capped at four times the default (256 MiB), so forged metadata
+# cannot make every open allocate gigabytes.
+ARGON2ID_MAX_MEMORY_COST = 4 * ARGON2ID_PARAMS["memory_cost"]
 _KDF_PARAM_BOUNDS: dict[str, dict[str, tuple[int, int]]] = {
     KDF_RAW: {},
     KDF_ARGON2ID: {
         "iterations": (1, 64),
         "lanes": (1, 64),
-        "memory_cost": (8, 4 * 1024 * 1024),
+        "memory_cost": (8, ARGON2ID_MAX_MEMORY_COST),
     },
     KDF_PBKDF2: {"iterations": (10_000, 100_000_000)},
 }

@@ -213,6 +213,13 @@ def _handle_store_rewrite(args: argparse.Namespace) -> int:
             "This backup is NOT encrypted. Check that the server starts with "
             f"{ENCRYPTION_KEY_ENV} set, then delete it securely."
         )
+        if result.plaintext_copies:
+            print(
+                "Copies made earlier by schema migrations, which may hold "
+                "plaintext too; delete them securely as well:"
+            )
+            for copy in result.plaintext_copies:
+                print(f"  {copy}")
     else:
         print(
             f"Backup of the encrypted store: {result.backup_path}\n"

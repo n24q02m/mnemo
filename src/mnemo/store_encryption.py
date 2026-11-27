@@ -7,22 +7,25 @@ plaintext store with data into an encrypted one, or back.
 
 Every rewrite follows the same steps:
 
-1. Open the store once through ``MemoryDB`` so it is migrated to the current
+1. Check that no other process (the server) has the store open. A busy store
+   is refused before anything is migrated, copied or rewritten.
+2. Open the store once through ``MemoryDB`` so it is migrated to the current
    schema, and check the key against it.
-2. Take an exclusive lock. A store that another process (the server) has
-   open is refused, never rewritten under it.
-3. Write a self-contained backup next to the store: a consistent copy taken
+3. Take an exclusive lock, held until the rewrite is done.
+4. Write a self-contained backup next to the store: a consistent copy taken
    through the SQLite backup API, switched to rollback-journal mode so it is
    one file, integrity-checked, flushed to disk, and only then renamed to its
    final ``<store>.<encrypt|decrypt>-<UTC time>.bak`` name.
-4. Rewrite every row in one transaction.
-5. Verify the result. When the rewrite or the verification fails, the
+5. Rewrite every row in one transaction.
+6. Verify the result. When the rewrite or the verification fails, the
    backup is copied back into the store under the same lock.
 
 After an encrypt, ``VACUUM`` and a truncating WAL checkpoint remove the
 plaintext that freed pages and the write-ahead log would otherwise keep. The
-backup written by encrypt holds that plaintext by design; the command tells
-the operator to delete it securely once the store has been checked.
+backup written by encrypt holds that plaintext by design, and so do the
+copies schema migrations leave next to the store (``<store>.bak.<time>``,
+including the one step 2 may write). Encrypt reports all of them so the
+operator can delete them securely once the store has been checked.
 """
 
 from __future__ import annotations
@@ -82,6 +85,10 @@ class RewriteResult:
     ``action`` is ``"encrypted"``, ``"decrypted"``, ``"already-encrypted"``
     or ``"not-encrypted"``. The counts are rows rewritten (zero when nothing
     was done) and ``backup_path`` is ``None`` when nothing was done.
+    ``plaintext_copies`` lists, after an encrypt, the schema-migration copies
+    of the store (``<store>.bak.*`` with their ``-wal``/``-shm`` files) found
+    next to it. They were made before the store was encrypted and may hold
+    plaintext.
     """
 
     action: str
@@ -90,6 +97,7 @@ class RewriteResult:
     memories: int
     archived: int
     graph_rows_dropped: int
+    plaintext_copies: tuple[Path, ...] = ()
 
 
 def encrypt_store(
@@ -116,6 +124,8 @@ def encrypt_store(
     """
     key = crypto.parse_key(key_str)
     _require_store(db_path)
+    # Refuse a busy store before _prepare migrates or copies anything.
+    _lock_store(db_path).close()
     if _prepare(db_path, key_str):
         return RewriteResult("already-encrypted", db_path, None, 0, 0, 0)
 
@@ -159,7 +169,15 @@ def encrypt_store(
             _fail(conn, db_path, backup, "encrypt", exc)
     finally:
         conn.close()
-    return RewriteResult("encrypted", db_path, backup, memories, archived, dropped)
+    return RewriteResult(
+        "encrypted",
+        db_path,
+        backup,
+        memories,
+        archived,
+        dropped,
+        _migration_copies(db_path),
+    )
 
 
 def decrypt_store(db_path: Path, key_str: str) -> RewriteResult:
@@ -170,6 +188,8 @@ def decrypt_store(db_path: Path, key_str: str) -> RewriteResult:
     """
     key = crypto.parse_key(key_str)
     _require_store(db_path)
+    # Refuse a busy store before _prepare migrates or copies anything.
+    _lock_store(db_path).close()
     if not _prepare(db_path, key_str):
         return RewriteResult("not-encrypted", db_path, None, 0, 0, 0)
 
@@ -223,14 +243,35 @@ def _prepare(db_path: Path, key_str: str) -> bool:
 
     Opening without a key first means a plaintext store is never handed a
     key, which would make an empty plaintext store encrypted as a side
-    effect of ``decrypt``.
+    effect of ``decrypt``. The caller has already checked that the store is
+    not busy; a process that opens it in between surfaces here as a SQLite
+    error, reported as :class:`StoreBusyError`.
     """
     try:
-        MemoryDB(db_path, embedding_dims=0, encryption_key="").close()
-    except EncryptionKeyMissing:
-        MemoryDB(db_path, embedding_dims=0, encryption_key=key_str).close()
-        return True
+        try:
+            MemoryDB(db_path, embedding_dims=0, encryption_key="").close()
+        except EncryptionKeyMissing:
+            MemoryDB(db_path, embedding_dims=0, encryption_key=key_str).close()
+            return True
+    except sqlite3.OperationalError as exc:
+        raise StoreBusyError(
+            f"{db_path} could not be opened for the rewrite ({exc}); stop the "
+            "mnemo server (and any other mnemo process using this store), then "
+            "retry"
+        ) from exc
     return False
+
+
+def _migration_copies(db_path: Path) -> tuple[Path, ...]:
+    """The ``<store>.bak.*`` files schema migrations left next to the store."""
+    prefix = f"{db_path.name}.bak."
+    return tuple(
+        sorted(
+            path
+            for path in db_path.parent.iterdir()
+            if path.name.startswith(prefix) and path.is_file()
+        )
+    )
 
 
 def _lock_store(db_path: Path) -> sqlite3.Connection:

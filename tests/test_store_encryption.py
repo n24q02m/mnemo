@@ -8,7 +8,9 @@ test value built at runtime.
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -75,13 +77,36 @@ def _export(path: Path, key: str = "") -> list[dict]:
     return [json.loads(line) for line in jsonl.splitlines()]
 
 
-def _scan(path: Path) -> bool:
-    """True when the marker appears in the database or any sidecar file."""
-    for suffix in ("", "-wal", "-shm"):
-        candidate = path.with_name(path.name + suffix)
-        if candidate.exists() and MARKER.encode() in candidate.read_bytes():
+def _scan(path: Path, *reported: Path) -> bool:
+    """True when the marker appears in the store or any file next to it.
+
+    Covers the database, its -wal/-shm, and every other sibling named after
+    it (rewrite and migration backups, temporary files), except the
+    ``reported`` files the operator was told hold plaintext.
+    """
+    for candidate in path.parent.iterdir():
+        if (
+            candidate.name.startswith(path.name)
+            and candidate.is_file()
+            and candidate not in reported
+            and MARKER.encode() in candidate.read_bytes()
+        ):
             return True
     return False
+
+
+def _reported(path: Path, out: str) -> list[Path]:
+    """The files next to ``path`` that the command output lists.
+
+    A file is listed when an output line ends with its full path.
+    """
+    lines = out.splitlines()
+    return [
+        candidate
+        for candidate in path.parent.iterdir()
+        if candidate.name.startswith(path.name)
+        and any(line.endswith(f" {candidate}") for line in lines)
+    ]
 
 
 def _meta(path: Path) -> dict[str, str]:
@@ -111,6 +136,16 @@ def _backups(path: Path, action: str) -> list[Path]:
 
 def _leftover_tmp(path: Path) -> list[Path]:
     return [p for p in path.parent.iterdir() if p.name.endswith(".tmp")]
+
+
+def _migration_copies(path: Path) -> list[Path]:
+    return sorted(path.parent.glob(f"{path.name}.bak.*"))
+
+
+def _plaintext_files(result: store_encryption.RewriteResult) -> list[Path]:
+    """Every file an encrypt reported as holding plaintext."""
+    assert result.backup_path is not None
+    return [result.backup_path, *result.plaintext_copies]
 
 
 def _get(db: MemoryDB, memory_id: str) -> dict[str, Any]:
@@ -161,7 +196,7 @@ class TestEncryptDecryptCli:
         assert not backup.with_name(backup.name + "-wal").exists()
 
         # The store itself holds no plaintext and only works with the key.
-        assert not _scan(plain_store)
+        assert not _scan(plain_store, *_reported(plain_store, out))
         assert _meta(plain_store)[crypto.META_SCHEME] == crypto.SCHEME_AES_GCM_V1
         triggers = _triggers(plain_store)
         assert "mnemo_guard_memories_insert" in triggers
@@ -296,12 +331,13 @@ class TestEncryptDecryptCli:
             db.add(f"{namespace} {MARKER}")
             db.close()
 
+        team = db_path_for_namespace("team")
+        default = db_path_for_namespace("default")
         assert _run_cli(["encrypt", "--namespace", "team"], monkeypatch) == 0
-        assert not _scan(db_path_for_namespace("team"))
-        assert _scan(db_path_for_namespace("default"))
+        assert not _scan(team, *_reported(team, capsys.readouterr().out))
+        assert _scan(default)
         assert _run_cli(["encrypt"], monkeypatch) == 0
-        assert not _scan(db_path_for_namespace("default"))
-        capsys.readouterr()
+        assert not _scan(default, *_reported(default, capsys.readouterr().out))
         assert _run_cli(["encrypt", "--namespace", "../escape"], monkeypatch) == 2
         assert "namespace" in capsys.readouterr().err
 
@@ -314,7 +350,7 @@ class TestEncryptDecryptCli:
         assert exc.value.code == 2
 
     def test_store_at_previous_revision_is_migrated_first(
-        self, plain_store, monkeypatch
+        self, plain_store, monkeypatch, capsys
     ):
         conn = sqlite3.connect(plain_store)
         conn.execute("DELETE FROM store_meta WHERE key = ?", (crypto.META_SCHEME,))
@@ -322,7 +358,18 @@ class TestEncryptDecryptCli:
         conn.commit()
         conn.close()
         assert _run_cli(["encrypt", "--db", str(plain_store)], monkeypatch) == 0
-        assert not _scan(plain_store)
+        out = capsys.readouterr().out
+        # The migration copied the plaintext store before it was encrypted.
+        # That copy is plaintext like the backup, so it must be listed too.
+        copies = _migration_copies(plain_store)
+        assert any(MARKER.encode() in copy.read_bytes() for copy in copies)
+        assert "may hold plaintext" in out
+        assert set(_reported(plain_store, out)) == {
+            *_backups(plain_store, "encrypt"),
+            *copies,
+        }
+        assert _scan(plain_store, *_backups(plain_store, "encrypt"))
+        assert not _scan(plain_store, *_reported(plain_store, out))
         db = MemoryDB(plain_store, embedding_dims=0, encryption_key=HEX_KEY)
         try:
             assert db._read_alembic_version() == "mem_008_encryption_meta"
@@ -363,8 +410,9 @@ class TestKnowledgeGraph:
             ["encrypt", "--db", str(plain_store), "--drop-graph"], monkeypatch
         )
         assert rc == 0
-        assert "2 knowledge-graph rows" in capsys.readouterr().out
-        assert not _scan(plain_store)
+        out = capsys.readouterr().out
+        assert "2 knowledge-graph rows" in out
+        assert not _scan(plain_store, *_reported(plain_store, out))
         conn = sqlite3.connect(plain_store)
         try:
             for table in ("memory_entities", "memory_entity_links", "memory_edges"):
@@ -444,7 +492,7 @@ class TestFailureRollsBack:
         assert str(backup) in message
 
     def test_failed_decrypt_keeps_store_encrypted(self, plain_store, monkeypatch):
-        store_encryption.encrypt_store(plain_store, HEX_KEY)
+        encrypted = store_encryption.encrypt_store(plain_store, HEX_KEY)
         snapshot = _export(plain_store, HEX_KEY)
         real_decrypt = crypto.FieldCipher.decrypt
         calls = {"n": 0}
@@ -461,11 +509,11 @@ class TestFailureRollsBack:
         monkeypatch.setattr(crypto.FieldCipher, "decrypt", real_decrypt)
         assert _meta(plain_store)[crypto.META_SCHEME] == crypto.SCHEME_AES_GCM_V1
         assert "mnemo_guard_memories_insert" in _triggers(plain_store)
-        assert not _scan(plain_store)
+        assert not _scan(plain_store, *_plaintext_files(encrypted))
         assert _export(plain_store, HEX_KEY) == snapshot
 
     def test_failed_decrypt_verification(self, plain_store, monkeypatch):
-        store_encryption.encrypt_store(plain_store, HEX_KEY)
+        encrypted = store_encryption.encrypt_store(plain_store, HEX_KEY)
 
         def broken(*args, **kwargs):
             raise EncryptedDataError("decrypt verification failed (injected)")
@@ -474,7 +522,28 @@ class TestFailureRollsBack:
         with pytest.raises(StoreRewriteError, match="injected"):
             store_encryption.decrypt_store(plain_store, HEX_KEY)
         assert _meta(plain_store)[crypto.META_SCHEME] == crypto.SCHEME_AES_GCM_V1
-        assert not _scan(plain_store)
+        assert not _scan(plain_store, *_plaintext_files(encrypted))
+
+    def test_tampered_row_is_named(self, plain_store):
+        encrypted = store_encryption.encrypt_store(plain_store, HEX_KEY)
+        conn = sqlite3.connect(plain_store)
+        try:
+            (row_id,) = conn.execute(
+                "SELECT id FROM memories ORDER BY rowid LIMIT 1"
+            ).fetchone()
+            # Keeps the ciphertext prefix, so the guard triggers let it through.
+            forged = crypto.VALUE_PREFIX + base64.b64encode(bytes(64)).decode()
+            conn.execute(
+                "UPDATE memories SET content = ? WHERE id = ?", (forged, row_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        where = re.escape(f"column 'content' of row {row_id!r}")
+        with pytest.raises(StoreRewriteError, match=where):
+            store_encryption.decrypt_store(plain_store, HEX_KEY)
+        assert _meta(plain_store)[crypto.META_SCHEME] == crypto.SCHEME_AES_GCM_V1
+        assert not _scan(plain_store, *_plaintext_files(encrypted))
 
 
 class TestPreconditions:
@@ -490,6 +559,55 @@ class TestPreconditions:
         assert _backups(plain_store, "encrypt") == []
         assert _meta(plain_store).get(crypto.META_SCHEME) == crypto.SCHEME_NONE
 
+    def test_busy_store_is_not_migrated(self, plain_store, monkeypatch, capsys):
+        # A store one revision behind, open in another process.
+        conn = sqlite3.connect(plain_store)
+        conn.execute("UPDATE alembic_version SET version_num = 'mem_007_confidence'")
+        conn.commit()
+        conn.close()
+        copies = _migration_copies(plain_store)
+        holder = sqlite3.connect(plain_store)
+        try:
+            holder.execute("SELECT count(*) FROM memories").fetchone()
+            with pytest.raises(StoreBusyError):
+                store_encryption.encrypt_store(plain_store, HEX_KEY)
+            with pytest.raises(StoreBusyError):
+                store_encryption.decrypt_store(plain_store, HEX_KEY)
+            assert _run_cli(["encrypt", "--db", str(plain_store)], monkeypatch) == 2
+            err = capsys.readouterr().err
+            assert "stop the mnemo server" in err
+            assert "Traceback" not in err
+        finally:
+            holder.close()
+        assert _migration_copies(plain_store) == copies
+        assert [p.read_bytes() for p in _migration_copies(plain_store)] == [
+            p.read_bytes() for p in copies
+        ]
+        assert _backups(plain_store, "encrypt") == []
+        conn = sqlite3.connect(plain_store)
+        try:
+            version = conn.execute("SELECT version_num FROM alembic_version")
+            assert version.fetchone() == ("mem_007_confidence",)
+        finally:
+            conn.close()
+
+    def test_store_opened_during_prepare_is_busy(
+        self, plain_store, monkeypatch, capsys
+    ):
+        def locked(*args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(store_encryption, "MemoryDB", locked)
+        for rewrite in (store_encryption.encrypt_store, store_encryption.decrypt_store):
+            with pytest.raises(StoreBusyError, match="database is locked"):
+                rewrite(plain_store, HEX_KEY)
+        assert _run_cli(["encrypt", "--db", str(plain_store)], monkeypatch) == 2
+        err = capsys.readouterr().err
+        assert "database is locked" in err
+        assert "stop the mnemo server" in err
+        assert "Traceback" not in err
+        assert _backups(plain_store, "encrypt") == []
+
     def test_result_fields(self, plain_store):
         result = store_encryption.encrypt_store(plain_store, HEX_KEY)
         assert result.action == "encrypted"
@@ -498,16 +616,22 @@ class TestPreconditions:
         assert result.memories == 5
         assert result.archived == 0
         assert result.graph_rows_dropped == 0
+        # Creating the store left a migration copy behind.
+        assert result.plaintext_copies
+        assert list(result.plaintext_copies) == _migration_copies(plain_store)
         again = store_encryption.encrypt_store(plain_store, HEX_KEY)
         assert again.action == "already-encrypted"
         assert again.backup_path is None
+        assert again.plaintext_copies == ()
         with pytest.raises(WrongEncryptionKey):
             store_encryption.encrypt_store(plain_store, OTHER_KEY)
         done = store_encryption.decrypt_store(plain_store, HEX_KEY)
         assert done.action == "decrypted"
         assert done.memories == 5
+        assert done.plaintext_copies == ()
         noop = store_encryption.decrypt_store(plain_store, HEX_KEY)
         assert noop.action == "not-encrypted"
+        assert noop.plaintext_copies == ()
 
     def test_legacy_archive_rows_are_rewritten(self, plain_store):
         conn = sqlite3.connect(plain_store)
@@ -522,7 +646,7 @@ class TestPreconditions:
         conn.close()
         result = store_encryption.encrypt_store(plain_store, HEX_KEY)
         assert result.archived == 1
-        assert not _scan(plain_store)
+        assert not _scan(plain_store, *_plaintext_files(result))
         db = MemoryDB(plain_store, embedding_dims=0, encryption_key=HEX_KEY)
         try:
             legacy = [r for r in db.list_archived() if r["id"] == "legacy1"][0]

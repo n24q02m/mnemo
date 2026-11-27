@@ -182,6 +182,29 @@ class TestStoreEncryptionMeta:
         with pytest.raises(EncryptedDataError):
             crypto.open_store_encryption(meta, crypto.parse_key(PASSPHRASE))
 
+    def test_argon2id_memory_cap(self):
+        assert (
+            crypto.ARGON2ID_MAX_MEMORY_COST == 4 * crypto.ARGON2ID_PARAMS["memory_cost"]
+        )
+        at_cap = dict(
+            crypto.ARGON2ID_PARAMS, memory_cost=crypto.ARGON2ID_MAX_MEMORY_COST
+        )
+        assert (
+            crypto._parse_kdf_params(crypto.KDF_ARGON2ID, json.dumps(at_cap)) == at_cap
+        )
+
+    def test_argon2id_memory_above_the_cap_is_refused(self):
+        meta, _ = crypto.new_store_encryption(crypto.parse_key(HEX_KEY))
+        meta[crypto.META_KDF] = crypto.KDF_ARGON2ID
+        meta[crypto.META_KDF_PARAMS] = json.dumps(
+            dict(
+                crypto.ARGON2ID_PARAMS,
+                memory_cost=crypto.ARGON2ID_MAX_MEMORY_COST + 1,
+            )
+        )
+        with pytest.raises(EncryptedDataError, match="invalid memory_cost"):
+            crypto.open_store_encryption(meta, crypto.parse_key(PASSPHRASE))
+
     def test_tampered_key_check_is_wrong_key(self):
         meta, _ = crypto.new_store_encryption(crypto.parse_key(HEX_KEY))
         raw = bytearray(base64.b64decode(meta[crypto.META_KEY_CHECK]))
@@ -189,6 +212,9 @@ class TestStoreEncryptionMeta:
         meta[crypto.META_KEY_CHECK] = base64.b64encode(bytes(raw)).decode()
         with pytest.raises(WrongEncryptionKey):
             crypto.open_store_encryption(meta, crypto.parse_key(HEX_KEY))
+
+
+_WHERE = "column 'content' of row 'row-1'"
 
 
 @pytest.fixture
@@ -232,15 +258,23 @@ class TestFieldCipher:
         raw = bytearray(base64.b64decode(token[len(crypto.VALUE_PREFIX) :]))
         raw[15] ^= 0x01
         bad = crypto.VALUE_PREFIX + base64.b64encode(bytes(raw)).decode()
-        with pytest.raises(EncryptedDataError):
+        with pytest.raises(EncryptedDataError, match=_WHERE):
             cipher.decrypt("row-1", "content", bad)
 
     @pytest.mark.parametrize(
         "value",
-        ["plain text", b"bytes", 42, crypto.VALUE_PREFIX + "%%%", crypto.VALUE_PREFIX],
+        [
+            "plain text",
+            b"bytes",
+            42,
+            crypto.VALUE_PREFIX + "%%%",
+            crypto.VALUE_PREFIX,
+            crypto.VALUE_PREFIX + "AAAA",
+        ],
     )
     def test_non_ciphertext_fails_closed(self, cipher, value):
-        with pytest.raises(EncryptedDataError):
+        # Every failure names the row and column, so the bad row can be found.
+        with pytest.raises(EncryptedDataError, match=_WHERE):
             cipher.decrypt("row-1", "content", value)
 
     def test_encrypt_rejects_non_text(self, cipher):

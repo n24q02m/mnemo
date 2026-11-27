@@ -11,9 +11,11 @@ Every key here is an obvious, non-secret test value built at runtime.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import itertools
 import json
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -437,12 +439,8 @@ class TestFailClosed:
                 "BEGIN SELECT RAISE(ABORT, 'blocked'); END",
                 "encryption guard triggers",
             ),
-            (
-                "UPDATE memories SET content = 'enc:v1:AAAA'",
-                "encrypted memory rows",
-            ),
         ],
-        ids=["meta", "guards", "rows"],
+        ids=["meta", "guards"],
     )
     def test_plaintext_store_with_encrypted_leftovers_refuses_to_open(
         self, tmp_path, tamper, reason
@@ -459,6 +457,48 @@ class TestFailClosed:
             MemoryDB(path, embedding_dims=0)
         with pytest.raises(EncryptedDataError, match=f"still holds {reason}"):
             _open(path)
+
+    def test_plaintext_rows_that_look_encrypted_still_open(self, tmp_path):
+        # Only the metadata and the guard triggers say a store is encrypted;
+        # what a user wrote into a row never does.
+        path = tmp_path / "plain.db"
+        texts = [
+            f"{crypto.VALUE_PREFIX}AAAA first note",
+            "middle note",
+            f"{crypto.VALUE_PREFIX}not base64 at all",
+        ]
+        plain = MemoryDB(path, embedding_dims=0)
+        ids = [plain.add(text) for text in texts]
+        plain.close()
+        again = MemoryDB(path, embedding_dims=0)
+        try:
+            assert not again.encrypted
+            assert [_get(again, mid)["content"] for mid in ids] == texts
+            assert {m["content"] for m in again.list_memories()} == set(texts)
+        finally:
+            again.close()
+        with pytest.raises(StoreNotEncrypted):
+            _open(path)
+
+    def test_tampered_row_is_named(self, enc_db):
+        enc_db.add("first note about alpha")
+        mid = enc_db.add("middle note about alpha")
+        enc_db.add("last note about alpha")
+        # Keeps the ciphertext prefix, so the guard triggers let it through.
+        forged = crypto.VALUE_PREFIX + base64.b64encode(bytes(64)).decode()
+        conn = sqlite3.connect(enc_db._db_path)
+        try:
+            conn.execute("UPDATE memories SET content = ? WHERE id = ?", (forged, mid))
+            conn.commit()
+        finally:
+            conn.close()
+        where = re.escape(f"column 'content' of row {mid!r}")
+        with pytest.raises(EncryptedDataError, match=where):
+            enc_db.search("alpha")
+        with pytest.raises(EncryptedDataError, match=where):
+            enc_db.get(mid)
+        with pytest.raises(EncryptedDataError, match=where):
+            enc_db.export_jsonl()
 
     def test_row_swap_is_detected(self, enc_db):
         first = enc_db.add("first secret")
@@ -550,6 +590,88 @@ class TestFailClosed:
         try:
             db.add(f"after {MARKER}")
             assert _raw(db, "SELECT count(*) FROM memories_fts_docsize") == [(0,)]
+        finally:
+            db.close()
+
+
+def _salt(path: Path) -> str:
+    conn = sqlite3.connect(path)
+    try:
+        (salt,) = conn.execute(
+            "SELECT value FROM store_meta WHERE key = ?", (crypto.META_SALT,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return salt
+
+
+class TestConcurrentCreation:
+    """Two processes opening one new store never overwrite each other's salt.
+
+    The rival open runs while the first opener has picked its own salt but
+    has not recorded it yet, which is the window two processes can race in.
+    """
+
+    def _race(self, monkeypatch, path: Path, key: str, content: str) -> list[str]:
+        """Let a rival create the store inside the next open; return its ids."""
+        real = MemoryDB._resolve_encryption
+        armed = [True]
+        rival_ids: list[str] = []
+
+        def resolve(db, configured):
+            real(db, configured)
+            if armed[0]:
+                armed[0] = False
+                rival = _open(path, key)
+                try:
+                    rival_ids.append(rival.add(content))
+                finally:
+                    rival.close()
+
+        monkeypatch.setattr(MemoryDB, "_resolve_encryption", resolve)
+        return rival_ids
+
+    def test_same_key_adopts_the_recorded_metadata(self, enc_path, monkeypatch):
+        rival_ids = self._race(monkeypatch, enc_path, HEX_KEY, "rival row")
+        db = _open(enc_path)
+        try:
+            assert db.encrypted
+            (rival_id,) = rival_ids
+            rival_salt = _salt(enc_path)
+            assert _get(db, rival_id)["content"] == "rival row"
+            own_id = db.add("own row")
+        finally:
+            db.close()
+        assert _salt(enc_path) == rival_salt
+        reopened = _open(enc_path)
+        try:
+            assert _get(reopened, rival_id)["content"] == "rival row"
+            assert _get(reopened, own_id)["content"] == "own row"
+        finally:
+            reopened.close()
+
+    def test_other_key_fails_and_keeps_the_rival_store(self, enc_path, monkeypatch):
+        rival_ids = self._race(monkeypatch, enc_path, OTHER_KEY, "rival row")
+        with pytest.raises(WrongEncryptionKey):
+            _open(enc_path)
+        (rival_id,) = rival_ids
+        rival_salt = _salt(enc_path)
+        db = _open(enc_path, OTHER_KEY)
+        try:
+            assert _get(db, rival_id)["content"] == "rival row"
+        finally:
+            db.close()
+        assert _salt(enc_path) == rival_salt
+
+    def test_plaintext_rival_fails_and_keeps_its_rows(self, enc_path, monkeypatch):
+        rival_ids = self._race(monkeypatch, enc_path, "", "plaintext rival row")
+        with pytest.raises(StoreNotEncrypted):
+            _open(enc_path)
+        (rival_id,) = rival_ids
+        db = _open(enc_path, "")
+        try:
+            assert not db.encrypted
+            assert _get(db, rival_id)["content"] == "plaintext rival row"
         finally:
             db.close()
 

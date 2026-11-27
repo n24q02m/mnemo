@@ -284,15 +284,23 @@ n24q02m-mnemo decrypt [--db PATH | --namespace NS]
 Both read the key from `MNEMO_ENCRYPTION_KEY`, or prompt for it (twice for
 `encrypt`). Each run:
 
-1. Migrates the store to the current schema and checks the key.
-2. Writes a consistent, single-file backup
+1. Refuses the store, before touching it, when another process has it
+   open.
+2. Migrates the store to the current schema and checks the key. A schema
+   migration first copies the store to `<store>.bak.<time>` (with its
+   `-wal` and `-shm`).
+3. Writes a consistent, single-file backup
    `<store>.<encrypt|decrypt>-<UTC time>.bak` next to the store.
-3. Rewrites every row in one transaction, then verifies the result.
-4. On any failure, restores the backup and says so.
+4. Rewrites every row in one transaction, then verifies the result.
+5. On any failure, restores the backup and says so.
 
 `encrypt` then runs `VACUUM` and truncates the WAL, so no plaintext stays in
 freed pages or in the `-wal` file. **The backup written by `encrypt` is
-plaintext.** Once the server starts with the key, delete it securely.
+plaintext, and so is every `<store>.bak.*` file next to a store that was
+plaintext**: the copies schema migrations take before they run, including
+the ones left by earlier upgrades, long before encryption was turned on.
+`encrypt` lists the backup and every such copy. Once the server starts with
+the key, delete them all securely.
 Running either command again on a converted store does nothing. In
 `auth = "multi"` mode every namespace has its own store; encrypt each one.
 
@@ -306,14 +314,17 @@ What encryption at rest does not cover:
 - **Full-text index**: the FTS5 index would hold every token in plaintext,
   so an encrypted store keeps it empty. Keyword search decrypts the rows
   that pass the metadata filters and ranks them in memory with the same
-  query tiers and BM25 weights, without stemming. Its cost grows linearly
-  with the number of memories, and rankings can differ slightly from FTS5.
+  query tiers and BM25 weights. This is a known limitation: every search
+  scans those rows, so its latency grows linearly with the store size,
+  there is no stemming, and rankings can differ slightly from FTS5.
 - **Knowledge graph**: entity names and relations would be plaintext, so an
   encrypted store keeps the graph empty. Automatic entity extraction is
   skipped, and `encrypt` refuses a store with graph rows unless
   `--drop-graph` deletes them.
 - **Provider calls**: text sent to the embed, rerank and chat cells leaves
   the machine as before. Encryption at rest protects the files on disk only.
+- **File permissions, filesystem remnants and the audit table**: see
+  [SECURITY.md](SECURITY.md#security-best-practices).
 
 ## Build from Source
 

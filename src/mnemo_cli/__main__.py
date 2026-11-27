@@ -8,16 +8,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from mnemo.db import MemoryDB
+from mnemo.exceptions import (
+    EncryptionError,
+    EncryptionKeyError,
+    EncryptionKeyMissing,
+    WrongEncryptionKey,
+)
 from mnemo_core import operations, results, standing
 
 
 def _serialize(envelope: dict) -> str:
     return json.dumps(envelope, sort_keys=True, ensure_ascii=False)
+
+
+def _open_failure(exc: Exception) -> dict:
+    """Map a store that cannot be opened to the error taxonomy."""
+    if isinstance(exc, EncryptionKeyError | EncryptionKeyMissing | WrongEncryptionKey):
+        return results.err(results.AUTH_DENIED, str(exc))
+    if isinstance(exc, EncryptionError | sqlite3.Error | OSError):
+        return results.err(results.STORAGE, str(exc))
+    return results.err(
+        results.INTERNAL, f"could not open the store ({type(exc).__name__}: {exc})"
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -155,7 +173,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         from mnemo.config import Settings
 
         db_path = Settings().get_db_path()
-    store = MemoryDB(db_path, embedding_dims=0)
+    try:
+        store = MemoryDB(db_path, embedding_dims=0)
+    except Exception as exc:  # noqa: BLE001 - taxonomy boundary
+        envelope = _open_failure(exc)
+        print(_serialize(envelope))
+        return results.exit_code(envelope)
     try:
         if args.command == "capture":
             tags = [t.strip() for t in args.tags.split(",") if t.strip()] or None
