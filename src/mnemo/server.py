@@ -20,9 +20,12 @@ import typing
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from importlib.metadata import version as _pkgver
+from pathlib import Path
 
+from fastmcp import Context, FastMCP
+from fastmcp_tasks import TasksExtension
+from hull_core.server import attach_skills_provider, build_task_config
 from loguru import logger
-from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 
 from mnemo.config import settings
@@ -255,7 +258,7 @@ _lifespan_state: dict | None = None
 
 
 @asynccontextmanager
-async def lifespan(server: MCPServer) -> AsyncGenerator[dict]:
+async def lifespan(server: FastMCP) -> AsyncGenerator[dict]:
     """Initialize DB and embedding/rerank backends on startup.
 
     Embedding backend init runs as a background task so the server accepts
@@ -335,12 +338,28 @@ async def lifespan(server: MCPServer) -> AsyncGenerator[dict]:
 
 # --- Server ---
 
-mcp = MCPServer(
+
+def _resolve_skills_dir() -> Path:
+    """Locate bundled Agent Skills directory across wheel and repo layouts."""
+    pkg_skills = Path(__file__).resolve().parent / "skills"
+    if pkg_skills.is_dir():
+        return pkg_skills
+    repo_skills = Path(__file__).resolve().parents[2] / "skills"
+    if repo_skills.is_dir():
+        return repo_skills
+    raise FileNotFoundError(
+        f"Skills directory not found at {pkg_skills} or {repo_skills}"
+    )
+
+
+mcp = FastMCP(
     "Mnemo",
     instructions="Persistent AI memory. Proactively save preferences, decisions, facts. Search before recommending.",
     lifespan=lifespan,
     version=__version__,
 )
+mcp.add_extension(TasksExtension())
+attach_skills_provider(mcp, _resolve_skills_dir())
 
 
 # --- Helper ---
@@ -356,7 +375,18 @@ def _get_ctx(ctx: Context | None) -> tuple[MemoryDB, str | None, int]:
             "mnemo tools need a request context; start the server with "
             "`n24q02m-mnemo` instead of calling a tool directly"
         )
-    return _resolve_state(ctx.request_context.lifespan_context)
+    lc = getattr(ctx, "lifespan_context", None)
+    if not isinstance(lc, dict) or "db" not in lc:
+        rc = getattr(ctx, "request_context", None)
+        lc = getattr(rc, "lifespan_context", None) if rc is not None else None
+    if not isinstance(lc, dict) or "db" not in lc:
+        lc = _lifespan_state
+    if lc is None:
+        raise ValueError(
+            "mnemo server lifespan has not initialized; start the server with "
+            "`n24q02m-mnemo`"
+        )
+    return _resolve_state(lc)
 
 
 def _resolve_state(lc: dict) -> tuple[MemoryDB, str | None, int]:
@@ -1526,6 +1556,7 @@ async def delete_memory(
         read_only_hint=False,
         destructive_hint=False,
     ),
+    task=build_task_config("optional"),
 )
 async def export_memories(ctx: Context | None = None) -> dict[str, typing.Any]:
     return await _handle_export(ctx)
@@ -1544,6 +1575,7 @@ async def export_memories(ctx: Context | None = None) -> dict[str, typing.Any]:
         read_only_hint=False,
         destructive_hint=False,
     ),
+    task=build_task_config("optional"),
 )
 async def import_memories(
     data: str | list, mode: str = "merge", ctx: Context | None = None
@@ -1620,6 +1652,7 @@ async def archived_memories(
         read_only_hint=False,
         destructive_hint=False,
     ),
+    task=build_task_config("optional"),
 )
 async def consolidate_memories(
     category: str, ctx: Context | None = None
@@ -1862,6 +1895,7 @@ async def memory(
         idempotent_hint=True,
         open_world_hint=True,
     ),
+    task=build_task_config("optional"),
 )
 async def config(
     action: str,
@@ -2267,9 +2301,10 @@ def build_http_app(settings=None):
     """Build the authenticated HTTP MCP app (Starlette), no port bind.
 
     Composition (de-host): the outer Starlette app runs the lifespan of the
-    MCP SDK's ``streamable_http_app()``, whose session manager enters the
-    server lifespan (mnemo's store init and embedding/rerank warmup) once for
-    the app's lifetime. Entering :func:`lifespan` here as well would open a
+    FastMCP HTTP app (``http_app(path="/mcp", transport="streamable-http")``),
+    whose session manager enters the server lifespan (mnemo's store init,
+    TasksExtension Docket worker, and embedding/rerank warmup) once for the
+    app's lifetime. Entering :func:`lifespan` here as well would open a
     second store and load every local model twice.
     :class:`HullAuthMiddleware` (pure ASGI) authenticates every request
     BEFORE the MCP handler and binds the identity to a contextvar that tools
@@ -2279,7 +2314,7 @@ def build_http_app(settings=None):
     from starlette.applications import Starlette
     from starlette.routing import Mount
 
-    inner = mcp.streamable_http_app()
+    inner = mcp.http_app(path="/mcp", transport="streamable-http")
     authenticator = build_authenticator(settings)
 
     app = HullAuthMiddleware(inner, authenticator)
