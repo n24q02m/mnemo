@@ -1,12 +1,80 @@
 {
-  "eval": "longmemeval-retrieval-0llm",
+  "eval": "longmemeval-retrieval",
+  "dataset": "xiaowu0162/longmemeval-cleaned (longmemeval_oracle.json)",
+  "variant": "oracle",
+  "source_url": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json",
   "deterministic": true,
+  "with_llm_judge": false,
   "paid_calls": 0,
   "cost_usd": 0.0,
-  "total_cases": 4,
-  "hits_at_5": 4,
-  "recall_at_5": 1.0,
-  "mrr_at_5": 1.0,
-  "p95_latency_ms": 6.079,
-  "failed_cases": []
+  "total_items": 500,
+  "total_queries": 470,
+  "abstention_cases": 30,
+  "total_turns_ingested": 10960,
+  "skipped_turns": 0,
+  "hits_at_1": 251,
+  "hits_at_5": 409,
+  "hits_at_10": 441,
+  "recall_at_1": 0.534,
+  "recall_at_5": 0.8702,
+  "recall_at_10": 0.9383,
+  "session_recall_at_5": 1.0,
+  "mrr_at_5": 0.6629,
+  "mrr_at_10": 0.6723,
+  "latency_ms": {
+    "p50": 4.577,
+    "p95": 7.789,
+    "mean": 5.034
+  },
+  "by_question_type": {
+    "knowledge-update": {
+      "queries": 72,
+      "recall_at_1": 0.5972,
+      "recall_at_5": 0.875,
+      "recall_at_10": 0.9306,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.6965
+    },
+    "multi-session": {
+      "queries": 121,
+      "recall_at_1": 0.405,
+      "recall_at_5": 0.8099,
+      "recall_at_10": 0.9091,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.5623
+    },
+    "single-session-assistant": {
+      "queries": 56,
+      "recall_at_1": 0.5893,
+      "recall_at_5": 0.9464,
+      "recall_at_10": 0.9464,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.7372
+    },
+    "single-session-preference": {
+      "queries": 30,
+      "recall_at_1": 0.4,
+      "recall_at_5": 0.9,
+      "recall_at_10": 1.0,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.5767
+    },
+    "single-session-user": {
+      "queries": 64,
+      "recall_at_1": 0.6406,
+      "recall_at_5": 0.9688,
+      "recall_at_10": 0.9844,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.7758
+    },
+    "temporal-reasoning": {
+      "queries": 127,
+      "recall_at_1": 0.5748,
+      "recall_at_5": 0.8346,
+      "recall_at_10": 0.9291,
+      "session_recall_at_5": 1.0,
+      "mrr_at_5": 0.6705
+    }
+  },
+  "reproduce_cmd": "uv run python -m evals.run_longmemeval_retrieval --variant oracle"
 }

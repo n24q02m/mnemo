@@ -1,0 +1,38 @@
+{
+  "eval": "phase2-compression",
+  "mode": "0llm-deterministic",
+  "fixture_path": "tests/fixtures/compression/conversations.jsonl",
+  "total_turns": 500,
+  "subject_buckets": 25,
+  "captured_turns": 500,
+  "deduplicated_turns": 0,
+  "compressed_turns": 0,
+  "tokens_in_total": 58647,
+  "tokens_out_total": 58647,
+  "capture_compression_ratio": 1.0,
+  "capture_token_savings_pct": 0.0,
+  "fact_retention": 1.0,
+  "capture_latency_ms": {
+    "p50": 2.048,
+    "p95": 5.912,
+    "mean": 2.611
+  },
+  "k": 5,
+  "total_queries": 500,
+  "raw_recall_at_5": 1.0,
+  "raw_mrr_at_5": 1.0,
+  "compact_recall_at_5": 1.0,
+  "compact_disclosure_char_ratio": 4.249,
+  "compact_disclosure_token_ratio": 4.5958,
+  "compact_disclosure_token_savings_pct": 78.24,
+  "raw_payload_tokens": 288544,
+  "compact_payload_tokens": 62784,
+  "search_latency_ms": {
+    "p50": 3.061,
+    "p95": 4.559,
+    "mean": 3.161
+  },
+  "paid_calls": 0,
+  "cost_usd": 0.0,
+  "reproduce_cmd": "uv run python -m evals.run_phase2_compression"
+}
