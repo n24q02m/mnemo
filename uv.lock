@@ -1247,9 +1247,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
-    { name = "cryptography", specifier = ">=44.0.0" },
-    { name = "fastmcp", extras = ["tasks"], specifier = ">=4.2.2,<5" },
-    { name = "fastretrieval", specifier = ">=1.16.0,<2" },
+    { name = "cryptography", specifier = ">=50.0.2" },
+    { name = "fastmcp", extras = ["tasks"], specifier = ">=4.2.3,<5" },
+    { name = "fastretrieval", specifier = ">=1.17.0,<2" },
     { name = "httpx" },
     { name = "idna", specifier = ">=3.20" },
     { name = "loguru" },
